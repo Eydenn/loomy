@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.9 — 2026-09-24
+
+### Corrigé
+- Une installation npm faite avec le Node de Homebrew (`/opt/homebrew/lib/node_modules`) était prise pour une installation Homebrew : `loomy update` lançait alors `brew upgrade` et échouait. La détection vérifie d'abord `node_modules`, et ne retient Homebrew que pour une formule installée (`Cellar`).
+- `loomy update` appelle Homebrew avec le nom complet de la formule (`eydenn/tap/loomy`) et, en cas d'échec, affiche la méthode détectée et la commande à lancer à la main.
+
 ## 0.1.8 — 2026-09-24
 
 ### Ajouté

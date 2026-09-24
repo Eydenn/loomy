@@ -27,11 +27,12 @@ project_root() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
 INVOKED="${BASH_SOURCE[0]}"
 install_method() {
   case "$INVOKED" in */.bun/*) echo "bun"; return 0 ;; esac
+  # L'ordre compte : npm installé via le Node de Homebrew range ses paquets dans /opt/homebrew/lib/node_modules.
   case "$LOOMY_HOME" in
-    */Cellar/*|*/homebrew/*|*/linuxbrew/*) echo "brew" ;;
     # bun range ses paquets globaux dans $BUN_INSTALL/install/global/node_modules (~/.bun par défaut).
     */.bun/*|*/install/global/node_modules/*) echo "bun" ;;
     */node_modules/*) echo "npm" ;;
+    */Cellar/*) echo "brew" ;;
     *) if [[ -d "$LOOMY_HOME/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
   esac
 }
@@ -181,7 +182,7 @@ case "$cmd" in
         if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
           HOMEBREW_GITHUB_API_TOKEN="$(gh auth token 2>/dev/null || true)"; export HOMEBREW_GITHUB_API_TOKEN
         fi
-        { brew update >/dev/null && brew upgrade loomy; } || rc=$? ;;
+        { brew update >/dev/null && brew upgrade eydenn/tap/loomy; } || rc=$? ;;
       bun)
         # bun ne sait pas installer depuis un dépôt GitHub privé : on passe par l'archive de la dernière release.
         tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
@@ -191,7 +192,16 @@ case "$cmd" in
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) echo "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; exit 1 ;;
     esac
-    if (( rc != 0 )); then echo "La mise à jour a échoué (code $rc)." >&2; exit "$rc"; fi
+    if (( rc != 0 )); then
+      ui_err "La mise à jour a échoué (code $rc)" "installation détectée : $method · $LOOMY_HOME"
+      case "$method" in
+        brew) ui_info "à la main : HOMEBREW_GITHUB_API_TOKEN=\"\$(gh auth token)\" brew upgrade eydenn/tap/loomy" ;;
+        npm)  ui_info "à la main : npm install -g github:$LOOMY_REPO" ;;
+        bun)  ui_info "à la main : gh release download -R $LOOMY_REPO -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz" ;;
+        git)  ui_info "à la main : git -C $LOOMY_HOME pull --ff-only" ;;
+      esac
+      exit "$rc"
+    fi
     ui_ok "Loomy à jour" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
     ui_info "tes projets gardent leur version de Loomy : dans chacun, loomy init --update les met à niveau"
     ;;

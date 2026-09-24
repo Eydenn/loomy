@@ -78,7 +78,7 @@ fails "clé de configuration inconnue refusée" 2 "$LOOMY" config set couleur bl
 fails "delegate sans cible refusé" 2 "$LOOMY" delegate
 
 # Méthode d'installation déduite de l'emplacement (elle choisit la commande de loomy update).
-for spec in "npm:lib/node_modules/loomy" "bun:bunprefix/install/global/node_modules/loomy" "brew:Cellar/loomy/0.0.0/libexec"; do
+for spec in "npm:lib/node_modules/loomy" "npm:opt/homebrew/lib/node_modules/loomy" "bun:bunprefix/install/global/node_modules/loomy" "brew:Cellar/loomy/0.0.0/libexec" "brew:opt/homebrew/Cellar/loomy/0.0.0/libexec"; do
   want="${spec%%:*}"; dir="$WORK/methodes/${spec#*:}"
   mkdir -p "$dir" && (cd "$REPO" && tar cf - bin scripts VERSION) | (cd "$dir" && tar xf -)
   got="$(bash "$dir/bin/loomy" version | sed -n 's/^loomy [^ ]* (\([a-z]*\) .*/\1/p')"

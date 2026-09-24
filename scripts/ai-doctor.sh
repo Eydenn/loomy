@@ -68,7 +68,15 @@ install_hint() {
   ui_rail "    ${C_DIM}puis      :${C_RESET} $3"
 }
 
+(( COMPACT )) || ui_clear
 (( COMPACT )) || ui_banner "Diagnostic" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
+
+# ---------------------------------------------------------------- installation de Loomy
+LOOMY_BIN="$SCRIPT_DIR/../bin/loomy"
+if (( ! COMPACT )) && [[ -x "$LOOMY_BIN" ]]; then
+  ui_section "LOOMY" "installations trouvées dans le PATH"
+  "$LOOMY_BIN" version --all >/dev/null || true
+fi
 
 # ---------------------------------------------------------------- système
 ui_section "SYSTÈME"

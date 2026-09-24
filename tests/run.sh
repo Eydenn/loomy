@@ -60,6 +60,9 @@ else
   printf '  \033[2m○ shellcheck absent : analyse statique ignorée\033[0m\n'
 fi
 
+# Une variable suivie d'un caractère accentué (« $var… ») casse bash 3.2 hors locale UTF-8 : écrire ${var}.
+if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' "$REPO/bin/loomy" "$REPO"/scripts/*.sh "$REPO"/scripts/lib/*.sh >"$OUT"; then ko "variables collées à un caractère non ASCII : $(head -1 "$OUT")"; else ok "aucune variable collée à un caractère non ASCII"; fi
+
 # ------------------------------------------------------------------ commande loomy
 section "Commande loomy"
 run "loomy version" "$LOOMY" version
@@ -84,6 +87,22 @@ for spec in "npm:lib/node_modules/loomy" "npm:opt/homebrew/lib/node_modules/loom
   got="$(bash "$dir/bin/loomy" version | sed -n 's/^loomy [^ ]* (\([a-z]*\) .*/\1/p')"
   if [[ "$got" == "$want" ]]; then ok "méthode détectée : $want"; else ko "méthode $want détectée comme « $got »"; fi
 done
+
+# Plusieurs installations dans le PATH : chacune reconnue, avec sa commande de retrait.
+IP="$WORK/installs"; mkdir -p "$IP/prefix" "$IP/npm/bin" "$IP/npm/lib/node_modules/loomy"
+LOOMY_PREFIX="$IP/prefix" sh "$REPO/install.sh" >/dev/null 2>&1
+(cd "$REPO" && tar cf - bin scripts VERSION) | (cd "$IP/npm/lib/node_modules/loomy" && tar xf -)
+ln -s ../lib/node_modules/loomy/bin/loomy "$IP/npm/bin/loomy"
+PATH="$IP/prefix/bin:$IP/npm/bin:$PATH" "$LOOMY" version --all >"$OUT" 2>&1
+has "installations : celle d'install.sh reconnue (git)" "git v"
+has "installations : celle de npm reconnue" "npm v"
+has "installations : commande de retrait npm" "npm uninstall -g loomy"
+PATH="$IP/prefix/bin:$IP/npm/bin:$PATH" "$LOOMY" version >"$OUT" 2>&1
+has "version : signale plusieurs installations" "Plusieurs installations"
+rm -rf "$IP"
+# Démarrage hors locale UTF-8 (bash 3.2 de macOS en locale C).
+PC="$WORK/projet-c"; mkdir -p "$PC/.loomy" && printf -- '---\nname: C\nai_mode: SOLO\nai_lead: claude\n---\n' >"$PC/.loomy/brief.md" && touch "$PC/START.md"
+run "start --new en locale C" env LC_ALL=C LANG=C "$LOOMY" start --root "$PC" --new
 
 # ------------------------------------------------------------------ configuration
 section "Configuration"

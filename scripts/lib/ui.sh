@@ -45,6 +45,12 @@ ui_is_interactive() { [[ "$UI_ASSUME_DEFAULTS" != "1" && -t 0 && -t 2 ]]; }
 
 ui_print() { printf '%s\n' "$*" >&2; }
 
+# ui_clear : efface l'écran avant un affichage Loomy, seulement dans un terminal interactif (LOOMY_NO_CLEAR=1 pour garder l'historique).
+ui_clear() {
+  if [[ -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive; then printf '\033[H\033[2J' >&2; fi
+  return 0
+}
+
 # ---------------------------------------------------------------- mesure et découpage du texte
 # _ui_strlen <texte> : largeur visible (UTF-8) dans UI_LEN, sans sous-processus si la locale est UTF-8.
 _ui_strlen() {

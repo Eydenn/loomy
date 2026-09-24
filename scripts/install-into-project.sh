@@ -99,6 +99,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
     ui_warn "Fichiers déjà créés par l'agent conservés" "AGENTS.md, CLAUDE.md, PROJECT.md… l'orchestrateur les reprendra"
   }
 
+  ui_clear
   ui_banner "Projet déjà initialisé" "${TARGET/#$HOME/~}"
   ui_section "ÉTAT"
   ui_kv "Loomy" "v$OLD_V dans le projet · v$NEW_V installé"

@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.9-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.10-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -25,14 +25,40 @@ Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les
 
 ## ⚡ Démarrage rapide
 
-```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy   # ou npm / bun / install.sh
-loomy doctor --fix --live            # une fois : vérifie la machine
+**1. Installer Loomy** (une fois ; npm, bun ou script : voir « Installation »)
 
+```bash
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+```
+
+**2. Vérifier la machine** (une fois)
+
+```bash
+loomy doctor --fix --live
+```
+
+**3. Créer le dossier du projet**
+
+```bash
 mkdir mon-projet && cd mon-projet
-loomy init                           # questionnaire interactif
-loomy start                          # ouvre la session de l'orchestrateur
-loomy watch                          # dans un second terminal : suivi en direct
+```
+
+**4. Répondre au questionnaire**
+
+```bash
+loomy init
+```
+
+**5. Ouvrir la session de l'orchestrateur**
+
+```bash
+loomy start
+```
+
+**6. Suivre en direct**, dans un second terminal
+
+```bash
+loomy watch
 ```
 
 > [!TIP]
@@ -44,17 +70,44 @@ loomy watch                          # dans un second terminal : suivi en direct
 
 Toutes les méthodes installent la même commande `loomy`. Le dépôt étant privé, elles utilisent tes identifiants GitHub (`gh auth login`).
 
-| Méthode | Installer |
-|---|---|
-| 🍺&nbsp;**Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` |
-| 📦&nbsp;**npm** | `npm install -g github:Eydenn/loomy` |
-| 🥟&nbsp;**bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` |
-| 🐚&nbsp;**Script&nbsp;shell** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` |
+🍺 **Homebrew** (recommandé sur macOS)
 
-**Mise à jour**, quelle que soit la méthode : `loomy update`.
+```bash
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+```
+
+📦 **npm**
+
+```bash
+npm install -g github:Eydenn/loomy
+```
+
+🥟 **bun**
+
+```bash
+gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz
+```
+
+🐚 **Script shell**
+
+```bash
+gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh
+```
+
+**Mise à jour**, quelle que soit la méthode :
+
+```bash
+loomy update
+```
+
+Plusieurs installations sur la même machine (par exemple Homebrew et npm) ? Pour voir celle qui est utilisée et comment retirer les autres :
+
+```bash
+loomy version --all
+```
 
 > [!TIP]
-> `loomy update` détecte la méthode d'installation et utilise la bonne commande. Homebrew télécharge dans un bac à sable qui n'a pas accès au trousseau macOS : le jeton GitHub lui est transmis par `HOMEBREW_GITHUB_API_TOKEN`, le temps du téléchargement seulement, et `loomy update` s'en charge. bun ne sait pas lire un dépôt GitHub privé : il installe l'archive de la release, que `gh` télécharge avec tes identifiants. Avec nvm, une installation npm est liée à la version de Node active : si tu changes souvent de version, préfère Homebrew ou le script shell.
+> `loomy update` détecte la méthode d'installation et utilise la bonne commande. Homebrew télécharge dans un bac à sable qui n'a pas accès au trousseau macOS : le jeton GitHub lui est transmis par `HOMEBREW_GITHUB_API_TOKEN`, le temps du téléchargement seulement, et `loomy update` s'en charge. bun ne sait pas lire un dépôt GitHub privé : il installe l'archive de la release, que `gh` télécharge avec tes identifiants. Pour npm, la mise à jour se fait dans le même dossier que l'installation d'origine, même si tu as changé de version de Node (nvm) entre-temps.
 
 ---
 
@@ -168,10 +221,22 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement :
 | Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | la **valeur API consommée ce mois**, face à 20 $, 100 $ ou 200 $ par mois |
 | ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | idem, face à 20 $, 100 $, 200 $ ou 25 $ par mois |
 
+Forfait Claude : `api`, `pro`, `max5`, `max20`, `team` ou `enterprise`
+
 ```bash
-loomy config set plan_claude max20      # api, pro, max5, max20, team, enterprise
-loomy config set plan_codex pro200      # api, plus, pro100, pro200, business, enterprise
-loomy config set plan_claude_price 180  # prix personnalisé, si besoin
+loomy config set plan_claude max20
+```
+
+Forfait ChatGPT / Codex : `api`, `plus`, `pro100`, `pro200`, `business` ou `enterprise`
+
+```bash
+loomy config set plan_codex pro200
+```
+
+Prix personnalisé, si besoin (en $ par mois)
+
+```bash
+loomy config set plan_claude_price 180
 ```
 
 > [!NOTE]
@@ -269,9 +334,28 @@ flowchart TB
 
 **Installer Claude Code et Codex dans le terminal.** `loomy doctor` indique ce qui est détecté et affiche ces commandes pour une CLI absente ; `loomy doctor --fix` propose de les lancer pour toi.
 
+**Claude Code** (installateur officiel)
+
 ```bash
-curl -fsSL https://claude.ai/install.sh | bash          # Claude Code (ou : brew install --cask claude-code)
-curl -fsSL https://chatgpt.com/codex/install.sh | sh    # Codex (ou : brew install --cask codex)
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+ou avec Homebrew
+
+```bash
+brew install --cask claude-code
+```
+
+**Codex** (installateur officiel)
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+ou avec Homebrew
+
+```bash
+brew install --cask codex
 ```
 
 Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait Claude Pro, Max, Team ou compte Console ; compte ChatGPT pour Codex), et vérifie avec `loomy doctor --live`.
@@ -371,8 +455,10 @@ Pour essayer un autre modèle sur une seule machine, sans rien modifier : `AI_MO
 <br>
 
 ```bash
-tests/run.sh        # ajoute -v pour voir la sortie des tests en échec
+tests/run.sh
 ```
+
+Avec `-v`, la sortie des tests en échec s'affiche.
 
 La suite exerce chaque commande en conditions réelles (bash, git, pseudo-terminal pour le questionnaire), sans réseau ni token : `claude` et `codex` y sont remplacés par des doublures (`tests/stubs/`). Elle couvre l'installation, le questionnaire interactif et non interactif, le routage des 4 environnements × 3 profils, les deux bridges, le journal dans tous ses états, le suivi en direct, le diagnostic avec ou sans CLI, les worktrees et `install.sh`. `shellcheck` et `expect` sont utilisés s'ils sont installés.
 

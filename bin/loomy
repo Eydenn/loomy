@@ -25,16 +25,69 @@ source "$S/lib/config.sh"
 project_root() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
 
 INVOKED="${BASH_SOURCE[0]}"
-install_method() {
-  case "$INVOKED" in */.bun/*) echo "bun"; return 0 ;; esac
-  # L'ordre compte : npm installé via le Node de Homebrew range ses paquets dans /opt/homebrew/lib/node_modules.
-  case "$LOOMY_HOME" in
-    # bun range ses paquets globaux dans $BUN_INSTALL/install/global/node_modules (~/.bun par défaut).
+
+# ---------------------------------------------------------------- installations
+# method_of <chemin appelé> <dossier réel> : brew, npm, bun, git (clone + install.sh) ou manuel.
+# L'ordre compte : npm installé avec le Node de Homebrew range ses paquets dans /opt/homebrew/lib/node_modules,
+# et bun peut ranger les siens dans ~/node_modules (on reconnaît alors bun au chemin appelé, ~/.bun/bin).
+method_of() {
+  case "$1" in */.bun/*) echo "bun"; return 0 ;; esac
+  case "$2" in
     */.bun/*|*/install/global/node_modules/*) echo "bun" ;;
     */node_modules/*) echo "npm" ;;
     */Cellar/*) echo "brew" ;;
-    *) if [[ -d "$LOOMY_HOME/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
+    *) if [[ -d "$2/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
   esac
+}
+install_method() { method_of "$INVOKED" "$LOOMY_HOME"; }
+
+# home_of <exécutable loomy> : dossier d'installation réel (lien résolu, ou cible du petit script d'install.sh).
+home_of() {
+  local p="$1" t
+  if [[ ! -L "$p" ]] && grep -q "Installé par install.sh de Loomy" "$p" 2>/dev/null; then
+    t="$(sed -n 's/^exec "\(.*\)\/bin\/loomy" .*/\1/p' "$p" | head -1)"
+    if [[ -n "$t" ]]; then echo "$t"; return 0; fi
+  fi
+  (cd "$(dirname "$(_realpath "$p")")/.." 2>/dev/null && pwd)
+}
+
+# loomy_installs : « méthode<TAB>dossier<TAB>commande » pour chaque loomy du PATH, dans l'ordre du PATH.
+loomy_installs() {
+  local p h seen=" "
+  while IFS= read -r p; do
+    [[ -n "$p" ]] || continue
+    h="$(home_of "$p")" || continue
+    case "$seen" in *" $h "*) continue ;; esac
+    seen="$seen$h "
+    printf '%s\t%s\t%s\n' "$(method_of "$p" "$h")" "$h" "$p"
+  done < <(type -ap loomy 2>/dev/null || true)
+}
+
+uninstall_cmd() {
+  case "$1" in
+    brew) echo "brew uninstall eydenn/tap/loomy" ;; npm) echo "npm uninstall -g loomy" ;;
+    bun) echo "bun remove -g loomy" ;; *) echo "rm $3" ;;
+  esac
+}
+
+# show_installs : l'installation utilisée, puis les autres copies trouvées dans le PATH et comment les retirer.
+show_installs() {
+  local m h p v n=0 first=1
+  while IFS=$'\t' read -r m h p; do
+    [[ -n "$m" ]] || continue
+    n=$(( n + 1 ))
+    v="$(cat "$h/VERSION" 2>/dev/null || echo "?")"
+    if [[ "$h" == "$LOOMY_HOME" ]]; then
+      ui_ok "$m v$v" "${h/#$HOME/~} · $( (( first )) && echo "utilisée par la commande loomy" || echo "masquée par une autre dans le PATH")"
+    else
+      ui_warn "$m v$v" "${h/#$HOME/~} · autre installation$( (( first )) && echo ", utilisée par la commande loomy")"
+      ui_rail "    ${C_DIM}pour la retirer :${C_RESET} $(uninstall_cmd "$m" "$h" "$p")"
+    fi
+    first=0
+  done < <(loomy_installs)
+  if (( n == 0 )); then ui_warn "loomy absent du PATH" "installation : voir le README"; fi
+  if (( n > 1 )); then ui_info "plusieurs installations : garde-en une seule pour éviter les versions mélangées"; fi
+  return 0
 }
 
 # ---------------------------------------------------------------- aide
@@ -188,7 +241,8 @@ case "$cmd" in
         tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
         { gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && bun add -g "$tmp"/loomy-*.tgz; } || rc=$?
         rm -rf "$tmp" ;;
-      npm) npm install -g "github:$LOOMY_REPO" || rc=$? ;;
+      # Même préfixe que l'installation existante, quel que soit le Node actif (nvm).
+      npm) npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO" || rc=$? ;;
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) echo "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; exit 1 ;;
     esac
@@ -196,7 +250,7 @@ case "$cmd" in
       ui_err "La mise à jour a échoué (code $rc)" "installation détectée : $method · $LOOMY_HOME"
       case "$method" in
         brew) ui_info "à la main : HOMEBREW_GITHUB_API_TOKEN=\"\$(gh auth token)\" brew upgrade eydenn/tap/loomy" ;;
-        npm)  ui_info "à la main : npm install -g github:$LOOMY_REPO" ;;
+        npm)  ui_info "à la main : npm install -g --prefix ${LOOMY_HOME%/lib/node_modules/*} github:$LOOMY_REPO" ;;
         bun)  ui_info "à la main : gh release download -R $LOOMY_REPO -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz" ;;
         git)  ui_info "à la main : git -C $LOOMY_HOME pull --ff-only" ;;
       esac
@@ -204,9 +258,13 @@ case "$cmd" in
     fi
     ui_ok "Loomy à jour" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
     ui_info "tes projets gardent leur version de Loomy : dans chacun, loomy init --update les met à niveau"
+    if (( $(loomy_installs | wc -l) > 1 )); then ui_section "INSTALLATIONS"; show_installs; fi
     ;;
 
-  version|--version|-v) echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)" ;;
+  version|--version|-v)
+    echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"
+    if [[ "${1:-}" == "--all" ]]; then show_installs
+    elif (( $(loomy_installs | wc -l) > 1 )); then echo "Plusieurs installations de loomy dans le PATH : loomy version --all" >&2; fi ;;
   help|--help|-h) usage ;;
   *) echo "Commande inconnue : $cmd" >&2; usage >&2; exit 2 ;;
 esac

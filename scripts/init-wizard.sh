@@ -539,6 +539,7 @@ write_brief() {
 
 
 # ---------------------------------------------------------------- programme principal
+ui_clear
 ui_banner "Brief de démarrage" "v$LOOMY_VERSION · Codex + Claude Code · $TARGET"
 DETECTED_REPO="new"
 env_check

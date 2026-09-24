@@ -96,6 +96,7 @@ if (( WATCH )); then
 fi
 
 # ---------------------------------------------------------------- en-tête
+ui_clear
 ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
 # Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"

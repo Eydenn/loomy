@@ -2,6 +2,19 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.10 — 2026-09-24
+
+### Ajouté
+- **Détection des installations** : `loomy version --all` et `loomy doctor` listent chaque `loomy` du PATH (Homebrew, npm, bun, script shell), indiquent celle qui est utilisée et donnent la commande pour retirer les autres. `loomy version` et `loomy update` signalent quand il y en a plusieurs.
+- `loomy init`, `brief`, `start`, `status`, `watch` et `doctor` effacent l'écran avant d'afficher (terminal interactif seulement ; `LOOMY_NO_CLEAR=1` pour garder l'historique).
+
+### Modifié
+- `loomy update` avec npm réinstalle dans le même dossier que l'installation d'origine, même si la version de Node active a changé (nvm).
+- README : une commande par bloc, pour copier directement celle qui convient (démarrage rapide en étapes, une méthode d'installation par bloc, forfaits, installation des CLI).
+
+### Corrigé
+- `loomy start` échouait au moment d'ouvrir la session (« tool_label?: unbound variable ») avec le bash de macOS hors locale UTF-8. Toutes les variables suivies d'un caractère accentué sont vérifiées par les tests, qui lancent aussi `loomy start` en locale C.
+
 ## 0.1.9 — 2026-09-24
 
 ### Corrigé

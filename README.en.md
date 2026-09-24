@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.9-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.10-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -27,14 +27,40 @@ A questionnaire to frame the project, a repository structure ready for agents, a
 
 ## ⚡ Quick start
 
-```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy   # or npm / bun / install.sh
-loomy doctor --fix --live            # once: checks your machine
+**1. Install Loomy** (once; npm, bun or script: see "Installation")
 
+```bash
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+```
+
+**2. Check your machine** (once)
+
+```bash
+loomy doctor --fix --live
+```
+
+**3. Create the project folder**
+
+```bash
 mkdir my-project && cd my-project
-loomy init                           # interactive questionnaire
-loomy start                          # opens the lead agent session
-loomy watch                          # in a second terminal: live tracking
+```
+
+**4. Answer the questionnaire**
+
+```bash
+loomy init
+```
+
+**5. Open the lead agent session**
+
+```bash
+loomy start
+```
+
+**6. Follow live**, in a second terminal
+
+```bash
+loomy watch
 ```
 
 > [!TIP]
@@ -46,17 +72,44 @@ loomy watch                          # in a second terminal: live tracking
 
 Every method installs the same `loomy` command. The repository is private, so they all use your GitHub credentials (`gh auth login`).
 
-| Method | Install |
-|---|---|
-| 🍺&nbsp;**Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` |
-| 📦&nbsp;**npm** | `npm install -g github:Eydenn/loomy` |
-| 🥟&nbsp;**bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` |
-| 🐚&nbsp;**Shell&nbsp;script** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` |
+🍺 **Homebrew** (recommended on macOS)
 
-**Update**, whatever the method: `loomy update`.
+```bash
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+```
+
+📦 **npm**
+
+```bash
+npm install -g github:Eydenn/loomy
+```
+
+🥟 **bun**
+
+```bash
+gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz
+```
+
+🐚 **Shell script**
+
+```bash
+gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh
+```
+
+**Update**, whatever the method:
+
+```bash
+loomy update
+```
+
+Several installs on the same machine (for example Homebrew and npm)? To see which one is used and how to remove the others:
+
+```bash
+loomy version --all
+```
 
 > [!TIP]
-> `loomy update` detects how Loomy was installed and runs the right command. Homebrew downloads inside a sandbox that cannot reach the macOS keychain, so the GitHub token is passed through `HOMEBREW_GITHUB_API_TOKEN` for the download only; `loomy update` does this for you. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. With nvm, an npm install is tied to the active Node version: if you switch versions often, prefer Homebrew or the shell script.
+> `loomy update` detects how Loomy was installed and runs the right command. Homebrew downloads inside a sandbox that cannot reach the macOS keychain, so the GitHub token is passed through `HOMEBREW_GITHUB_API_TOKEN` for the download only; `loomy update` does this for you. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. For npm, the update goes into the same folder as the original install, even if you switched Node versions (nvm) since.
 
 ---
 
@@ -145,10 +198,22 @@ Loomy knows whether you pay per use (API) or by subscription:
 | Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | the **API value consumed this month**, against $20, $100 or $200 per month |
 | ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | the same, against $20, $100, $200 or $25 per month |
 
+Claude plan: `api`, `pro`, `max5`, `max20`, `team` or `enterprise`
+
 ```bash
-loomy config set plan_claude max20      # api, pro, max5, max20, team, enterprise
-loomy config set plan_codex pro200      # api, plus, pro100, pro200, business, enterprise
-loomy config set plan_claude_price 180  # custom price, if needed
+loomy config set plan_claude max20
+```
+
+ChatGPT / Codex plan: `api`, `plus`, `pro100`, `pro200`, `business` or `enterprise`
+
+```bash
+loomy config set plan_codex pro200
+```
+
+Custom price, if needed ($ per month)
+
+```bash
+loomy config set plan_claude_price 180
 ```
 
 > [!NOTE]
@@ -216,9 +281,28 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 **Install Claude Code and Codex in the terminal.** `loomy doctor` shows what it detects and prints these commands for a missing CLI; `loomy doctor --fix` offers to run them for you.
 
+**Claude Code** (official installer)
+
 ```bash
-curl -fsSL https://claude.ai/install.sh | bash          # Claude Code (or: brew install --cask claude-code)
-curl -fsSL https://chatgpt.com/codex/install.sh | sh    # Codex (or: brew install --cask codex)
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+or with Homebrew
+
+```bash
+brew install --cask claude-code
+```
+
+**Codex** (official installer)
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+or with Homebrew
+
+```bash
+brew install --cask codex
 ```
 
 Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan or Console account; ChatGPT account for Codex), and check with `loomy doctor --live`.

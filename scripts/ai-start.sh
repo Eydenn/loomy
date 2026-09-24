@@ -80,6 +80,7 @@ tool_label="Claude Code"; [[ "$TOOL" == "codex" ]] && tool_label="Codex"
 short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $MODEL --effort $EFFORT"; else echo "codex${1:+ $1} -m $MODEL -c model_reasoning_effort=$EFFORT"; fi; }
 
 # ---------------------------------------------------------------- affichage
+ui_clear
 ui_banner "Démarrer ou reprendre" "${NAME:-$(basename "$ROOT")} · ${ROOT/#$HOME/~}"
 ui_section "SESSION"
 ui_kv "Phase" "${C_BOLD}$(phase_label "$PHASE")${C_RESET}"
@@ -136,6 +137,6 @@ case "$MODE" in
 esac
 [[ "$MODE" == "print" ]] && exit 0
 
-ui_end "ouverture de $tool_label… · suivi en direct dans un autre terminal : loomy watch"
+ui_end "ouverture de ${tool_label}… · suivi en direct dans un autre terminal : loomy watch"
 cd "$ROOT"
 if [[ "$MODE" == "resume" ]]; then exec "${RESUME_CMD[@]}"; else exec "${NEW_CMD[@]}"; fi

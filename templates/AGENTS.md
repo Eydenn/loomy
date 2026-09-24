@@ -10,7 +10,7 @@ Tu es l'orchestrateur du travail IA de ce dépôt : avant de déléguer ou de ch
 Ne recopie pas ces règles ici.
 
 ## Reprise de session
-Au début de chaque session, lance `.loomy/scripts/ai-context.sh` s'il existe : il donne la phase en cours, ce que l'utilisateur attend et les dernières délégations. Commence par dire en une ou deux phrases où en est le projet et ce que tu proposes.
+Le contexte Loomy (phase en cours, attentes de l'utilisateur, dernières délégations) arrive automatiquement en début de session par un hook du projet (`.codex/hooks.json`, `.claude/settings.json`). S'il n'apparaît pas (hooks pas encore approuvés), lance `.loomy/scripts/ai-context.sh`. Commence par dire en une ou deux phrases où en est le projet et ce que tu proposes.
 Avant de clore une session, résume ce qui a été fait et la prochaine étape. Si les fichiers IA sont dans un dépôt privé séparé, sauvegarde-les avec `.loomy/scripts/ai-privacy.sh sync`.
 
 ## Carte du projet

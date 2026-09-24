@@ -3,6 +3,7 @@
 #   ai-context.sh               affiche le contexte (Codex le lit en début de session, voir AGENTS.md)
 #   ai-context.sh --hook start  hook SessionStart de Claude Code : note l'ouverture de la session, puis affiche le contexte
 #   ai-context.sh --hook end    hook SessionEnd de Claude Code : note la fermeture ; en mode dépôt privé, sauvegarde les fichiers IA
+#   --tool codex                 mêmes hooks pour Codex (.codex/hooks.json)
 # Ne bloque jamais une session : en cas de problème, il se tait.
 set -uo pipefail
 
@@ -16,11 +17,12 @@ source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
 
-HOOK=""; ROOT=""
+HOOK=""; ROOT=""; TOOL="claude"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --hook) HOOK="${2:-}"; shift ;;
     --root) ROOT="${2:-}"; shift ;;
+    --tool) TOOL="${2:-claude}"; shift ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   esac
   shift
@@ -35,17 +37,17 @@ if [[ -n "$HOOK" ]]; then
   input=""; [[ -t 0 ]] || input="$(cat 2>/dev/null || true)"
   sid="$(printf '%s' "$input" | sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p' | head -1)"
   src="$(printf '%s' "$input" | sed -n 's/.*"source" *: *"\([^"]*\)".*/\1/p' | head -1)"
-  # Processus Claude Code (ancêtre du hook) : sa présence dit si la session est encore ouverte.
+  # Processus de l'agent (ancêtre du hook) : sa présence dit si la session est encore ouverte.
   pid=$PPID; p=$PPID; i=0
   while (( i < 6 )) && [[ -n "$p" && "$p" != "1" ]]; do
-    case "$(ps -o comm= -p "$p" 2>/dev/null)" in *claude*) pid=$p; break ;; esac
+    case "$(ps -o comm= -p "$p" 2>/dev/null)" in *"$TOOL"*) pid=$p; break ;; esac
     p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"; i=$(( i + 1 ))
   done
   case "$HOOK" in
     start)
-      ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"claude\",\"session\":$(ai_json_str "$sid"),\"source\":$(ai_json_str "$src"),\"pid\":$pid" ;;
+      ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"$TOOL\",\"session\":$(ai_json_str "$sid"),\"source\":$(ai_json_str "$src"),\"pid\":$pid" ;;
     end)
-      ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"claude\",\"session\":$(ai_json_str "$sid"),\"pid\":$pid"
+      ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"$TOOL\",\"session\":$(ai_json_str "$sid"),\"pid\":$pid"
       # Budget de fin de session très court : la sauvegarde part en arrière-plan.
       if [[ "$(privacy_mode "$ROOT")" == "private" ]] && privacy_companion_ready "$ROOT"; then
         nohup bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" sync --quiet >/dev/null 2>&1 &
@@ -82,7 +84,7 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "- Git : branche $br, $dirty fichier(s) modifié(s) non commité(s)."
 fi
 case "$(privacy_mode "$ROOT")" in
-  local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/ ni START.md (jamais de git add -f)." ;;
+  local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f)." ;;
   private) echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne pas dans le dépôt du projet ; sauvegarde-les en fin d'étape avec .loomy/scripts/ai-privacy.sh sync." ;;
 esac
 echo "- Pour commencer : dis à l'utilisateur, en une ou deux phrases, où en est le projet et ce que tu proposes de faire maintenant."

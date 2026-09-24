@@ -139,6 +139,11 @@ case "$MODE" in
 esac
 [[ "$MODE" == "print" ]] && exit 0
 
+# Codex n'exécute les hooks d'un projet (contexte automatique, suivi de session) qu'une fois le dossier jugé de confiance
+# et les hooks approuvés : il le demande lui-même au premier lancement.
+if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
+  ui_info "premier lancement de Codex dans ce projet : accepte de faire confiance au dossier, puis approuve les hooks Loomy (reprise automatique)"
+fi
 ui_end "ouverture de ${tool_label}… · suivi en direct dans un autre terminal : loomy watch"
 cd "$ROOT"
 # Codex n'a pas de hooks par projet : la session est notée ici. Après exec, Codex garde ce pid.

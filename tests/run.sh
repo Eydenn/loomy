@@ -345,6 +345,16 @@ if command -v python3 >/dev/null 2>&1; then
   python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['permissions']['allow']==['Bash(ls:*)'] and d['hooks']['SessionStart']" "$PM/.claude/settings.json" \
     && ok "settings.json existant : hooks ajoutés, réglages conservés" || ko "settings.json existant mal fusionné"
 fi
+file_has "hooks Codex installés" "$PC2/.codex/hooks.json" 'ai-context.sh.*--hook start --tool codex'
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$PC2/.codex/hooks.json" && ok ".codex/hooks.json valide" || ko ".codex/hooks.json invalide"
+  CX_CMD="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['hooks']['SessionStart'][0]['hooks'][0]['command'])" "$PC2/.codex/hooks.json")"
+  mkdir -p "$PC2/src/deep"
+  (cd "$PC2/src/deep" && echo '{"session_id":"cx-test","source":"startup"}' | eval "$CX_CMD") >"$OUT" 2>&1
+  has "hook Codex depuis un sous-dossier : contexte renvoyé" "Contexte de reprise"
+  file_has "hook Codex : session notée avec l'outil codex" "$PC2/.loomy/logs/events.jsonl" '"tool":"codex","session":"cx-test"'
+  echo '{"session_id":"cx-test"}' | (cd "$PC2" && bash .loomy/scripts/ai-context.sh --hook end --tool codex) >/dev/null 2>&1
+fi
 bash "$PC2/.loomy/scripts/ai-context.sh" >"$OUT" 2>&1
 has "contexte : projet et phase" "Contexte de reprise du projet"
 has "contexte : consigne de reprise" "Reprends START.md à partir de cette phase"

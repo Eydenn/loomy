@@ -124,6 +124,7 @@ copy_loomy_files() {
   done
   cp "$LOOMY_ROOT/VERSION" "$L/VERSION"
   install_claude_hooks
+  install_codex_hooks
   # Le journal d'activité contient le texte des tâches déléguées : il reste local.
   if ! grep -qxF '.loomy/logs/' "$TARGET/.gitignore" 2>/dev/null; then
     printf '\n# Loomy : journal d\x27activité local\n.loomy/logs/\n' >>"$TARGET/.gitignore"
@@ -139,7 +140,36 @@ LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook
 _hooks_json() {
   local s e
   s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
-  printf '{\n  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e"
+  printf '{\n  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ]\n  }\n}\n' "$s" "$e"
+}
+
+# Codex lance ses hooks depuis le dossier de la session : la commande remonte jusqu'au projet Loomy.
+codex_hook_cmd() {
+  printf '%s' "sh -c 'd=\$PWD; while [ \"\$d\" != / ] && [ ! -f \"\$d/.loomy/scripts/ai-context.sh\" ]; do d=\$(dirname \"\$d\"); done; [ -f \"\$d/.loomy/scripts/ai-context.sh\" ] && exec bash \"\$d/.loomy/scripts/ai-context.sh\" --hook $1 --tool codex'"
+}
+
+# install_codex_hooks : .codex/hooks.json du projet (même format que Claude Code). Codex demande de les approuver au premier lancement.
+install_codex_hooks() {
+  local f="$TARGET/.codex/hooks.json" start end merger
+  start="$(codex_hook_cmd start)"; end="$(codex_hook_cmd end)"
+  mkdir -p "$TARGET/.codex"
+  if [[ -f "$f" ]] && grep -q 'ai-context.sh' "$f"; then return 0; fi
+  merger='import json, os, sys
+path, start, end = sys.argv[1:4]
+data = json.load(open(path)) if os.path.exists(path) else {}
+hooks = data.setdefault("hooks", {})
+hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
+hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 3}]})
+out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
+  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$start" "$end" 2>/dev/null; then return 0; fi
+  if [[ ! -f "$f" ]]; then
+    local s e
+    s="$(printf '%s' "$start" | sed 's/\\/\\\\/g; s/"/\\"/g')"; e="$(printf '%s' "$end" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf '{\n  "hooks": {\n    "SessionStart": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] } ],\n    "SessionEnd": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] } ]\n  }\n}\n' "$s" "$e" >"$f"
+    return 0
+  fi
+  ui_warn ".codex/hooks.json existant non modifié" "ajoute-y les hooks Loomy à la main (voir .loomy/scripts/ai-context.sh)"
+  return 0
 }
 
 install_claude_hooks() {
@@ -152,7 +182,7 @@ path, start, end = sys.argv[1:4]
 data = json.load(open(path))
 hooks = data.setdefault("hooks", {})
 hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
-hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 5}]})
+hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 3}]})
 out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
   if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" 2>/dev/null; then return 0; fi
   _hooks_json >"$L/claude-hooks.json"

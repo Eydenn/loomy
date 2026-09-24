@@ -7,7 +7,7 @@
 #   private    exclus du dépôt du projet et versionnés dans un dépôt privé séparé (.loomy/ai.git),
 #              qui suit uniquement ces fichiers, directement dans le dossier du projet
 
-LOOMY_AI_PATHS=".loomy START.md AGENTS.md CLAUDE.md .ai .claude"
+LOOMY_AI_PATHS=".loomy START.md AGENTS.md CLAUDE.md .ai .claude .codex"
 PRIVACY_BEGIN="# >>> loomy : fichiers IA hors du dépôt (loomy privacy)"
 PRIVACY_END="# <<< loomy"
 

@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.15 — 2026-09-24
+
+### Ajouté
+- **Reprise automatique avec Codex aussi.** `loomy init` installe les mêmes hooks pour Codex (`.codex/hooks.json`) : contexte transmis à l'ouverture, session notée à l'ouverture et à la fermeture, sauvegarde des fichiers IA en mode dépôt privé. Vérifié avec les vraies CLI Codex et Claude Code. Codex demande, au premier lancement, de faire confiance au dossier puis d'approuver les hooks ; `loomy start` le rappelle.
+- `.codex/` fait partie des fichiers IA (modes local et dépôt privé).
+
 ## 0.1.14 — 2026-09-24
 
 ### Ajouté

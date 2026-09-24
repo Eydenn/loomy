@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.6 — 2026-09-24
+
+### Modifié
+- Description de Loomy réécrite partout (aide, README, npm, GitHub, formule Homebrew) : Loomy démarre et structure les projets (questionnaire, structure prête pour les agents), puis les fait avancer (orchestrateur et rôles dédiés, suivi en direct).
+- `loomy init` est décrit pour ce qu'il fait : créer ou initialiser un projet, nouveau ou existant.
+
 ## 0.1.5 — 2026-09-24
 
 ### Corrigé

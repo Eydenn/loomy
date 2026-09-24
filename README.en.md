@@ -5,10 +5,10 @@
   <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
 </picture>
 
-**Weave Codex and Claude Code into one development crew.**
-A lead agent on the best model, dedicated roles on just the model they need, and live tracking in your terminal.
+**Start and structure your projects with Codex and Claude Code.**
+A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.5-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.6-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -186,7 +186,7 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | Command | Purpose |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | installs Loomy in a project and runs the questionnaire (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates or initializes a project, new or existing: questionnaire, then structure set up by the lead agent (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, `--live` tests every model) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |

@@ -5,10 +5,10 @@
   <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
 </picture>
 
-**Tisse Codex et Claude Code en une seule équipe de développement.**
-Un orchestrateur sur le meilleur modèle, des rôles dédiés sur le modèle juste nécessaire, et un suivi en direct dans le terminal.
+**Démarre et structure tes projets avec Codex et Claude Code.**
+Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.5-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.6-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -219,7 +219,7 @@ flowchart TB
 
 | Commande | Rôle |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | installe Loomy dans un projet et lance le questionnaire (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |

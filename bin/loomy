@@ -35,31 +35,78 @@ install_method() {
   esac
 }
 
+# ---------------------------------------------------------------- aide
+# L'aide s'écrit sur la sortie standard (loomy help | less), en couleurs seulement vers un terminal.
+_h_color() {
+  if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    HB="$C_BOLD"; HD="$C_DIM"; HR="$C_RESET"; HL="$C_RAIL"; HA="$C_BOX"
+  else
+    HB=""; HD=""; HR=""; HL=""; HA=""; C_BOLD=""; C_DIM=""; C_RESET=""; C_RAIL=""; C_BRAND=""
+  fi
+}
+_h_group() { printf '%s\n%s◇%s  %s%s%s\n' "${HL}│${HR}" "$HL" "$HR" "$HB" "$1" "$HR"; }
+# _h_cmd <commande> <arguments> <description> : colonne de commandes alignée, description repliée à la largeur du terminal.
+_h_cmd() {
+  local left="loomy $1${2:+ $2}" col=34 len i indent
+  _ui_term_size
+  _ui_strlen "$left"; len=$UI_LEN
+  # Deux colonnes à partir de 80 colonnes ; sinon la description passe sous la commande.
+  if (( UI_COLS >= 80 && len + 2 <= col )); then
+    _ui_wrap "$3" $(( UI_COLS - col - 5 ))
+    _ui_pad "$left" "$col"
+    printf '%s│%s  %sloomy%s %s%s%s%s%s\n' "$HL" "$HR" "$HD" "$HR" "$HB" "$1" "$HR" "${2:+ ${HA}$2${HR}}" "${UI_PADDED:${#left}}${UI_LINES[0]:-}"
+    indent=$col
+  else
+    printf '%s│%s  %sloomy%s %s%s%s%s\n' "$HL" "$HR" "$HD" "$HR" "$HB" "$1" "$HR" "${2:+ ${HA}$2${HR}}"
+    if (( UI_COLS >= 80 )); then indent=$col; else indent=4; fi
+    _ui_wrap "$3" $(( UI_COLS - indent - 5 ))
+    _ui_pad "" "$indent"; printf '%s│%s  %s%s\n' "$HL" "$HR" "$UI_PADDED" "${UI_LINES[0]:-}"
+  fi
+  _ui_pad "" "$indent"
+  for (( i = 1; i < ${#UI_LINES[@]}; i++ )); do printf '%s│%s  %s%s\n' "$HL" "$HR" "$UI_PADDED" "${UI_LINES[$i]}"; done
+  return 0
+}
+
 usage() {
-  cat >&2 <<EOF
-${C_BOLD}loomy${C_RESET} ${VERSION} — un orchestrateur sur le meilleur modèle, des rôles dédiés sur le modèle juste nécessaire.
+  _h_color
+  if [[ -t 1 ]] && ui_logo_ok; then
+    _ui_logo_lines "  "; printf '\n'; printf '%s\n' "${UI_LINES[@]}"
+  else
+    printf '\n  %sLoomy%s\n' "$C_BRAND" "$HR"
+  fi
+  printf '\n  %sv%s%s  %sun orchestrateur sur le meilleur modèle, des rôles dédiés sur le modèle juste nécessaire%s\n\n' "$HB" "$VERSION" "$HR" "$HD" "$HR"
+  printf '%s┌%s  %sUsage : loomy <commande> [arguments]%s\n' "$HL" "$HR" "$HD" "$HR"
+  _h_group "PROJET"
+  _h_cmd init "[dossier] [options]" "Installe Loomy dans un projet et lance le questionnaire"
+  _h_cmd brief "" "Relance le questionnaire du projet courant"
+  _h_cmd route "[commande]" "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)"
+  _h_cmd delegate "<claude|codex> <rôle> \"tâche\"" "Confie un rôle à Claude ou à Codex via les bridges"
+  _h_cmd worktrees "<tâche> [base]" "Crée deux worktrees séparés pour le mode parallèle"
+  _h_group "SUIVI"
+  _h_cmd status "" "Statut du projet : phases, délégations en cours, activité, coûts, Git"
+  _h_cmd watch "[N]" "Suivi en direct dans le terminal, rafraîchi toutes les N secondes"
+  _h_cmd log "[-n N] [-f]" "Journal brut des délégations et des phases"
+  _h_group "MACHINE"
+  _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
+  _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
+  _h_cmd update "" "Met à jour Loomy selon sa méthode d'installation"
+  _h_cmd version "" "Version et méthode d'installation"
+  printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy <commande> --help%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
+}
 
-${C_BOLD}Projet${C_RESET}
-  loomy init [dossier] [options]    Installe Loomy dans un projet et lance le questionnaire
-  loomy brief                       Relance le questionnaire du projet courant
-  loomy route [commande]            Matrice rôle → modèle → effort (lead, get <rôle>, markdown, json, all…)
-  loomy delegate <claude|codex> <rôle> "tâche"
-                                    Confie un rôle à Claude ou à Codex via les bridges
-  loomy worktrees <tâche> [base]    Crée deux worktrees séparés pour le mode parallèle
-
-${C_BOLD}Suivi${C_RESET}
-  loomy status                      Statut du projet : phases, délégations en cours, activité, coûts, Git
-  loomy watch [N]                   Suivi en direct dans le terminal (raccourci de loomy status --watch)
-  loomy log [-n N] [-f]             Journal brut des délégations et des phases
-
-${C_BOLD}Machine${C_RESET}
-  loomy doctor [--fix] [--live]     Vérifie les prérequis et les modèles
-  loomy config [list|get|set]       Préférences : plan_claude, plan_codex…
-  loomy update                      Met à jour Loomy selon sa méthode d'installation
-  loomy version                     Version et méthode d'installation
-
-Aide détaillée d'une commande : loomy <commande> --help
-EOF
+# Aide courte des commandes gérées directement ici.
+sub_help() {
+  case "$1" in
+    log) echo "Usage : loomy log [-n N] [-f]"; echo "Affiche les N dernières lignes du journal (.loomy/logs/events.jsonl, 20 par défaut) ; -f le suit en continu." ;;
+    config) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"
+            echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
+            echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public)."
+            echo "Fichier : $(loomy_config_file)" ;;
+    delegate) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""
+              echo "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."
+              echo "claude : architect, debugger, security, reviewer, explorer (lecture seule)."
+              echo "Chaque délégation est journalisée ; suivi avec loomy watch." ;;
+  esac
 }
 
 cmd="${1:-help}"; [[ $# -gt 0 ]] && shift
@@ -72,11 +119,12 @@ case "$cmd" in
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
   worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;
   delegate)
+    case "${1:-}" in -h|--help) sub_help delegate; exit 0 ;; esac
     target="${1:-}"; [[ $# -gt 0 ]] && shift
     case "$target" in
       claude) exec bash "$S/delegate-to-claude.sh" "$@" ;;
       codex) exec bash "$S/delegate-to-codex.sh" "$@" ;;
-      *) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\"" >&2; exit 2 ;;
+      *) sub_help delegate >&2; exit 2 ;;
     esac ;;
 
   watch) exec bash "$S/ai-status.sh" --root "$(project_root)" --watch "$@" ;;
@@ -84,7 +132,7 @@ case "$cmd" in
   log|logs)
     n=20; follow=0
     while [[ $# -gt 0 ]]; do
-      case "$1" in -n) n="${2:-20}"; shift ;; -f|--follow) follow=1 ;; *) echo "Argument inconnu : $1" >&2; exit 2 ;; esac
+      case "$1" in -n) n="${2:-20}"; shift ;; -f|--follow) follow=1 ;; -h|--help) sub_help log; exit 0 ;; *) echo "Argument inconnu : $1" >&2; exit 2 ;; esac
       shift
     done
     file="$(project_root)/.loomy/logs/events.jsonl"
@@ -94,6 +142,7 @@ case "$cmd" in
   config)
     sub="${1:-list}"; [[ $# -gt 0 ]] && shift
     case "$sub" in
+      -h|--help) sub_help config; exit 0 ;;
       list) echo "# $(loomy_config_file)"; loomy_config_list ;;
       get) loomy_config_get "${1:?clé manquante}" ;;
       set)
@@ -129,5 +178,5 @@ case "$cmd" in
 
   version|--version|-v) echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)" ;;
   help|--help|-h) usage ;;
-  *) echo "Commande inconnue : $cmd" >&2; usage; exit 2 ;;
+  *) echo "Commande inconnue : $cmd" >&2; usage >&2; exit 2 ;;
 esac

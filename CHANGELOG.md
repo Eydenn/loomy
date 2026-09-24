@@ -2,6 +2,16 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.3 — 2026-09-24
+
+### Modifié
+- **Aide de `loomy`** structurée comme le questionnaire : logo, groupes Projet / Suivi / Machine, commandes en gras, arguments en couleur, descriptions alignées et repliées à la largeur du terminal (sous la commande en dessous de 80 colonnes). Écrite sur la sortie standard, sans couleurs quand elle est redirigée.
+- `--help` fonctionne pour chaque commande, y compris `log`, `config`, `delegate` et `worktrees`.
+
+### Corrigé
+- `loomy worktrees --help` créait deux worktrees nommés « --help » : l'aide est maintenant gérée, et un nom de tâche doit commencer par une lettre ou un chiffre.
+- L'aide mentionnait encore `loomy route json`, supprimé.
+
 ## 0.1.2 — 2026-09-24
 
 ### Modifié

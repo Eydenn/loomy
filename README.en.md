@@ -8,7 +8,7 @@
 **Weave Codex and Claude Code into one development crew.**
 A lead agent on the best model, dedicated roles on just the model they need, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.2-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.3-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)

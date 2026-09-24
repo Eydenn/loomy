@@ -65,7 +65,14 @@ section "Commande loomy"
 run "loomy version" "$LOOMY" version
 has "version affichée depuis VERSION" "^loomy $(cat "$REPO/VERSION") "
 run "loomy help" "$LOOMY" help
-has "aide : section Suivi" "Suivi"
+has "aide : sections structurées" "◇  SUIVI"
+hasnt "aide : aucune couleur hors terminal" $'\033\\['
+hasnt "aide : plus de route json" "json"
+bad=""
+for c in init brief route status watch log doctor config delegate worktrees; do
+  "$LOOMY" "$c" --help >"$OUT" 2>&1 </dev/null || bad="$bad $c"
+done
+if [[ -z "$bad" ]]; then ok "--help répond pour chaque commande"; else ko "--help en échec :$bad"; fi
 fails "commande inconnue refusée" 2 "$LOOMY" nimporte
 fails "clé de configuration inconnue refusée" 2 "$LOOMY" config set couleur bleu
 fails "delegate sans cible refusé" 2 "$LOOMY" delegate
@@ -269,6 +276,9 @@ section "Worktrees parallèles"
 git -C "$PROJ" add -A && git -C "$PROJ" commit -qm "travail" || true
 run "worktrees" "$LOOMY" worktrees demo
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "deux worktrees créés"; else ko "worktrees : $(git -C "$PROJ" worktree list | wc -l) entrées"; fi
+run "worktrees --help n'a rien créé" "$LOOMY" worktrees --help
+fails "nom de tâche commençant par un tiret refusé" 2 "$LOOMY" worktrees -x
+if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "toujours deux worktrees seulement"; else ko "worktrees créés par erreur"; fi
 
 # ------------------------------------------------------------------ install.sh
 section "install.sh"

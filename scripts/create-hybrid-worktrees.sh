@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+worktrees_usage() {
+  echo "Usage : loomy worktrees <tâche> [branche-de-base]"
+  echo "Crée deux worktrees séparés (codex/<tâche> et claude/<tâche>) à côté du dépôt, pour le mode parallèle."
+  echo "Exemple : loomy worktrees auth-refactor main"
+}
+case "${1:-}" in -h|--help) worktrees_usage; exit 0 ;; esac
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "Usage : $0 <tâche> [branche-de-base]" >&2
-  echo "Exemple : $0 auth-refactor main" >&2
+  worktrees_usage >&2
   exit 2
 fi
 
 TASK="$1"
 BASE="${2:-HEAD}"
 
-if [[ ! "$TASK" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-  echo "Erreur : le nom de tâche ne peut contenir que des lettres, chiffres, points, tirets bas et tirets." >&2
+if [[ ! "$TASK" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+  echo "Erreur : le nom de tâche commence par une lettre ou un chiffre, puis lettres, chiffres, points, tirets bas et tirets." >&2
   exit 2
 fi
 

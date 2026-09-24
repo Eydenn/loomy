@@ -537,17 +537,6 @@ write_brief() {
   } >"$BRIEF"
 }
 
-start_prompt() {
-  local p="Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation."
-  case "$MODE" in
-    ORCHESTRATED)
-      if [[ "$LEAD" == "codex" ]]; then p="$p Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur."
-      else p="$p Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh."; fi ;;
-    HYBRID) p="$p Configure le mode HYBRID Codex + Claude Code sans multiplier les agents." ;;
-    PARALLEL) p="$p Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités." ;;
-  esac
-  printf '%s' "$p"
-}
 
 # ---------------------------------------------------------------- programme principal
 ui_banner "Brief de démarrage" "v$LOOMY_VERSION · Codex + Claude Code · $TARGET"
@@ -608,11 +597,15 @@ if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
   "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
 fi
 
-PROMPT="$(start_prompt)"
+PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"
 LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""
 ui_rail_group "Étape suivante"
-ui_rail "${C_BRAND}1${C_RESET}  Lance l'orchestrateur à la racine du projet :"
+if command -v loomy >/dev/null 2>&1; then
+  ui_rail "${C_BRAND}1${C_RESET}  Lance l'orchestrateur à la racine du projet : ${C_BOLD}loomy start${C_RESET} ${C_DIM}(ou à la main :)${C_RESET}"
+else
+  ui_rail "${C_BRAND}1${C_RESET}  Lance l'orchestrateur à la racine du projet :"
+fi
 ui_rail "   ${C_BOLD}${LEAD_CMD}${C_RESET}"
 if [[ "${ROUTE_ENV#hybrid-}" == "codex" ]]; then
   ui_rail "   ${C_DIM}(ou dans l'app Codex : modèle ${LEAD_LINE%% *}, effort ${LEAD_LINE##*(})${C_RESET}"

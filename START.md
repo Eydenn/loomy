@@ -31,13 +31,17 @@ Ne saute pas l'étape de validation avant de créer le projet, sauf si l'utilisa
 
 ## Suivi de l'avancement
 
-Au début de chaque phase, enregistre-la pour que l'utilisateur puisse suivre avec `.loomy/scripts/ai-status.sh` :
+Au début de chaque phase, **avant toute autre action**, enregistre-la : l'utilisateur la voit aussitôt dans `loomy watch`, avec ce qui est attendu de lui.
 
 ```bash
 .loomy/scripts/ai-status.sh set <discover|interview|propose|approve|build|verify|document|commit|retire|done>
 ```
 
 Si le script est absent, ignore cette étape sans le signaler.
+
+À chaque changement de phase, dis aussi à l'utilisateur, en une phrase, ce que tu fais maintenant et ce que tu attends de lui (réponses, validation, relecture) : il ne doit jamais se demander si c'est à lui d'agir.
+
+Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`.
 
 Chaque délégation passée par les bridges (`delegate-to-claude.sh`, `delegate-to-codex.sh`) est journalisée automatiquement dans `.loomy/logs/events.jsonl` : rôle, modèle, effort, durée, tokens, coût. L'utilisateur suit ce journal en direct dans le terminal (`loomy watch`). Tu n'as rien à lancer pour cela.
 

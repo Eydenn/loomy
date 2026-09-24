@@ -2,6 +2,23 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.8 — 2026-09-24
+
+### Ajouté
+- **`loomy start`** : démarre ou reprend la session de l'orchestrateur. Il détecte une session précédente du projet sur la machine et propose de la reprendre (`claude --continue`, `codex resume --last`) ou d'en ouvrir une nouvelle avec le prompt adapté à la phase : démarrage du bootstrap, reprise à la phase enregistrée, ou travail courant. `--resume`, `--new`, `--print` ; en mode affichage, les consignes pour les apps de bureau.
+- **`loomy init` sur un projet déjà initialisé** : au lieu de refuser, propose de reprendre, mettre à jour, refaire le questionnaire ou réinitialiser. Options `--update` (fichiers Loomy du projet mis à niveau ; brief, phase et journal conservés) et `--reset` (bootstrap recommencé, anciennes réponses en valeurs par défaut).
+- `loomy update` rappelle de mettre à niveau chaque projet ; `loomy status` signale un projet resté sur une version plus ancienne.
+
+### Modifié
+- **Phases guidées** dans `loomy status` et `loomy watch` : frise sur une ligne (●━◉━○…), phase en cours, ce que fait l'orchestrateur et « À toi : » ce que l'utilisateur doit faire ; annotations quand l'activité ou les fichiers IA sont encore vides. Source unique : `scripts/lib/phases.sh`.
+- `START.md` demande à l'orchestrateur d'enregistrer chaque phase avant toute autre action et de dire à l'utilisateur ce qu'il attend de lui.
+- README : nouvelle section « Avancer dans ton projet » (ouvrir ou reprendre la session dans le terminal ou les apps, phases et rôle de l'utilisateur, développement au quotidien, mise à jour et réinitialisation) ; ce qui est réellement en direct dans le suivi.
+
+### Corrigé
+- `loomy start` et la lecture de la phase échouaient sur un projet qui n'avait encore enregistré aucune phase.
+- Le type de projet « Autre » s'affichait « other » dans `loomy status`.
+- Les sessions sont retrouvées sur le chemin réel du projet (liens symboliques résolus), comme Claude et Codex les enregistrent.
+
 ## 0.1.7 — 2026-09-24
 
 ### Modifié

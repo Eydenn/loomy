@@ -15,16 +15,10 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
+# shellcheck source=lib/phases.sh
+source "$SCRIPT_DIR/lib/phases.sh"
 
 PHASES="brief discover interview propose approve build verify document commit retire done"
-phase_label() {
-  case "$1" in
-    brief) echo "Brief" ;; discover) echo "Découverte" ;; interview) echo "Entretien" ;;
-    propose) echo "Proposition" ;; approve) echo "Validation" ;; build) echo "Construction" ;;
-    verify) echo "Vérification" ;; document) echo "Documentation" ;; commit) echo "Commit" ;;
-    retire) echo "Clôture" ;; done) echo "Terminé" ;; *) echo "$1" ;;
-  esac
-}
 
 ROOT=""
 CMD="show"
@@ -70,7 +64,7 @@ if [[ "$CMD" == "set" ]]; then
   } >"$STATE.tmp"
   mv "$STATE.tmp" "$STATE"
   ai_journal_write "$ROOT" "\"type\":\"phase\",\"phase\":\"$PHASE_ARG\""
-  echo "Phase enregistrée : $(phase_label "$PHASE_ARG") ($PHASE_ARG)"
+  echo "Phase enregistrée : $(loomy_phase_label "$PHASE_ARG") ($PHASE_ARG)"
   exit 0
 fi
 
@@ -83,7 +77,7 @@ label_of() {
   case "$1" in
     web) echo "Application web / SaaS" ;; api) echo "API / backend" ;; mobile) echo "Application mobile" ;;
     desktop) echo "Application desktop" ;; cli) echo "CLI / bibliothèque" ;; ai) echo "Application IA / LLM" ;;
-    prototype) echo "Prototype" ;; mvp) echo "MVP" ;; production) echo "Production" ;;
+    prototype) echo "Prototype" ;; other) echo "Autre" ;; mvp) echo "MVP" ;; production) echo "Production" ;;
     econome) echo "Économe" ;; equilibre) echo "Équilibré" ;; qualite) echo "Qualité max" ;;
     codex) echo "Codex" ;; claude) echo "Claude Code" ;;
     yes) echo "oui" ;; no) echo "non" ;; "") echo "?" ;; *) echo "$1" ;;
@@ -95,7 +89,7 @@ if (( WATCH )); then
   trap 'printf "\033[?25h\n" >&2; exit 0' INT TERM
   printf '\033[?25l' >&2
   while true; do
-    frame="$(LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · mise à jour toutes les ${INTERVAL} s · $(date '+%H:%M:%S') · Ctrl-C pour quitter" "$0" --root "$ROOT" 2>&1)"
+    frame="$(LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · session de l'agent fermée ? loomy start · Ctrl-C pour quitter" "$0" --root "$ROOT" 2>&1)"
     printf '\033[H\033[2J%s\n' "$frame" >&2
     sleep "$INTERVAL"
   done
@@ -103,6 +97,11 @@ fi
 
 # ---------------------------------------------------------------- en-tête
 ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
+# Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
+proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
+if [[ -n "$proj_v" && -n "$inst_v" && "$proj_v" != "$inst_v" && "$SCRIPT_DIR" != "$ROOT/.loomy/scripts" ]] && ai_version_ge "$inst_v" "$proj_v"; then
+  ui_warn "Loomy $proj_v dans ce projet, $inst_v installé" "mets le projet à jour : loomy init --update"
+fi
 
 # ---------------------------------------------------------------- phases du bootstrap
 CURRENT=""
@@ -110,39 +109,35 @@ CURRENT=""
 UPDATED=""
 [[ -f "$STATE" ]] && UPDATED="$(sed -n 's/^updated=//p' "$STATE" | head -1)"
 
-ui_section "PHASES"
+if [[ -z "$CURRENT" && -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then CURRENT="done"; fi
+if [[ -z "$CURRENT" && -f "$ROOT/START.md" && -f "$BRIEF" ]]; then CURRENT="brief"; fi
+idx="$(loomy_phase_index "$CURRENT")"
+note=""
+if [[ "$CURRENT" == "done" ]]; then note="bootstrap terminé"
+elif (( idx > 0 )); then note="étape $idx sur 10${UPDATED:+ · depuis ${UPDATED##* }}"; fi
+ui_section "PHASES" "$note"
 if [[ -z "$CURRENT" ]]; then
-  if [[ -f "$ROOT/START.md" ]]; then
-    CURRENT="brief"
-    ui_info "START.md présent, brief non rempli : lancez loomy brief"
-  elif [[ -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then
-    CURRENT="done"
-  fi
-fi
-
-if [[ -n "$CURRENT" ]]; then
-  # Barre de progression comme dans le questionnaire, puis les phases suivantes.
-  total=0; idx=0; next=""
-  for p in $PHASES; do
-    [[ "$p" == "done" ]] && continue
-    total=$(( total + 1 ))
-    [[ "$p" == "$CURRENT" ]] && idx=$total
-    if (( idx > 0 && total > idx )); then next="${next:+$next → }$(phase_label "$p")"; fi
-  done
-  [[ "$CURRENT" == "done" ]] && idx=$total
-  bar_on=""; bar_off=""; i=0
-  while (( i < 20 )); do if (( i < idx * 20 / total )); then bar_on="${bar_on}━"; else bar_off="${bar_off}╌"; fi; i=$(( i + 1 )); done
-  if [[ "$CURRENT" == "done" ]]; then
-    ui_rail "${C_GREEN}${bar_on}${C_RESET}  ${C_GREEN}✓${C_RESET} ${C_BOLD}Bootstrap terminé${C_RESET}"
-  else
-    ui_rail "${C_RAIL}${bar_on}${C_RESET}${C_DIM}${bar_off}${C_RESET}  ${C_DIM}${idx}/${total}${C_RESET}  ${C_BOLD}$(phase_label "$CURRENT")${C_RESET}${UPDATED:+  ${C_DIM}depuis ${UPDATED##* }${C_RESET}}"
-    if [[ -n "$next" ]]; then
-      _ui_term_size; _ui_wrap "ensuite : $next" $(( UI_W - 3 ))
-      for l in "${UI_LINES[@]}"; do ui_rail "${C_DIM}${l}${C_RESET}"; done
-    fi
-  fi
+  if [[ -f "$ROOT/START.md" ]]; then ui_info "START.md présent mais brief vide : lance loomy brief"
+  else ui_info "aucun projet Loomy ici : lance loomy init"; fi
 else
-  ui_info "aucun bootstrap suivi dans ce dossier"
+  # Frise sur une ligne : ● fait, ◉ en cours, ○ à venir.
+  steps=""; i=0
+  for p in $LOOMY_PHASES; do
+    i=$(( i + 1 ))
+    if (( i > 1 )); then if (( i <= idx )); then steps="${steps}${C_GREEN}━${C_RESET}"; else steps="${steps}${C_DIM}━${C_RESET}"; fi; fi
+    if (( i < idx )); then steps="${steps}${C_GREEN}●${C_RESET}"
+    elif (( i == idx )); then steps="${steps}${C_BRAND}◉${C_RESET}"
+    else steps="${steps}${C_DIM}○${C_RESET}"; fi
+  done
+  ui_rail "${steps}   ${C_BOLD}$(loomy_phase_label "$CURRENT")${C_RESET}"
+  ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
+  ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}À toi :${C_RESET} $(loomy_phase_you "$CURRENT")"
+  if (( idx >= 1 && idx < 10 )); then
+    next=""; i=0
+    for p in $LOOMY_PHASES; do i=$(( i + 1 )); (( i > idx )) && next="${next:+$next → }$(loomy_phase_label "$p")"; done
+    _ui_term_size; _ui_fit "ensuite : $next" $(( UI_W - 3 ))
+    ui_rail "${C_DIM}${UI_FIT}${C_RESET}"
+  fi
 fi
 
 # ---------------------------------------------------------------- brief
@@ -182,6 +177,7 @@ if [[ -s "$JOURNAL" ]]; then
   done
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
     ui_info "aucune délégation terminée pour l'instant"
+    ui_rail "${C_DIM}  elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex${C_RESET}"
   else
     summary="$(grep '"type":"delegation"' "$JOURNAL" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
@@ -231,6 +227,10 @@ if [[ -s "$JOURNAL" ]]; then
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  $%.4f' "$role" "$m" "$d" "$cost")  ${C_DIM}${task}${C_RESET}"
     done
   fi
+else
+  ui_section "ACTIVITÉ"
+  ui_info "aucune délégation pour l'instant"
+  ui_rail "${C_DIM}  elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex${C_RESET}"
 fi
 
 # ---------------------------------------------------------------- fichiers IA
@@ -238,6 +238,9 @@ ui_section "FICHIERS IA"
 check_file() {
   if [[ -e "$ROOT/$1" ]]; then ui_ok "$1" "${2:-}"; else ui_rail "${C_DIM}○ $1${C_RESET}"; fi
 }
+if [[ ! -e "$ROOT/AGENTS.md" && ! -e "$ROOT/CLAUDE.md" ]]; then
+  ui_rail "${C_DIM}créés par l'orchestrateur pendant la Construction : c'est normal qu'ils manquent avant${C_RESET}"
+fi
 check_file AGENTS.md
 check_file CLAUDE.md
 check_file PROJECT.md
@@ -280,4 +283,4 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 else
   ui_info "pas de dépôt Git"
 fi
-ui_end "${LOOMY_STATUS_FOOTER:-suivi en direct : loomy watch · journal : loomy log}"
+ui_end "${LOOMY_STATUS_FOOTER:-démarrer ou reprendre : loomy start · suivi en direct : loomy watch}"

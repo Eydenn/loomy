@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.7-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.8-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -33,12 +33,12 @@ loomy doctor --fix --live            # once: checks your machine
 
 mkdir my-project && cd my-project
 loomy init                           # interactive questionnaire
+loomy start                          # opens the lead agent session
+loomy watch                          # in a second terminal: live tracking
 ```
 
-The questionnaire ends by printing:
-1. the **command to launch the lead agent**, for example `claude --model claude-opus-5-5 --effort high`;
-2. the **start prompt**, already copied to your clipboard;
-3. the **tracking command** to run in a second terminal: `loomy watch`.
+> [!TIP]
+> Session closed, terminal quit, back the next day: **`loomy start`**, in the project folder, resumes the lead agent's last session or opens a new one at the right point of the project.
 
 ---
 
@@ -87,6 +87,40 @@ flowchart LR
 
 ---
 
+## 🚀 Moving your project forward
+
+Once `loomy init` is done, everything goes through the **lead agent**: a Claude Code or Codex session on the best model, which follows `START.md` and then the project rules. It delegates to the dedicated roles.
+
+### 1. Open or resume its session
+
+| Where | How |
+|---|---|
+| 🖥️&nbsp;**Terminal,&nbsp;with&nbsp;Loomy** | `loomy start`: a menu to **resume** this folder's last session (with its history) or open a **new** one with the prompt that fits the project phase. `--resume` and `--new` go straight there. |
+| ⌨️&nbsp;**Terminal,&nbsp;by&nbsp;hand** | Claude Code: `claude --continue` to resume; Codex: `codex resume --last`. For a new session, `loomy start --print` shows the exact command (model and effort) and copies the prompt. |
+| 🪟&nbsp;**Desktop&nbsp;apps** | In the Claude app (Code tab) or the Codex app: open the **project folder**, pick the model and effort shown by `loomy start --print`, paste the prompt it copied. To resume, reopen the project conversation in the app. |
+
+> [!NOTE]
+> Sessions stay on the machine where they were opened. On another machine, `loomy start` opens a new session: the lead agent rereads `START.md`, the brief and the recorded phase, and picks up where the project is. In an app, allow the lead agent to run the `.loomy/scripts/` scripts: that is how it delegates to the other tool and records phases.
+
+### 2. Follow the phases, and know when it is your turn
+
+`loomy watch`, in a second terminal, shows the current phase, **what the agent is doing** and **what you need to do**: answer its questions (Interview), approve its proposal (Approval), review the diffs and the commit.
+
+### 3. Then: day-to-day development
+
+After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` and `CLAUDE.md`. For each change: `loomy start`, describe the request, let it propose and delegate, follow with `loomy watch`, review the diff, approve the commit. One clear request per session; ask for a proposal before any large change; ask for a security review on sensitive topics.
+
+### 4. Update, resume or reset
+
+| Need | Command |
+|---|---|
+| Update&nbsp;Loomy | `loomy update`, then `loomy init --update` in each project (keeps brief, phase and journal) |
+| Project&nbsp;already&nbsp;initialized | `loomy init` offers: resume, update, redo the questionnaire, reset |
+| Redo&nbsp;the&nbsp;questionnaire | `loomy brief` |
+| Restart&nbsp;the&nbsp;bootstrap | `loomy init --reset`: START.md copied again, phase reset, questionnaire rerun with your previous answers |
+
+---
+
 ## 📈 Live tracking
 
 Everything happens in the terminal, with no dependency. **Nothing starts on its own**: you start tracking when you want, in a second terminal.
@@ -97,7 +131,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every N seconds (2 by default), Ctrl-C to quit |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Raw journal, optionally streamed |
 
-A delegation shows as "en cours" (running), with its timer, as soon as it starts. If it is interrupted, it disappears on its own.
+**What is live.** The screen rereads the project every 2 seconds. Delegations to Claude or Codex appear as soon as they start, with their timer, then their cost; an interrupted one disappears on its own. The phase changes when the lead agent records it (`START.md` asks it to at each step). Work the lead agent does itself, in its session, is not journaled: you follow it in its session.
 
 The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. `LOOMY_JOURNAL=0` disables it, `LOOMY_JOURNAL_TASKS=0` leaves task text out of it.
 
@@ -195,8 +229,9 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 
 | Command | Purpose |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates or initializes a project, new or existing: questionnaire, then structure set up by the lead agent (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates or initializes a project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
+| ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`) |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, `--live` tests every model) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
@@ -204,7 +239,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
-| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | update and version |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy (then `loomy init --update` in each project) and version |
 
 Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo-terminal for the questionnaire) with stubbed `claude` and `codex` CLIs, so no network and no tokens.
 

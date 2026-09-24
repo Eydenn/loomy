@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.7-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.8-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -31,12 +31,12 @@ loomy doctor --fix --live            # une fois : vérifie la machine
 
 mkdir mon-projet && cd mon-projet
 loomy init                           # questionnaire interactif
+loomy start                          # ouvre la session de l'orchestrateur
+loomy watch                          # dans un second terminal : suivi en direct
 ```
 
-Le questionnaire se termine en affichant :
-1. la **commande de lancement de l'orchestrateur**, par exemple `claude --model claude-opus-5-5 --effort high` ;
-2. le **prompt de démarrage**, déjà copié dans le presse-papiers ;
-3. la **commande de suivi** à lancer dans un autre terminal : `loomy watch`.
+> [!TIP]
+> Session fermée, terminal quitté, reprise le lendemain : **`loomy start`**, dans le dossier du projet, reprend la dernière session de l'orchestrateur ou en ouvre une nouvelle au bon endroit du projet.
 
 ---
 
@@ -85,6 +85,62 @@ flowchart LR
 
 ---
 
+## 🚀 Avancer dans ton projet
+
+Une fois `loomy init` terminé, tout passe par **l'orchestrateur** : une session Claude Code ou Codex, sur le meilleur modèle, qui suit `START.md` puis les règles du projet. Tu lui parles en français, il délègue aux rôles dédiés.
+
+### 1. Ouvrir ou reprendre sa session
+
+| Où | Comment |
+|---|---|
+| 🖥️&nbsp;**Terminal,&nbsp;avec&nbsp;Loomy** | `loomy start` : un menu propose de **reprendre** la dernière session de ce dossier (avec son historique) ou d'en ouvrir une **nouvelle** avec le prompt adapté à la phase du projet. `--resume` et `--new` y vont directement. |
+| ⌨️&nbsp;**Terminal,&nbsp;à&nbsp;la&nbsp;main** | Claude Code : `claude --continue` pour reprendre ; Codex : `codex resume --last`. Pour une nouvelle session, `loomy start --print` affiche la commande exacte (modèle et effort) et copie le prompt. |
+| 🪟&nbsp;**Apps&nbsp;de&nbsp;bureau** | Dans l'app Claude (onglet Code) ou l'app Codex : ouvre le **dossier du projet**, choisis le modèle et l'effort indiqués par `loomy start --print`, colle le prompt qu'il a copié. Pour reprendre, rouvre la conversation du projet dans l'app. |
+
+> [!NOTE]
+> Les sessions restent sur la machine où elles ont été ouvertes. Sur une autre machine, `loomy start` ouvre une nouvelle session : l'orchestrateur relit `START.md`, le brief et la phase enregistrée, et reprend là où le projet en est.
+>
+> Dans une app, autorise l'orchestrateur à lancer les scripts `.loomy/scripts/` : c'est par eux qu'il délègue à l'autre outil et qu'il enregistre les phases.
+
+### 2. Suivre les phases, et savoir quand c'est à toi
+
+`loomy watch`, dans un second terminal, affiche la phase en cours, **ce que fait l'agent** et **ce que tu dois faire**.
+
+| Phase | L'orchestrateur… | À toi |
+|---|---|---|
+| 1&nbsp;·&nbsp;Brief | attend d'être lancé | `loomy start` |
+| 2&nbsp;·&nbsp;Découverte | lit le brief et explore le dossier | rien, garde sa session ouverte |
+| 3&nbsp;·&nbsp;Entretien | pose les questions qui manquent | réponds dans sa session |
+| 4&nbsp;·&nbsp;Proposition | présente stack, structure et plan | lis, questionne |
+| 5&nbsp;·&nbsp;Validation | attend ton feu vert | **valide** ou demande des changements |
+| 6&nbsp;·&nbsp;Construction | met en place le projet et délègue | suis les délégations |
+| 7&nbsp;·&nbsp;Vérification | tests, relecture croisée, sécurité | regarde les constats remontés |
+| 8&nbsp;·&nbsp;Documentation | écrit PROJECT.md, ARCHITECTURE.md, `.ai/` | relis |
+| 9&nbsp;·&nbsp;Commit | commit initial, si autorisé | vérifie le commit |
+| 10&nbsp;·&nbsp;Clôture | archive ou supprime START.md | rien |
+
+### 3. Ensuite : le développement au quotidien
+
+Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md` et `CLAUDE.md`. Pour chaque évolution :
+
+1. `loomy start`, puis décris ta demande : une fonctionnalité, un bug, un refactor ;
+2. l'orchestrateur propose, puis délègue l'exécution, la revue ou la sécurité au rôle adapté ;
+3. tu suis avec `loomy watch`, tu relis le diff, tu valides le commit.
+
+> [!TIP]
+> **Recommandations.** Une demande claire par session, avec le résultat attendu. Demande une proposition avant tout changement large. Relis chaque diff avant de committer. Pour les sujets sensibles (authentification, paiements, données personnelles), demande explicitement une revue du rôle sécurité.
+
+### 4. Mettre à jour, reprendre ou réinitialiser
+
+| Besoin | Commande |
+|---|---|
+| Mettre&nbsp;à&nbsp;jour&nbsp;Loomy | `loomy update`, puis `loomy init --update` dans chaque projet (garde brief, phase et journal) |
+| Projet&nbsp;déjà&nbsp;initialisé | `loomy init` propose : reprendre, mettre à jour, refaire le questionnaire, réinitialiser |
+| Refaire&nbsp;le&nbsp;questionnaire | `loomy brief` |
+| Recommencer&nbsp;le&nbsp;bootstrap | `loomy init --reset` : START.md recopié, phase remise à zéro, questionnaire relancé avec tes anciennes réponses |
+
+---
+
 ## 📈 Suivi en direct
 
 Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul** : tu lances le suivi quand tu veux, dans un second terminal.
@@ -95,7 +151,10 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi toutes les N secondes (2 par défaut), Ctrl-C pour quitter |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal brut, éventuellement en continu |
 
-Une délégation apparaît « en cours », avec son chrono, dès son lancement. Si elle est interrompue, elle disparaît d'elle-même.
+**Ce qui est en direct.** L'écran relit le projet toutes les 2 secondes :
+- les **délégations** à Claude ou Codex s'affichent dès leur lancement, avec leur chrono, puis leur coût à la fin ; une délégation interrompue disparaît d'elle-même ;
+- la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ;
+- le travail que l'orchestrateur fait lui-même, dans sa session, n'est pas journalisé : c'est dans sa session que tu le suis.
 
 Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de Git automatiquement. `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
 
@@ -228,8 +287,9 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 
 | Commande | Rôle |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
+| ▶️&nbsp;<code>loomy&nbsp;start</code> | démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`) |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
@@ -237,7 +297,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
-| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour et version |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy (puis `loomy init --update` dans chaque projet) et version |
 
 <sub>Dans un projet, l'orchestrateur appelle directement les scripts de <code>.loomy/scripts/</code>, sans avoir besoin de la commande <code>loomy</code>.</sub>
 

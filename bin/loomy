@@ -89,8 +89,9 @@ usage() {
   printf '\n'
   printf '%s┌%s  %sUsage : loomy <commande> [arguments]%s\n' "$HL" "$HR" "$HD" "$HR"
   _h_group "PROJET"
-  _h_cmd init "[dossier] [options]" "Crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur"
+  _h_cmd init "[dossier] [options]" "Crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset"
   _h_cmd brief "" "Relance le questionnaire du projet courant"
+  _h_cmd start "[--resume|--new|--print]" "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici)"
   _h_cmd route "[commande]" "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)"
   _h_cmd delegate "<claude|codex> <rôle> \"tâche\"" "Confie un rôle à Claude ou à Codex via les bridges"
   _h_cmd worktrees "<tâche> [base]" "Crée deux worktrees séparés pour le mode parallèle"
@@ -101,7 +102,7 @@ usage() {
   _h_group "MACHINE"
   _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
   _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
-  _h_cmd update "" "Met à jour Loomy selon sa méthode d'installation"
+  _h_cmd update "" "Met à jour Loomy selon sa méthode d'installation ; puis loomy init --update dans chaque projet"
   _h_cmd version "" "Version et méthode d'installation"
   printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy <commande> --help%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
 }
@@ -126,6 +127,7 @@ cmd="${1:-help}"; [[ $# -gt 0 ]] && shift
 case "$cmd" in
   init|install) exec bash "$S/install-into-project.sh" "$@" ;;
   brief|wizard) exec bash "$S/init-wizard.sh" "$(project_root)" "$@" ;;
+  start|resume) exec bash "$S/ai-start.sh" --root "$(project_root)" "$@" ;;
   route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
@@ -172,21 +174,27 @@ case "$cmd" in
   update|upgrade)
     method="$(install_method)"
     echo "Mise à jour de Loomy (installation : $method)…" >&2
+    rc=0
     case "$method" in
       brew)
         # Homebrew télécharge dans un bac à sable sans accès au trousseau macOS : la formule reçoit le jeton de gh.
         if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
           HOMEBREW_GITHUB_API_TOKEN="$(gh auth token 2>/dev/null || true)"; export HOMEBREW_GITHUB_API_TOKEN
         fi
-        brew update >/dev/null && exec brew upgrade loomy ;;
+        { brew update >/dev/null && brew upgrade loomy; } || rc=$? ;;
       bun)
         # bun ne sait pas installer depuis un dépôt GitHub privé : on passe par l'archive de la dernière release.
         tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
-        gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && exec bun add -g "$tmp"/loomy-*.tgz ;;
-      npm) exec npm install -g "github:$LOOMY_REPO" ;;
-      git) exec git -C "$LOOMY_HOME" pull --ff-only ;;
+        { gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && bun add -g "$tmp"/loomy-*.tgz; } || rc=$?
+        rm -rf "$tmp" ;;
+      npm) npm install -g "github:$LOOMY_REPO" || rc=$? ;;
+      git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) echo "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; exit 1 ;;
-    esac ;;
+    esac
+    if (( rc != 0 )); then echo "La mise à jour a échoué (code $rc)." >&2; exit "$rc"; fi
+    ui_ok "Loomy à jour" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
+    ui_info "tes projets gardent leur version de Loomy : dans chacun, loomy init --update les met à niveau"
+    ;;
 
   version|--version|-v) echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)" ;;
   help|--help|-h) usage ;;

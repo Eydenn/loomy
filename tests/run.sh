@@ -146,11 +146,60 @@ file_has "phase initiale : découverte" "$PROJ/.loomy/state" "^phase=discover$"
 file_has ".gitignore : journal exclu" "$PROJ/.gitignore" "^\.loomy/logs/$"
 has "étape suivante : suivi terminal" "loomy watch|ai-status.sh --watch"
 if [[ ! -f "$XDG_CONFIG_HOME/loomy/config" ]] || ! grep -q '^plan_' "$XDG_CONFIG_HOME/loomy/config"; then ok "--yes ne mémorise aucun forfait"; else ko "--yes a mémorisé un forfait"; fi
-fails "second init refusé (START.md existe)" 1 "$LOOMY" init "$PROJ" --no-wizard
+fails "second init hors terminal : guide sans rien modifier" 1 "$LOOMY" init "$PROJ" --no-wizard
+has "second init : propose de reprendre" "loomy start"
+has "second init : propose la mise à jour" "loomy init --update"
+# Mise à jour d'un projet : scripts recopiés, brief et phase conservés.
+echo "0.0.1" >"$PROJ/.loomy/VERSION"; rm -f "$PROJ/.loomy/scripts/ai-start.sh"; cp "$PROJ/.loomy/brief.md" "$WORK/brief.avant"
+run "init --update" "$LOOMY" init "$PROJ" --update
+file_has "update : version du projet à jour" "$PROJ/.loomy/VERSION" "^$(cat "$REPO/VERSION")$"
+[[ -f "$PROJ/.loomy/scripts/ai-start.sh" ]] && ok "update : nouveaux scripts copiés" || ko "update : scripts manquants"
+cmp -s "$PROJ/.loomy/brief.md" "$WORK/brief.avant" && ok "update : brief conservé" || ko "update : brief modifié"
+file_has "update : phase conservée" "$PROJ/.loomy/state" "^phase=discover$"
+fails "update sans projet refusé" 1 "$LOOMY" init "$WORK/pas-un-projet-$$" --update
+mkdir -p "$WORK/pas-un-projet-$$"
+fails "update sans projet refusé" 1 "$LOOMY" init "$WORK/pas-un-projet-$$" --update
+PR="$WORK/projet-reset"; mkdir -p "$PR"
+run "init d'un projet à réinitialiser" "$LOOMY" init "$PR" --yes --no-clipboard
+"$LOOMY" status --root "$PR" set build >/dev/null 2>&1
+run "init --reset --no-wizard" "$LOOMY" init "$PR" --reset --no-wizard
+[[ ! -f "$PR/.loomy/state" && -f "$PR/.loomy/brief.previous.md" && -f "$PR/START.md" ]] && ok "reset : phase remise à zéro, ancien brief gardé, START.md présent" || ko "reset incomplet"
+FS="$WORK/start-etranger"; mkdir -p "$FS" && echo "autre" >"$FS/START.md"
+fails "START.md étranger refusé" 1 "$LOOMY" init "$FS" --no-wizard
 fails "dossier cible absent refusé" 1 "$LOOMY" init "$WORK/absent" --no-wizard
 PROJ2="$WORK/projet2"; mkdir -p "$PROJ2"
 run "init --answers reprend un brief" "$LOOMY" init "$PROJ2" --answers "$PROJ/.loomy/brief.md" --yes --no-clipboard
 file_has "brief repris : même nom" "$PROJ2/.loomy/brief.md" "^name: "
+
+# ------------------------------------------------------------------ démarrer ou reprendre
+section "loomy start"
+L="$WORK/start.log"
+(cd "$PROJ" && "$LOOMY" start) >"$OUT" 2>&1; st=$?
+if [[ $st == 0 ]]; then ok "start hors terminal : affiche les commandes"; else ko "start hors terminal (code $st)"; fi
+has "start : commande de l'orchestrateur" "claude --model claude-opus"
+has "start : prompt de démarrage du bootstrap" "Initialise ce projet en suivant strictement START.md"
+hasnt "start : pas de reprise sans session" "reprendre :"
+(cd "$PROJ" && STUB_LOG="$L" "$LOOMY" start --new) >"$OUT" 2>&1
+if grep -q $'^claude\t--model\tclaude-opus[^\t]*\t--effort\t[a-z]*\tInitialise ce projet' "$L" 2>/dev/null; then ok "start --new lance claude avec modèle, effort et prompt"; else ko "start --new : appel inattendu ($(cat "$L" 2>/dev/null))"; fi
+: >"$L"
+(cd "$PROJ" && STUB_LOG="$L" "$LOOMY" start --resume) >"$OUT" 2>&1
+if grep -q $'\tInitialise ce projet' "$L" && ! grep -q -- '--continue' "$L"; then ok "start --resume sans session : nouvelle session"; else ko "start --resume sans session ($(cat "$L"))"; fi
+SESS="$HOME/.claude/projects/$(cd "$PROJ" && pwd -P | sed 's/[^A-Za-z0-9]/-/g')"
+mkdir -p "$SESS" && touch "$SESS/s.jsonl"
+: >"$L"
+(cd "$PROJ" && STUB_LOG="$L" "$LOOMY" start --resume) >"$OUT" 2>&1
+if grep -q $'^claude\t--continue\t--model' "$L"; then ok "start --resume reprend la session du dossier"; else ko "start --resume ($(cat "$L"))"; fi
+(cd "$PROJ" && "$LOOMY" start --print) >"$OUT" 2>&1
+has "start : reprise proposée quand une session existe" "reprendre : claude --continue"
+rm -rf "$HOME/.claude/projects"
+# Projet mené par Codex.
+PX="$WORK/projet-codex"; mkdir -p "$PX/.loomy" && printf -- '---\nname: X\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n' >"$PX/.loomy/brief.md" && touch "$PX/START.md"
+: >"$L"
+(cd "$PX" && STUB_LOG="$L" "$LOOMY" start --new) >"$OUT" 2>&1
+if grep -q $'^codex\t-m\tgpt-6-astra\t-c\tmodel_reasoning_effort=' "$L"; then ok "start --new lance codex quand Codex mène"; else ko "start codex ($(cat "$L"))"; fi
+fails "start sans brief refusé" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
+mkdir -p "$WORK/route-vide-$$"
+fails "start sans brief refusé" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
 
 # ------------------------------------------------------------------ questionnaire interactif
 section "loomy init (interactif, terminal réel via expect)"

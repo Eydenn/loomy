@@ -2,7 +2,9 @@
 # Doublure de la CLI Claude Code pour tests/run.sh : aucune requête réseau.
 #   STUB_SLEEP=N              attend N secondes avant de répondre
 #   STUB_BROKEN_VERSION=1     « claude --version » échoue
+#   STUB_LOG=fichier          note chaque appel (arguments séparés par des tabulations)
 set -u
+if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
 case "${1:-}" in
   --version)
     [[ -n "${STUB_BROKEN_VERSION:-}" ]] && exit 1

@@ -304,3 +304,17 @@ ai_env_label() {
 ai_profile_label() {
   case "$1" in econome) echo "Économe" ;; equilibre) echo "Équilibré" ;; qualite) echo "Qualité max" ;; *) echo "$1" ;; esac
 }
+
+# ai_start_prompt <mode> <lead> : prompt de démarrage du bootstrap pour l'orchestrateur (questionnaire et loomy start).
+ai_start_prompt() {
+  local MODE="${1:-SOLO}" LEAD="${2:-claude}"
+  local p="Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation."
+  case "$MODE" in
+    ORCHESTRATED)
+      if [[ "$LEAD" == "codex" ]]; then p="$p Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur."
+      else p="$p Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh."; fi ;;
+    HYBRID) p="$p Configure le mode HYBRID Codex + Claude Code sans multiplier les agents." ;;
+    PARALLEL) p="$p Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités." ;;
+  esac
+  printf '%s' "$p"
+}

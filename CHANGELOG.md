@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.18 — 2026-09-25
+
+### Corrigé
+- Fichier `VERSION` de la 0.1.17 mal formé.
+
 ## 0.1.17 — 2026-09-25
 
 ### Corrigé

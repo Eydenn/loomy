@@ -12,6 +12,14 @@
 # les coûts avec un point. Le reste de la locale (UTF-8, messages) est conservé.
 if [[ -n "${LC_ALL:-}" ]]; then export LC_CTYPE="$LC_ALL"; unset LC_ALL; fi
 export LC_NUMERIC=C
+# Texte : sans locale UTF-8, bash couperait les caractères accentués en deux. On en choisit une si besoin.
+_ui_probe="é"
+if [[ ${#_ui_probe} != 1 ]]; then
+  for _l in C.UTF-8 en_US.UTF-8 fr_FR.UTF-8; do
+    if locale -a 2>/dev/null | grep -qixE "${_l/UTF-8/utf-?8}"; then export LC_CTYPE="$_l"; break; fi
+  done
+fi
+unset _ui_probe _l
 
 AI_CATALOG_DATE="2026-09-23"
 

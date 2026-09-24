@@ -251,7 +251,7 @@ Quand le mode hybride est choisi :
 5. Ne crée pas `.ai/HANDOFF.md` tant qu'aucun passage de relais réel n'est en cours.
 6. Pour le travail parallèle, utilise des branches ou worktrees isolés ; ne laisse jamais les deux outils modifier le même répertoire de travail en même temps.
 7. Quand l'implémentation parallèle n'est pas nécessaire, préfère qu'un outil implémente et que l'autre relise, pour un contrôle croisé à forte valeur.
-8. La délégation entre modèles passe par `.loomy/scripts/delegate-to-claude.sh` (spécialiste Claude en lecture seule) et `.loomy/scripts/delegate-to-codex.sh` (exécutant, développeur, relecteur Codex…), selon le routage de `ai-route.sh`. L'orchestrateur valide chaque résultat avant d'agir.
+8. La délégation entre modèles passe par `.loomy/scripts/delegate-to-claude.sh` (spécialiste Claude en lecture seule) et `.loomy/scripts/delegate-to-codex.sh` (exécutant, développeur, relecteur Codex…), selon le routage de `ai-route.sh`. L'orchestrateur valide chaque résultat avant d'agir. Lance toujours ces scripts **au premier plan** et attends leur fin : une délégation lancée en arrière-plan est interrompue si la session se ferme.
 9. N'utilise pas les appels entre modèles pour des tâches triviales ni pour faire confirmer automatiquement chaque décision.
 
 ### Mise en place du routage des modèles

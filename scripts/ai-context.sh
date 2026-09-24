@@ -87,5 +87,6 @@ case "$(privacy_mode "$ROOT")" in
   local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f)." ;;
   private) echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne pas dans le dépôt du projet ; sauvegarde-les en fin d'étape avec .loomy/scripts/ai-privacy.sh sync." ;;
 esac
+echo "- Délégations : lance toujours les bridges au premier plan et attends leur fin (en arrière-plan, elles s'arrêtent si la session se ferme)."
 echo "- Pour commencer : dis à l'utilisateur, en une ou deux phrases, où en est le projet et ce que tu proposes de faire maintenant."
 exit 0

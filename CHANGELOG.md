@@ -2,6 +2,15 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.16 — 2026-09-24
+
+### Corrigé
+Défauts révélés par un parcours complet réel (init, orchestrateur, délégations, commit, push) :
+- Une frappe rapide pendant une question s'affichait en vrac à l'écran : l'écho du terminal est coupé pendant les questions.
+- Un dossier neuf était détecté comme « projet existant » à cause des dossiers `.claude/` et `.codex/` créés par Loomy.
+- Hors locale UTF-8, un texte tronqué pouvait couper un caractère accentué : Loomy choisit une locale UTF-8 disponible.
+- Les agents sont invités à lancer les délégations au premier plan (START.md, ORCHESTRATION.md, contexte de reprise) : en arrière-plan, elles s'arrêtaient à la fermeture de la session.
+
 ## 0.1.15 — 2026-09-24
 
 ### Ajouté

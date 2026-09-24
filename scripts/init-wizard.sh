@@ -145,7 +145,7 @@ env_check() {
 
   local count
   # Ce que Loomy vient d'ajouter (START.md, .loomy, .gitignore) ne fait pas un projet existant.
-  count="$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.loomy' ! -name 'START.md' ! -name '.gitignore' ! -name '.DS_Store' | wc -l | tr -d ' ')"
+  count="$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.loomy' ! -name 'START.md' ! -name '.gitignore' ! -name '.claude' ! -name '.codex' ! -name '.DS_Store' | wc -l | tr -d ' ')"
   if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_end "détecté : dossier vide (nouveau projet)"
   elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_end "détecté : projet existant (1 élément à la racine)"
   else DETECTED_REPO="existing"; ui_end "détecté : projet existant ($count éléments à la racine)"; fi

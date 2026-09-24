@@ -217,6 +217,7 @@ ui_form_begin() {
   ui_is_interactive || return 0
   UI_FORM_ACTIVE=1
   printf '\033[?1049h\033[?25l' >&2
+  stty -echo </dev/tty 2>/dev/null || true
   trap 'ui_form_end' EXIT
   trap 'ui_form_end; exit 130' INT TERM
   return 0
@@ -230,7 +231,7 @@ ui_form_pass() {
 ui_form_again() { [[ "$UI_BACK" == "1" ]]; }
 
 ui_form_end() {
-  if [[ "$UI_FORM_ACTIVE" == "1" ]]; then printf '\033[?25h\033[?1049l' >&2; fi
+  if [[ "$UI_FORM_ACTIVE" == "1" ]]; then printf '\033[?25h\033[?1049l' >&2; stty echo </dev/tty 2>/dev/null || true; fi
   UI_FORM_ACTIVE=0
   trap - INT TERM
   return 0
@@ -432,11 +433,14 @@ _ui_inline_done() {
 }
 
 # Hors formulaire, le curseur est masqué pendant la question : il est rétabli même en cas d'interruption.
+# L'écho du terminal est coupé pendant une question : une frappe rapide, arrivée entre deux lectures, ne s'imprime pas en vrac.
 _ui_hide_cursor() {
   printf '\033[?25l' >&2
-  if [[ "$UI_FORM_ACTIVE" != "1" ]]; then trap 'printf "\033[?25h" >&2' EXIT; fi
+  stty -echo </dev/tty 2>/dev/null || true
+  if [[ "$UI_FORM_ACTIVE" != "1" ]]; then trap 'printf "\033[?25h" >&2; stty echo </dev/tty 2>/dev/null || true' EXIT; fi
   return 0
 }
+_ui_show_cursor() { printf '\033[?25h' >&2; [[ "$UI_FORM_ACTIVE" == "1" ]] || stty echo </dev/tty 2>/dev/null || true; return 0; }
 
 _ui_footer() {
   local keys="$1"
@@ -485,7 +489,7 @@ ui_input() {
       left) if ui_can_go_back; then UI_KEY="back"; break; fi ;;
     esac
   done
-  printf '\033[?25h' >&2
+  _ui_show_cursor
   # Espaces en trop au début et à la fin retirés.
   buf="${buf#"${buf%%[![:space:]]*}"}"; buf="${buf%"${buf##*[![:space:]]}"}"
   UI_VALUE="${buf:-$def}"
@@ -533,7 +537,7 @@ ui_choose() {
       left) if ui_can_go_back; then UI_KEY="back"; break; fi ;;
     esac
   done
-  printf '\033[?25h' >&2
+  _ui_show_cursor
   UI_VALUE="${opts[$sel]}"
   _ui_inline_done "$q"
   _ui_q_end "$q"
@@ -585,7 +589,7 @@ ui_multi() {
       left) if ui_can_go_back; then UI_KEY="back"; break; fi ;;
     esac
   done
-  printf '\033[?25h' >&2
+  _ui_show_cursor
   for (( i = 0; i < n; i++ )); do
     [[ "${on[$i]}" == "1" ]] && out="${out:+$out, }${opts[$i]}"
   done

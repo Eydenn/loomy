@@ -39,7 +39,7 @@ Un orchestrateur Codex utilise aussi `delegate-to-codex.sh` pour faire tourner u
 Le résultat d'un délégué n'est qu'un avis tant que l'orchestrateur ne l'a pas vérifié.
 
 ## Journal d'activité
-Les deux bridges journalisent chaque appel dans `.loomy/logs/events.jsonl` (modèle, effort, durée, tokens, coût réel ou estimé). Ce journal alimente `loomy status` et `loomy watch`. L'utilisateur ouvre ou reprend la session de l'orchestrateur avec `loomy start`. Il reste local (ignoré par Git). `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
+Les deux bridges journalisent chaque appel dans `.loomy/logs/events.jsonl` (modèle, effort, durée, tokens, coût réel ou estimé). Ce journal alimente `loomy status` et `loomy watch`. L'utilisateur ouvre ou reprend la session de l'orchestrateur avec `loomy start`. Lance toujours les bridges au premier plan et attends leur résultat : en arrière-plan, une délégation est interrompue si la session se ferme. Il reste local (ignoré par Git). `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
 
 ## Protocole de relecture
 1. Indique au relecteur le diff, le commit ou les fichiers réels.

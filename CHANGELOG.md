@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.5 — 2026-09-24
+
+### Corrigé
+- Une installation bun dans un dossier personnalisé (`BUN_INSTALL`) était reconnue comme une installation npm : `loomy update` utilisait alors npm au lieu de bun.
+- Tests : la méthode d'installation (npm, bun, Homebrew) est vérifiée pour chaque emplacement.
+
 ## 0.1.4 — 2026-09-24
 
 ### Modifié

@@ -77,6 +77,14 @@ fails "commande inconnue refusée" 2 "$LOOMY" nimporte
 fails "clé de configuration inconnue refusée" 2 "$LOOMY" config set couleur bleu
 fails "delegate sans cible refusé" 2 "$LOOMY" delegate
 
+# Méthode d'installation déduite de l'emplacement (elle choisit la commande de loomy update).
+for spec in "npm:lib/node_modules/loomy" "bun:bunprefix/install/global/node_modules/loomy" "brew:Cellar/loomy/0.0.0/libexec"; do
+  want="${spec%%:*}"; dir="$WORK/methodes/${spec#*:}"
+  mkdir -p "$dir" && (cd "$REPO" && tar cf - bin scripts VERSION) | (cd "$dir" && tar xf -)
+  got="$(bash "$dir/bin/loomy" version | sed -n 's/^loomy [^ ]* (\([a-z]*\) .*/\1/p')"
+  if [[ "$got" == "$want" ]]; then ok "méthode détectée : $want"; else ko "méthode $want détectée comme « $got »"; fi
+done
+
 # ------------------------------------------------------------------ configuration
 section "Configuration"
 run "config set plan_claude max20" "$LOOMY" config set plan_claude max20

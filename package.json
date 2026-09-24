@@ -1,6 +1,6 @@
 {
   "name": "loomy",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Kit de démarrage de projets pour Codex, Claude Code ou les deux : questionnaire, diagnostic, orchestrateur sur le meilleur modèle, rôles dédiés routés par coût, suivi en direct dans le terminal.",
   "private": true,
   "license": "UNLICENSED",

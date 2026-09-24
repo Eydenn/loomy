@@ -29,7 +29,8 @@ install_method() {
   case "$INVOKED" in */.bun/*) echo "bun"; return 0 ;; esac
   case "$LOOMY_HOME" in
     */Cellar/*|*/homebrew/*|*/linuxbrew/*) echo "brew" ;;
-    */.bun/*) echo "bun" ;;
+    # bun range ses paquets globaux dans $BUN_INSTALL/install/global/node_modules (~/.bun par défaut).
+    */.bun/*|*/install/global/node_modules/*) echo "bun" ;;
     */node_modules/*) echo "npm" ;;
     *) if [[ -d "$LOOMY_HOME/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
   esac

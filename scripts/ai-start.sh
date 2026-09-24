@@ -12,6 +12,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/journal.sh
+source "$SCRIPT_DIR/lib/journal.sh"
 
 ROOT=""; MODE="menu"
 while [[ $# -gt 0 ]]; do
@@ -52,10 +54,10 @@ phase_label() {
 if [[ -f "$ROOT/START.md" && ( -z "$PHASE" || "$PHASE" == "brief" || "$PHASE" == "discover" ) ]]; then
   PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="démarrage du bootstrap"
 elif [[ -f "$ROOT/START.md" ]]; then
-  PROMPT="Reprends l'initialisation de ce projet en suivant START.md, là où elle s'est arrêtée : phase « $(phase_label "$PHASE") » (voir .loomy/state). Le brief est dans .loomy/brief.md. Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer."
+  PROMPT="Reprends l'initialisation de ce projet en suivant START.md, là où elle s'est arrêtée : phase « $(phase_label "$PHASE") ». Lance d'abord .loomy/scripts/ai-context.sh pour le contexte (phase, attentes, dernières délégations). Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer."
   KIND="reprise à la phase $(phase_label "$PHASE")"
 else
-  PROMPT="Reprends le travail sur ce projet : lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh."
+  PROMPT="Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh."
   KIND="travail courant (bootstrap terminé)"
 fi
 
@@ -139,4 +141,8 @@ esac
 
 ui_end "ouverture de ${tool_label}… · suivi en direct dans un autre terminal : loomy watch"
 cd "$ROOT"
+# Codex n'a pas de hooks par projet : la session est notée ici. Après exec, Codex garde ce pid.
+if [[ "$TOOL" == "codex" ]]; then
+  ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
+fi
 if [[ "$MODE" == "resume" ]]; then exec "${RESUME_CMD[@]}"; else exec "${NEW_CMD[@]}"; fi

@@ -144,7 +144,15 @@ else
   _ui_pad "" "$off"
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}"
   ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
-  ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}À toi :${C_RESET} $(loomy_phase_you "$CURRENT")"
+  # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
+  sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"
+  you="$(loomy_you_now "$CURRENT" "$sess")"
+  ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}À toi :${C_RESET} $you"
+  case "$sess" in
+    open*) ui_rail "${C_GREEN}●${C_RESET} Session de l'orchestrateur ouverte depuis $(printf '%s' "$sess" | cut -d'|' -f2) ${C_DIM}($tool_name)${C_RESET}" ;;
+    closed*) ui_rail "${C_DIM}○ Session de l'orchestrateur fermée à $(printf '%s' "$sess" | cut -d'|' -f2) ($tool_name) → loomy start pour la reprendre${C_RESET}" ;;
+    *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ Aucune session de l'orchestrateur enregistrée → loomy start${C_RESET}" ;;
+  esac
   if (( idx >= 1 && idx < 10 )); then
     next=""; i=0
     for p in $LOOMY_PHASES; do i=$(( i + 1 )); (( i > idx )) && next="${next:+$next → }$(loomy_phase_label "$p")"; done

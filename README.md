@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.13-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.14-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -58,7 +58,7 @@ loomy watch
 ```
 
 > [!TIP]
-> Session fermée, terminal quitté, reprise le lendemain : **`loomy start`**, dans le dossier du projet, reprend la dernière session de l'orchestrateur ou en ouvre une nouvelle au bon endroit du projet.
+> Pour la suite, tape simplement **`loomy`** dans le dossier du projet : il affiche où en est le projet, ce qui est attendu de toi, et propose d'ouvrir ou reprendre la session, de suivre en direct ou de voir le statut.
 
 ---
 
@@ -140,6 +140,8 @@ Une fois `loomy init` terminé, tout passe par **l'orchestrateur** : une session
 
 ### 1. Ouvrir ou reprendre sa session
 
+Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou reprendre la session ».
+
 | Où | Comment |
 |---|---|
 | 🖥️&nbsp;**Terminal,&nbsp;avec&nbsp;Loomy** | `loomy start` : un menu propose de **reprendre** la dernière session de ce dossier (avec son historique) ou d'en ouvrir une **nouvelle** avec le prompt adapté à la phase du projet. `--resume` et `--new` y vont directement. |
@@ -150,6 +152,11 @@ Une fois `loomy init` terminé, tout passe par **l'orchestrateur** : une session
 > Les sessions restent sur la machine où elles ont été ouvertes. Sur une autre machine, `loomy start` ouvre une nouvelle session : l'orchestrateur relit `START.md`, le brief et la phase enregistrée, et reprend là où le projet en est.
 >
 > Dans une app, autorise l'orchestrateur à lancer les scripts `.loomy/scripts/` : c'est par eux qu'il délègue à l'autre outil et qu'il enregistre les phases.
+
+**La reprise est automatique.**
+- **Claude Code :** à chaque ouverture de session dans le projet (terminal, app, `claude` tapé à la main), un hook installé par `loomy init` lui transmet d'office le contexte : phase, ce que tu dois faire, dernières délégations. Il commence par te dire où en est le projet. À la fermeture, la session est notée ; en mode dépôt privé, les fichiers IA sont sauvegardés.
+- **Codex :** `AGENTS.md` et le prompt de `loomy start` lui demandent de lire ce même contexte (`.loomy/scripts/ai-context.sh`) en début de session.
+- **Suivi :** `loomy watch` et `loomy` indiquent si la session de l'orchestrateur est ouverte, et depuis quand.
 
 ### 2. Suivre les phases, et savoir quand c'est à toi
 
@@ -193,6 +200,8 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 ## 🔒 Fichiers IA : versionnés, locaux ou privés
 
 Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt.
+
+Le questionnaire propose aussi de **créer le dépôt GitHub** du projet, privé ou public. Son nom, tiré du nom du projet, est à valider ou à modifier. En mode dépôt privé séparé, le nom du dépôt des fichiers IA (`<dépôt>-ai`) l'est aussi, et les deux sont confirmés ensemble. Un dépôt existant qui porte un autre nom est signalé, avec la commande pour le renommer ; Loomy ne renomme rien lui-même.
 
 | Mode | Pour qui | Ce qui se passe |
 |---|---|---|
@@ -414,6 +423,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 
 | Commande | Rôle |
 |---|---|
+| 🏠&nbsp;<code>loomy</code> | accueil : où en est le projet, ce qui est attendu, et la suite en un choix (hors projet : créer un projet) |
 | 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée le dossier si besoin (ou propose de le créer d'après le nom du projet), puis initialise le projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé |

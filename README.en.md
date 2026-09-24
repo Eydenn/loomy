@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.13-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.14-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -60,7 +60,7 @@ loomy watch
 ```
 
 > [!TIP]
-> Session closed, terminal quit, back the next day: **`loomy start`**, in the project folder, resumes the lead agent's last session or opens a new one at the right point of the project.
+> From then on, just type **`loomy`** in the project folder: it shows where the project stands, what is expected from you, and offers to open or resume the session, follow live, or see the status.
 
 ---
 
@@ -142,6 +142,8 @@ Once `loomy init` is done, everything goes through the **lead agent**: a Claude 
 
 ### 1. Open or resume its session
 
+The simplest: **`loomy`** in the project folder, then "Ouvrir ou reprendre la session".
+
 | Where | How |
 |---|---|
 | 🖥️&nbsp;**Terminal,&nbsp;with&nbsp;Loomy** | `loomy start`: a menu to **resume** this folder's last session (with its history) or open a **new** one with the prompt that fits the project phase. `--resume` and `--new` go straight there. |
@@ -149,6 +151,8 @@ Once `loomy init` is done, everything goes through the **lead agent**: a Claude 
 | 🪟&nbsp;**Desktop&nbsp;apps** | In the Claude app (Code tab) or the Codex app: open the **project folder**, pick the model and effort shown by `loomy start --print`, paste the prompt it copied. To resume, reopen the project conversation in the app. |
 
 > [!NOTE]
+> Resuming is automatic. With Claude Code, a hook installed by `loomy init` hands the context (phase, what you need to do, latest delegations) to every session opened in the project, and notes when it closes; in private mode, it also backs up the AI files. With Codex, `AGENTS.md` and the `loomy start` prompt ask it to read the same context at the start of each session.
+>
 > Sessions stay on the machine where they were opened. On another machine, `loomy start` opens a new session: the lead agent rereads `START.md`, the brief and the recorded phase, and picks up where the project is. In an app, allow the lead agent to run the `.loomy/scripts/` scripts: that is how it delegates to the other tool and records phases.
 
 ### 2. Follow the phases, and know when it is your turn
@@ -173,6 +177,8 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 ## 🔒 AI files: versioned, local or private
 
 The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository.
+
+The questionnaire also offers to **create the project's GitHub repository**, private or public, with a name taken from the project name that you confirm or edit. In separate private repository mode, the AI files repository name (`<repo>-ai`) is confirmed too, both together. An existing repository with a different name is flagged, with the rename command; Loomy never renames anything itself.
 
 | Mode | For | What happens |
 |---|---|---|
@@ -356,6 +362,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 
 | Command | Purpose |
 |---|---|
+| 🏠&nbsp;<code>loomy</code> | home: where the project stands, what is expected, and the next step in one choice (outside a project: create one) |
 | 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |

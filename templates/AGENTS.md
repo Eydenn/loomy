@@ -9,6 +9,10 @@ Pour la délégation entre modèles, lis aussi `.ai/AI_ORCHESTRATION.md` s'il ex
 Tu es l'orchestrateur du travail IA de ce dépôt : avant de déléguer ou de choisir un modèle et un niveau d'effort, suis `.ai/AI_MODEL_ROUTING.md` s'il existe (rôles, bridges, escalade).
 Ne recopie pas ces règles ici.
 
+## Reprise de session
+Au début de chaque session, lance `.loomy/scripts/ai-context.sh` s'il existe : il donne la phase en cours, ce que l'utilisateur attend et les dernières délégations. Commence par dire en une ou deux phrases où en est le projet et ce que tu proposes.
+Avant de clore une session, résume ce qui a été fait et la prochaine étape. Si les fichiers IA sont dans un dépôt privé séparé, sauvegarde-les avec `.loomy/scripts/ai-privacy.sh sync`.
+
 ## Carte du projet
 - Contexte produit : `PROJECT.md`
 - Architecture : `ARCHITECTURE.md` s'il existe

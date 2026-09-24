@@ -330,3 +330,17 @@ ai_project_root() {
   done
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
+
+# loomy_slug <nom> : identifiant technique du projet (minuscules, sans accents ni espaces). Il donne le nom du dossier
+# créé par loomy init, du dépôt GitHub et du dépôt privé des fichiers IA : un seul nom partout.
+loomy_slug() {
+  local s=""
+  # Accents retirés : perl (Unicode::Normalize, livré avec perl) sinon iconv, sinon le texte tel quel.
+  if command -v perl >/dev/null 2>&1; then
+    s="$(printf '%s' "$1" | perl -CS -MUnicode::Normalize -pe '$_ = NFD($_); s/\pM//g' 2>/dev/null || true)"
+  fi
+  if [[ -z "$s" ]] && command -v iconv >/dev/null 2>&1; then s="$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || true)"; fi
+  [[ -n "$s" ]] || s="$1"
+  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+  echo "${s:-mon-projet}"
+}

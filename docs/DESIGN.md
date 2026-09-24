@@ -19,6 +19,9 @@ Loomy sépare le comportement temporaire du bootstrap des instructions permanent
 - `scripts/ai-start.sh` (`loomy start`) : ouvre ou reprend la session de l'orchestrateur. Il retrouve la session précédente du dossier sur la machine (Claude range ses conversations par dossier, Codex note le dossier de chaque session) et choisit le prompt selon la phase.
 - `scripts/install-into-project.sh` (`loomy init`) : sur un projet déjà initialisé, propose de reprendre, mettre à jour (`--update`, brief, phase et journal conservés) ou réinitialiser (`--reset`).
 - `scripts/ai-privacy.sh` et `scripts/lib/privacy.sh` (`loomy privacy`) : visibilité des fichiers IA. Mode local : exclusion dans `.git/info/exclude`, propre à la copie et invisible dans le dépôt. Mode privé : un second dépôt Git (`.loomy/ai.git`) dont le dossier de travail est le projet lui-même et qui ne suit que les fichiers IA ; pas de copie, `sync` rejoue les changements par-dessus ceux d'une autre machine avant d'envoyer.
+- `scripts/ai-context.sh` : contexte de reprise (phase, attentes, délégations, Git, fichiers IA). Installé par `loomy init` comme hooks `SessionStart` et `SessionEnd` de Claude Code dans `.claude/settings.json` (fusionnés avec un fichier existant) ; Codex le lit à la demande d'`AGENTS.md`. Les ouvertures et fermetures de session vont dans le journal ; `loomy start` note aussi les sessions Codex, dont le processus reprend son pid après `exec`.
+- `scripts/ai-home.sh` : `loomy` sans argument, l'accueil qui mène à l'action suivante.
+- Nom technique du projet (`slug` dans le brief, `loomy_slug`) : une seule source pour le dossier créé, le dépôt GitHub (`repo_name`) et le dépôt privé des fichiers IA (`ai_repo_name`).
 - `tests/run.sh` : suite de tests de bout en bout, sans réseau ni token (doublures de `claude` et `codex` dans `tests/stubs/`).
 
 La conception évite volontairement de précharger tous les rôles spécialisés ou un gros workflow de sécurité dans chaque session.

@@ -19,6 +19,9 @@ export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
+# GitHub simulé : la doublure gh crée les dépôts dans $GH_STUB_REMOTES, et Git y redirige https://github.com/.
+export GH_STUB_REMOTES="$WORK/github"; mkdir -p "$GH_STUB_REMOTES"
+git config --global url."$GH_STUB_REMOTES/".insteadOf "https://github.com/"
 LOOMY="$REPO/bin/loomy"
 
 PASS=0; FAIL=0; OUT="$WORK/out.txt"
@@ -293,7 +296,7 @@ file_has "local : mode enregistré dans le brief" "$PV/.loomy/brief.md" "^ai_fil
 file_has "local : exclusion posée dans .git/info/exclude" "$PV/.git/info/exclude" "^/AGENTS.md$"
 has "local : fichiers déjà suivis signalés" "Encore suivis par le dépôt"
 has "local : commande pour arrêter de les suivre" "git rm -r --cached"
-git -C "$PV" rm -r -q --cached -- .loomy START.md AGENTS.md .ai >/dev/null && git -C "$PV" commit -qm "fichiers IA hors du dépôt"
+git -C "$PV" rm -r -q --cached -- .loomy START.md AGENTS.md .ai .claude >/dev/null && git -C "$PV" commit -qm "fichiers IA hors du dépôt"
 [[ -z "$(git -C "$PV" status --porcelain)" ]] && ok "local : les fichiers IA n'apparaissent plus dans git status" || ko "local : fichiers IA encore visibles ($(git -C "$PV" status --porcelain | head -3 | tr '\n' ' '))"
 [[ -f "$PV/AGENTS.md" && -f "$PV/.loomy/brief.md" ]] && ok "local : fichiers conservés sur le disque" || ko "local : fichiers perdus"
 if git -C "$PV" check-ignore -q .gitignore; then ko ".gitignore exclu par erreur"; else ok "le reste du projet reste versionné"; fi
@@ -314,8 +317,10 @@ run "privacy sync" "$LOOMY" privacy --root "$PV" sync
 # Seconde machine : clone du projet (sans fichiers IA), puis restauration.
 M2="$WORK/machine2"; git clone -q "$PV" "$M2"
 [[ ! -e "$M2/AGENTS.md" ]] && ok "clone : fichiers IA absents du dépôt du projet" || ko "clone : fichiers IA présents"
+echo "version locale différente" >"$M2/AGENTS.md"
 run "privacy restore" "$LOOMY" privacy --root "$M2" restore "$BARE"
 [[ -f "$M2/AGENTS.md" && -f "$M2/.loomy/brief.md" && -f "$M2/.ai/AI_WORKFLOW.md" ]] && ok "restore : fichiers IA récupérés" || ko "restore : fichiers manquants"
+has "restore : fichiers locaux différents mis de côté" "mis de côté"
 file_has "restore : exclusion posée sur la nouvelle machine" "$M2/.git/info/exclude" "^/AGENTS.md$"
 [[ -z "$(git -C "$M2" status --porcelain)" ]] && ok "restore : dépôt du projet propre" || ko "restore : dépôt du projet modifié"
 echo "depuis la machine 2" >>"$M2/AGENTS.md"
@@ -327,6 +332,51 @@ fails "sync hors mode privé refusé" 1 "$LOOMY" privacy --root "$PV" sync
 # Projet en sous-dossier : motifs ancrés sur le sous-dossier.
 run "privacy local dans un sous-dossier" "$LOOMY" privacy --root "$MONO/apps/site" local
 file_has "sous-dossier : motif préfixé" "$MONO/.git/info/exclude" "^/apps/site/AGENTS.md$"
+
+# ------------------------------------------------------------------ continuité des sessions
+section "Continuité (contexte, hooks, sessions, accueil)"
+PC2="$WORK/continuite"
+run "init pour la continuité" "$LOOMY" init "$PC2" --yes --no-clipboard
+file_has "hooks Claude Code installés" "$PC2/.claude/settings.json" 'ai-context.sh\\" --hook start'
+if command -v python3 >/dev/null 2>&1; then
+  python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$PC2/.claude/settings.json" && ok "settings.json valide" || ko "settings.json invalide"
+  PM="$WORK/fusion"; mkdir -p "$PM/.claude" && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >"$PM/.claude/settings.json"
+  "$LOOMY" init "$PM" --yes --no-clipboard >/dev/null 2>&1
+  python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['permissions']['allow']==['Bash(ls:*)'] and d['hooks']['SessionStart']" "$PM/.claude/settings.json" \
+    && ok "settings.json existant : hooks ajoutés, réglages conservés" || ko "settings.json existant mal fusionné"
+fi
+bash "$PC2/.loomy/scripts/ai-context.sh" >"$OUT" 2>&1
+has "contexte : projet et phase" "Contexte de reprise du projet"
+has "contexte : consigne de reprise" "Reprends START.md à partir de cette phase"
+"$LOOMY" status --root "$PC2" >"$OUT" 2>&1
+has "status : aucune session → ouvrir la session" "ouvre la session de l'orchestrateur"
+echo '{"session_id":"s-test","source":"startup"}' | bash "$PC2/.loomy/scripts/ai-context.sh" --hook start >"$OUT" 2>&1
+has "hook start : contexte renvoyé à Claude" "Contexte de reprise"
+file_has "hook start : session notée" "$PC2/.loomy/logs/events.jsonl" '"type":"session","event":"start"'
+"$LOOMY" status --root "$PC2" >"$OUT" 2>&1
+has "status : session ouverte" "Session de l'orchestrateur ouverte depuis"
+echo '{"session_id":"s-test"}' | bash "$PC2/.loomy/scripts/ai-context.sh" --hook end >/dev/null 2>&1
+"$LOOMY" status --root "$PC2" >"$OUT" 2>&1
+has "status : session fermée" "fermée à"
+has "status : consigne de reprise" "rouvre la session de l'orchestrateur"
+(cd "$PC2" && "$LOOMY") >"$OUT" 2>&1
+has "loomy seul hors terminal : aide" "◇  SUIVI"
+
+# ------------------------------------------------------------------ nom du dépôt
+section "Nom du dépôt cohérent avec le projet"
+file_has "brief : nom technique" "$PC2/.loomy/brief.md" "^slug: continuite$"
+file_has "brief : --yes ne crée aucun dépôt GitHub" "$PC2/.loomy/brief.md" "^github_repo: no$"
+[[ -z "$(git -C "$PC2" remote)" ]] && ok "--yes : aucun remote ajouté" || ko "--yes : remote ajouté"
+PR2="$WORK/nom-different"; mkdir -p "$PR2" && git -C "$PR2" init -q && git -C "$PR2" remote add origin "https://github.com/testeur/autre-nom.git"
+run "init avec un dépôt distant au nom différent" "$LOOMY" init "$PR2" --yes --no-clipboard
+file_has "écart de nom signalé dans le brief" "$PR2/.loomy/brief.md" "dépôt distant « autre-nom », nom du projet « nom-different »"
+file_has "brief : nom du dépôt existant" "$PR2/.loomy/brief.md" "^repo_name: autre-nom$"
+PV2="$WORK/prive-gh"
+run "projet pour dépôt privé créé par gh" "$LOOMY" init "$PV2" --yes --no-clipboard
+run "privacy private sans --remote (GitHub simulé)" "$LOOMY" privacy --root "$PV2" private
+[[ -d "$GH_STUB_REMOTES/testeur/prive-gh-ai.git" ]] && ok "dépôt privé nommé d'après le projet (prive-gh-ai)" || ko "dépôt privé absent ou mal nommé ($(ls "$GH_STUB_REMOTES/testeur" 2>/dev/null | tr '\n' ' '))"
+git --git-dir="$GH_STUB_REMOTES/testeur/prive-gh-ai.git" ls-tree -r --name-only main 2>/dev/null | grep -q '^.loomy/brief.md$' && ok "dépôt privé : fichiers IA envoyés" || ko "dépôt privé vide"
+file_has "brief : nom du dépôt privé" "$PV2/.loomy/brief.md" "^ai_repo_name: prive-gh-ai$"
 
 # ------------------------------------------------------------------ questionnaire interactif
 section "loomy init (interactif, terminal réel via expect)"
@@ -353,6 +403,8 @@ EXP
   has "question du forfait Claude" "forfait Claude"
   file_has "forfaits mémorisés" "$XDG_CONFIG_HOME/loomy/config" "^plan_codex=api$"
   file_has "brief écrit" "$W1/.loomy/brief.md" "^ai_mode: "
+  [[ "$(git -C "$W1" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/interactif1.git" && -d "$GH_STUB_REMOTES/testeur/interactif1.git" ]] && ok "dépôt GitHub créé au nom du projet" || ko "remote inattendu : $(git -C "$W1" config --get remote.origin.url 2>&1)"
+  file_has "brief : dépôt GitHub privé" "$W1/.loomy/brief.md" "^github_repo: private$"
   W2="$WORK/interactif2"; mkdir -p "$W2"
   run "questionnaire complet, forfaits déjà connus" wizard_expect "$W2"
   has "12 étapes" "question 12/12"
@@ -367,6 +419,29 @@ expect "question 1/" ; expect "Projet Retour" ; exit 0
 EXP
   W3="$WORK/interactif3"; mkdir -p "$W3"
   run "← revient à la question précédente avec sa réponse" env WIZ_DIR="$W3" expect "$WORK/retour.exp"
+  # Deux dépôts : projet public + fichiers IA dans un dépôt privé, noms confirmés ensemble.
+  cat >"$WORK/deux-depots.exp" <<EXP
+set timeout 20
+spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+for {set i 0} {\$i < 80} {incr i} {
+  expect {
+    -re {Créer un dépôt GitHub pour ce projet} { expect "valider" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {Où garder les fichiers IA} { expect "valider" ; send "\033\[B" ; after 200 ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {Créer ces deux dépôts} { expect "valider" ; send "\r" }
+    -re {Ouvrir la session} { expect "valider" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {valider} { send "\r" }
+    eof { exit [lindex [wait] 3] }
+    timeout { exit 3 }
+  }
+}
+exit 4
+EXP
+  W4="$WORK/deux-depots"; mkdir -p "$W4"
+  run "questionnaire : deux dépôts confirmés" env WIZ_DIR="$W4" expect "$WORK/deux-depots.exp"
+  has "confirmation des deux noms demandée" "Créer ces deux dépôts"
+  [[ -d "$GH_STUB_REMOTES/testeur/deux-depots.git" && -d "$GH_STUB_REMOTES/testeur/deux-depots-ai.git" ]] && ok "deux dépôts créés : deux-depots (public) et deux-depots-ai (privé)" || ko "dépôts manquants ($(ls "$GH_STUB_REMOTES/testeur" | tr '\n' ' '))"
+  file_has "brief : dépôt public" "$W4/.loomy/brief.md" "^github_repo: public$"
+  file_has "brief : fichiers IA dans le dépôt privé" "$W4/.loomy/brief.md" "^ai_files: private$"
   rm -f "$XDG_CONFIG_HOME/loomy/config"
 else
   printf '  \033[2m○ expect absent : questionnaire interactif non testé\033[0m\n'

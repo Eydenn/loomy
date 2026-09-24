@@ -8,6 +8,8 @@ LOOMY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/models.sh
+source "$SCRIPT_DIR/lib/models.sh"
 
 usage() {
   cat <<'EOF'
@@ -49,18 +51,6 @@ export LOOMY_INVOKED_FROM="$PWD"
 is_home_or_root() { [[ "$(cd "$1" && pwd -P)" == "$(cd "$HOME" 2>/dev/null && pwd -P)" || "$(cd "$1" && pwd -P)" == "/" ]]; }
 is_loomy_project() { [[ -d "$1/.loomy" && ( -f "$1/.loomy/VERSION" || -f "$1/.loomy/brief.md" ) ]]; }
 
-# slugify <nom> : nom de dossier à partir du nom du projet (minuscules, sans accents ni espaces).
-slugify() {
-  local s=""
-  # Accents retirés : perl (Unicode::Normalize, livré avec perl) sinon iconv, sinon le texte tel quel.
-  if command -v perl >/dev/null 2>&1; then
-    s="$(printf '%s' "$1" | perl -CS -MUnicode::Normalize -pe '$_ = NFD($_); s/\pM//g' 2>/dev/null || true)"
-  fi
-  if [[ -z "$s" ]] && command -v iconv >/dev/null 2>&1; then s="$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || true)"; fi
-  [[ -n "$s" ]] || s="$1"
-  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
-  echo "${s:-mon-projet}"
-}
 
 # Dossier courant « de projet » : vide, dépôt Git, ou fichiers typiques d'un projet.
 looks_like_project() {
@@ -88,7 +78,7 @@ if [[ -z "$TARGET_INPUT" ]]; then
     default_name="mon-projet"; if (( here_ok )) && looks_like_project "$CWD"; then default_name="$(basename "$CWD")"; fi
     UI_LABEL="Nom"; UI_HINT="Il sert de nom au projet et, si tu crées un dossier, de nom de dossier."
     ui_input "Nom du projet" "$default_name"
-    PROJECT_NAME="$UI_VALUE"; slug="$(slugify "$PROJECT_NAME")"
+    PROJECT_NAME="$UI_VALUE"; slug="$(loomy_slug "$PROJECT_NAME")"
     opts=("Nouveau dossier ./$slug"); descs=("Crée ${CWD/#$HOME/~}/$slug et y installe Loomy.")
     if (( here_ok )); then
       opts+=("Dossier courant (${CWD/#$HOME/~})"); descs+=("Installe Loomy ici : pour un dossier vide ou un projet existant à standardiser.")
@@ -133,10 +123,41 @@ copy_loomy_files() {
     cp -R "$LOOMY_ROOT/$d" "$L/"
   done
   cp "$LOOMY_ROOT/VERSION" "$L/VERSION"
+  install_claude_hooks
   # Le journal d'activité contient le texte des tâches déléguées : il reste local.
   if ! grep -qxF '.loomy/logs/' "$TARGET/.gitignore" 2>/dev/null; then
     printf '\n# Loomy : journal d\x27activité local\n.loomy/logs/\n' >>"$TARGET/.gitignore"
   fi
+}
+
+# Hooks Claude Code du projet : à chaque ouverture de session, le contexte Loomy (phase, attentes, délégations) est
+# ajouté d'office ; à la fermeture, la session est notée. Fusion avec un .claude/settings.json existant, sans rien écraser.
+LOOMY_HOOK_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook start'
+LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook end'
+
+# _hooks_json : bloc « hooks » de Loomy, en JSON.
+_hooks_json() {
+  local s e
+  s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
+  printf '{\n  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e"
+}
+
+install_claude_hooks() {
+  local f="$TARGET/.claude/settings.json" merger
+  mkdir -p "$TARGET/.claude"
+  if [[ -f "$f" ]] && grep -q 'ai-context.sh' "$f"; then return 0; fi
+  if [[ ! -f "$f" ]]; then _hooks_json >"$f"; return 0; fi
+  merger='import json, sys
+path, start, end = sys.argv[1:4]
+data = json.load(open(path))
+hooks = data.setdefault("hooks", {})
+hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
+hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 5}]})
+out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
+  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" 2>/dev/null; then return 0; fi
+  _hooks_json >"$L/claude-hooks.json"
+  ui_warn ".claude/settings.json existant non modifié" "ajoute-y les hooks de .loomy/claude-hooks.json"
+  return 0
 }
 
 run_wizard() {

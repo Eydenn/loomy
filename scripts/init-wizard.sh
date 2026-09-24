@@ -174,6 +174,7 @@ ask_all() {
   UI_HINT="Sert de nom au projet dans la documentation générée."
   ui_input "Nom du projet" "$(ans name "${LOOMY_PROJECT_NAME:-$(basename "$TARGET")}")"
   NAME="$UI_VALUE"
+  SLUG="$(loomy_slug "$NAME")"
 
   ui_step 2 $TOTAL
   UI_LABEL="Objectif"
@@ -386,7 +387,34 @@ ask_all() {
       "yes|Oui|Crée le dépôt local maintenant, rien n'est envoyé en ligne." \
       "no|Non|Pas de versionnement : ni commit ni push possibles."
   fi
+  GITHUB_REPO="no"; REMOTE_NAME_NOTE=""; REPO_NAME="$SLUG"; AI_REPO_NAME=""
   if (( IS_REPO )) || [[ "$GIT_INIT" == "yes" ]]; then
+    if [[ -n "$GIT_REMOTE" ]]; then
+      # Le dépôt distant doit porter le nom du projet : sinon on le signale (sans rien renommer).
+      remote_name="$(basename "${GIT_REMOTE#* }" .git)"
+      [[ -n "$remote_name" ]] && REPO_NAME="$remote_name"
+      if [[ -n "$remote_name" && "$remote_name" != "$SLUG" ]]; then
+        REMOTE_NAME_NOTE="dépôt distant « $remote_name », nom du projet « $SLUG »"
+        ui_warn "Nom du dépôt différent du projet" "$remote_name ≠ $SLUG"
+      fi
+    elif [[ -n "$GH_USER" ]]; then
+      UI_LABEL="Dépôt GitHub"
+      # Jamais de création de dépôt en ligne sans question (mode --yes : non, sauf réponse explicite).
+      gh_def="private"; [[ "$UI_ASSUME_DEFAULTS" == "1" ]] && gh_def="no"
+      choose_coded GITHUB_REPO "Créer un dépôt GitHub pour ce projet ?" "$(ans github_repo "$gh_def")" \
+        "Il porte le nom du projet ; créé seulement une fois le brief enregistré." \
+        "private|Oui, privé|Visible par toi seul (et les personnes que tu invites). Recommandé." \
+        "public|Oui, public|Visible par tous : pense à la visibilité des fichiers IA, question suivante." \
+        "no|Non, plus tard|Aucun dépôt en ligne pour l'instant ; tu pourras le créer avec gh repo create."
+      if [[ "$GITHUB_REPO" != "no" ]]; then
+        UI_LABEL="Nom du dépôt"
+        UI_HINT="Proposé d'après le nom du projet ; modifie-le si besoin (lettres, chiffres, tirets)."
+        ui_input "Nom du dépôt GitHub ($GH_USER/…)" "$(ans repo_name "$SLUG")"
+        REPO_NAME="$(loomy_slug "$UI_VALUE")"
+        GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
+        REMOTE_VIS="$(printf '%s' "$GITHUB_REPO" | tr '[:lower:]' '[:upper:]')"
+      fi
+    fi
     UI_LABEL="Commit initial"
     choose_coded COMMIT "Commit initial une fois le setup vérifié ?" "$(ans commit_after_setup yes)" \
       "Autorise l'agent à clôturer l'initialisation par un commit." \
@@ -419,6 +447,24 @@ ask_all() {
     "versioned|Versionnés avec le projet|Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent." \
     "local|Locaux uniquement|Jamais envoyés sur GitHub : exclus via .git/info/exclude, invisible dans le dépôt. Perdus si tu changes de machine." \
     "private|Dans un dépôt privé séparé|Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé ($(basename "$TARGET")-ai), avec loomy privacy sync."
+  if [[ "$AI_FILES" == "private" ]]; then
+    while true; do
+      UI_LABEL="Dépôt privé IA"
+      UI_HINT="Dépôt privé qui ne contiendra que les fichiers IA ; modifie le nom si besoin."
+      ui_input "Nom du dépôt privé des fichiers IA${GH_USER:+ ($GH_USER/…)}" "$(ans ai_repo_name "${AI_REPO_NAME:-$REPO_NAME-ai}")"
+      AI_REPO_NAME="$(loomy_slug "$UI_VALUE")"
+      [[ "$GITHUB_REPO" == "no" ]] && break
+      # Deux dépôts à créer : confirmation des deux noms ensemble.
+      UI_LABEL="Deux dépôts"
+      UI_DESCS=("Crée $GH_USER/$REPO_NAME ($(if [[ "$GITHUB_REPO" == public ]]; then echo public; else echo privé; fi)) pour le projet et $GH_USER/$AI_REPO_NAME (privé) pour les fichiers IA." \
+        "Repose les deux noms.")
+      ui_choose "Créer ces deux dépôts : $REPO_NAME et $AI_REPO_NAME ?" 0 "Oui, créer les deux" "Modifier les noms"
+      [[ "$UI_VALUE" == Oui* ]] && break
+      UI_LABEL="Nom du dépôt"
+      ui_input "Nom du dépôt GitHub ($GH_USER/…)" "$REPO_NAME"
+      REPO_NAME="$(loomy_slug "$UI_VALUE")"; GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
+    done
+  fi
 
   if (( TOTAL == 13 )); then ui_group "FORFAITS"; ui_step 13 $TOTAL; fi
   if (( ASK_PLAN_CLAUDE )); then
@@ -474,8 +520,13 @@ show_recap() {
   ui_rail ""
   ui_rail_group "Livrables"
   ui_rail_kv "Docs" "$DOCLANG_LABEL · START.md : ${HISTORY_LABEL% (recommandé)}"
+  ui_rail_kv "Nom technique" "$SLUG ${C_DIM}(dossier, noms techniques)${C_RESET}"
+  if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }dépôt GitHub $GITHUB_REPO $GH_USER/$REPO_NAME"; fi
   ui_rail_kv "Git" "${parts:-aucune action}"
-  ui_rail_kv "Fichiers IA" "$AI_FILES_LABEL"
+  if [[ -n "$REMOTE_NAME_NOTE" ]]; then
+    ui_rail_kv "" "${C_YELLOW}! $REMOTE_NAME_NOTE${C_RESET} ${C_DIM}→ gh repo rename $SLUG${C_RESET}"
+  fi
+  ui_rail_kv "Fichiers IA" "$AI_FILES_LABEL${AI_REPO_NAME:+ · dépôt privé ${GH_USER:+$GH_USER/}$AI_REPO_NAME}"
   if [[ "$COMMIT" == "yes" && -z "$GIT_REMOTE" ]]; then
     ui_rail_kv "" "${C_DIM}pas de remote : push à faire plus tard${GH_USER:+ (gh repo create --private --source=. --push)}${C_RESET}"
   fi
@@ -496,6 +547,7 @@ write_brief() {
     echo "loomy_version: $LOOMY_VERSION"
     echo "created: $today"
     echo "name: $(yaml_q "$NAME")"
+    echo "slug: $SLUG"
     echo "goal: $(yaml_q "$GOAL")"
     echo "repo: $REPO"
     echo "type: $TYPE"
@@ -514,6 +566,9 @@ write_brief() {
     echo "commit_after_setup: $COMMIT"
     echo "push_after_commit: $PUSH"
     echo "ai_files: $AI_FILES"
+    echo "github_repo: $GITHUB_REPO"
+    echo "repo_name: $REPO_NAME"
+    echo "ai_repo_name: $AI_REPO_NAME"
     echo "---"
     echo
     echo "# Brief de démarrage — $NAME"
@@ -559,6 +614,8 @@ write_brief() {
         echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne jamais dans le dépôt du projet (jamais de git add -f)."
         echo "- Après chaque étape importante et en fin de session, sauvegarde-les : \`.loomy/scripts/ai-privacy.sh sync\`." ;;
     esac
+    echo "- Nom technique du projet : \`$SLUG\`. Utilise-le pour les noms de paquet, de dépôt et les identifiants techniques, pour que tout porte le même nom."
+    if [[ -n "$REMOTE_NAME_NOTE" ]]; then echo "- Attention : $REMOTE_NAME_NOTE. Signale-le à l'utilisateur ; ne renomme rien sans son accord (gh repo rename $SLUG)."; fi
     echo "- Mets à jour l'avancement avec \`.loomy/scripts/ai-status.sh set <phase>\`."
   } >"$BRIEF"
 }
@@ -594,6 +651,8 @@ while true; do
   show_recap
   save_desc="Écrit .loomy/brief.md."
   [[ "$GIT_INIT" == "yes" ]] && save_desc="Écrit .loomy/brief.md et initialise le dépôt Git (branche main)."
+  [[ "$GITHUB_REPO" != "no" ]] && save_desc="$save_desc Crée le dépôt GitHub $GH_USER/$REPO_NAME ($GITHUB_REPO)."
+  [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc Crée le dépôt privé ${GH_USER:+$GH_USER/}$AI_REPO_NAME pour les fichiers IA."
   UI_LABEL="Brief"
   choose_coded CONFIRM "Enregistrer ce brief ?" "save" "Rien n'est écrit avant ta confirmation." \
     "save|Oui, enregistrer|$save_desc" \
@@ -606,13 +665,21 @@ while true; do
       A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"
       A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
       A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_doc_language="$DOCLANG"
-      A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES" ;;
+      A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES"; A_github_repo="$GITHUB_REPO"; A_repo_name="$REPO_NAME"; A_ai_repo_name="$AI_REPO_NAME" ;;
   esac
 done
 
 ui_rail ""
 if [[ "$GIT_INIT" == "yes" ]]; then
   git -C "$TARGET" init -q -b main && ui_rail "${C_GREEN}✓${C_RESET} Dépôt Git initialisé ${C_DIM}branche main${C_RESET}"
+fi
+if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
+  if (cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin >/dev/null 2>&1); then
+    ui_rail "${C_GREEN}✓${C_RESET} Dépôt GitHub créé ${C_DIM}$GH_USER/$REPO_NAME ($GITHUB_REPO) · remote origin${C_RESET}"
+  else
+    ui_rail "${C_YELLOW}!${C_RESET} Dépôt GitHub non créé ${C_DIM}→ gh repo create $REPO_NAME --$GITHUB_REPO --source=. --remote=origin${C_RESET}"
+    GITHUB_REPO="no"
+  fi
 fi
 write_brief
 if [[ "$AI_FILES" != "versioned" ]]; then

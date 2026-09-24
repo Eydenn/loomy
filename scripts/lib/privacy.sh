@@ -39,6 +39,19 @@ privacy_set_mode() {
   mv "$tmp" "$brief"
 }
 
+# privacy_set_key <racine> <clé> <valeur> : écrit une clé dans le front matter du brief.
+privacy_set_key() {
+  local brief="$1/.loomy/brief.md" tmp
+  [[ -f "$brief" ]] || return 0
+  tmp="$brief.tmp.$$"
+  if grep -q "^$2:" "$brief"; then
+    awk -v k="$2" -v v="$3" 'index($0, k ":") == 1 && !done { print k ": " v; done = 1; next } { print }' "$brief" >"$tmp"
+  else
+    awk -v k="$2" -v v="$3" 'NR > 1 && !done && /^---$/ { print k ": " v; done = 1 } { print }' "$brief" >"$tmp"
+  fi
+  mv "$tmp" "$brief"
+}
+
 # privacy_git_root <racine> : racine du dépôt Git du projet (vide s'il n'y en a pas).
 privacy_git_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
 

@@ -57,3 +57,14 @@ loomy_phase_index() {
   for p in $LOOMY_PHASES; do i=$(( i + 1 )); [[ "$p" == "$1" ]] && { echo "$i"; return 0; }; done
   echo 0
 }
+
+# loomy_you_now <phase> <état de session> : consigne pour l'utilisateur, adaptée à la session de l'orchestrateur.
+# Tant qu'aucune session n'est ouverte, la seule chose utile est de l'ouvrir (ou de la rouvrir).
+loomy_you_now() {
+  case "$1" in done) loomy_phase_you "$1"; return 0 ;; esac
+  case "$2" in
+    open*) loomy_phase_you "$1" ;;
+    closed*) echo "rouvre la session de l'orchestrateur avec loomy start ; il reprendra à cette phase." ;;
+    *) echo "ouvre la session de l'orchestrateur avec loomy start." ;;
+  esac
+}

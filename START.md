@@ -41,7 +41,9 @@ Si le script est absent, ignore cette étape sans le signaler.
 
 À chaque changement de phase, dis aussi à l'utilisateur, en une phrase, ce que tu fais maintenant et ce que tu attends de lui (réponses, validation, relecture) : il ne doit jamais se demander si c'est à lui d'agir.
 
-Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`.
+Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`. Avec Claude Code, le contexte de reprise (`.loomy/scripts/ai-context.sh`) est injecté automatiquement à l'ouverture de chaque session ; avec Codex, lance ce script en début de session.
+
+Quand tu génères `.claude/settings.json`, conserve les hooks Loomy déjà présents (`ai-context.sh`).
 
 Chaque délégation passée par les bridges (`delegate-to-claude.sh`, `delegate-to-codex.sh`) est journalisée automatiquement dans `.loomy/logs/events.jsonl` : rôle, modèle, effort, durée, tokens, coût. L'utilisateur suit ce journal en direct dans le terminal (`loomy watch`). Tu n'as rien à lancer pour cela.
 

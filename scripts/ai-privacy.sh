@@ -3,7 +3,7 @@
 #   loomy privacy                          état : mode, fichiers encore suivis, dépôt privé
 #   loomy privacy versioned                versionnés avec le projet
 #   loomy privacy local                    exclus de Git sur cette machine (invisibles dans le dépôt)
-#   loomy privacy private [--remote URL]   exclus du projet, sauvegardés dans un dépôt privé séparé
+#   loomy privacy private [--name NOM | --remote URL]   exclus du projet, sauvegardés dans un dépôt privé séparé
 #   loomy privacy sync                     sauvegarde les fichiers IA dans le dépôt privé
 #   loomy privacy restore <URL|compte/dépôt>   récupère les fichiers IA sur une autre machine
 set -euo pipefail
@@ -16,11 +16,12 @@ source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
 
-ROOT=""; CMD="show"; REMOTE=""; ARG=""; QUIET=0
+ROOT=""; CMD="show"; REMOTE=""; ARG=""; QUIET=0; AI_REPO_OPT=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
     --remote) REMOTE="${2:-}"; shift ;;
+    --name) AI_REPO_OPT="${2:-}"; shift ;;
     --quiet) QUIET=1 ;;
     versioned|local|private|sync|apply|show) CMD="$1" ;;
     restore) CMD="restore"; ARG="${2:-}"; [[ $# -gt 1 ]] && shift ;;
@@ -35,7 +36,15 @@ if [[ "$CMD" == "restore" ]]; then mkdir -p "$ROOT/.loomy"
 elif [[ ! -d "$ROOT/.loomy" ]]; then echo "Pas de projet Loomy dans ${ROOT/#$HOME/~} : loomy init d'abord (ou loomy privacy restore <compte/dépôt> pour récupérer ses fichiers IA)." >&2; exit 1; fi
 GIT_ROOT="$(privacy_git_root "$ROOT")"
 MODE="$(privacy_mode "$ROOT")"
-NAME="$(basename "$ROOT")"
+# Nom du dépôt privé : celui du projet (slug du brief), pour que tout porte le même nom.
+NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^slug:[[:space:]]*//p' | head -1 || true)"
+if [[ -z "$NAME" ]]; then
+  NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^name:[[:space:]]*//p' | head -1 | sed 's/^"//; s/"$//' || true)"
+  NAME="$(loomy_slug "${NAME:-$(basename "$ROOT")}")"
+fi
+# Nom du dépôt privé : --name, sinon celui du brief (validé dans le questionnaire), sinon <projet>-ai.
+AI_REPO="${AI_REPO_OPT:-$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^ai_repo_name:[[:space:]]*//p' | head -1 || true)}"
+AI_REPO="${AI_REPO:-$NAME-ai}"
 
 # ---------------------------------------------------------------- dépôt privé séparé
 create_companion() {
@@ -43,20 +52,28 @@ create_companion() {
   if privacy_companion_ready "$ROOT"; then return 0; fi
   if [[ -z "$url" ]]; then
     if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
-      ui_err "Impossible de créer le dépôt privé" "gh absent ou non connecté : gh auth login, ou indique un dépôt existant avec --remote URL"
+      ui_err "Impossible de créer le dépôt privé $AI_REPO" "gh absent ou non connecté : gh auth login, ou indique un dépôt existant avec --remote URL"
       return 1
     fi
     owner="$(gh api user --jq .login 2>/dev/null || true)"
     [[ -n "$owner" ]] || { ui_err "Compte GitHub introuvable" "gh auth login"; return 1; }
-    if gh repo view "$owner/$NAME-ai" >/dev/null 2>&1; then
-      ui_info "dépôt $owner/$NAME-ai déjà présent : utilisé tel quel"
-    else
-      gh repo create "$owner/$NAME-ai" --private --description "Fichiers IA du projet $NAME (Loomy)" >/dev/null || { ui_err "Création du dépôt privé échouée" "$owner/$NAME-ai"; return 1; }
-      ui_ok "Dépôt privé créé" "$owner/$NAME-ai"
+    # Nom proposé à validation, modifiable (sauf s'il vient déjà de --name ou du questionnaire).
+    if [[ -z "$AI_REPO_OPT" && "$CMD" != "apply" ]] && ui_is_interactive; then
+      UI_LABEL="Dépôt privé"
+      UI_HINT="Dépôt GitHub privé qui ne contiendra que les fichiers IA."
+      ui_input "Nom du dépôt privé ($owner/…)" "$AI_REPO"
+      AI_REPO="$(loomy_slug "$UI_VALUE")"
     fi
-    url="https://github.com/$owner/$NAME-ai.git"
+    if gh repo view "$owner/$AI_REPO" >/dev/null 2>&1; then
+      ui_info "dépôt $owner/$AI_REPO déjà présent : utilisé tel quel"
+    else
+      gh repo create "$owner/$AI_REPO" --private --description "Fichiers IA du projet $NAME (Loomy)" >/dev/null || { ui_err "Création du dépôt privé échouée" "$owner/$AI_REPO"; return 1; }
+      ui_ok "Dépôt privé créé" "$owner/$AI_REPO"
+    fi
+    url="https://github.com/$owner/$AI_REPO.git"
   fi
   git init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
+  privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
   privacy_companion_config "$ROOT"
   return 0
@@ -168,10 +185,18 @@ case "$CMD" in
     if [[ "$ARG" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "$ARG" ]]; then url="https://github.com/$ARG.git"; fi
     git clone --bare -q "$url" "$(privacy_ai_git_dir "$ROOT")" || { echo "Clonage impossible : $url" >&2; exit 1; }
     privacy_companion_config "$ROOT"
-    if ! ai_git "$ROOT" checkout 2>/dev/null; then
-      echo "Des fichiers IA existent déjà dans le projet et seraient écrasés : déplace-les, puis relance." >&2
+    # Fichiers déjà présents : identiques, on les garde ; différents, ils sont mis de côté avant la restauration.
+    backup="$ROOT/.loomy/restore-backup-$(date +%Y%m%d-%H%M%S)"; moved=0
+    while IFS= read -r f; do
+      [[ -e "$ROOT/$f" ]] || continue
+      if ai_git "$ROOT" show "HEAD:$f" 2>/dev/null | cmp -s - "$ROOT/$f"; then continue; fi
+      mkdir -p "$backup/$(dirname "$f")" && mv "$ROOT/$f" "$backup/$f" && moved=$(( moved + 1 ))
+    done < <(ai_git "$ROOT" ls-tree -r --name-only HEAD 2>/dev/null)
+    if ! ai_git "$ROOT" checkout -f 2>/dev/null; then
+      echo "Restauration impossible : $url" >&2
       rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
     fi
+    if (( moved > 0 )); then ui_warn "$moved fichier(s) local(aux) différent(s) mis de côté" "${backup#"$ROOT"/}"; fi
     [[ -n "$GIT_ROOT" ]] && privacy_add_exclude "$ROOT"
     privacy_set_mode "$ROOT" private
     ui_ok "Fichiers IA récupérés" "$url"

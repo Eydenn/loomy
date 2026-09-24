@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 Utilise l'`AGENTS.md` de ce dépôt comme règles d'ingénierie communes principales.
+Le contexte Loomy (phase, attentes de l'utilisateur, dernières délégations) t'est donné automatiquement à l'ouverture de chaque session par un hook du projet (`.claude/settings.json`) ; appuie-toi dessus pour reprendre là où le projet en est.
 Pour un travail conséquent ou toute collaboration Codex/Claude, lis `.ai/AI_WORKFLOW.md` s'il existe.
 Pour la délégation entre modèles, lis `.ai/AI_ORCHESTRATION.md` s'il existe.
 En tant que session principale, tu es l'orchestrateur : suis `.ai/AI_MODEL_ROUTING.md` s'il existe pour les rôles, les modèles et les efforts. Les sous-agents du projet sont dans `.claude/agents/`. Les rôles Codex passent par `.loomy/scripts/delegate-to-codex.sh`.

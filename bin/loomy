@@ -143,7 +143,7 @@ usage() {
   done
   printf '%s%s%s%s\n' "$pad" "$HD" "$l" "$HR"
   printf '\n'
-  printf '%s┌%s  %sUsage : loomy <commande> [arguments]%s\n' "$HL" "$HR" "$HD" "$HR"
+  printf '%s┌%s  %sUsage : loomy <commande> [arguments] · loomy seul : accueil du projet%s\n' "$HL" "$HR" "$HD" "$HR"
   _h_group "PROJET"
   _h_cmd init "[dossier] [options]" "Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset"
   _h_cmd brief "" "Relance le questionnaire du projet courant"
@@ -180,7 +180,8 @@ sub_help() {
   esac
 }
 
-cmd="${1:-help}"; [[ $# -gt 0 ]] && shift
+# Sans argument : l'accueil (état du projet et suite en un choix) dans un terminal, l'aide sinon.
+cmd="${1:-home}"; [[ $# -gt 0 ]] && shift
 
 case "$cmd" in
   init|install) exec bash "$S/install-into-project.sh" "$@" ;;
@@ -277,6 +278,9 @@ case "$cmd" in
     echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"
     if [[ "${1:-}" == "--all" ]]; then show_installs
     elif (( $(loomy_installs | wc -l) > 1 )); then echo "Plusieurs installations de loomy dans le PATH : loomy version --all" >&2; fi ;;
+  home)
+    if [[ -t 0 && -t 2 ]]; then exec bash "$S/ai-home.sh"; fi
+    usage ;;
   help|--help|-h)
     # loomy help <commande> : aide de cette commande.
     if [[ -n "${1:-}" && "$1" != "help" ]]; then exec "$LOOMY_HOME/bin/loomy" "$1" --help; fi

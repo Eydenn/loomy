@@ -2,6 +2,18 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.14 — 2026-09-24
+
+### Ajouté
+- **Reprise automatique des sessions.** `loomy init` installe des hooks Claude Code (`.claude/settings.json`, fusionnés avec un fichier existant) : chaque session ouverte dans le projet reçoit d'office le contexte Loomy (phase, attentes de l'utilisateur, dernières délégations, Git), et sa fermeture est notée ; en mode dépôt privé, les fichiers IA sont sauvegardés à la fermeture. Codex lit ce contexte (`.loomy/scripts/ai-context.sh`) à la demande d'`AGENTS.md` et du prompt de `loomy start`.
+- **`loomy` sans argument : accueil.** Dans un projet : où il en est, ce qui est attendu, et un choix pour la suite (ouvrir ou reprendre la session, suivre, statut, fichiers IA). Hors projet : créer un projet, vérifier la machine.
+- `loomy status`, `watch` et l'accueil indiquent si la session de l'orchestrateur est ouverte, et depuis quand ; la consigne « À toi » en tient compte.
+- **Dépôt GitHub au nom du projet.** Le questionnaire propose de le créer (privé ou public ; jamais en mode `--yes`), avec un nom tiré du projet à valider ou modifier. En mode dépôt privé séparé, le nom du dépôt des fichiers IA est proposé aussi, et les deux sont confirmés ensemble. `loomy privacy private` propose le nom à validation (`--name` pour l'imposer).
+
+### Modifié
+- Un seul nom technique pour tout (`slug` dans le brief) : dossier créé, dépôt GitHub, dépôt privé des fichiers IA (auparavant nommé d'après le dossier). Un dépôt existant au nom différent est signalé dans le questionnaire et le brief, sans être renommé.
+- `loomy privacy restore` met de côté les fichiers locaux différents (`.loomy/restore-backup-…`) au lieu d'échouer.
+
 ## 0.1.13 — 2026-09-24
 
 ### Modifié

@@ -53,6 +53,36 @@ ai_task_excerpt() {
   printf '%s' "$1" | tr '\n' ' ' | cut -c1-200
 }
 
+# ai_session_state <racine> : « open|<heure locale>|<outil> », « closed|<heure>|<outil> » ou « none ».
+# Une session est ouverte si elle a commencé, n'a pas fini, et que son processus (Claude Code ou Codex) tourne encore.
+ai_session_state() {
+  local j line pid ts tool state="none" s hhmm
+  j="$(ai_journal_file "$1")"
+  [[ -s "$j" ]] || { echo "none"; return 0; }
+  while IFS='|' read -r kind pid ts tool; do
+    [[ -n "$kind" ]] || continue
+    if [[ "$kind" == "open" ]]; then
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then state="open|$ts|$tool"; break; fi
+    elif [[ "$state" == "none" ]]; then state="closed|$ts|$tool"; fi
+  done < <(awk '
+    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+    function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
+    /"type":"session"/ {
+      key = field("session"); if (key == "") key = "pid" num("pid")
+      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool") }
+      else { ended[key] = field("ts") "|" field("tool"); last_end = field("ts") "|" field("tool") }
+    }
+    END {
+      for (i = n; i >= 1 && i > n - 10; i--) if (!(order[i] in ended)) print "open|" start[order[i]]
+      if (last_end != "") print "end||" last_end
+    }' "$j" 2>/dev/null)
+  [[ "$state" == "none" ]] && { echo "none"; return 0; }
+  ts="$(printf '%s' "$state" | cut -d'|' -f2)"
+  s="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || date -u -d "$ts" +%s 2>/dev/null || true)"
+  hhmm="$( [[ -n "$s" ]] && { date -r "$s" +%H:%M 2>/dev/null || date -d "@$s" +%H:%M 2>/dev/null; } )"
+  echo "$(printf '%s' "$state" | cut -d'|' -f1)|${hhmm:-?}|$(printf '%s' "$state" | cut -d'|' -f3)"
+}
+
 # ai_delegation_id : identifiant court d'une délégation, relie son événement de début à son événement de fin.
 ai_delegation_id() { printf 'd%s%05d' "$(date +%s)" "$$"; }
 

@@ -116,7 +116,7 @@ yaml_q() {
 }
 
 # ---------------------------------------------------------------- environnement
-HAS_GIT=0; IS_REPO=0; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
+HAS_GIT=0; IS_REPO=0; PARENT_REPO=""; PARENT_REMOTE=""; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
 
 env_check() {
   # L'affichage, le contrôle des prérequis et les corrections guidées sont confiés à ai-doctor.sh.
@@ -127,10 +127,15 @@ env_check() {
   if command -v git >/dev/null 2>&1; then
     HAS_GIT=1
     if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      IS_REPO=1
-      local remote
+      local remote top
       remote="$(git -C "$TARGET" remote 2>/dev/null | head -1)"
       if [[ -n "$remote" ]]; then GIT_REMOTE="$remote $(git -C "$TARGET" remote get-url "$remote" 2>/dev/null)"; fi
+      top="$(cd "$(git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)"
+      if [[ "$top" == "$(cd "$TARGET" && pwd -P)" ]]; then IS_REPO=1
+      else
+        # Dossier à l'intérieur d'un dépôt parent : dépôt propre au projet, ou monorepo (question Git).
+        PARENT_REPO="$top"; PARENT_REMOTE="$GIT_REMOTE"; GIT_REMOTE=""
+      fi
     fi
   fi
   ai_has_claude && HAS_CLAUDE=1
@@ -380,7 +385,15 @@ ask_all() {
 
   ui_step 12 $TOTAL
   GIT_INIT="no"; COMMIT="no"; PUSH="no"
-  if (( HAS_GIT )) && (( ! IS_REPO )); then
+  if (( HAS_GIT )) && [[ -n "$PARENT_REPO" ]]; then
+    UI_LABEL="Dépôt Git"
+    git_def="yes"; [[ "$REPO" == "existing" ]] && git_def="no"
+    choose_coded GIT_INIT "Créer un dépôt Git propre à ce projet ?" "$(ans git_init "$git_def")" \
+      "Ce dossier est à l'intérieur du dépôt Git ${PARENT_REPO/#$HOME/~}." \
+      "yes|Oui, dépôt dédié (recommandé pour un nouveau projet)|Le projet a son propre historique, et peut avoir son dépôt GitHub." \
+      "no|Non, rester dans le dépôt parent (monorepo)|Commits dans le dépôt parent ; pas de dépôt GitHub propre au projet."
+    if [[ "$GIT_INIT" == "no" ]]; then IS_REPO=1; GIT_REMOTE="$PARENT_REMOTE"; fi
+  elif (( HAS_GIT )) && (( ! IS_REPO )); then
     UI_LABEL="Dépôt Git"
     choose_coded GIT_INIT "Initialiser un dépôt Git (branche main) maintenant ?" "$(ans git_init yes)" \
       "Le versionnement est nécessaire pour les commits, les worktrees et les handoffs." \
@@ -397,7 +410,7 @@ ask_all() {
         REMOTE_NAME_NOTE="dépôt distant « $remote_name », nom du projet « $SLUG »"
         ui_warn "Nom du dépôt différent du projet" "$remote_name ≠ $SLUG"
       fi
-    elif [[ -n "$GH_USER" ]]; then
+    elif [[ -n "$GH_USER" && ( -z "$PARENT_REPO" || "$GIT_INIT" == "yes" ) ]]; then
       UI_LABEL="Dépôt GitHub"
       # Jamais de création de dépôt en ligne sans question (mode --yes : non, sauf réponse explicite).
       gh_def="private"; [[ "$UI_ASSUME_DEFAULTS" == "1" ]] && gh_def="no"
@@ -674,10 +687,11 @@ if [[ "$GIT_INIT" == "yes" ]]; then
   git -C "$TARGET" init -q -b main && ui_rail "${C_GREEN}✓${C_RESET} Dépôt Git initialisé ${C_DIM}branche main${C_RESET}"
 fi
 if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
-  if (cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin >/dev/null 2>&1); then
+  if gh_err="$(cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin 2>&1 >/dev/null)"; then
     ui_rail "${C_GREEN}✓${C_RESET} Dépôt GitHub créé ${C_DIM}$GH_USER/$REPO_NAME ($GITHUB_REPO) · remote origin${C_RESET}"
   else
-    ui_rail "${C_YELLOW}!${C_RESET} Dépôt GitHub non créé ${C_DIM}→ gh repo create $REPO_NAME --$GITHUB_REPO --source=. --remote=origin${C_RESET}"
+    ui_rail "${C_YELLOW}!${C_RESET} Dépôt GitHub non créé ${C_DIM}: $(printf '%s' "$gh_err" | tail -1)${C_RESET}"
+    ui_rail "   ${C_DIM}à la main : gh repo create $REPO_NAME --$GITHUB_REPO --source=. --remote=origin${C_RESET}"
     GITHUB_REPO="no"
   fi
 fi

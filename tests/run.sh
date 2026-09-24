@@ -275,6 +275,30 @@ EXP
   rm -f "$XDG_CONFIG_HOME/loomy/config"
 fi
 
+# Nouveau projet dans un dossier qui est lui-même dans un dépôt Git : dépôt propre proposé, puis dépôt GitHub.
+if command -v expect >/dev/null 2>&1; then
+  PARD="$WORK/parent-git"; mkdir -p "$PARD" && git -C "$PARD" init -q && git -C "$PARD" commit -q --allow-empty -m parent
+  cat >"$WORK/dans-parent.exp" <<EXP
+set timeout 20
+cd "$PARD"
+spawn "$LOOMY" init sous-projet --no-clipboard
+for {set i 0} {\$i < 80} {incr i} {
+  expect {
+    -re {Ouvrir la session} { expect "valider" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {valider} { send "\r" }
+    eof { exit [lindex [wait] 3] }
+    timeout { exit 3 }
+  }
+}
+exit 4
+EXP
+  run "init dans un sous-dossier d'un dépôt parent" expect "$WORK/dans-parent.exp"
+  has "dépôt propre proposé" "Créer un dépôt Git propre à ce projet"
+  [[ -d "$PARD/sous-projet/.git" ]] && ok "dépôt Git propre créé pour le projet" || ko "pas de dépôt propre"
+  [[ "$(git -C "$PARD/sous-projet" config --get remote.origin.url)" == "https://github.com/testeur/sous-projet.git" ]] && ok "dépôt GitHub créé dans le dépôt propre" || ko "remote : $(git -C "$PARD/sous-projet" config --get remote.origin.url)"
+  rm -f "$XDG_CONFIG_HOME/loomy/config"
+fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

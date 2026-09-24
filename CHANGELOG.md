@@ -2,6 +2,15 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.17 — 2026-09-25
+
+### Corrigé
+- **Projet créé dans un dossier qui est déjà dans un dépôt Git** (par exemple `~/Projets`) : `loomy init` propose un dépôt Git propre au projet (recommandé), ou de rester dans le dépôt parent (monorepo). Avant, le dépôt GitHub échouait sans explication.
+- La raison d'un échec de `gh repo create` est affichée.
+
+### Ajouté
+- `loomy init` dans un dossier qui est lui-même un projet Loomy : nouvelle option « Créer un nouveau projet dans un sous-dossier ».
+
 ## 0.1.16 — 2026-09-24
 
 ### Corrigé

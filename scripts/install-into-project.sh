@@ -65,6 +65,7 @@ looks_like_project() {
   return 1
 }
 
+INIT_NO_TARGET=0; [[ -z "$TARGET_INPUT" ]] && INIT_NO_TARGET=1
 if [[ -z "$TARGET_INPUT" ]]; then
   CWD="$(pwd)"
   if is_loomy_project "$CWD" || { [[ -n "$ACTION" ]] && ! is_home_or_root "$CWD"; }; then
@@ -251,6 +252,9 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
     fi
     if (( IN_PROGRESS )); then opts+=("Refaire le questionnaire"); descs+=("Tes réponses actuelles servent de valeurs par défaut ; le brief n'est remplacé qu'après confirmation."); fi
     opts+=("Réinitialiser le projet"); descs+=("Repart du début du bootstrap : START.md recopié, phase remise à zéro, questionnaire relancé. Les fichiers déjà créés par l'agent restent.")
+    if [[ "$INIT_NO_TARGET" == "1" ]]; then
+      opts+=("Créer un nouveau projet dans un sous-dossier"); descs+=("Ce dossier est lui-même un projet Loomy : crée un nouveau projet à côté, dans ./<nom-du-projet>.")
+    fi
     opts+=("Annuler"); descs+=("Ne modifie rien.")
     UI_DESCS=("${descs[@]}"); UI_LABEL="Choix"
     default=0; [[ "$OLD_V" != "$NEW_V" ]] && default=1
@@ -259,6 +263,12 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
       Reprendre*) ui_end "ouverture de loomy start…"; exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" ;;
       Mettre*|Réinstaller*) ACTION="update" ;;
       Refaire*) ACTION="brief" ;;
+      Créer*)
+        UI_LABEL="Nom"; UI_HINT="Il donne aussi le nom du dossier créé ici."
+        ui_input "Nom du nouveau projet" "mon-projet"
+        export LOOMY_PROJECT_NAME="$UI_VALUE"
+        ui_end "création de ./$(loomy_slug "$UI_VALUE")…"
+        exec bash "$0" "$TARGET/$(loomy_slug "$UI_VALUE")" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
       Réinitialiser*)
         UI_DESCS=("Repart de la phase Brief. Rien n'est supprimé en dehors de .loomy/state." "Ne modifie rien.")
         UI_LABEL="Confirmation"

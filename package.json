@@ -1,6 +1,6 @@
 {
   "name": "loomy",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Démarre et structure tes projets avec Codex et Claude Code : questionnaire, structure du dépôt prête pour les agents, orchestrateur sur le meilleur modèle et rôles dédiés, suivi en direct dans le terminal.",
   "private": true,
   "license": "UNLICENSED",

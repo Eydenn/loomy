@@ -116,7 +116,7 @@ yaml_q() {
 }
 
 # ---------------------------------------------------------------- environnement
-HAS_GIT=0; IS_REPO=0; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""
+HAS_GIT=0; IS_REPO=0; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
 
 env_check() {
   # L'affichage, le contrôle des prérequis et les corrections guidées sont confiés à ai-doctor.sh.
@@ -137,6 +137,10 @@ env_check() {
   ai_has_codex && HAS_CODEX=1
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     GH_USER="$(gh api user --jq .login 2>/dev/null || true)"
+    # Visibilité du dépôt GitHub existant : elle oriente le choix par défaut pour les fichiers IA.
+    if [[ "$GIT_REMOTE" == *github.com* ]]; then
+      REMOTE_VIS="$(cd "$TARGET" && gh repo view --json visibility --jq .visibility 2>/dev/null || true)"
+    fi
   fi
 
   local count
@@ -403,6 +407,19 @@ ask_all() {
     ui_fact "Git" "pas de dépôt Git : ni commit ni push"
   fi
 
+  # Fichiers IA : GitHub règle la visibilité par dépôt, pas par fichier.
+  local files_def="versioned" vis_txt=""
+  case "$REMOTE_VIS" in
+    PUBLIC) files_def="private"; [[ -z "$GH_USER" ]] && files_def="local"; vis_txt=" Ton dépôt GitHub est public." ;;
+    PRIVATE|INTERNAL) vis_txt=" Ton dépôt GitHub est privé." ;;
+  esac
+  UI_LABEL="Fichiers IA"
+  choose_coded AI_FILES "Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .ai/, .loomy/…) ?" "$(ans ai_files "$files_def")" \
+    "Ce sont tes règles de travail avec les agents. GitHub règle la visibilité par dépôt, pas par fichier.$vis_txt" \
+    "versioned|Versionnés avec le projet|Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent." \
+    "local|Locaux uniquement|Jamais envoyés sur GitHub : exclus via .git/info/exclude, invisible dans le dépôt. Perdus si tu changes de machine." \
+    "private|Dans un dépôt privé séparé|Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé ($(basename "$TARGET")-ai), avec loomy privacy sync."
+
   if (( TOTAL == 13 )); then ui_group "FORFAITS"; ui_step 13 $TOTAL; fi
   if (( ASK_PLAN_CLAUDE )); then
     UI_LABEL="Forfait Claude"
@@ -458,6 +475,7 @@ show_recap() {
   ui_rail_group "Livrables"
   ui_rail_kv "Docs" "$DOCLANG_LABEL · START.md : ${HISTORY_LABEL% (recommandé)}"
   ui_rail_kv "Git" "${parts:-aucune action}"
+  ui_rail_kv "Fichiers IA" "$AI_FILES_LABEL"
   if [[ "$COMMIT" == "yes" && -z "$GIT_REMOTE" ]]; then
     ui_rail_kv "" "${C_DIM}pas de remote : push à faire plus tard${GH_USER:+ (gh repo create --private --source=. --push)}${C_RESET}"
   fi
@@ -495,6 +513,7 @@ write_brief() {
     echo "git_init: $GIT_INIT"
     echo "commit_after_setup: $COMMIT"
     echo "push_after_commit: $PUSH"
+    echo "ai_files: $AI_FILES"
     echo "---"
     echo
     echo "# Brief de démarrage — $NAME"
@@ -516,6 +535,7 @@ write_brief() {
     echo "| START.md après init | $HISTORY_LABEL |"
     echo "| Commit initial | $commit_txt |"
     echo "| Push | $push_txt |"
+    echo "| Fichiers IA | $AI_FILES_LABEL |"
     echo
     echo "## Consignes pour l'agent"
     echo
@@ -533,6 +553,12 @@ write_brief() {
     else
       echo "- Ne pousse rien vers un remote."
     fi
+    case "$AI_FILES" in
+      local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/ ni START.md (jamais de git add -f) ; ils sont exclus via .git/info/exclude." ;;
+      private)
+        echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne jamais dans le dépôt du projet (jamais de git add -f)."
+        echo "- Après chaque étape importante et en fin de session, sauvegarde-les : \`.loomy/scripts/ai-privacy.sh sync\`." ;;
+    esac
     echo "- Mets à jour l'avancement avec \`.loomy/scripts/ai-status.sh set <phase>\`."
   } >"$BRIEF"
 }
@@ -580,7 +606,7 @@ while true; do
       A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"
       A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
       A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_doc_language="$DOCLANG"
-      A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH" ;;
+      A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES" ;;
   esac
 done
 
@@ -589,6 +615,10 @@ if [[ "$GIT_INIT" == "yes" ]]; then
   git -C "$TARGET" init -q -b main && ui_rail "${C_GREEN}✓${C_RESET} Dépôt Git initialisé ${C_DIM}branche main${C_RESET}"
 fi
 write_brief
+if [[ "$AI_FILES" != "versioned" ]]; then
+  bash "$SCRIPT_DIR/ai-privacy.sh" --root "$TARGET" apply --quiet \
+    || ui_rail "${C_YELLOW}!${C_RESET} Fichiers IA : réglage incomplet ${C_DIM}→ loomy privacy $AI_FILES${C_RESET}"
+fi
 [[ -n "$PLAN_CLAUDE_NEW" ]] && loomy_config_set plan_claude "$PLAN_CLAUDE_NEW"
 [[ -n "$PLAN_CODEX_NEW" ]] && loomy_config_set plan_codex "$PLAN_CODEX_NEW"
 if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then ui_rail "${C_GREEN}✓${C_RESET} Forfaits mémorisés ${C_DIM}$(loomy_config_file | sed "s|^$HOME|~|")${C_RESET}"; fi

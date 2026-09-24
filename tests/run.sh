@@ -251,6 +251,53 @@ run "uninstall" "$LOOMY" uninstall
 has "uninstall : commande de retrait" "rm |uninstall"
 has "uninstall : retrait d'un projet" "rm -rf .loomy START.md"
 
+# ------------------------------------------------------------------ visibilité des fichiers IA
+section "Visibilité des fichiers IA (loomy privacy)"
+PV="$WORK/prive"; mkdir -p "$PV"
+run "projet pour loomy privacy" "$LOOMY" init "$PV" --yes --no-clipboard
+file_has "brief : ai_files versioned par défaut" "$PV/.loomy/brief.md" "^ai_files: versioned$"
+mkdir -p "$PV/.ai" && echo "# agents" >"$PV/AGENTS.md" && echo "règles" >"$PV/.ai/AI_WORKFLOW.md" && echo "code" >"$PV/app.txt"
+git -C "$PV" add -A && git -C "$PV" commit -qm "avec fichiers IA"
+run "privacy local" "$LOOMY" privacy --root "$PV" local
+file_has "local : mode enregistré dans le brief" "$PV/.loomy/brief.md" "^ai_files: local$"
+file_has "local : exclusion posée dans .git/info/exclude" "$PV/.git/info/exclude" "^/AGENTS.md$"
+has "local : fichiers déjà suivis signalés" "Encore suivis par le dépôt"
+has "local : commande pour arrêter de les suivre" "git rm -r --cached"
+git -C "$PV" rm -r -q --cached -- .loomy START.md AGENTS.md .ai >/dev/null && git -C "$PV" commit -qm "fichiers IA hors du dépôt"
+[[ -z "$(git -C "$PV" status --porcelain)" ]] && ok "local : les fichiers IA n'apparaissent plus dans git status" || ko "local : fichiers IA encore visibles ($(git -C "$PV" status --porcelain | head -3 | tr '\n' ' '))"
+[[ -f "$PV/AGENTS.md" && -f "$PV/.loomy/brief.md" ]] && ok "local : fichiers conservés sur le disque" || ko "local : fichiers perdus"
+if git -C "$PV" check-ignore -q .gitignore; then ko ".gitignore exclu par erreur"; else ok "le reste du projet reste versionné"; fi
+# Dépôt privé séparé (dépôt local à la place de GitHub).
+BARE="$WORK/prive-ai.git"; git init --bare -q -b main "$BARE"
+run "privacy private --remote" "$LOOMY" privacy --root "$PV" private --remote "$BARE"
+file_has "private : mode enregistré" "$PV/.loomy/brief.md" "^ai_files: private$"
+git --git-dir="$BARE" ls-tree -r --name-only main >"$OUT" 2>&1
+has "private : AGENTS.md sauvegardé" "^AGENTS.md$"
+has "private : brief sauvegardé" "^.loomy/brief.md$"
+hasnt "private : code du projet absent du dépôt privé" "^app.txt$"
+hasnt "private : journal absent du dépôt privé" "^.loomy/logs/"
+echo "nouvelle règle" >>"$PV/AGENTS.md"
+"$LOOMY" status --root "$PV" >"$OUT" 2>&1
+has "status : changements non sauvegardés signalés" "non sauvegardé"
+run "privacy sync" "$LOOMY" privacy --root "$PV" sync
+[[ "$(git --git-dir="$BARE" show main:AGENTS.md | tail -1)" == "nouvelle règle" ]] && ok "sync : modification envoyée" || ko "sync : modification absente"
+# Seconde machine : clone du projet (sans fichiers IA), puis restauration.
+M2="$WORK/machine2"; git clone -q "$PV" "$M2"
+[[ ! -e "$M2/AGENTS.md" ]] && ok "clone : fichiers IA absents du dépôt du projet" || ko "clone : fichiers IA présents"
+run "privacy restore" "$LOOMY" privacy --root "$M2" restore "$BARE"
+[[ -f "$M2/AGENTS.md" && -f "$M2/.loomy/brief.md" && -f "$M2/.ai/AI_WORKFLOW.md" ]] && ok "restore : fichiers IA récupérés" || ko "restore : fichiers manquants"
+file_has "restore : exclusion posée sur la nouvelle machine" "$M2/.git/info/exclude" "^/AGENTS.md$"
+[[ -z "$(git -C "$M2" status --porcelain)" ]] && ok "restore : dépôt du projet propre" || ko "restore : dépôt du projet modifié"
+echo "depuis la machine 2" >>"$M2/AGENTS.md"
+run "sync depuis la seconde machine" "$LOOMY" privacy --root "$M2" sync
+run "sync de la première machine après la seconde" "$LOOMY" privacy --root "$PV" sync
+run "retour au mode versionné" "$LOOMY" privacy --root "$PV" versioned
+if grep -q "loomy : fichiers IA" "$PV/.git/info/exclude"; then ko "versioned : exclusion encore présente"; else ok "versioned : exclusion retirée"; fi
+fails "sync hors mode privé refusé" 1 "$LOOMY" privacy --root "$PV" sync
+# Projet en sous-dossier : motifs ancrés sur le sous-dossier.
+run "privacy local dans un sous-dossier" "$LOOMY" privacy --root "$MONO/apps/site" local
+file_has "sous-dossier : motif préfixé" "$MONO/.git/info/exclude" "^/apps/site/AGENTS.md$"
+
 # ------------------------------------------------------------------ questionnaire interactif
 section "loomy init (interactif, terminal réel via expect)"
 if command -v expect >/dev/null 2>&1; then

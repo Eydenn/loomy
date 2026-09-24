@@ -17,6 +17,8 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/privacy.sh
+source "$SCRIPT_DIR/lib/privacy.sh"
 
 PHASES="brief discover interview propose approve build verify document commit retire done"
 
@@ -245,7 +247,13 @@ else
 fi
 
 # ---------------------------------------------------------------- fichiers IA
-ui_section "FICHIERS IA"
+ui_section "FICHIERS IA" "$(privacy_label "$(privacy_mode "$ROOT")")"
+if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then
+  if ! privacy_companion_ready "$ROOT"; then ui_warn "dépôt privé absent sur cette machine" "loomy privacy restore <compte/dépôt>"
+  elif [[ "$(privacy_pending "$ROOT")" != "0" ]]; then ui_warn "$(privacy_pending "$ROOT") changement(s) non sauvegardé(s) dans le dépôt privé" "loomy privacy sync"; fi
+elif [[ "$(privacy_mode "$ROOT")" == "local" ]] && [[ -n "$(privacy_git_root "$ROOT")" ]] && ! privacy_excluded "$ROOT"; then
+  ui_warn "fichiers IA pas encore exclus sur cette machine" "loomy privacy local"
+fi
 check_file() {
   if [[ -e "$ROOT/$1" ]]; then ui_ok "$1" "${2:-}"; else ui_rail "${C_DIM}○ $1${C_RESET}"; fi
 }

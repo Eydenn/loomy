@@ -150,6 +150,7 @@ usage() {
   _h_cmd start "[--resume|--new|--print]" "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici)"
   _h_cmd route "[commande]" "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)"
   _h_cmd delegate "<claude|codex> <rôle> \"tâche\"" "Confie un rôle à Claude ou à Codex via les bridges"
+  _h_cmd privacy "[mode|sync|restore]" "Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé"
   _h_cmd worktrees "<tâche> [base]" "Crée deux worktrees séparés pour le mode parallèle"
   _h_group "SUIVI"
   _h_cmd status "" "Statut du projet : phases, délégations en cours, activité, coûts, Git"
@@ -191,6 +192,7 @@ case "$cmd" in
     fi
     exec bash "$S/init-wizard.sh" "$root" "$@" ;;
   start|resume) exec bash "$S/ai-start.sh" --root "$(project_root)" "$@" ;;
+  privacy) exec bash "$S/ai-privacy.sh" --root "$(project_root)" "$@" ;;
   route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;

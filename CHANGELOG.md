@@ -2,6 +2,16 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.12 — 2026-09-24
+
+### Ajouté
+- **Visibilité des fichiers IA** (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.loomy/`, `START.md`), choisie dans le questionnaire et modifiable avec `loomy privacy` :
+  - **versionnés** avec le projet (défaut ; recommandé pour un dépôt privé) ;
+  - **locaux** : exclus via `.git/info/exclude`, invisibles dans le dépôt ;
+  - **dépôt privé séparé** : exclus du projet et sauvegardés dans un dépôt GitHub privé `<projet>-ai` (ou toute URL avec `--remote`), qui ne suit que ces fichiers, directement dans le dossier du projet. `loomy privacy sync` sauvegarde, `loomy privacy restore` les récupère sur une autre machine.
+  Le choix par défaut dépend de la visibilité du dépôt GitHub. Les fichiers encore suivis sont signalés, avec la commande pour arrêter de les suivre sans les supprimer. `loomy status` signale une sauvegarde en retard ou une exclusion absente.
+- Le brief transmet le mode à l'orchestrateur : ne jamais forcer l'ajout de ces fichiers, et sauvegarder le dépôt privé en fin d'étape.
+
 ## 0.1.11 — 2026-09-24
 
 ### Ajouté

@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.11-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.12-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -174,6 +174,53 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 
 ---
 
+## 🔒 AI files: versioned, local or private
+
+The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository.
+
+| Mode | For | What happens |
+|---|---|---|
+| **Versioned** | private repository *(default)* | they live in the repository: available everywhere, read by online agents |
+| **Local** | public repository, no backup | excluded through `.git/info/exclude` (invisible in the repository); lost if you change machines |
+| **Separate private repository** | public repository *(recommended)* | excluded from the project and backed up in a private GitHub repository `<project>-ai` that tracks only these files |
+
+See the mode and the backup state:
+
+```bash
+loomy privacy
+```
+
+Switch mode (one of the three):
+
+```bash
+loomy privacy versioned
+```
+
+```bash
+loomy privacy local
+```
+
+```bash
+loomy privacy private
+```
+
+Back up the AI files to the private repository (the lead agent also does it at the end of each step):
+
+```bash
+loomy privacy sync
+```
+
+On another machine, after cloning the project, get its AI files back:
+
+```bash
+loomy privacy restore <your-account>/<project>-ai
+```
+
+> [!WARNING]
+> A file already pushed to a public repository stays in its history. When you switch to local or private, `loomy privacy` lists the files still tracked and gives the command to stop tracking them without deleting them from your disk. `--remote <URL>` lets you use another host than GitHub for the private repository.
+
+---
+
 ## 📈 Live tracking
 
 Everything happens in the terminal, with no dependency. **Nothing starts on its own**: you start tracking when you want, in a second terminal.
@@ -315,6 +362,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 |---|---|
 | 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates or initializes a project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
+| 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`) |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, `--live` tests every model) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |

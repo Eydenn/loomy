@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.11-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.12-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -194,6 +194,53 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 
 ---
 
+## 🔒 Fichiers IA : versionnés, locaux ou privés
+
+Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt.
+
+| Mode | Pour qui | Ce qui se passe |
+|---|---|---|
+| **Versionnés** | dépôt privé *(défaut)* | ils sont dans le dépôt : tu les retrouves partout, les agents en ligne les lisent |
+| **Locaux** | dépôt public, sans sauvegarde | exclus via `.git/info/exclude` (invisible dans le dépôt) ; perdus si tu changes de machine |
+| **Dépôt privé séparé** | dépôt public *(recommandé)* | exclus du projet et sauvegardés dans un dépôt GitHub privé `<projet>-ai`, qui ne suit que ces fichiers |
+
+Voir le mode et l'état de la sauvegarde :
+
+```bash
+loomy privacy
+```
+
+Changer de mode (un seul des trois) :
+
+```bash
+loomy privacy versioned
+```
+
+```bash
+loomy privacy local
+```
+
+```bash
+loomy privacy private
+```
+
+Sauvegarder les fichiers IA dans le dépôt privé (l'orchestrateur le fait aussi en fin d'étape) :
+
+```bash
+loomy privacy sync
+```
+
+Sur une autre machine, après avoir cloné le projet, récupérer ses fichiers IA :
+
+```bash
+loomy privacy restore <ton-compte>/<projet>-ai
+```
+
+> [!WARNING]
+> Un fichier déjà envoyé sur un dépôt public reste dans son historique. Quand tu passes en mode local ou privé, `loomy privacy` liste les fichiers encore suivis et donne la commande pour arrêter de les suivre sans les supprimer de ton disque. `--remote <URL>` permet d'utiliser un autre hébergeur que GitHub pour le dépôt privé.
+
+---
+
 ## 📈 Suivi en direct
 
 Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul** : tu lances le suivi quand tu veux, dans un second terminal.
@@ -373,6 +420,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 |---|---|
 | 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
+| 🔒&nbsp;<code>loomy&nbsp;privacy</code> | visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`) |
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |

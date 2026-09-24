@@ -15,7 +15,6 @@ Options :
   --no-wizard       Installer seulement, sans le questionnaire
   --yes             Remplir le brief sans questions, avec les valeurs par défaut
   --answers FICHIER Reprendre les réponses d'un brief.md existant
-  --no-gum          Affichage ANSI simple même si gum est installé
   -h, --help        Afficher cette aide
 EOF
 }
@@ -26,7 +25,7 @@ WIZARD_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-wizard) RUN_WIZARD=0 ;;
-    --yes|-y|--no-gum|--no-clipboard) WIZARD_ARGS+=("$1") ;;
+    --yes|-y|--no-clipboard) WIZARD_ARGS+=("$1") ;;
     --answers) WIZARD_ARGS+=("$1" "${2:-}"); shift ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "Erreur : option inconnue $1" >&2; usage; exit 2 ;;

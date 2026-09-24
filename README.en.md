@@ -1,11 +1,14 @@
 <div align="center">
 
-# 🧶 Loomy
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/loomy-dark.svg">
+  <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
+</picture>
 
 **Weave Codex and Claude Code into one development crew.**
 A lead agent on the best model, dedicated roles on just the model they need, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.2-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -43,12 +46,14 @@ The questionnaire ends by printing:
 
 Every method installs the same `loomy` command. The repository is private, so they all use your GitHub credentials (`gh auth login`).
 
-| Method | Install | Update |
-|---|---|---|
-| 🍺 **Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` | `loomy update` |
-| 📦 **npm** | `npm install -g github:Eydenn/loomy` | `loomy update` |
-| 🥟 **bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` | `loomy update` |
-| 🐚 **Shell script** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` | `loomy update` |
+| Method | Install |
+|---|---|
+| 🍺&nbsp;**Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` |
+| 📦&nbsp;**npm** | `npm install -g github:Eydenn/loomy` |
+| 🥟&nbsp;**bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` |
+| 🐚&nbsp;**Shell&nbsp;script** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` |
+
+**Update**, whatever the method: `loomy update`.
 
 > [!TIP]
 > `loomy update` detects how Loomy was installed and runs the right command. Homebrew downloads inside a sandbox that cannot reach the macOS keychain, so the GitHub token is passed through `HOMEBREW_GITHUB_API_TOKEN` for the download only; `loomy update` does this for you. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. With nvm, an npm install is tied to the active Node version: if you switch versions often, prefer Homebrew or the shell script.
@@ -71,7 +76,7 @@ flowchart LR
 ```
 
 1. **Check.** Verifies CLI versions, finds Codex even when it is bundled inside the ChatGPT app, checks model availability, and offers fixes.
-2. **Questionnaire.** Twelve questions, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a thirteenth asks for your Claude and ChatGPT subscriptions.
+2. **Questionnaire.** Twelve questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a thirteenth asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question.
 3. **Routing.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing.
 4. **Lead agent.** The main session follows `START.md`:
 
@@ -123,15 +128,15 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | Role | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybrid, Claude lead | 🟣 Hybrid, Codex lead |
 |---|---|---|---|---|
-| 🎯 **Lead agent** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
-| 🏛️ Architect | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞 Debugger | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒 Security | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍 Reviewer | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
-| 🛠️ Developer | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
-| ⚙️ Executor | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
-| 🔎 Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚 Documenter | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
+| 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
+| 🏛️&nbsp;Architect | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Debugger | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Security | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔍&nbsp;Reviewer | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
+| 🛠️&nbsp;Developer | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
+| ⚙️&nbsp;Executor | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔎&nbsp;Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
+| 📚&nbsp;Documenter | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
 
 <sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
 
@@ -150,12 +155,12 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | Model | 💵 Price ($ per million tokens, in / out) | Cost per AA task | AA Coding Agent Index | Terminal-Bench 4.0 | 🏷️ Role |
 |---|---|---|---|---|---|
-| GPT-6-Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
-| GPT-6-Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | developer, reviewer (Codex) |
-| GPT-6-Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | lead agent when Codex only |
-| Claude Sonnet 5 | 2 / 10 | — | — | — | developer, reviewer (Claude) |
-| Claude Opus 5.5 | 4 / 20 | $0.55 → $5.98 | not published | **59.6 %** | 🏆 lead agent and specialists |
-| Claude Fable 5.1 | 10 / 50 | $7.63 | 62 | 55.8 % | ❌ superseded by Opus 5.5 |
+| GPT&#8209;6&#8209;Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
+| GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | developer, reviewer (Codex) |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | lead agent when Codex only |
+| Claude&nbsp;Sonnet&nbsp;5 | 2 / 10 | — | — | — | developer, reviewer (Claude) |
+| Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | $0.55 → $5.98 | not published | **59.6 %** | 🏆 lead agent and specialists |
+| Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | $7.63 | 62 | 55.8 % | ❌ superseded by Opus 5.5 |
 
 - 🥇 **Opus 5.5 is the best lead agent.** It ranks first on the AA Intelligence Index and leads agentic work. At high effort it costs less per task than Astra at max, for a better score.
 - ⚙️ **GPT-6-Luna max is the best-value executor, not an autonomous agent.**
@@ -173,7 +178,7 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 | **System** | macOS or Linux, bash ≥ 3.2 (the macOS one works), `git` | + `gh` logged in |
 | **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, for hybrid mode |
 | **Models** | those of your tool | all answer `loomy doctor --live` |
-| **Comfort** | built-in plain menus | [`gum`](https://github.com/charmbracelet/gum) (installed by the doctor), clipboard |
+| **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |
 
 ---
 

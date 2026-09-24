@@ -13,8 +13,8 @@ VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-tests.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
-# Environnement isolé : configuration, HOME et PATH maîtrisés, pas de gum ni de presse-papiers.
-export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1 LOOMY_NO_GUM=1
+# Environnement isolé : configuration, HOME et PATH maîtrisés, sans couleurs.
+export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1
 export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
@@ -88,7 +88,7 @@ section "Routage"
 P="$WORK/route"; mkdir -p "$P"
 for env in claude codex hybrid-claude hybrid-codex; do
   for prof in econome equilibre qualite; do
-    if AI_ENV="$env" AI_ROUTE_PROFILE="$prof" "$LOOMY" route --root "$P" markdown >"$OUT" 2>&1 && grep -q '^| ' "$OUT"; then :; else ko "route $env / $prof"; continue 2; fi
+    if "$LOOMY" route --root "$P" --env "$env" --profile "$prof" markdown >"$OUT" 2>&1 && grep -q '^| ' "$OUT"; then :; else ko "route $env / $prof"; continue 2; fi
   done
 done
 ok "matrice produite pour 4 environnements × 3 profils"
@@ -101,13 +101,27 @@ run "route get executor" "$LOOMY" route get executor
 if [[ "$(wc -w <"$OUT" | tr -d ' ')" == "3" ]]; then ok "route get : famille modèle effort"; else ko "route get : format inattendu ($(cat "$OUT"))"; fi
 
 # Repli : sans Codex, un mode hybride retombe sur Claude seul.
-run "repli sans Codex" env LOOMY_CODEX_BIN=/inexistant AI_ENV=hybrid-claude "$LOOMY" route get executor
+# Chaque environnement place bien l'orchestrateur et l'exécutant sur la bonne famille.
+lead_of() { "$LOOMY" route --root "$P" --env "$1" get lead 2>/dev/null | cut -d' ' -f2; }
+exec_of() { "$LOOMY" route --root "$P" --env "$1" get executor 2>/dev/null | cut -d' ' -f1; }
+if [[ "$(lead_of claude)" == claude-opus* && "$(lead_of codex)" == gpt-6-astra && "$(lead_of hybrid-claude)" == claude-opus* && "$(lead_of hybrid-codex)" == gpt-6-astra ]]
+then ok "orchestrateur : Opus côté Claude, Astra côté Codex"; else ko "orchestrateur mal routé ($(lead_of claude) / $(lead_of codex) / $(lead_of hybrid-claude) / $(lead_of hybrid-codex))"; fi
+if [[ "$(exec_of claude)" == claude && "$(exec_of codex)" == codex && "$(exec_of hybrid-claude)" == codex ]]
+then ok "exécutant : Luna en hybride lead Claude"; else ko "exécutant mal routé"; fi
+if [[ "$("$LOOMY" route --root "$P" --env claude --profile econome get lead)" != "$("$LOOMY" route --root "$P" --env claude --profile qualite get lead)" ]]
+then ok "les profils changent l'effort de l'orchestrateur"; else ko "profils sans effet sur l'orchestrateur"; fi
+
+# Repli : un brief hybride sans Codex installé retombe sur Claude seul.
+mkdir -p "$P/.loomy" && printf -- '---\nai_mode: ORCHESTRATED\nai_lead: claude\n---\n' >"$P/.loomy/brief.md"
+if [[ "$("$LOOMY" route --root "$P" get executor | cut -d' ' -f1)" == codex ]]; then ok "brief hybride : exécutant sur Codex"; else ko "brief hybride : exécutant pas sur Codex"; fi
+run "repli sans Codex" env LOOMY_CODEX_BIN=/inexistant "$LOOMY" route --root "$P" get executor
 has "exécutant routé sur Claude" "^claude "
+rm -rf "$P/.loomy"
 
 # ------------------------------------------------------------------ installation dans un projet
 section "loomy init (non interactif)"
 PROJ="$WORK/projet"; mkdir -p "$PROJ"
-run "init --yes dans un dossier vide" "$LOOMY" init "$PROJ" --yes --no-gum --no-clipboard
+run "init --yes dans un dossier vide" "$LOOMY" init "$PROJ" --yes --no-clipboard
 for f in START.md .loomy/brief.md .loomy/state .loomy/VERSION .loomy/scripts/ai-status.sh .loomy/templates/AGENTS.md; do
   if [[ -e "$PROJ/$f" ]]; then :; else ko "fichier manquant après init : $f"; fi
 done
@@ -120,7 +134,7 @@ if [[ ! -f "$XDG_CONFIG_HOME/loomy/config" ]] || ! grep -q '^plan_' "$XDG_CONFIG
 fails "second init refusé (START.md existe)" 1 "$LOOMY" init "$PROJ" --no-wizard
 fails "dossier cible absent refusé" 1 "$LOOMY" init "$WORK/absent" --no-wizard
 PROJ2="$WORK/projet2"; mkdir -p "$PROJ2"
-run "init --answers reprend un brief" "$LOOMY" init "$PROJ2" --answers "$PROJ/.loomy/brief.md" --yes --no-gum --no-clipboard
+run "init --answers reprend un brief" "$LOOMY" init "$PROJ2" --answers "$PROJ/.loomy/brief.md" --yes --no-clipboard
 file_has "brief repris : même nom" "$PROJ2/.loomy/brief.md" "^name: "
 
 # ------------------------------------------------------------------ questionnaire interactif
@@ -134,7 +148,6 @@ spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {valider} { send "\r" }
-    -re {› *\$|\\? *\$|: *\$} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
   }
@@ -145,14 +158,24 @@ EXP
   }
   W1="$WORK/interactif1"; mkdir -p "$W1"
   run "questionnaire complet, forfaits non renseignés" wizard_expect "$W1"
-  has "13 étapes quand les forfaits sont à demander" "tape 13/13"
+  has "13 étapes quand les forfaits sont à demander" "question 13/13"
   has "question du forfait Claude" "forfait Claude"
   file_has "forfaits mémorisés" "$XDG_CONFIG_HOME/loomy/config" "^plan_codex=api$"
   file_has "brief écrit" "$W1/.loomy/brief.md" "^ai_mode: "
   W2="$WORK/interactif2"; mkdir -p "$W2"
   run "questionnaire complet, forfaits déjà connus" wizard_expect "$W2"
-  has "12 étapes" "tape 12/12"
+  has "12 étapes" "question 12/12"
   hasnt "forfaits pas redemandés" "forfait Claude|/13"
+  # ← revient à la question précédente, qui garde la réponse déjà donnée.
+  cat >"$WORK/retour.exp" <<EXP
+set timeout 15
+spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+expect "question 1/" ; expect "valider" ; send "Projet Retour\r"
+expect "question 2/" ; expect "valider" ; send "\033\[D"
+expect "question 1/" ; expect "Projet Retour" ; exit 0
+EXP
+  W3="$WORK/interactif3"; mkdir -p "$W3"
+  run "← revient à la question précédente avec sa réponse" env WIZ_DIR="$W3" expect "$WORK/retour.exp"
   rm -f "$XDG_CONFIG_HOME/loomy/config"
 else
   printf '  \033[2m○ expect absent : questionnaire interactif non testé\033[0m\n'

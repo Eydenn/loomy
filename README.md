@@ -1,11 +1,14 @@
 <div align="center">
 
-# 🧶 Loomy
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/loomy-dark.svg">
+  <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
+</picture>
 
 **Tisse Codex et Claude Code en une seule équipe de développement.**
 Un orchestrateur sur le meilleur modèle, des rôles dédiés sur le modèle juste nécessaire, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.2-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -41,12 +44,14 @@ Le questionnaire se termine en affichant :
 
 Toutes les méthodes installent la même commande `loomy`. Le dépôt étant privé, elles utilisent tes identifiants GitHub (`gh auth login`).
 
-| Méthode | Installer | Mettre à jour |
-|---|---|---|
-| 🍺 **Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` | `loomy update` |
-| 📦 **npm** | `npm install -g github:Eydenn/loomy` | `loomy update` |
-| 🥟 **bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` | `loomy update` |
-| 🐚 **Script shell** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` | `loomy update` |
+| Méthode | Installer |
+|---|---|
+| 🍺&nbsp;**Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` |
+| 📦&nbsp;**npm** | `npm install -g github:Eydenn/loomy` |
+| 🥟&nbsp;**bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` |
+| 🐚&nbsp;**Script&nbsp;shell** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` |
+
+**Mise à jour**, quelle que soit la méthode : `loomy update`.
 
 > [!TIP]
 > `loomy update` détecte la méthode d'installation et utilise la bonne commande. Homebrew télécharge dans un bac à sable qui n'a pas accès au trousseau macOS : le jeton GitHub lui est transmis par `HOMEBREW_GITHUB_API_TOKEN`, le temps du téléchargement seulement, et `loomy update` s'en charge. bun ne sait pas lire un dépôt GitHub privé : il installe l'archive de la release, que `gh` télécharge avec tes identifiants. Avec nvm, une installation npm est liée à la version de Node active : si tu changes souvent de version, préfère Homebrew ou le script shell.
@@ -69,7 +74,7 @@ flowchart LR
 ```
 
 1. **Diagnostic.** Vérifie les versions des CLI, trouve Codex même caché dans l'app ChatGPT, contrôle les modèles disponibles, et propose les corrections.
-2. **Questionnaire.** Douze questions en français, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une treizième demande tes forfaits Claude et ChatGPT.
+2. **Questionnaire.** Douze questions en français, groupées par thème, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une treizième demande tes forfaits Claude et ChatGPT. ← revient à la question précédente.
 3. **Routage.** Transforme le brief et les outils installés en une matrice rôle → modèle → effort, avec repli automatique si une CLI manque.
 4. **Orchestrateur.** La session principale suit `START.md` :
 
@@ -142,15 +147,15 @@ flowchart TB
 
 | Rôle | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybride, lead Claude | 🟣 Hybride, lead Codex |
 |---|---|---|---|---|
-| 🎯 **Orchestrateur** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
-| 🏛️ Architecte | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞 Débogueur | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒 Sécurité | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍 Relecteur | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
-| 🛠️ Développeur | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
-| ⚙️ Exécutant | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
-| 🔎 Explorateur | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚 Documentaliste | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
+| 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
+| 🏛️&nbsp;Architecte | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Sécurité | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔍&nbsp;Relecteur | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
+| 🛠️&nbsp;Développeur | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
+| ⚙️&nbsp;Exécutant | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔎&nbsp;Explorateur | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
+| 📚&nbsp;Documentaliste | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
 
@@ -176,12 +181,12 @@ flowchart TB
 
 | Modèle | 💵 Prix ($ par million de tokens, entrée / sortie) | Coût par tâche AA | Indice de codage AA | Terminal-Bench 4.0 | 🏷️ Rôle attribué |
 |---|---|---|---|---|---|
-| GPT-6-Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
-| GPT-6-Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | développeur, relecteur (Codex) |
-| GPT-6-Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | orchestrateur en full Codex |
-| Claude Sonnet 5 | 2 / 10 | — | — | — | développeur, relecteur (Claude) |
-| Claude Opus 5.5 | 4 / 20 | 0,55 → 5,98 $ | non publié | **59,6 %** | 🏆 orchestrateur et spécialistes |
-| Claude Fable 5.1 | 10 / 50 | 7,63 $ | 62 | 55,8 % | ❌ remplacé par Opus 5.5 |
+| GPT&#8209;6&#8209;Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
+| GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | développeur, relecteur (Codex) |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | orchestrateur en full Codex |
+| Claude&nbsp;Sonnet&nbsp;5 | 2 / 10 | — | — | — | développeur, relecteur (Claude) |
+| Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | 0,55 → 5,98 $ | non publié | **59,6 %** | 🏆 orchestrateur et spécialistes |
+| Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | 7,63 $ | 62 | 55,8 % | ❌ remplacé par Opus 5.5 |
 
 - 🥇 **Opus 5.5, meilleur orchestrateur.** Il est premier de l'indice d'intelligence AA et en tête du travail agentique. En effort high, il coûte moins cher par tâche qu'Astra en max, pour un meilleur score.
 - ⚙️ **GPT-6-Luna max, meilleur exécutant, mais pas un agent autonome.**
@@ -199,7 +204,7 @@ flowchart TB
 | **Système** | macOS ou Linux, bash ≥ 3.2 (celui de macOS convient), `git` | + `gh` connecté |
 | **IA** | **une** CLI : Claude Code ≥ 2.1.280 **ou** Codex ≥ 0.155, connectée | **les deux**, pour le mode hybride |
 | **Modèles** | ceux de ton outil | tous répondent à `loomy doctor --live` |
-| **Confort** | menus simples intégrés | [`gum`](https://github.com/charmbracelet/gum) (installé par le diagnostic), presse-papiers |
+| **Confort** | aucun (questionnaire intégré, sans dépendance) | presse-papiers, pour copier le prompt de démarrage |
 
 > [!IMPORTANT]
 > - **Codex livré avec les apps ChatGPT et Codex.** `loomy doctor --fix` le rend accessible sous le nom `codex` grâce à un petit script dans `~/.local/bin`. Un lien symbolique ne marcherait pas : la CLI cherche ses programmes auxiliaires à côté du chemin par lequel on l'appelle.
@@ -212,7 +217,7 @@ flowchart TB
 
 | Commande | Rôle |
 |---|---|
-| 📦 `loomy init [dossier]` | installe Loomy dans un projet et lance le questionnaire (`--no-wizard`, `--yes`, `--answers`, `--no-gum`) |
+| 📦 `loomy init [dossier]` | installe Loomy dans un projet et lance le questionnaire (`--no-wizard`, `--yes`, `--answers`) |
 | 📝 `loomy brief` | relance le questionnaire du projet courant |
 | 🩺 `loomy doctor` | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
 | 🧭 `loomy route` | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |

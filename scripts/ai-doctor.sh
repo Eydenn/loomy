@@ -61,7 +61,7 @@ offer_fix() {
   return 1
 }
 
-(( COMPACT )) || ui_banner "Diagnostic Loomy" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
+(( COMPACT )) || ui_banner "Diagnostic" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
 
 # ---------------------------------------------------------------- système
 ui_section "Système"
@@ -130,16 +130,6 @@ fi
 
 # ---------------------------------------------------------------- confort
 ui_section "Confort (facultatif)"
-if command -v gum >/dev/null 2>&1; then
-  ui_ok "gum" "menus enrichis"
-else
-  ui_info "gum absent : menus en affichage simple"
-  if command -v brew >/dev/null 2>&1; then
-    if offer_fix "Installer gum pour des menus enrichis ?" brew install gum; then :; else missing_ideal "gum"; fi
-  else
-    missing_ideal "gum"; ui_info "installation : https://github.com/charmbracelet/gum#installation"
-  fi
-fi
 if command -v gh >/dev/null 2>&1; then
   if gh auth status >/dev/null 2>&1; then ui_ok "gh" "authentifié"
   else ui_warn "gh" "non authentifié — lancez : gh auth login"; missing_ideal "gh authentifié"; fi
@@ -171,25 +161,30 @@ ui_info "orchestrateur : $R_MODEL ($R_EFFORT) · détail : ai-route.sh"
 # ---------------------------------------------------------------- test réel
 if (( LIVE )); then
   ui_section "Test réel des modèles"
-  seen=" "
-  for r in $AI_ROLES; do
-    ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
-    key="$R_FAMILY:$R_MODEL"
-    case "$seen" in *" $key "*) continue ;; esac
-    seen="$seen$key "
-    if [[ "$R_FAMILY" == "claude" ]]; then
-      if (( ! HAS_C )); then ui_warn "$R_MODEL" "Claude Code absent"; continue; fi
-      out="$(cd "${TMPDIR:-/tmp}" && claude -p "Réponds exactement : OK" --output-format json --max-turns 1 --model "$R_MODEL" --effort low 2>&1 || true)"
-      if printf '%s' "$out" | grep -q '"is_error":false'; then ui_ok "$R_MODEL" "répond"
-      else ui_err "$R_MODEL" "$(printf '%s' "$out" | grep -oE '"result":"[^"]{0,120}' | head -1 | sed 's/"result":"//')"; MIN_OK=0; fi
+  ui_info "tous les modèles du catalogue pour chaque CLI installée (un « OK » en effort bas par modèle)"
+  # Modèles utilisés par le routage courant : un échec y est bloquant, ailleurs c'est un avertissement.
+  routed=" "
+  for r in $AI_ROLES; do ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"; routed="$routed$R_FAMILY:$R_MODEL "; done
+  for key in "claude:$AI_MODEL_CLAUDE_TOP" "claude:$AI_MODEL_CLAUDE_MID" "claude:$AI_MODEL_CLAUDE_FAST" \
+             "codex:$AI_MODEL_CODEX_TOP" "codex:$AI_MODEL_CODEX_MID" "codex:$AI_MODEL_CODEX_FAST"; do
+    fam="${key%%:*}"; model="${key#*:}"
+    if [[ "$fam" == "claude" ]]; then
+      (( HAS_C )) || continue
+      out="$(cd "${TMPDIR:-/tmp}" && claude -p "Réponds exactement : OK" --output-format json --max-turns 1 --model "$model" --effort low 2>&1 || true)"
+      if printf '%s' "$out" | grep -q '"is_error":false'; then ok=1; why=""
+      else ok=0; why="$(printf '%s' "$out" | grep -oE '"result":"[^"]{0,120}' | head -1 | sed 's/"result":"//' || true)"; fi
     else
-      if (( ! HAS_X )); then ui_warn "$R_MODEL" "Codex absent"; continue; fi
+      (( HAS_X )) || continue
       tmpf="$(mktemp)"
-      if "$CODEX_BIN" exec -m "$R_MODEL" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
-           -o "$tmpf" "Réponds exactement : OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ui_ok "$R_MODEL" "répond"
-      else ui_err "$R_MODEL" "pas de réponse (connexion, plan ou nom de modèle)"; MIN_OK=0; fi
+      if "$CODEX_BIN" exec -m "$model" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
+           -o "$tmpf" "Réponds exactement : OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ok=1; why=""
+      else ok=0; why="pas de réponse (connexion, forfait ou nom de modèle)"; fi
       rm -f "$tmpf"
     fi
+    case "$routed" in *" $key "*) used="utilisé par ce projet" ;; *) used="" ;; esac
+    if (( ok )); then ui_ok "$model" "répond${used:+ · $used}"
+    elif [[ -n "$used" ]]; then ui_err "$model" "${why:-échec} · $used"; MIN_OK=0
+    else ui_warn "$model" "${why:-échec} · non utilisé par le routage actuel"; missing_ideal "$model"; fi
   done
 fi
 

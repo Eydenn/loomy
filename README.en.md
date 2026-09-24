@@ -93,9 +93,9 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 
 | Command | View |
 |---|---|
-| `loomy status` | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| `loomy watch [N]` | 🖥️ The same screen refreshed every N seconds (2 by default), Ctrl-C to quit |
-| `loomy log [-n N] [-f]` | Raw journal, optionally streamed |
+| <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every N seconds (2 by default), Ctrl-C to quit |
+| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Raw journal, optionally streamed |
 
 A delegation shows as "en cours" (running), with its timer, as soon as it starts. If it is interrupted, it disappears on its own.
 
@@ -108,8 +108,8 @@ Loomy knows whether you pay per use (API) or by subscription:
 | Plan | What Loomy shows |
 |---|---|
 | API | the real **cost** (Claude) or an estimate from tokens (Codex) |
-| Claude Pro · Max 5x · Max 20x | the **API value consumed this month**, against $20, $100 or $200 per month |
-| ChatGPT Plus · Pro · Business | the same, against $20, $100, $200 or $25 per month |
+| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | the **API value consumed this month**, against $20, $100 or $200 per month |
+| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | the same, against $20, $100, $200 or $25 per month |
 
 ```bash
 loomy config set plan_claude max20      # api, pro, max5, max20, team, enterprise
@@ -186,15 +186,16 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | Command | Purpose |
 |---|---|
-| `loomy init [dir]` | installs Loomy in a project and runs the questionnaire |
-| `loomy brief` | reruns the questionnaire for the current project |
-| `loomy doctor [--fix] [--live]` | checks prerequisites and models |
-| `loomy route [lead \| get <role> \| markdown \| all …]` | role → model → effort matrix |
-| `loomy delegate <claude\|codex> <role> "task"` | hands a role to Claude or Codex through the bridges |
-| `loomy status` · `loomy watch` · `loomy log` | tracking |
-| `loomy config [list \| get \| set]` | preferences: `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
-| `loomy worktrees <task>` | two separate worktrees for parallel mode |
-| `loomy update` · `loomy version` | update and version |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | installs Loomy in a project and runs the questionnaire (`--no-wizard`, `--yes`, `--answers`) |
+| 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
+| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, `--live` tests every model) |
+| 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
+| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
+| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
+| 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
+| 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | update and version |
 
 Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo-terminal for the questionnaire) with stubbed `claude` and `codex` CLIs, so no network and no tokens.
 
@@ -204,8 +205,8 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 
 | Status | Feature |
 |---|---|
-| ✅ 0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking, subscriptions, Homebrew, npm, bun and shell installs, test suite |
-| 🎯 1.0 | Full validation in real conditions |
+| ✅&nbsp;0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking, subscriptions, Homebrew, npm, bun and shell installs, test suite |
+| 🎯&nbsp;1.0 | Full validation in real conditions |
 | 🔜 | Journaling of native Claude sub-agents (`SubagentStop` hook) and Codex turns (turn-end notification) |
 | 🔜 | Cross-project comparison and CSV cost export |
 | 💡 | Real subscription quota tracking, once Claude Code or Codex expose it |

@@ -91,9 +91,9 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 
 | Commande | Vue |
 |---|---|
-| `loomy status` | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
-| `loomy watch [N]` | 🖥️ Le même écran rafraîchi toutes les N secondes (2 par défaut), Ctrl-C pour quitter |
-| `loomy log [-n N] [-f]` | Journal brut, éventuellement en continu |
+| <code>loomy&nbsp;status</code> | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi toutes les N secondes (2 par défaut), Ctrl-C pour quitter |
+| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal brut, éventuellement en continu |
 
 Une délégation apparaît « en cours », avec son chrono, dès son lancement. Si elle est interrompue, elle disparaît d'elle-même.
 
@@ -106,8 +106,8 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement :
 | Forfait | Ce que Loomy affiche |
 |---|---|
 | API | le **coût** réel (Claude) ou estimé à partir des tokens (Codex) |
-| Claude Pro · Max 5x · Max 20x | la **valeur API consommée ce mois**, face à 20 $, 100 $ ou 200 $ par mois |
-| ChatGPT Plus · Pro · Business | idem, face à 20 $, 100 $, 200 $ ou 25 $ par mois |
+| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | la **valeur API consommée ce mois**, face à 20 $, 100 $ ou 200 $ par mois |
+| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | idem, face à 20 $, 100 $, 200 $ ou 25 $ par mois |
 
 ```bash
 loomy config set plan_claude max20      # api, pro, max5, max20, team, enterprise
@@ -159,9 +159,11 @@ flowchart TB
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
 
-| 💚 Économe | 💛 Équilibré *(défaut)* | ❤️ Qualité max |
-|---|---|---|
-| orchestrateur et spécialistes en `medium`, exécution sur les modèles rapides | la matrice ci-dessus | orchestrateur et spécialistes en `xhigh`, revues sur le modèle de pointe, exécution sur Sol ou Sonnet `high` |
+| Profil | Effet |
+|---|---|
+| 💚&nbsp;Économe | orchestrateur et spécialistes en `medium`, exécution sur les modèles rapides |
+| 💛&nbsp;Équilibré&nbsp;*(défaut)* | la matrice ci-dessus |
+| ❤️&nbsp;Qualité&nbsp;max | orchestrateur et spécialistes en `xhigh`, revues sur le modèle de pointe, exécution sur Sol ou Sonnet `high` |
 
 > [!NOTE]
 > **Replis automatiques.** Si le mode demande les deux outils mais qu'une CLI manque, le routage bascule sur la matrice complète de l'outil disponible. Si l'outil principal manque, c'est l'autre qui orchestre.
@@ -217,16 +219,16 @@ flowchart TB
 
 | Commande | Rôle |
 |---|---|
-| 📦 `loomy init [dossier]` | installe Loomy dans un projet et lance le questionnaire (`--no-wizard`, `--yes`, `--answers`) |
-| 📝 `loomy brief` | relance le questionnaire du projet courant |
-| 🩺 `loomy doctor` | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
-| 🧭 `loomy route` | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
-| 🔀 `loomy delegate codex <rôle> "…"` | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
-| 🔀 `loomy delegate claude <rôle> "…"` | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
-| 📈 `loomy status` · `loomy watch` · `loomy log` | suivi (voir ci-dessus) |
-| ⚙️ `loomy config` | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
-| 🌳 `loomy worktrees <tâche>` | deux worktrees séparés pour le mode parallèle |
-| 🔄 `loomy update` · `loomy version` | mise à jour et version |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | installe Loomy dans un projet et lance le questionnaire (`--no-wizard`, `--yes`, `--answers`) |
+| 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
+| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
+| 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
+| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
+| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
+| 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price` |
+| 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour et version |
 
 <sub>Dans un projet, l'orchestrateur appelle directement les scripts de <code>.loomy/scripts/</code>, sans avoir besoin de la commande <code>loomy</code>.</sub>
 
@@ -236,11 +238,11 @@ flowchart TB
 
 | Mode | Principe | Quand |
 |---|---|---|
-| 🧍 **SOLO** | un seul outil fait tout | petits projets, budget serré |
-| 👀 **REVIEW** | l'un implémente, l'autre relit le diff | changements substantiels |
-| 🔁 **HANDOFF** | point d'arrêt propre + `.ai/HANDOFF.md`, l'autre reprend | changement d'outil en cours de route |
-| 🌳 **PARALLEL** | deux worktrees, périmètres disjoints | chantiers vraiment indépendants |
-| 🎯 **ORCHESTRATED** | l'orchestrateur délègue chaque rôle au meilleur modèle des deux familles | **recommandé** quand les deux outils sont installés |
+| 🧍&nbsp;**SOLO** | un seul outil fait tout | petits projets, budget serré |
+| 👀&nbsp;**REVIEW** | l'un implémente, l'autre relit le diff | changements substantiels |
+| 🔁&nbsp;**HANDOFF** | point d'arrêt propre + `.ai/HANDOFF.md`, l'autre reprend | changement d'outil en cours de route |
+| 🌳&nbsp;**PARALLEL** | deux worktrees, périmètres disjoints | chantiers vraiment indépendants |
+| 🎯&nbsp;**ORCHESTRATED** | l'orchestrateur délègue chaque rôle au meilleur modèle des deux familles | **recommandé** quand les deux outils sont installés |
 
 ---
 
@@ -336,8 +338,8 @@ loomy/
 
 | Statut | Fonctionnalité |
 |---|---|
-| ✅ 0.1 | Commande `loomy`, questionnaire, diagnostic, routage orchestrateur + rôles, bridges, journal, suivi terminal en direct, forfaits, installation Homebrew, npm, bun et shell, suite de tests |
-| 🎯 1.0 | Validation complète en conditions réelles |
+| ✅&nbsp;0.1 | Commande `loomy`, questionnaire, diagnostic, routage orchestrateur + rôles, bridges, journal, suivi terminal en direct, forfaits, installation Homebrew, npm, bun et shell, suite de tests |
+| 🎯&nbsp;1.0 | Validation complète en conditions réelles |
 | 🔜 | Journalisation des sous-agents Claude natifs (hook `SubagentStop`) et des tours Codex (notification de fin de tour) |
 | 🔜 | Comparaison entre projets et export CSV des coûts |
 | 💡 | Suivi du quota réel des forfaits, dès que Claude Code ou Codex l'exposeront |

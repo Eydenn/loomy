@@ -45,7 +45,7 @@ case "$ROLE" in
   *) echo "Erreur : rôle non pris en charge '$ROLE'." >&2; exit 2 ;;
 esac
 
-CODEX="$(ai_codex_bin)" || { echo "Erreur : CLI Codex introuvable (PATH, Codex.app ou ChatGPT.app). Lancez ai-doctor.sh." >&2; exit 127; }
+CODEX="$(ai_codex_bin)" || { echo "Erreur : CLI Codex introuvable (PATH, Codex.app ou ChatGPT.app). Lancez loomy doctor." >&2; exit 127; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 ai_detect_env "$ROOT"

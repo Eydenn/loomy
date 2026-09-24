@@ -24,7 +24,7 @@ case "$ROLE" in
 esac
 
 if ! command -v claude >/dev/null 2>&1; then
-  echo "Erreur : la CLI Claude Code ('claude') est introuvable dans le PATH. Lancez ai-doctor.sh." >&2
+  echo "Erreur : la CLI Claude Code ('claude') est introuvable dans le PATH. Lancez loomy doctor." >&2
   exit 127
 fi
 

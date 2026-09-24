@@ -142,9 +142,9 @@ env_check() {
   local count
   # Ce que Loomy vient d'ajouter (START.md, .loomy, .gitignore) ne fait pas un projet existant.
   count="$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.loomy' ! -name 'START.md' ! -name '.gitignore' ! -name '.DS_Store' | wc -l | tr -d ' ')"
-  if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_info "détecté : dossier vide (nouveau projet)"
-  elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_info "détecté : projet existant (1 élément à la racine)"
-  else DETECTED_REPO="existing"; ui_info "détecté : projet existant ($count éléments à la racine)"; fi
+  if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_end "détecté : dossier vide (nouveau projet)"
+  elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_end "détecté : projet existant (1 élément à la racine)"
+  else DETECTED_REPO="existing"; ui_end "détecté : projet existant ($count éléments à la racine)"; fi
 }
 
 # ---------------------------------------------------------------- questionnaire
@@ -347,7 +347,7 @@ ask_all() {
   ui_step 9 $TOTAL
   UI_LABEL="Profil"
   choose_coded BUDGET "Profil de coût / qualité des modèles ?" "$(ans budget equilibre)" \
-    "L'orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : ai-route.sh)." \
+    "L'orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route)." \
     "econome|Économe|Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles." \
     "equilibre|Équilibré (recommandé)|Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût." \
     "qualite|Qualité max|Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises."

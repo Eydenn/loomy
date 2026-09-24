@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOOMY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/ui.sh
+source "$SCRIPT_DIR/lib/ui.sh"
 
 usage() {
   cat >&2 <<'EOF'
@@ -59,20 +61,19 @@ if ! grep -qxF '.loomy/logs/' "$TARGET/.gitignore" 2>/dev/null; then
   printf '\n# Loomy : journal d\x27activité local\n.loomy/logs/\n' >>"$TARGET/.gitignore"
 fi
 
-echo "Loomy $(cat "$LOOMY_ROOT/VERSION") installé dans : $TARGET" >&2
-
 if (( RUN_WIZARD )); then
   wants_yes=0
   for a in ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}; do [[ "$a" == "--yes" || "$a" == "-y" ]] && wants_yes=1; done
   if [[ -t 0 && -t 2 ]] || (( wants_yes )); then
     exec "$TARGET/.loomy/scripts/init-wizard.sh" "$TARGET" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}
   fi
-  echo "Terminal non interactif : questionnaire ignoré. Lancez-le plus tard : .loomy/scripts/init-wizard.sh" >&2
 fi
 
-cat <<MSG
-Étape suivante :
-  Remplissez le brief du projet :   .loomy/scripts/init-wizard.sh
-  Puis ouvrez le dépôt avec Codex ou Claude Code et dites :
-  "Initialise ce projet en suivant START.md. Reste en mode analyse/plan jusqu'à ma validation."
-MSG
+brief_cmd=".loomy/scripts/init-wizard.sh"; command -v loomy >/dev/null 2>&1 && brief_cmd="loomy brief"
+ui_banner "Loomy installé" "v$(cat "$LOOMY_ROOT/VERSION") · ${TARGET/#$HOME/~}"
+if (( RUN_WIZARD )); then ui_warn "Terminal non interactif" "questionnaire ignoré"; fi
+ui_section "ÉTAPE SUIVANTE"
+ui_rail "${C_BRAND}1${C_RESET}  Remplis le brief du projet : ${C_BOLD}${brief_cmd}${C_RESET}"
+ui_rail "${C_BRAND}2${C_RESET}  Ouvre le dépôt avec Codex ou Claude Code et dis :"
+ui_rail "   ${C_DIM}Initialise ce projet en suivant START.md. Reste en mode analyse/plan jusqu'à ma validation.${C_RESET}"
+ui_end "START.md, .loomy/ et une ligne de .gitignore ajoutés ; rien d'autre n'est modifié"

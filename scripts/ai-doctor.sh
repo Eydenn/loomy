@@ -64,7 +64,7 @@ offer_fix() {
 (( COMPACT )) || ui_banner "Diagnostic" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
 
 # ---------------------------------------------------------------- système
-ui_section "Système"
+ui_section "SYSTÈME"
 ui_ok "bash ${BASH_VERSION%%(*}" "$(uname -s)"
 if command -v git >/dev/null 2>&1; then
   ui_ok "git" "$(git --version | awk '{print $3}')"
@@ -73,7 +73,7 @@ else
 fi
 
 # ---------------------------------------------------------------- CLI IA
-ui_section "CLI IA (au moins une requise, les deux pour le mode hybride)"
+ui_section "CLI IA" "au moins une requise, les deux pour le mode hybride"
 HAS_C=0; HAS_X=0
 if ai_has_claude; then
   v="$(ai_claude_version)"
@@ -129,7 +129,7 @@ if (( ! HAS_C && ! HAS_X )); then
 fi
 
 # ---------------------------------------------------------------- confort
-ui_section "Confort (facultatif)"
+ui_section "CONFORT" "facultatif"
 if command -v gh >/dev/null 2>&1; then
   if gh auth status >/dev/null 2>&1; then ui_ok "gh" "authentifié"
   else ui_warn "gh" "non authentifié — lancez : gh auth login"; missing_ideal "gh authentifié"; fi
@@ -143,24 +143,25 @@ else
 fi
 
 # ---------------------------------------------------------------- préférences
-ui_section "Préférences (loomy config)"
+ui_section "PRÉFÉRENCES" "loomy config"
 for fam in claude codex; do
+  name="Forfait Claude"; [[ "$fam" == "codex" ]] && name="Forfait Codex"
   plan="$(loomy_config_get "plan_$fam" "")"
-  if [[ -z "$plan" ]]; then ui_kv "Forfait $fam" "non renseigné (loomy config set plan_$fam …)"
-  else ui_kv "Forfait $fam" "$(ai_plan_label "$fam" "$plan")${plan:+ $(p="$(loomy_plan_monthly "$fam")"; [[ -n "$p" ]] && echo "· $p \$/mois")}"; fi
+  if [[ -z "$plan" ]]; then ui_kv "$name" "non renseigné (loomy config set plan_$fam …)"
+  else ui_kv "$name" "$(ai_plan_label "$fam" "$plan")${plan:+ $(p="$(loomy_plan_monthly "$fam")"; [[ -n "$p" ]] && echo "· $p \$/mois")}"; fi
 done
 
 # ---------------------------------------------------------------- routage
 ai_detect_env "$ROOT"
-ui_section "Routage"
+ui_section "ROUTAGE"
 ui_ok "$(ai_env_label "$AI_ENV")" "profil $(ai_profile_label "$AI_PROFILE")"
 [[ -n "$AI_ENV_NOTE" ]] && ui_warn "Repli" "$AI_ENV_NOTE"
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
-ui_info "orchestrateur : $R_MODEL ($R_EFFORT) · détail : ai-route.sh"
+ui_info "orchestrateur : $R_MODEL ($R_EFFORT) · détail : loomy route"
 
 # ---------------------------------------------------------------- test réel
 if (( LIVE )); then
-  ui_section "Test réel des modèles"
+  ui_section "TEST RÉEL DES MODÈLES"
   ui_info "tous les modèles du catalogue pour chaque CLI installée (un « OK » en effort bas par modèle)"
   # Modèles utilisés par le routage courant : un échec y est bloquant, ailleurs c'est un avertissement.
   routed=" "
@@ -189,12 +190,16 @@ if (( LIVE )); then
 fi
 
 # ---------------------------------------------------------------- bilan
-ui_section "Bilan"
+ui_section "BILAN"
+# Dans le questionnaire (--compact), c'est lui qui ferme le fil.
+doctor_end() { (( COMPACT )) || ui_end "$1"; }
 if (( MIN_OK )); then
   if [[ -z "$IDEAL_MISSING" ]]; then ui_ok "Configuration idéale" "tout est en place"
   else ui_ok "Minimum atteint" ""; ui_info "pour l'idéal : $IDEAL_MISSING"; fi
-  (( LIVE )) || ui_info "test réel des modèles : ai-doctor.sh --live"
+  if (( LIVE )); then doctor_end "corrections guidées : loomy doctor --fix"
+  else doctor_end "test réel des modèles : loomy doctor --live · corrections guidées : loomy doctor --fix"; fi
   exit 0
 fi
 ui_err "Minimum non atteint" "corrigez les points ✗ ci-dessus"
+doctor_end "corrections guidées : loomy doctor --fix"
 exit 1

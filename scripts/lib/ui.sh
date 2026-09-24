@@ -122,7 +122,7 @@ _ui_logo_lines() {
   return 0
 }
 
-# ui_banner <titre> <sous-titre> : en-tête des commandes Loomy (logo, puis titre).
+# ui_banner <titre> <sous-titre> : en-tête des commandes Loomy (logo, puis ouverture du fil).
 ui_banner() {
   local title="$1" subtitle="$2" l
   ui_print ""
@@ -130,22 +130,26 @@ ui_banner() {
     _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print ""
-    ui_print "  ${C_BOLD}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   else
-    ui_print "  ${C_BRAND}◆ Loomy${C_RESET} ${C_BOLD}· ${title}${C_RESET}"
-    ui_print "  ${C_DIM}${subtitle}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_BOLD}· ${title}${C_RESET}"
+    ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   fi
 }
 
-ui_section() { ui_print ""; ui_print "${C_BOLD}$*${C_RESET}"; }
-ui_ok()   { if _ui_form_note ok "$1${2:+ · $2}"; then return 0; fi; ui_print "  ${C_GREEN}✓${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
-ui_warn() { if _ui_form_note warn "$1${2:+ · $2}"; then return 0; fi; ui_print "  ${C_YELLOW}!${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
-ui_err()  { ui_print "  ${C_RED}✗${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
-ui_info() { if _ui_form_note info "$*"; then return 0; fi; ui_print "  ${C_DIM}→ $*${C_RESET}"; }
+# Sortie des commandes : un fil conducteur violet, des sections ◇, une ligne de fin └.
+ui_section() { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}◇${C_RESET}  ${C_BOLD}$1${C_RESET}${2:+  ${C_DIM}$2${C_RESET}}"; }
+ui_ok()   { if _ui_form_note ok "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_GREEN}✓${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
+ui_warn() { if _ui_form_note warn "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_YELLOW}!${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
+ui_err()  { ui_print "${C_RAIL}│${C_RESET}  ${C_RED}✗${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
+ui_info() { if _ui_form_note info "$*"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}→ $*${C_RESET}"; }
+ui_end()  { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; ui_print ""; }
 
 ui_kv() {
-  _ui_pad "$1" 14
-  printf '  %s %s\n' "$UI_PADDED" "$2" >&2
+  local w=16
+  _ui_strlen "$1"; (( UI_LEN + 2 > w )) && w=$(( UI_LEN + 2 ))
+  _ui_pad "$1" "$w"
+  ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"
 }
 
 # ---------------------------------------------------------------- fil conducteur (récapitulatifs)

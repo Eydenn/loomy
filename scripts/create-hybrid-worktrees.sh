@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/ui.sh
+source "$SCRIPT_DIR/lib/ui.sh"
+
 worktrees_usage() {
   echo "Usage : loomy worktrees <tâche> [branche-de-base]"
   echo "Crée deux worktrees séparés (codex/<tâche> et claude/<tâche>) à côté du dépôt, pour le mode parallèle."
@@ -55,23 +59,18 @@ for dir in "$CODEX_DIR" "$CLAUDE_DIR"; do
   fi
 done
 
-git worktree add -b "$CODEX_BRANCH" "$CODEX_DIR" "$BASE"
-git worktree add -b "$CLAUDE_BRANCH" "$CLAUDE_DIR" "$BASE"
+git worktree add -q -b "$CODEX_BRANCH" "$CODEX_DIR" "$BASE"
+git worktree add -q -b "$CLAUDE_BRANCH" "$CLAUDE_DIR" "$BASE"
 
-cat <<MSG
-Worktrees hybrides créés à partir de : $BASE
-
-Codex :
-  branche : $CODEX_BRANCH
-  chemin :  $CODEX_DIR
-
-Claude :
-  branche : $CLAUDE_BRANCH
-  chemin :  $CLAUDE_DIR
-
-Étapes suivantes recommandées :
-  1. Ouvrez le chemin Codex dans Codex.
-  2. Ouvrez le chemin Claude dans Claude Code.
-  3. Donnez à chaque outil un périmètre distinct et les mêmes critères d'acceptation.
-  4. Exigez que chaque outil vérifie et committe avant l'intégration.
-MSG
+ui_banner "Worktrees parallèles" "tâche $TASK · à partir de $BASE"
+ui_section "CODEX"
+ui_kv "Branche" "${C_BOLD}$CODEX_BRANCH${C_RESET}"
+ui_kv "Chemin" "${CODEX_DIR/#$HOME/~}"
+ui_section "CLAUDE"
+ui_kv "Branche" "${C_BOLD}$CLAUDE_BRANCH${C_RESET}"
+ui_kv "Chemin" "${CLAUDE_DIR/#$HOME/~}"
+ui_section "ÉTAPES SUIVANTES"
+ui_rail "${C_BRAND}1${C_RESET}  Ouvre le chemin Codex dans Codex, et le chemin Claude dans Claude Code."
+ui_rail "${C_BRAND}2${C_RESET}  Donne à chaque outil un périmètre distinct et les mêmes critères d'acceptation."
+ui_rail "${C_BRAND}3${C_RESET}  Chaque outil vérifie et committe avant l'intégration."
+ui_end "suppression après intégration : git worktree remove <chemin>"

@@ -2,6 +2,14 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.4 — 2026-09-24
+
+### Modifié
+- **Un seul style pour toutes les commandes** : logo, ligne d'ouverture `┌`, sections `◇` en capitales, fil conducteur violet `│` et ligne de fin `└` avec les raccourcis utiles. S'applique à `loomy status` et `loomy watch`, `loomy doctor`, `loomy route`, `loomy worktrees` et `loomy init --no-wizard`, en plus du questionnaire et de l'aide.
+- `loomy status` : la frise des phases, qui débordait, devient une barre de progression avec la phase en cours et les suivantes.
+- Les messages renvoient aux commandes `loomy` (`loomy route`, `loomy doctor`) plutôt qu'aux scripts internes.
+- Les sorties destinées aux machines ou aux agents restent en texte brut : `loomy log`, `loomy config list`, `loomy version`, messages des bridges, `loomy route markdown`.
+
 ## 0.1.3 — 2026-09-24
 
 ### Modifié

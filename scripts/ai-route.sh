@@ -133,18 +133,20 @@ case "$CMD" in
   show)
     ui_banner "Routage des modèles" "$(ai_env_label "$AI_ENV") · profil $(ai_profile_label "$AI_PROFILE") · catalogue du $AI_CATALOG_DATE"
     [[ -n "$AI_ENV_NOTE" ]] && ui_warn "Repli" "$AI_ENV_NOTE"
-    ui_print ""
+    ui_section "RÔLES" "modèle · effort · comment l'appeler"
     for r in $AI_ROLES; do
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
-      label="$(ai_role_label "$r")"
-      pad=""; len="$(_ui_len "$label")"; while (( len + ${#pad} < 22 )); do pad="$pad "; done
-      mpad=""; while (( ${#R_MODEL} + ${#mpad} < 18 )); do mpad="$mpad "; done
-      epad=""; while (( ${#R_EFFORT} + ${#epad} < 7 )); do epad="$epad "; done
+      _ui_pad "$(ai_role_label "$r")" 22; label="$UI_PADDED"
+      _ui_pad "$R_MODEL" 18; model="$UI_PADDED"
+      _ui_pad "$R_EFFORT" 8; effort="$UI_PADDED"
       color="$C_CYAN"; [[ "$R_TIER" == "TOP" ]] && color="$C_MAGENTA"; [[ "$R_TIER" == "FAST" ]] && color="$C_GREEN"
-      ui_print "  ${C_BOLD}${label}${C_RESET}${pad}${color}${R_MODEL}${C_RESET}${mpad}${R_EFFORT}${epad}${C_DIM}${R_VIA}${C_RESET}"
+      if [[ "$r" == "lead" ]]; then label="${C_BRAND}${label}${C_RESET}"; else label="${C_BOLD}${label}${C_RESET}"; fi
+      ui_rail "${label}${color}${model}${C_RESET}${effort}${C_DIM}${R_VIA}${C_RESET}"
     done
-    ui_print ""
-    ui_info "Lancer l'orchestrateur : $(ai_lead_command "$AI_ENV" "$AI_PROFILE")"
-    ui_info "Couleurs : ${C_MAGENTA}pointe${C_RESET}${C_DIM} · ${C_CYAN}standard${C_RESET}${C_DIM} · ${C_GREEN}rapide${C_RESET}"
+    ui_rail ""
+    ui_rail "${C_DIM}couleurs :${C_RESET} ${C_MAGENTA}pointe${C_RESET} ${C_DIM}·${C_RESET} ${C_CYAN}standard${C_RESET} ${C_DIM}·${C_RESET} ${C_GREEN}rapide${C_RESET}"
+    ui_section "LANCER L'ORCHESTRATEUR"
+    ui_rail "${C_BOLD}$(ai_lead_command "$AI_ENV" "$AI_PROFILE")${C_RESET}"
+    ui_end "comparer les environnements : loomy route all · autre profil : loomy route --profile qualite"
     ;;
 esac

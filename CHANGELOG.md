@@ -2,6 +2,22 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.11 — 2026-09-24
+
+### Ajouté
+- `loomy uninstall` : la commande de désinstallation de chaque installation trouvée, et comment retirer Loomy d'un projet.
+- `loomy help <commande>` : aide d'une commande.
+
+### Modifié
+- **Frise des phases agrandie** : dix cases larges (█ fait, ▓ en cours, ░ à venir) sur toute la largeur, et le nom de la phase en cours sous sa case.
+- Les commandes trouvent le projet Loomy le plus proche en remontant depuis le dossier courant : un projet peut vivre dans un sous-dossier d'un dépôt Git, et `loomy status`, `start`, `brief` et les délégations le retrouvent depuis n'importe quel sous-dossier.
+
+### Corrigé
+- `loomy brief` hors d'un projet Loomy créait un brief isolé : il renvoie maintenant vers `loomy init`.
+- Refaire le questionnaire en cours de route remettait la phase à « Découverte » : la phase en cours est conservée.
+- `loomy init` dans le dossier personnel ou à la racine du disque est refusé.
+- `loomy update --help` lançait la mise à jour.
+
 ## 0.1.10 — 2026-09-24
 
 ### Ajouté

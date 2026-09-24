@@ -318,3 +318,15 @@ ai_start_prompt() {
   esac
   printf '%s' "$p"
 }
+
+# ai_project_root : racine du projet Loomy le plus proche (dossier contenant .loomy, en remontant depuis le dossier courant),
+# sinon la racine Git, sinon le dossier courant. Un projet Loomy peut ainsi vivre dans un sous-dossier d'un dépôt.
+ai_project_root() {
+  local d
+  d="$(pwd -P)"
+  while [[ -n "$d" && "$d" != "/" ]]; do
+    if [[ -d "$d/.loomy" && ( -f "$d/.loomy/VERSION" || -f "$d/.loomy/brief.md" ) ]]; then echo "$d"; return 0; fi
+    d="$(dirname "$d")"
+  done
+  git rev-parse --show-toplevel 2>/dev/null || pwd
+}

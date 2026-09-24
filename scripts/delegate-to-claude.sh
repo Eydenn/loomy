@@ -44,7 +44,7 @@ case "$ROLE" in
     exit 2 ;;
 esac
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" claude "$AI_PROFILE"
 # Volontairement pas CLAUDE_MODEL/CLAUDE_EFFORT : Claude Code exporte CLAUDE_EFFORT dans ses propres sessions.

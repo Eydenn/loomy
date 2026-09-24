@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 # Chemin réel (liens résolus) : c'est celui que Claude et Codex enregistrent pour leurs sessions.
-ROOT="$(cd "${ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}" && pwd -P)"
+ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
 if [[ ! -f "$BRIEF" ]]; then
   echo "Pas de brief Loomy dans ${ROOT/#$HOME/~} : lancez d'abord loomy init (nouveau projet) ou loomy brief." >&2

@@ -22,7 +22,9 @@ source "$S/lib/ui.sh"
 # shellcheck source=../scripts/lib/config.sh
 source "$S/lib/config.sh"
 
-project_root() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
+# shellcheck source=../scripts/lib/models.sh
+source "$S/lib/models.sh"
+project_root() { ai_project_root; }
 
 INVOKED="${BASH_SOURCE[0]}"
 
@@ -157,8 +159,9 @@ usage() {
   _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
   _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
   _h_cmd update "" "Met à jour Loomy selon sa méthode d'installation ; puis loomy init --update dans chaque projet"
-  _h_cmd version "" "Version et méthode d'installation"
-  printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy <commande> --help%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
+  _h_cmd version "[--all]" "Version et méthode d'installation ; --all liste toutes les installations trouvées"
+  _h_cmd uninstall "" "Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet"
+  printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy help <commande>%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
 }
 
 # Aide courte des commandes gérées directement ici.
@@ -180,7 +183,13 @@ cmd="${1:-help}"; [[ $# -gt 0 ]] && shift
 
 case "$cmd" in
   init|install) exec bash "$S/install-into-project.sh" "$@" ;;
-  brief|wizard) exec bash "$S/init-wizard.sh" "$(project_root)" "$@" ;;
+  brief|wizard)
+    root="$(project_root)"
+    case "${1:-}" in -h|--help) exec bash "$S/init-wizard.sh" --help ;; esac
+    if [[ ! -f "$root/.loomy/VERSION" && ! -f "$root/.loomy/brief.md" ]]; then
+      echo "Pas de projet Loomy dans ${root/#$HOME/~} : crée-le d'abord avec loomy init." >&2; exit 1
+    fi
+    exec bash "$S/init-wizard.sh" "$root" "$@" ;;
   start|resume) exec bash "$S/ai-start.sh" --root "$(project_root)" "$@" ;;
   route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
@@ -226,6 +235,7 @@ case "$cmd" in
     esac ;;
 
   update|upgrade)
+    case "${1:-}" in -h|--help) echo "Usage : loomy update"; echo "Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell), puis rappelle de mettre à niveau chaque projet avec loomy init --update."; exit 0 ;; esac
     method="$(install_method)"
     echo "Mise à jour de Loomy (installation : $method)…" >&2
     rc=0
@@ -265,6 +275,25 @@ case "$cmd" in
     echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"
     if [[ "${1:-}" == "--all" ]]; then show_installs
     elif (( $(loomy_installs | wc -l) > 1 )); then echo "Plusieurs installations de loomy dans le PATH : loomy version --all" >&2; fi ;;
-  help|--help|-h) usage ;;
+  help|--help|-h)
+    # loomy help <commande> : aide de cette commande.
+    if [[ -n "${1:-}" && "$1" != "help" ]]; then exec "$LOOMY_HOME/bin/loomy" "$1" --help; fi
+    usage ;;
+  uninstall)
+    ui_banner "Désinstaller Loomy" "rien n'est supprimé automatiquement"
+    ui_section "INSTALLATIONS" "une commande par installation trouvée"
+    n=0
+    while IFS=$'\t' read -r m h p; do
+      [[ -n "$m" ]] || continue; n=$(( n + 1 ))
+      ui_rail "${C_BOLD}$m${C_RESET} ${C_DIM}${h/#$HOME/~}${C_RESET}"
+      ui_rail "    $(uninstall_cmd "$m" "$h" "$p")"
+    done < <(loomy_installs)
+    if (( n == 0 )); then ui_rail "$(install_method) ${C_DIM}${LOOMY_HOME/#$HOME/~}${C_RESET}"; ui_rail "    $(uninstall_cmd "$(install_method)" "$LOOMY_HOME" "$INVOKED")"; fi
+    ui_section "DANS TES PROJETS"
+    ui_rail "Chaque projet garde son dossier ${C_BOLD}.loomy/${C_RESET} : l'orchestrateur s'en sert pour déléguer et suivre les phases."
+    ui_rail "Pour retirer Loomy d'un projet : ${C_BOLD}rm -rf .loomy START.md${C_RESET} ${C_DIM}(et la ligne .loomy/logs/ du .gitignore)${C_RESET}"
+    ui_rail "${C_DIM}Configuration personnelle : $(loomy_config_file | sed "s|^$HOME|~|")${C_RESET}"
+    ui_end "lance la commande qui correspond à ton installation"
+    ;;
   *) echo "Commande inconnue : $cmd" >&2; usage >&2; exit 2 ;;
 esac

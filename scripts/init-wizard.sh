@@ -595,7 +595,11 @@ if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then ui_rail "${C_GREEN}✓${C_RE
 ui_rail "${C_GREEN}✓${C_RESET} Brief enregistré ${C_DIM}${BRIEF#"$TARGET"/}${C_RESET}"
 
 if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
-  "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
+  # Premier brief : la phase passe à Découverte. Brief refait en cours de route : la phase en cours est conservée.
+  current_phase="$(sed -n 's/^phase=//p' "$TARGET/.loomy/state" 2>/dev/null | head -1 || true)"
+  if [[ -z "$current_phase" || "$current_phase" == "brief" ]]; then
+    "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
+  fi
 fi
 
 PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"

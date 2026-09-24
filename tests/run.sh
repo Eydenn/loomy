@@ -220,6 +220,37 @@ fails "start sans brief refusé" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
 mkdir -p "$WORK/route-vide-$$"
 fails "start sans brief refusé" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
 
+# ------------------------------------------------------------------ cas de figure
+section "Cas de figure"
+# Projet Loomy dans un sous-dossier d'un dépôt Git : trouvé depuis n'importe quel sous-dossier.
+MONO="$WORK/mono"; mkdir -p "$MONO/apps/site/src"
+git -C "$MONO" init -q && git -C "$MONO" commit -q --allow-empty -m init
+run "init dans un sous-dossier d'un dépôt" "$LOOMY" init "$MONO/apps/site" --yes --no-clipboard
+(cd "$MONO/apps/site/src" && "$LOOMY" status) >"$OUT" 2>&1
+has "status depuis un sous-dossier : projet trouvé" "Statut du projet +~?.*apps/site"
+(cd "$MONO/apps/site/src" && "$LOOMY" delegate claude explorer "sous-dossier") >/dev/null 2>&1
+[[ -s "$MONO/apps/site/.loomy/logs/events.jsonl" ]] && grep -q '"type":"delegation",' "$MONO/apps/site/.loomy/logs/events.jsonl" && ok "délégation journalisée dans le projet du sous-dossier" || ko "délégation non journalisée dans le sous-dossier"
+(cd "$MONO/apps/site/src" && "$LOOMY" start --print) >"$OUT" 2>&1
+has "start depuis un sous-dossier" "claude --model"
+# loomy brief hors projet, et brief refait en cours de route.
+(cd "$WORK" && mkdir -p hors-projet && cd hors-projet && "$LOOMY" brief) >"$OUT" 2>&1; st=$?
+[[ $st == 1 ]] && grep -q "loomy init" "$OUT" && ok "brief hors projet : renvoie vers loomy init" || ko "brief hors projet (code $st)"
+[[ ! -e "$WORK/hors-projet/.loomy" ]] && ok "brief hors projet : rien créé" || ko "brief hors projet : .loomy créé"
+"$LOOMY" status --root "$MONO/apps/site" set build >/dev/null 2>&1
+(cd "$MONO/apps/site" && "$LOOMY" brief --yes --no-clipboard) >/dev/null 2>&1
+file_has "brief refait en cours de route : phase conservée" "$MONO/apps/site/.loomy/state" "^phase=build$"
+# Dossiers qui ne sont pas des projets.
+(cd "$HOME" && "$LOOMY" init --no-wizard) >"$OUT" 2>&1; st=$?
+[[ $st == 1 && ! -e "$HOME/START.md" ]] && ok "init refusé dans le dossier personnel" || ko "init dans le dossier personnel (code $st)"
+# Aides et commandes annexes.
+run "help init" "$LOOMY" help init
+has "help <commande> : aide de la commande" "Usage : loomy init"
+run "update --help ne met rien à jour" "$LOOMY" update --help
+has "update --help : aide" "Usage : loomy update"
+run "uninstall" "$LOOMY" uninstall
+has "uninstall : commande de retrait" "rm |uninstall"
+has "uninstall : retrait d'un projet" "rm -rf .loomy START.md"
+
 # ------------------------------------------------------------------ questionnaire interactif
 section "loomy init (interactif, terminal réel via expect)"
 if command -v expect >/dev/null 2>&1; then

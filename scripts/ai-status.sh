@@ -40,7 +40,7 @@ if [[ -z "$ROOT" ]]; then
   if [[ "$(basename "$(dirname "$SCRIPT_DIR")")" == ".loomy" ]]; then
     ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
   else
-    ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    ROOT="$(ai_project_root)"
   fi
 fi
 ROOT="$(cd "$ROOT" && pwd)"
@@ -121,16 +121,26 @@ if [[ -z "$CURRENT" ]]; then
   if [[ -f "$ROOT/START.md" ]]; then ui_info "START.md présent mais brief vide : lance loomy brief"
   else ui_info "aucun projet Loomy ici : lance loomy init"; fi
 else
-  # Frise sur une ligne : ● fait, ◉ en cours, ○ à venir.
-  steps=""; i=0
+  # Frise large : une case par phase (█ fait, ▓ en cours, ░ à venir), puis ▲ et le nom sous la case en cours.
+  _ui_term_size
+  cw=$(( (UI_W - 3 - 9) / 10 )); (( cw > 7 )) && cw=7; (( cw < 2 )) && cw=2
+  cell_done=""; cell_cur=""; cell_todo=""; i=0
+  while (( i < cw )); do cell_done="${cell_done}█"; cell_cur="${cell_cur}▓"; cell_todo="${cell_todo}░"; i=$(( i + 1 )); done
+  bar=""; i=0
   for p in $LOOMY_PHASES; do
     i=$(( i + 1 ))
-    if (( i > 1 )); then if (( i <= idx )); then steps="${steps}${C_GREEN}━${C_RESET}"; else steps="${steps}${C_DIM}━${C_RESET}"; fi; fi
-    if (( i < idx )); then steps="${steps}${C_GREEN}●${C_RESET}"
-    elif (( i == idx )); then steps="${steps}${C_BRAND}◉${C_RESET}"
-    else steps="${steps}${C_DIM}○${C_RESET}"; fi
+    (( i > 1 )) && bar="$bar "
+    if (( i < idx )); then bar="${bar}${C_GREEN}${cell_done}${C_RESET}"
+    elif (( i == idx )); then bar="${bar}${C_BRAND}${cell_cur}${C_RESET}"
+    else bar="${bar}${C_DIM}${cell_todo}${C_RESET}"; fi
   done
-  ui_rail "${steps}   ${C_BOLD}$(loomy_phase_label "$CURRENT")${C_RESET}"
+  ui_rail "$bar"
+  label="▲ $(loomy_phase_label "$CURRENT")"; [[ "$CURRENT" == "done" ]] && label="✓ Bootstrap terminé"
+  total=$(( cw * 10 + 9 )); _ui_strlen "$label"
+  off=$(( (idx > 10 ? 9 : idx - 1) * (cw + 1) )); (( off < 0 )) && off=0
+  (( off + UI_LEN > total )) && off=$(( total - UI_LEN ))
+  _ui_pad "" "$off"
+  ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}"
   ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}À toi :${C_RESET} $(loomy_phase_you "$CURRENT")"
   if (( idx >= 1 && idx < 10 )); then

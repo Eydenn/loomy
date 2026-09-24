@@ -47,7 +47,7 @@ esac
 
 CODEX="$(ai_codex_bin)" || { echo "Erreur : CLI Codex introuvable (PATH, Codex.app ou ChatGPT.app). Lancez loomy doctor." >&2; exit 127; }
 
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" codex "$AI_PROFILE"
 MODEL="${DELEGATE_CODEX_MODEL:-$R_MODEL}"

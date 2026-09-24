@@ -46,6 +46,10 @@ if [[ ! -d "$TARGET_INPUT" ]]; then
   exit 1
 fi
 TARGET="$(cd "$TARGET_INPUT" && pwd)"
+if [[ "$(cd "$TARGET" && pwd -P)" == "$(cd "$HOME" 2>/dev/null && pwd -P)" || "$TARGET" == "/" ]]; then
+  echo "Erreur : ${TARGET/#$HOME/~} n'est pas un dossier de projet. Crée un dossier dédié : mkdir mon-projet && cd mon-projet && loomy init" >&2
+  exit 1
+fi
 L="$TARGET/.loomy"
 NEW_V="$(cat "$LOOMY_ROOT/VERSION")"
 

@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 if [[ -z "$ROOT" ]]; then
   if [[ "$(basename "$(dirname "$SCRIPT_DIR")")" == ".loomy" ]]; then ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-  else ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; fi
+  else ROOT="$(ai_project_root)"; fi
 fi
 ROOT="$(cd "$ROOT" && pwd)"
 

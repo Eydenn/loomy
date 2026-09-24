@@ -274,9 +274,12 @@ section "loomy doctor"
 run "doctor avec claude et codex" "$LOOMY" doctor
 has "doctor : claude détecté" "claude 2\.[0-9]"
 has "doctor : codex détecté" "codex 0\.[0-9]"
+hasnt "doctor : pas de commande d'installation si tout est détecté" "install.sh"
 run "doctor --live (sondes)" "$LOOMY" doctor --live
 fails "doctor sans aucune CLI IA : minimum non atteint" 1 env LOOMY_CODEX_BIN=/inexistant PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPO/scripts/ai-doctor.sh" --root "$PROJ"
 has "doctor : bilan explicite" "Minimum non atteint"
+has "doctor : commande d'installation de Claude Code" "curl -fsSL https://claude.ai/install.sh"
+has "doctor : commande d'installation de Codex" "curl -fsSL https://chatgpt.com/codex/install.sh"
 run "doctor avec une CLI claude cassée" env STUB_BROKEN_VERSION=1 "$LOOMY" doctor
 
 # ------------------------------------------------------------------ worktrees

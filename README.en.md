@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.6-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.7-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -176,9 +176,18 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 | | 🟢 Minimum | ⭐ Ideal |
 |---|---|---|
 | **System** | macOS or Linux, bash ≥ 3.2 (the macOS one works), `git` | + `gh` logged in |
-| **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, for hybrid mode |
+| **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, installed in the terminal and detected by `loomy doctor`: hybrid mode |
 | **Models** | those of your tool | all answer `loomy doctor --live` |
 | **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |
+
+**Install Claude Code and Codex in the terminal.** `loomy doctor` shows what it detects and prints these commands for a missing CLI; `loomy doctor --fix` offers to run them for you.
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash          # Claude Code (or: brew install --cask claude-code)
+curl -fsSL https://chatgpt.com/codex/install.sh | sh    # Codex (or: brew install --cask codex)
+```
+
+Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan or Console account; ChatGPT account for Codex), and check with `loomy doctor --live`.
 
 ---
 

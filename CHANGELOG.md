@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.7 — 2026-09-24
+
+### Modifié
+- **Prérequis idéal : Claude Code et Codex installés dans le terminal.** `loomy doctor` affiche chaque CLI détectée avec son emplacement ; pour une CLI absente, il donne les commandes officielles d'installation (installateur recommandé, alternative Homebrew ou npm) et la première connexion. `loomy doctor --fix` propose de lancer l'installation.
+- README : prérequis idéaux précisés, avec les commandes d'installation des deux CLI.
+
 ## 0.1.6 — 2026-09-24
 
 ### Modifié

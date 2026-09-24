@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.6-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.7-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -204,9 +204,18 @@ flowchart TB
 | | 🟢 Minimum | ⭐ Idéal |
 |---|---|---|
 | **Système** | macOS ou Linux, bash ≥ 3.2 (celui de macOS convient), `git` | + `gh` connecté |
-| **IA** | **une** CLI : Claude Code ≥ 2.1.280 **ou** Codex ≥ 0.155, connectée | **les deux**, pour le mode hybride |
+| **IA** | **une** CLI : Claude Code ≥ 2.1.280 **ou** Codex ≥ 0.155, connectée | **les deux**, installées dans le terminal et détectées par `loomy doctor` : mode hybride |
 | **Modèles** | ceux de ton outil | tous répondent à `loomy doctor --live` |
 | **Confort** | aucun (questionnaire intégré, sans dépendance) | presse-papiers, pour copier le prompt de démarrage |
+
+**Installer Claude Code et Codex dans le terminal.** `loomy doctor` indique ce qui est détecté et affiche ces commandes pour une CLI absente ; `loomy doctor --fix` propose de les lancer pour toi.
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash          # Claude Code (ou : brew install --cask claude-code)
+curl -fsSL https://chatgpt.com/codex/install.sh | sh    # Codex (ou : brew install --cask codex)
+```
+
+Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait Claude Pro, Max, Team ou compte Console ; compte ChatGPT pour Codex), et vérifie avec `loomy doctor --live`.
 
 > [!IMPORTANT]
 > - **Codex livré avec les apps ChatGPT et Codex.** `loomy doctor --fix` le rend accessible sous le nom `codex` grâce à un petit script dans `~/.local/bin`. Un lien symbolique ne marcherait pas : la CLI cherche ses programmes auxiliaires à côté du chemin par lequel on l'appelle.

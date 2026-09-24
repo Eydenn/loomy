@@ -61,6 +61,13 @@ offer_fix() {
   return 1
 }
 
+# install_hint <commande recommandée> <alternative> <connexion> : commandes officielles d'installation d'une CLI absente.
+install_hint() {
+  ui_rail "    ${C_DIM}installer :${C_RESET} ${C_BOLD}$1${C_RESET}"
+  ui_rail "    ${C_DIM}ou        :${C_RESET} $2"
+  ui_rail "    ${C_DIM}puis      :${C_RESET} $3"
+}
+
 (( COMPACT )) || ui_banner "Diagnostic" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
 
 # ---------------------------------------------------------------- système
@@ -73,26 +80,31 @@ else
 fi
 
 # ---------------------------------------------------------------- CLI IA
-ui_section "CLI IA" "au moins une requise, les deux pour le mode hybride"
+ui_section "CLI IA" "au moins une requise ; idéal : les deux, pour le mode hybride"
 HAS_C=0; HAS_X=0
 if ai_has_claude; then
   v="$(ai_claude_version)"
   if ai_version_ge "${v:-0.0.0}" "$AI_MIN_CLAUDE_VERSION"; then
-    HAS_C=1; ui_ok "claude $v" "Claude Code (≥ $AI_MIN_CLAUDE_VERSION requis pour $AI_MODEL_CLAUDE_TOP)"
+    HAS_C=1; ui_ok "claude $v" "Claude Code · $(command -v claude | sed "s|^$HOME|~|")"
   else
     ui_warn "claude $v" "trop ancien pour $AI_MODEL_CLAUDE_TOP (≥ $AI_MIN_CLAUDE_VERSION)"
     HAS_C=1; offer_fix "Mettre à jour Claude Code ?" claude update || missing_ideal "Claude Code à jour"
   fi
 else
-  ui_warn "claude" "absent — installation : https://docs.claude.com/en/docs/claude-code/setup"
-  missing_ideal "Claude Code"
+  ui_warn "claude" "Claude Code absent : orchestrateur sur $AI_MODEL_CLAUDE_TOP et mode hybride indisponibles"
+  install_hint "curl -fsSL https://claude.ai/install.sh | bash" "brew install --cask claude-code" "claude  (connexion au premier lancement)"
+  if (( FIX )) && offer_fix "Installer Claude Code maintenant (installateur officiel) ?" sh -c 'curl -fsSL https://claude.ai/install.sh | bash'; then
+    ui_info "ouvre un nouveau terminal, lance claude pour te connecter, puis relance loomy doctor"
+  else
+    missing_ideal "Claude Code"
+  fi
 fi
 
 CODEX_BIN="$(ai_codex_bin || true)"
 if [[ -n "$CODEX_BIN" ]]; then
   v="$(ai_codex_version)"
   if command -v codex >/dev/null 2>&1; then
-    ui_ok "codex ${v:-?}" "$CODEX_BIN"
+    ui_ok "codex ${v:-?}" "Codex CLI · $(printf '%s' "$CODEX_BIN" | sed "s|^$HOME|~|")"
   else
     ui_warn "codex ${v:-?}" "trouvé dans $CODEX_BIN mais absent du PATH"
     mkdir -p "$HOME/.local/bin"
@@ -120,8 +132,13 @@ if [[ -n "$CODEX_BIN" ]]; then
     else ui_warn "modèles Codex" "absents du catalogue local : $miss (plan, région ou CLI à mettre à jour)"; missing_ideal "modèles Codex"; fi
   fi
 else
-  ui_warn "codex" "absent — installation : https://developers.openai.com/codex/cli (ou npm install -g @openai/codex)"
-  missing_ideal "Codex CLI"
+  ui_warn "codex" "Codex CLI absent : exécutant $AI_MODEL_CODEX_FAST et mode hybride indisponibles"
+  install_hint "curl -fsSL https://chatgpt.com/codex/install.sh | sh" "brew install --cask codex  ·  npm install -g @openai/codex" "codex  (connexion au premier lancement)"
+  if (( FIX )) && offer_fix "Installer la CLI Codex maintenant (installateur officiel) ?" sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'; then
+    ui_info "ouvre un nouveau terminal, lance codex pour te connecter, puis relance loomy doctor"
+  else
+    missing_ideal "Codex CLI"
+  fi
 fi
 
 if (( ! HAS_C && ! HAS_X )); then

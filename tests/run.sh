@@ -185,7 +185,6 @@ run "init --reset --no-wizard" "$LOOMY" init "$PR" --reset --no-wizard
 [[ ! -f "$PR/.loomy/state" && -f "$PR/.loomy/brief.previous.md" && -f "$PR/START.md" ]] && ok "reset : phase remise à zéro, ancien brief gardé, START.md présent" || ko "reset incomplet"
 FS="$WORK/start-etranger"; mkdir -p "$FS" && echo "autre" >"$FS/START.md"
 fails "START.md étranger refusé" 1 "$LOOMY" init "$FS" --no-wizard
-fails "dossier cible absent refusé" 1 "$LOOMY" init "$WORK/absent" --no-wizard
 PROJ2="$WORK/projet2"; mkdir -p "$PROJ2"
 run "init --answers reprend un brief" "$LOOMY" init "$PROJ2" --answers "$PROJ/.loomy/brief.md" --yes --no-clipboard
 file_has "brief repris : même nom" "$PROJ2/.loomy/brief.md" "^name: "
@@ -242,6 +241,37 @@ file_has "brief refait en cours de route : phase conservée" "$MONO/apps/site/.l
 # Dossiers qui ne sont pas des projets.
 (cd "$HOME" && "$LOOMY" init --no-wizard) >"$OUT" 2>&1; st=$?
 [[ $st == 1 && ! -e "$HOME/START.md" ]] && ok "init refusé dans le dossier personnel" || ko "init dans le dossier personnel (code $st)"
+# loomy init crée le dossier indiqué, et guide hors terminal quand aucun dossier n'est donné au mauvais endroit.
+run "init d'un dossier qui n'existe pas encore" "$LOOMY" init "$WORK/cree-par-init/app" --yes --no-clipboard
+[[ -f "$WORK/cree-par-init/app/.loomy/brief.md" ]] && ok "init : dossier créé et projet initialisé" || ko "init : dossier non créé"
+(cd "$HOME" && "$LOOMY" init --no-wizard) >"$OUT" 2>&1
+has "init hors terminal dans le dossier personnel : propose loomy init <nom>" "loomy init mon-projet"
+if command -v expect >/dev/null 2>&1; then
+  PARENT="$WORK/parent"; mkdir -p "$PARENT/autre" "$PARENT/encore"
+  cat >"$WORK/init-dossier.exp" <<EXP
+set timeout 20
+cd "$PARENT"
+spawn "$LOOMY" init --no-clipboard
+expect "Nom du projet" ; expect "valider" ; send "Projet Été 2026\r"
+expect "Où créer le projet" ; expect "valider" ; send "\r"
+for {set i 0} {\$i < 60} {incr i} {
+  expect {
+    -re {Ouvrir la session} { expect "valider" ; send "\033\[B" ; after 300 ; send "\r" }
+    -re {valider} { send "\r" }
+    eof { exit [lindex [wait] 3] }
+    timeout { exit 3 }
+  }
+}
+exit 4
+EXP
+  run "init interactif depuis un dossier parent" expect "$WORK/init-dossier.exp"
+  D="$PARENT/projet-ete-2026"
+  [[ -n "$D" && -f "$D/.loomy/brief.md" ]] && ok "init : dossier créé d'après le nom du projet ($(basename "$D"))" || ko "init : dossier du projet absent ($(ls "$PARENT" | tr '\n' ' '))"
+  [[ -n "$D" ]] && file_has "init : nom du projet repris dans le brief" "$D/.loomy/brief.md" '^name: "Projet Été 2026"$'
+  has "init : rappel du cd vers le nouveau dossier" "cd projet-"
+  rm -f "$XDG_CONFIG_HOME/loomy/config"
+fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

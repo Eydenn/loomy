@@ -2,6 +2,16 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.13 — 2026-09-24
+
+### Modifié
+- **Plus besoin de créer le dossier avant `loomy init`.** Sans dossier indiqué, `loomy init` demande le nom du projet et propose : un nouveau dossier nommé d'après lui (`./nom-du-projet`, sans accents ni espaces), le dossier courant (proposé par défaut s'il est vide ou ressemble à un projet), ou un autre emplacement. `loomy init mon-projet` crée le dossier s'il n'existe pas.
+- Fin du questionnaire : rappel du `cd` quand le projet est ailleurs que le dossier de départ, `loomy start` mis en avant, et proposition d'ouvrir tout de suite la session de l'orchestrateur, dans le dossier du projet.
+- README : démarrage rapide sans l'étape `mkdir`.
+
+### Corrigé
+- Un mot plus long que la largeur d'un encadré (un chemin, par exemple) en débordait : il est maintenant coupé.
+
 ## 0.1.12 — 2026-09-24
 
 ### Ajouté

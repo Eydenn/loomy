@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.12-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.13-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -37,25 +37,21 @@ HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
 loomy doctor --fix --live
 ```
 
-**3. Créer le dossier du projet**
-
-```bash
-mkdir mon-projet && cd mon-projet
-```
-
-**4. Répondre au questionnaire**
+**3. Créer le projet et répondre au questionnaire**, depuis n'importe quel dossier
 
 ```bash
 loomy init
 ```
 
-**5. Ouvrir la session de l'orchestrateur**
+`loomy init` propose de créer un dossier nommé d'après le projet (nom modifiable), d'utiliser le dossier courant, ou un autre emplacement. `loomy init mon-projet` crée directement le dossier. À la fin, il propose d'ouvrir la session de l'orchestrateur.
+
+**4. Rouvrir la session de l'orchestrateur** plus tard, depuis le dossier du projet
 
 ```bash
 loomy start
 ```
 
-**6. Suivre en direct**, dans un second terminal
+**5. Suivre en direct**, dans un second terminal
 
 ```bash
 loomy watch
@@ -418,7 +414,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 
 | Commande | Rôle |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée ou initialise un projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée le dossier si besoin (ou propose de le créer d'après le nom du projet), puis initialise le projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`) |

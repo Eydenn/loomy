@@ -172,7 +172,7 @@ ask_all() {
   ui_step 1 $TOTAL
   UI_LABEL="Nom"
   UI_HINT="Sert de nom au projet dans la documentation générée."
-  ui_input "Nom du projet" "$(ans name "$(basename "$TARGET")")"
+  ui_input "Nom du projet" "$(ans name "${LOOMY_PROJECT_NAME:-$(basename "$TARGET")}")"
   NAME="$UI_VALUE"
 
   ui_step 2 $TOTAL
@@ -636,29 +636,49 @@ PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"
 LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""
 ui_rail_group "Étape suivante"
-if command -v loomy >/dev/null 2>&1; then
-  ui_rail "${C_BRAND}1${C_RESET}  Lance l'orchestrateur à la racine du projet : ${C_BOLD}loomy start${C_RESET} ${C_DIM}(ou à la main :)${C_RESET}"
-else
-  ui_rail "${C_BRAND}1${C_RESET}  Lance l'orchestrateur à la racine du projet :"
+step=1
+# Projet créé ailleurs que dans le dossier d'où loomy init a été lancé : il faut s'y rendre.
+from="${LOOMY_INVOKED_FROM:-$TARGET}"
+if [[ "$(cd "$from" 2>/dev/null && pwd -P)" != "$(cd "$TARGET" && pwd -P)" ]]; then
+  rel="${TARGET#"$from"/}"; [[ "$rel" == "$TARGET" ]] && rel="${TARGET/#$HOME/~}"
+  ui_rail "${C_BRAND}${step}${C_RESET}  Va dans le dossier du projet : ${C_BOLD}cd $rel${C_RESET}"
+  ui_rail ""
+  step=$(( step + 1 ))
 fi
-ui_rail "   ${C_BOLD}${LEAD_CMD}${C_RESET}"
+if command -v loomy >/dev/null 2>&1; then
+  ui_rail "${C_BRAND}${step}${C_RESET}  Ouvre la session de l'orchestrateur : ${C_BOLD}loomy start${C_RESET}"
+  ui_rail "   ${C_DIM}ou à la main : ${LEAD_CMD}, puis colle le prompt de démarrage${C_RESET}"
+else
+  ui_rail "${C_BRAND}${step}${C_RESET}  Lance l'orchestrateur à la racine du projet :"
+  ui_rail "   ${C_BOLD}${LEAD_CMD}${C_RESET}"
+  ui_rail "   puis colle le prompt de démarrage :"
+  _ui_term_size
+  _ui_wrap "$PROMPT" $(( UI_W - 8 ))
+  for line in ${UI_LINES[@]+"${UI_LINES[@]}"}; do ui_rail "   ${C_DIM}${line}${C_RESET}"; done
+fi
 if [[ "${ROUTE_ENV#hybrid-}" == "codex" ]]; then
   ui_rail "   ${C_DIM}(ou dans l'app Codex : modèle ${LEAD_LINE%% *}, effort ${LEAD_LINE##*(})${C_RESET}"
 fi
-ui_rail ""
-ui_rail "${C_BRAND}2${C_RESET}  Colle le prompt de démarrage :"
-_ui_term_size
-_ui_wrap "$PROMPT" $(( UI_W - 8 ))
-for line in ${UI_LINES[@]+"${UI_LINES[@]}"}; do ui_rail "   ${C_DIM}${line}${C_RESET}"; done
 if (( USE_CLIPBOARD )) && ui_is_interactive && ui_copy "$PROMPT"; then
-  ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}copié dans le presse-papiers${C_RESET}"
+  ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}prompt de démarrage copié dans le presse-papiers${C_RESET}"
 fi
+step=$(( step + 1 ))
 ui_rail ""
-ui_rail "${C_BRAND}3${C_RESET}  Suis l'avancement en direct dans un autre terminal :"
+ui_rail "${C_BRAND}${step}${C_RESET}  Suis l'avancement en direct dans un autre terminal :"
 if command -v loomy >/dev/null 2>&1; then
   ui_rail "   ${C_BOLD}loomy watch${C_RESET}"
-  ui_rail_end "routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log"
 else
   ui_rail "   ${C_BOLD}.loomy/scripts/ai-status.sh --watch${C_RESET}"
-  ui_rail_end "routage : .loomy/scripts/ai-route.sh · diagnostic : .loomy/scripts/ai-doctor.sh --live"
 fi
+
+# Proposer d'ouvrir tout de suite la session, dans le dossier du projet (sans cd).
+if ui_is_interactive && [[ -x "$SCRIPT_DIR/ai-start.sh" ]]; then
+  ui_rail ""
+  UI_LABEL="Session"
+  UI_DESCS=("Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage." "Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.")
+  ui_choose "Ouvrir la session de l'orchestrateur maintenant ?" 0 "Oui, maintenant" "Plus tard"
+  if [[ "$UI_VALUE" == Oui* ]]; then
+    exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" --new
+  fi
+fi
+ui_rail_end "routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log"

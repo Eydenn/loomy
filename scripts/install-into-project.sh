@@ -13,6 +13,8 @@ usage() {
   cat <<'EOF'
 Usage : loomy init [dossier] [options]
 
+Sans dossier : propose le dossier courant, ou d'en créer un nouveau à partir du nom du projet.
+Avec un dossier : le crée s'il n'existe pas.
 Nouveau projet : copie START.md et .loomy/ dans le dossier, puis lance le questionnaire.
 Projet déjà initialisé : propose de reprendre, mettre à jour, refaire le questionnaire ou réinitialiser.
 
@@ -26,7 +28,7 @@ Options :
 EOF
 }
 
-TARGET_INPUT="."; RUN_WIZARD=1; WIZARD_ARGS=(); ACTION=""
+TARGET_INPUT=""; RUN_WIZARD=1; WIZARD_ARGS=(); ACTION=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-wizard) RUN_WIZARD=0 ;;
@@ -41,13 +43,82 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+# Dossier d'où la commande est lancée : le questionnaire rappellera d'y faire « cd » si le projet est ailleurs.
+export LOOMY_INVOKED_FROM="$PWD"
+
+is_home_or_root() { [[ "$(cd "$1" && pwd -P)" == "$(cd "$HOME" 2>/dev/null && pwd -P)" || "$(cd "$1" && pwd -P)" == "/" ]]; }
+is_loomy_project() { [[ -d "$1/.loomy" && ( -f "$1/.loomy/VERSION" || -f "$1/.loomy/brief.md" ) ]]; }
+
+# slugify <nom> : nom de dossier à partir du nom du projet (minuscules, sans accents ni espaces).
+slugify() {
+  local s=""
+  # Accents retirés : perl (Unicode::Normalize, livré avec perl) sinon iconv, sinon le texte tel quel.
+  if command -v perl >/dev/null 2>&1; then
+    s="$(printf '%s' "$1" | perl -CS -MUnicode::Normalize -pe '$_ = NFD($_); s/\pM//g' 2>/dev/null || true)"
+  fi
+  if [[ -z "$s" ]] && command -v iconv >/dev/null 2>&1; then s="$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || true)"; fi
+  [[ -n "$s" ]] || s="$1"
+  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+  echo "${s:-mon-projet}"
+}
+
+# Dossier courant « de projet » : vide, dépôt Git, ou fichiers typiques d'un projet.
+looks_like_project() {
+  local d="$1" count
+  [[ -e "$d/.git" ]] && return 0
+  count="$(find "$d" -mindepth 1 -maxdepth 1 ! -name '.DS_Store' | wc -l | tr -d ' ')"
+  [[ "$count" == "0" ]] && return 0
+  local f
+  for f in package.json pyproject.toml Cargo.toml go.mod composer.json Gemfile pom.xml build.gradle Makefile src README.md; do
+    [[ -e "$d/$f" ]] && return 0
+  done
+  return 1
+}
+
+if [[ -z "$TARGET_INPUT" ]]; then
+  CWD="$(pwd)"
+  if is_loomy_project "$CWD" || { [[ -n "$ACTION" ]] && ! is_home_or_root "$CWD"; }; then
+    TARGET_INPUT="$CWD"
+  elif ui_is_interactive; then
+    # Choix du dossier : ici, un nouveau dossier nommé d'après le projet, ou un autre emplacement.
+    ui_clear
+    ui_banner "Nouveau projet" "dossier courant : ${CWD/#$HOME/~}"
+    ui_section "PROJET"
+    here_ok=1; is_home_or_root "$CWD" && here_ok=0
+    default_name="mon-projet"; if (( here_ok )) && looks_like_project "$CWD"; then default_name="$(basename "$CWD")"; fi
+    UI_LABEL="Nom"; UI_HINT="Il sert de nom au projet et, si tu crées un dossier, de nom de dossier."
+    ui_input "Nom du projet" "$default_name"
+    PROJECT_NAME="$UI_VALUE"; slug="$(slugify "$PROJECT_NAME")"
+    opts=("Nouveau dossier ./$slug"); descs=("Crée ${CWD/#$HOME/~}/$slug et y installe Loomy.")
+    if (( here_ok )); then
+      opts+=("Dossier courant (${CWD/#$HOME/~})"); descs+=("Installe Loomy ici : pour un dossier vide ou un projet existant à standardiser.")
+    fi
+    opts+=("Autre emplacement…"); descs+=("Tu indiques le chemin du dossier ; il est créé s'il n'existe pas.")
+    default=0; if (( here_ok )) && looks_like_project "$CWD"; then default=1; fi
+    UI_DESCS=("${descs[@]}"); UI_LABEL="Dossier"
+    ui_choose "Où créer le projet ?" "$default" "${opts[@]}"
+    case "$UI_VALUE" in
+      Nouveau*) TARGET_INPUT="$CWD/$slug" ;;
+      Dossier*) TARGET_INPUT="$CWD" ;;
+      *) UI_LABEL="Chemin"; ui_input "Chemin du dossier du projet" "${CWD/#$HOME/~}/$slug"; TARGET_INPUT="${UI_VALUE/#\~/$HOME}" ;;
+    esac
+    export LOOMY_PROJECT_NAME="$PROJECT_NAME"
+    ui_end "installation de Loomy dans ${TARGET_INPUT/#$HOME/~}…"
+  elif is_home_or_root "$CWD"; then
+    echo "Erreur : ${CWD/#$HOME/~} n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet" >&2
+    exit 1
+  else
+    TARGET_INPUT="$CWD"
+  fi
+fi
+
 if [[ ! -d "$TARGET_INPUT" ]]; then
-  echo "Erreur : le dossier cible n'existe pas : $TARGET_INPUT" >&2
-  exit 1
+  if [[ "$ACTION" == "update" ]]; then echo "Erreur : le dossier n'existe pas : $TARGET_INPUT" >&2; exit 1; fi
+  mkdir -p "$TARGET_INPUT" || { echo "Erreur : impossible de créer le dossier $TARGET_INPUT" >&2; exit 1; }
 fi
 TARGET="$(cd "$TARGET_INPUT" && pwd)"
-if [[ "$(cd "$TARGET" && pwd -P)" == "$(cd "$HOME" 2>/dev/null && pwd -P)" || "$TARGET" == "/" ]]; then
-  echo "Erreur : ${TARGET/#$HOME/~} n'est pas un dossier de projet. Crée un dossier dédié : mkdir mon-projet && cd mon-projet && loomy init" >&2
+if is_home_or_root "$TARGET"; then
+  echo "Erreur : ${TARGET/#$HOME/~} n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet" >&2
   exit 1
 fi
 L="$TARGET/.loomy"

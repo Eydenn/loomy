@@ -83,6 +83,13 @@ _ui_wrap() {
   UI_LINES=()
   read -r -a words <<<"$1"
   for word in ${words[@]+"${words[@]}"}; do
+    # Mot plus long que la largeur (un chemin, une URL) : coupé en morceaux.
+    _ui_strlen "$word"
+    while (( UI_LEN > w )); do
+      [[ -n "$line" ]] && { UI_LINES+=("$line"); line=""; }
+      UI_LINES+=("${word:0:$w}"); word="${word:$w}"; _ui_strlen "$word"
+    done
+    [[ -z "$word" ]] && continue
     if [[ -z "$line" ]]; then line="$word"; continue; fi
     _ui_strlen "$line $word"
     if (( UI_LEN <= w )); then line="$line $word"; else UI_LINES+=("$line"); line="$word"; fi

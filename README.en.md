@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.12-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.13-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -39,25 +39,21 @@ HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
 loomy doctor --fix --live
 ```
 
-**3. Create the project folder**
-
-```bash
-mkdir my-project && cd my-project
-```
-
-**4. Answer the questionnaire**
+**3. Create the project and answer the questionnaire**, from any folder
 
 ```bash
 loomy init
 ```
 
-**5. Open the lead agent session**
+`loomy init` offers to create a folder named after the project (name editable), to use the current folder, or another location. `loomy init my-project` creates the folder directly. At the end, it offers to open the lead agent session.
+
+**4. Reopen the lead agent session** later, from the project folder
 
 ```bash
 loomy start
 ```
 
-**6. Follow live**, in a second terminal
+**5. Follow live**, in a second terminal
 
 ```bash
 loomy watch
@@ -360,7 +356,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 
 | Command | Purpose |
 |---|---|
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates or initializes a project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`) |

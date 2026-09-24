@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# loomy — point d'entrée unique de Loomy. Compatible bash 3.2.
+# Installé via npm, bun, Homebrew ou install.sh ; tous pointent vers ce fichier.
+set -euo pipefail
+
+# Dossier d'installation réel (les liens symboliques créés par npm, bun ou Homebrew sont résolus).
+_realpath() {
+  local p="$1" link
+  while [[ -L "$p" ]]; do
+    link="$(readlink "$p")"
+    case "$link" in /*) p="$link" ;; *) p="$(dirname "$p")/$link" ;; esac
+  done
+  echo "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")"
+}
+LOOMY_HOME="$(cd "$(dirname "$(_realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
+S="$LOOMY_HOME/scripts"
+LOOMY_REPO="${LOOMY_REPO:-Eydenn/loomy}"
+VERSION="$(cat "$LOOMY_HOME/VERSION" 2>/dev/null || echo "?")"
+
+# shellcheck source=../scripts/lib/ui.sh
+source "$S/lib/ui.sh"
+# shellcheck source=../scripts/lib/config.sh
+source "$S/lib/config.sh"
+
+project_root() { git rev-parse --show-toplevel 2>/dev/null || pwd; }
+
+INVOKED="${BASH_SOURCE[0]}"
+install_method() {
+  case "$INVOKED" in */.bun/*) echo "bun"; return 0 ;; esac
+  case "$LOOMY_HOME" in
+    */Cellar/*|*/homebrew/*|*/linuxbrew/*) echo "brew" ;;
+    */.bun/*) echo "bun" ;;
+    */node_modules/*) echo "npm" ;;
+    *) if [[ -d "$LOOMY_HOME/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
+  esac
+}
+
+usage() {
+  cat >&2 <<EOF
+${C_BOLD}loomy${C_RESET} ${VERSION} — un orchestrateur sur le meilleur modèle, des rôles dédiés sur le modèle juste nécessaire.
+
+${C_BOLD}Projet${C_RESET}
+  loomy init [dossier] [options]    Installe Loomy dans un projet et lance le questionnaire
+  loomy brief                       Relance le questionnaire du projet courant
+  loomy route [commande]            Matrice rôle → modèle → effort (lead, get <rôle>, markdown, json, all…)
+  loomy delegate <claude|codex> <rôle> "tâche"
+                                    Confie un rôle à Claude ou à Codex via les bridges
+  loomy worktrees <tâche> [base]    Crée deux worktrees séparés pour le mode parallèle
+
+${C_BOLD}Suivi${C_RESET}
+  loomy status                      Statut du projet : phases, délégations en cours, activité, coûts, Git
+  loomy watch [N]                   Suivi en direct dans le terminal (raccourci de loomy status --watch)
+  loomy log [-n N] [-f]             Journal brut des délégations et des phases
+
+${C_BOLD}Machine${C_RESET}
+  loomy doctor [--fix] [--live]     Vérifie les prérequis et les modèles
+  loomy config [list|get|set]       Préférences : plan_claude, plan_codex…
+  loomy update                      Met à jour Loomy selon sa méthode d'installation
+  loomy version                     Version et méthode d'installation
+
+Aide détaillée d'une commande : loomy <commande> --help
+EOF
+}
+
+cmd="${1:-help}"; [[ $# -gt 0 ]] && shift
+
+case "$cmd" in
+  init|install) exec bash "$S/install-into-project.sh" "$@" ;;
+  brief|wizard) exec bash "$S/init-wizard.sh" "$(project_root)" "$@" ;;
+  route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
+  status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
+  doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
+  worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;
+  delegate)
+    target="${1:-}"; [[ $# -gt 0 ]] && shift
+    case "$target" in
+      claude) exec bash "$S/delegate-to-claude.sh" "$@" ;;
+      codex) exec bash "$S/delegate-to-codex.sh" "$@" ;;
+      *) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\"" >&2; exit 2 ;;
+    esac ;;
+
+  watch) exec bash "$S/ai-status.sh" --root "$(project_root)" --watch "$@" ;;
+
+  log|logs)
+    n=20; follow=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in -n) n="${2:-20}"; shift ;; -f|--follow) follow=1 ;; *) echo "Argument inconnu : $1" >&2; exit 2 ;; esac
+      shift
+    done
+    file="$(project_root)/.loomy/logs/events.jsonl"
+    [[ -f "$file" ]] || { echo "Aucun journal dans ce projet ($file)." >&2; exit 1; }
+    if (( follow )); then exec tail -n "$n" -f "$file"; else exec tail -n "$n" "$file"; fi ;;
+
+  config)
+    sub="${1:-list}"; [[ $# -gt 0 ]] && shift
+    case "$sub" in
+      list) echo "# $(loomy_config_file)"; loomy_config_list ;;
+      get) loomy_config_get "${1:?clé manquante}" ;;
+      set)
+        key="${1:?clé manquante}"; val="${2:?valeur manquante}"
+        case "$key" in
+          plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { echo "plan_claude : api, pro, max5, max20, team ou enterprise" >&2; exit 2; } ;;
+          plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { echo "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; exit 2; } ;;
+          plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "$key : un prix mensuel en \$" >&2; exit 2; } ;;
+          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price)" >&2; exit 2 ;;
+        esac
+        loomy_config_set "$key" "$val"; echo "$key=$val" ;;
+      *) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; exit 2 ;;
+    esac ;;
+
+  update|upgrade)
+    method="$(install_method)"
+    echo "Mise à jour de Loomy (installation : $method)…" >&2
+    case "$method" in
+      brew) brew update >/dev/null && exec brew upgrade loomy ;;
+      bun)
+        # bun ne sait pas installer depuis un dépôt GitHub privé : on passe par l'archive de la dernière release.
+        tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
+        gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && exec bun add -g "$tmp"/loomy-*.tgz ;;
+      npm) exec npm install -g "github:$LOOMY_REPO" ;;
+      git) exec git -C "$LOOMY_HOME" pull --ff-only ;;
+      *) echo "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; exit 1 ;;
+    esac ;;
+
+  version|--version|-v) echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)" ;;
+  help|--help|-h) usage ;;
+  *) echo "Commande inconnue : $cmd" >&2; usage; exit 2 ;;
+esac

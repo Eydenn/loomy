@@ -1,0 +1,24 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Secrets and local env
+.env
+.env.*
+*.pem
+*.key
+
+# Logs / temp
+*.log
+tmp/
+
+# Loomy installé dans son propre dépôt pour essai (généré, non canonique)
+/.loomy/
+
+# Paquets npm/bun générés localement
+node_modules/
+*.tgz

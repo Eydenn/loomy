@@ -1,0 +1,43 @@
+{
+  "name": "loomy",
+  "version": "0.1.0",
+  "description": "Kit de démarrage de projets pour Codex, Claude Code ou les deux : questionnaire, diagnostic, orchestrateur sur le meilleur modèle, rôles dédiés routés par coût, suivi en direct dans le terminal.",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Eydenn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Eydenn/loomy.git"
+  },
+  "homepage": "https://github.com/Eydenn/loomy#readme",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "ai-agents",
+    "orchestration",
+    "bootstrap",
+    "starter-kit",
+    "cli"
+  ],
+  "bin": {
+    "loomy": "bin/loomy"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "templates/",
+    "agents/",
+    "skills/",
+    "external-skills/",
+    "docs/",
+    "START.md",
+    "VERSION",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md"
+  ],
+  "os": [
+    "darwin",
+    "linux"
+  ]
+}

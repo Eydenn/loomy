@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.1 — 2026-09-24
+
+### Corrigé
+- Installation Homebrew : depuis Homebrew 7, le téléchargement se fait dans un bac à sable sans accès au trousseau macOS, et le dépôt privé ne pouvait plus être cloné. La formule reçoit maintenant le jeton GitHub par `HOMEBREW_GITHUB_API_TOKEN`, le temps du téléchargement seulement ; `loomy update` le fournit automatiquement à partir de `gh auth token`.
+
 ## 0.1.0 — 2026-09-24
 
 Première pré-version, 100 % terminal.

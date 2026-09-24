@@ -5,7 +5,7 @@
 **Weave Codex and Claude Code into one development crew.**
 A lead agent on the best model, dedicated roles on just the model they need, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -25,7 +25,7 @@ A lead agent on the best model, dedicated roles on just the model they need, and
 ## ⚡ Quick start
 
 ```bash
-brew install eydenn/tap/loomy        # or npm / bun / install.sh, see "Installation"
+HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy   # or npm / bun / install.sh
 loomy doctor --fix --live            # once: checks your machine
 
 mkdir my-project && cd my-project
@@ -45,13 +45,13 @@ Every method installs the same `loomy` command. The repository is private, so th
 
 | Method | Install | Update |
 |---|---|---|
-| 🍺 **Homebrew** | `brew install eydenn/tap/loomy` | `loomy update` |
+| 🍺 **Homebrew** | `HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy` | `loomy update` |
 | 📦 **npm** | `npm install -g github:Eydenn/loomy` | `loomy update` |
 | 🥟 **bun** | `gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz` | `loomy update` |
 | 🐚 **Shell script** | `gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh` | `loomy update` |
 
 > [!TIP]
-> `loomy update` detects how Loomy was installed and runs the right command. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. With nvm, an npm install is tied to the active Node version: if you switch versions often, prefer Homebrew or the shell script.
+> `loomy update` detects how Loomy was installed and runs the right command. Homebrew downloads inside a sandbox that cannot reach the macOS keychain, so the GitHub token is passed through `HOMEBREW_GITHUB_API_TOKEN` for the download only; `loomy update` does this for you. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. With nvm, an npm install is tied to the active Node version: if you switch versions often, prefer Homebrew or the shell script.
 
 ---
 

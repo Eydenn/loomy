@@ -112,7 +112,12 @@ case "$cmd" in
     method="$(install_method)"
     echo "Mise à jour de Loomy (installation : $method)…" >&2
     case "$method" in
-      brew) brew update >/dev/null && exec brew upgrade loomy ;;
+      brew)
+        # Homebrew télécharge dans un bac à sable sans accès au trousseau macOS : la formule reçoit le jeton de gh.
+        if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
+          HOMEBREW_GITHUB_API_TOKEN="$(gh auth token 2>/dev/null || true)"; export HOMEBREW_GITHUB_API_TOKEN
+        fi
+        brew update >/dev/null && exec brew upgrade loomy ;;
       bun)
         # bun ne sait pas installer depuis un dépôt GitHub privé : on passe par l'archive de la dernière release.
         tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"

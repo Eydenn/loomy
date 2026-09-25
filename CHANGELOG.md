@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.29 — 2026-09-25
+
+### Modifié
+- Petit logo de la vue resserrée redessiné aux deux tiers du grand : mêmes proportions et même style (3 lignes, sans déformation), suivi d'une ligne d'espace.
+
 ## 0.1.28 — 2026-09-25
 
 ### Modifié

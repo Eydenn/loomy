@@ -198,6 +198,7 @@ if [[ "$COMPACT" == "1" ]]; then
   if ui_logo_ok; then
     UI_LOGO_SIZE=small _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
+    ui_print ""
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   else
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"

@@ -70,7 +70,8 @@ install_hint() {
   ui_rail "    ${C_DIM}puis      :${C_RESET} $3"
 }
 
-(( COMPACT )) || ui_clear
+# Diagnostic seul : sortie normale ; avec --fix (questions), écran de Loomy.
+(( COMPACT )) || (( ! FIX )) || ui_clear
 (( COMPACT )) || ui_banner "Diagnostic" "Prérequis, modèles et corrections · catalogue du $AI_CATALOG_DATE"
 
 # ---------------------------------------------------------------- installation de Loomy
@@ -172,6 +173,9 @@ if command -v gh >/dev/null 2>&1; then
   if (( gh_ok )); then
     ui_ok "gh" "connecté à GitHub"
     # Accès réel de git au dépôt de Loomy (privé pendant la pré-version) : c'est ce dont le tap Homebrew a besoin.
+    # Pas dans le diagnostic de loomy init (--compact) : sans rapport avec le projet créé.
+  fi
+  if (( gh_ok )) && (( ! COMPACT )); then
     loomy_repo="https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}.git"
     ui_wait "Accès de git au dépôt Loomy"; git_ok=0
     GIT_TERMINAL_PROMPT=0 git ls-remote "$loomy_repo" HEAD >/dev/null 2>&1 && git_ok=1; ui_wait_end
@@ -182,7 +186,7 @@ if command -v gh >/dev/null 2>&1; then
       else ui_info "invitation au dépôt : https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}/invitations"; missing_ideal "accès git au dépôt Loomy"; fi
     fi
     (( git_ok )) && ui_ok "git → dépôt Loomy" "accès vérifié (mises à jour Homebrew possibles)"
-  else
+  elif (( ! gh_ok )); then
     missing_ideal "gh connecté"
   fi
 fi

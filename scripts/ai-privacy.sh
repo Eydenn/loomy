@@ -153,7 +153,6 @@ show_state() {
 
 case "$CMD" in
   show)
-    ui_clear
     ui_banner "Visibilité des fichiers IA" "${ROOT/#$HOME/~}"
     show_state
     ui_section "CHANGER"

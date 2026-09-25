@@ -312,6 +312,21 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   tmux -L loomy-test send-keys -t w q; sleep 1.5
   tmux -L loomy-test capture-pane -t w -p | grep -q SORTIE_OK && ok "watch : q quitte et rend l'écran normal" || ko "watch : q ne quitte pas"
   tmux -L loomy-test kill-server 2>/dev/null || true
+  # Accueil : application plein écran à cadre fixe ; les vues s'ouvrent dans le cadre, q quitte sans rien laisser.
+  tmux -L loomy-test new-session -d -s h -x 100 -y 34 -c "$PARD/sous-projet" "bash '$LOOMY'; echo FIN_ACCUEIL; sleep 30"
+  sleep 3
+  tmux -L loomy-test capture-pane -t h -p | grep -q "Que veux-tu faire" && tmux -L loomy-test capture-pane -t h -p | tail -1 | grep -q "loomy" \
+    && ok "accueil : cadre (menu dans le corps, version dans le pied)" || ko "accueil : cadre absent"
+  tmux -L loomy-test send-keys -t h Down Down; sleep 0.4; tmux -L loomy-test send-keys -t h Enter; sleep 2.5
+  tmux -L loomy-test capture-pane -t h -p | grep -q "Statut détaillé" && tmux -L loomy-test capture-pane -t h -p | grep -q "PHASES" \
+    && ok "accueil : statut affiché dans le cadre" || ko "accueil : vue statut absente"
+  tmux -L loomy-test send-keys -t h Enter; sleep 2
+  tmux -L loomy-test capture-pane -t h -p | grep -q "Que veux-tu faire" && ok "accueil : retour depuis la vue" || ko "accueil : pas de retour"
+  tmux -L loomy-test send-keys -t h q; sleep 1.5
+  if tmux -L loomy-test capture-pane -t h -p | grep -q "FIN_ACCUEIL" && ! tmux -L loomy-test capture-pane -t h -p -S -200 | grep -q "Que veux-tu faire"; then
+    ok "accueil : q quitte, rien ne reste dans le terminal"
+  else ko "accueil : sortie"; fi
+  tmux -L loomy-test kill-server 2>/dev/null || true
   # loomy start --watch dans tmux : un panneau de suivi à côté de l'agent, fermé avec lui.
   mkdir -p "$WORK/lent"
   printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"

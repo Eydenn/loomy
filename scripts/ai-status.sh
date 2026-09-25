@@ -118,7 +118,7 @@ if (( WATCH )); then
   stty -echo </dev/tty 2>/dev/null || true
   NAME_W="$(brief_get name 2>/dev/null || basename "$ROOT")"
   J="$(ai_journal_file "$ROOT")"
-  tick=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
+  tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
   p_phase=""; p_done=0; p_err=0; p_sess=""
   while true; do
     now="$(date +%s)"
@@ -150,34 +150,33 @@ if (( WATCH )); then
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
     extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
-    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on) LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
-      LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · $keys" "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
+    frame="$(LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+      "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Chaque ligne est coupée à la largeur du terminal (« … »), séquences de couleur comprises : pas de retour à la
     # ligne, même dans un terminal qui ignore la désactivation du retour automatique.
-    frame="$(printf '%s\n' "$frame" | perl -CS -Mutf8 -ne '
-      chomp; my ($w, $out, $vis) = ('"$(( UI_COLS - 1 ))"', "", 0);
-      while (length) {
-        if (s/^(\e\[[0-9;?]*[A-Za-z])//) { $out .= $1; next }
-        s/^(.)//s; if ($vis >= $w - 1 && length) { $out .= "…"; $vis++; last } $out .= $1; $vis++;
-      }
-      print $out, "\e[0m\n";' 2>/dev/null || printf '%s' "$frame")"
+    frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"
     UI_PAGE_L=()
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
-      # La page commence en haut de l'écran ; ce qui dépasse en bas est coupé (le haut, le plus utile, reste visible).
-      # Le pied (heure, touches) reste toujours visible, en bas.
-      n_l=${#UI_PAGE_L[@]}
-      if (( n_l > UI_ROWS - 1 )); then
-        foot="${UI_PAGE_L[$(( n_l - 1 ))]}"
-        UI_PAGE_L=("${UI_PAGE_L[@]:0:$(( UI_ROWS - 3 ))}" "${C_RAIL}│${C_RESET}  ${C_DIM}… vue complète plus haute que l'écran : c pour la vue resserrée${C_RESET}" "$foot")
-      fi
-      _ui_page_draw
+      # Cadre de l'application : en-tête (projet, heure), corps affiché depuis le haut (↑↓ pour défiler), pied (touches).
+      ui_header "$NAME_W" "suivi en direct · $(date '+%H:%M:%S')"
+      LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on)
+      _ui_term_size; _ui_chrome
+      (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ défiler · $keys"
+      UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
+      _ui_page_draw; wtop=$UI_BODY_START
     else
       printf '%s\n' "$frame" >&2
     fi
     tick=$(( tick + 1 ))
     key=""
     if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
+    # Flèches (séquence ESC [ A / B) : défilement du corps.
+    if [[ "$key" == $'\033' ]]; then
+      k3=""; read -rsn1 -t 1 _ </dev/tty || true; read -rsn1 -t 1 k3 </dev/tty || true
+      case "$k3" in A) wtop=$(( wtop - 1 )) ;; B) wtop=$(( wtop + 1 )) ;; esac
+      (( wtop < 0 )) && wtop=0
+    fi
     case "$key" in
       q|Q) break ;;
       c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
@@ -192,8 +191,10 @@ if (( WATCH )); then
 fi
 
 # ---------------------------------------------------------------- en-tête
-ui_clear
-if [[ "$COMPACT" == "1" ]]; then
+# Commande directe : le statut s'imprime normalement (comme git status), sans écran plein.
+# Dans loomy watch, l'en-tête et le pied sont ceux du cadre de l'application (LOOMY_NO_HEADER).
+if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then :
+elif [[ "$COMPACT" == "1" ]]; then
   # Vue resserrée : le logo aussi (sans lignes vides autour), si le terminal est assez large.
   if ui_logo_ok; then
     _ui_logo_lines "  "
@@ -225,7 +226,7 @@ if (( JOURNAL_VIEW )); then
   else
     ui_info "journal vide pour l'instant"
   fi
-  ui_end "${LOOMY_STATUS_FOOTER:-journal complet : loomy log}"
+  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-journal complet : loomy log}"
   exit 0
 fi
 
@@ -497,4 +498,4 @@ elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 else
   ui_info "pas de dépôt Git"
 fi
-ui_end "${LOOMY_STATUS_FOOTER:-démarrer ou reprendre : loomy start · suivi en direct : loomy watch}"
+[[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-démarrer ou reprendre : loomy start · suivi en direct : loomy watch}"

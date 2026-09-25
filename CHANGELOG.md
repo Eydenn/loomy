@@ -2,6 +2,21 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.3.5 — 2026-09-25
+
+### Modifié
+- **Une interface à cadre fixe, cohérente partout.** Les écrans interactifs de Loomy (`loomy`, `init` et son questionnaire, la mise en place, `start`, `effort`, `feedback`, `doctor --fix`, `watch`) s'affichent dans un même cadre : en-tête fixe (logo, titre, contexte : projet, question en cours, heure du suivi), pied fixe (touches utiles, version), et un corps qui est la seule zone à changer. Plus d'écrans empilés ni de logo répété.
+- **L'accueil (`loomy`) est une vraie application** : statut détaillé, journal, visibilité des fichiers IA et aide s'ouvrent dans le cadre, avec défilement (↑↓, espace, b), puis ⏎ ou ← ramène à l'accueil ; q quitte depuis partout. En sortant, le terminal revient tel qu'il était.
+- **En sortie d'un écran qui produit un résultat** (fin de `init`, commandes de `start`, réglage d'`effort`…), seul ce résultat reste dans l'historique, sous son titre, sans logo ni diagnostic préalable. En passant d'un écran à l'autre, rien ne reste.
+- **Commandes directes** (`loomy status`, `route`, `privacy`, `doctor` sans `--fix`) : sortie normale, comme `git status`, sans basculer d'écran.
+- `loomy watch` : en-tête (projet, « suivi en direct », heure) et pied (touches) du cadre ; ↑↓ font défiler le corps.
+- Menus : la touche q choisit directement « Quitter » ou « Annuler ».
+
+### Corrigé
+- Terminaux qui annoncent une taille nulle : 80 × 24 par défaut (le corps restait vide).
+- Le diagnostic de `loomy init` ne propose plus de configurer l'accès git au dépôt Loomy (question sans rapport avec le projet créé) ; `loomy doctor` le fait toujours.
+- Les lignes trop longues de la visionneuse sont coupées à la largeur de l'écran.
+
 ## 0.3.0 — 2026-09-25
 
 Deuxième étape de la feuille de route : fiabiliser.

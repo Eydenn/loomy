@@ -58,9 +58,10 @@ ui_print() {
 # Le processus qui ouvre l'écran le possède (LOOMY_SCREEN_OWNER = son PID). Un sous-processus Loomy lancé pendant ce
 # temps dessine sur le même écran ; sa page est rendue au parent par le fichier LOOMY_PAGE_OUT (voir ui_run).
 # LOOMY_NO_CLEAR=1 : pas d'écran alternatif, sortie ligne à ligne.
-UI_SCREEN=0; UI_PAGE_L=()
+UI_SCREEN=0; UI_PAGE_L=(); UI_PAGE_BODY=0
 
 ui_screen_begin() {
+  UI_PAGE_BODY=0
   if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L=(); printf '\033[H\033[2J' >&2; return 0; fi
   [[ -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive || return 0
   UI_SCREEN=1; UI_PAGE_L=()
@@ -81,7 +82,13 @@ ui_screen_end() {
   local l
   if [[ "${LOOMY_SCREEN_OWNER:-}" == "$$" ]]; then
     printf '\033[?7h\033[?25h\033[?1049l' >&2; unset LOOMY_SCREEN_OWNER
-    for l in ${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}; do printf '%s\n' "$l" >&2; done
+    # Ce qui reste dans l'historique : le contenu de la dernière page, sans le logo ; rien quand on passe à un autre
+    # écran (ui_exec), pour que les écrans ne s'empilent pas.
+    if [[ -z "${UI_NO_DUMP:-}" ]] && (( ${#UI_PAGE_L[@]} > 0 )); then
+      local i n=${#UI_PAGE_L[@]}
+      [[ -n "$UI_HDR_TITLE" ]] && printf '%s\n%s\n' "${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}" "${C_RAIL}│${C_RESET}" >&2
+      for (( i = 0; i < n; i++ )); do printf '%s\n' "${UI_PAGE_L[$i]:-}" >&2; done
+    fi
   elif [[ -n "${LOOMY_PAGE_OUT:-}" ]]; then
     for l in ${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}; do printf '%s\n' "$l"; done >>"$LOOMY_PAGE_OUT"
   fi
@@ -106,8 +113,55 @@ ui_external() {
   return $rc
 }
 
+# ui_pager <titre> <fichier> : affiche un texte (sortie d'une commande Loomy) dans l'écran de l'application, avec
+# défilement ; ↑↓ ligne, espace / b page, ⏎ ou ← retour, q quitter. UI_KEY vaut « back » ou « quit » en sortie.
+# Hors écran plein (LOOMY_NO_CLEAR, sortie non interactive) : le texte est simplement affiché.
+# ui_clip <largeur> : coupe chaque ligne de l'entrée à <largeur> colonnes visibles (« … »), séquences de couleur
+# comprises ; rien ne passe à la ligne, même dans un terminal qui ignore la désactivation du retour automatique.
+ui_clip() {
+  perl -CS -Mutf8 -ne '
+    chomp; my ($w, $out, $vis) = ('"$1"', "", 0);
+    while (length) {
+      if (s/^(\e\[[0-9;?]*[A-Za-z])//) { $out .= $1; next }
+      s/^(.)//s; if ($vis >= $w - 1 && length) { $out .= "…"; $vis++; last } $out .= $1; $vis++;
+    }
+    print $out, "\e[0m\n";' 2>/dev/null || cat
+}
+
+ui_pager() {
+  local title="$1" file="$2" lines=() l top=0 n avail saved_page=() saved_title saved_sub
+  if [[ "$UI_SCREEN" != "1" ]]; then cat "$file" >&2; UI_KEY="back"; return 0; fi
+  _ui_term_size
+  while IFS= read -r l || [[ -n "$l" ]]; do lines[${#lines[@]}]="$l"; done < <(ui_clip "$(( UI_COLS - 1 ))" <"$file")
+  n=${#lines[@]}
+  saved_page=(${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}); saved_title="$UI_HDR_TITLE"; saved_sub="$UI_HDR_SUB"
+  ui_header "$title" "$saved_title${saved_sub:+ · $saved_sub}"
+  UI_PAGE_L=(${lines[@]+"${lines[@]}"})
+  _ui_hide_cursor
+  while :; do
+    _ui_term_size; _ui_chrome
+    avail=$(( UI_ROWS - UI_CHROME_H )); (( avail < 3 )) && avail=3
+    (( top > n - avail )) && top=$(( n - avail )); (( top < 0 )) && top=0
+    UI_FTR_KEYS="⏎ ← retour · q quitter"
+    (( n > avail )) && UI_FTR_KEYS="↑↓ espace b défiler ($(( top + 1 ))–$(( top + avail < n ? top + avail : n ))/$n) · $UI_FTR_KEYS"
+    UI_BODY_TOP=$top; _ui_page_draw
+    _ui_read_key
+    case "$UI_KEY" in
+      up) top=$(( top - 1 )) ;;
+      down) top=$(( top + 1 )) ;;
+      space) top=$(( top + avail )) ;;
+      enter|left) UI_KEY="back"; break ;;
+      char) case "$UI_CH" in q|Q) UI_KEY="quit"; break ;; b|B) top=$(( top - avail )) ;; j) top=$(( top + 1 )) ;; k) top=$(( top - 1 )) ;; esac ;;
+    esac
+  done
+  UI_BODY_TOP=""; UI_FTR_KEYS=""
+  UI_PAGE_L=(${saved_page[@]+"${saved_page[@]}"}); ui_header "$saved_title" "$saved_sub"
+  _ui_show_cursor
+  return 0
+}
+
 # ui_exec <commande>... : quitte l'écran de Loomy (la page reste dans l'historique), puis lance la commande à sa place.
-ui_exec() { _ui_restore; trap - EXIT INT TERM; exec "$@"; }
+ui_exec() { UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM; exec "$@"; }
 
 # ui_run <commande>... : lance un sous-processus Loomy qui dessine sur le même écran, puis ajoute sa page à la page courante.
 ui_run() {
@@ -122,13 +176,50 @@ ui_run() {
 }
 
 # _ui_page_draw [lignes-réservées] [suite] : dessine la fin de la page qui tient à l'écran, puis <suite> (question en cours).
+# ---------------------------------------------------------------- cadre de l'application
+# Dans l'écran de Loomy, tout s'affiche dans un cadre fixe :
+#   en-tête : logo, puis « ┌ titre  contexte » (ui_banner le règle : projet, écran en cours, état)
+#   corps   : la page (UI_PAGE_L) et, en bas, la question en cours ; seule zone qui change
+#   pied    : les touches utiles (ui_choose, ui_input, visionneuse, suivi) et la version de Loomy
+# Les sous-processus Loomy reprennent le même en-tête (LOOMY_HDR_TITLE / LOOMY_HDR_SUB).
+UI_HDR_TITLE="${LOOMY_HDR_TITLE:-}"; UI_HDR_SUB="${LOOMY_HDR_SUB:-}"; UI_FTR_KEYS=""; UI_BODY_TOP=""; UI_CHROME_H=0
+UI_LOOMY_V="$(cat "$(dirname "${BASH_SOURCE[0]}")/../../VERSION" 2>/dev/null || true)"
+
+# ui_header <titre> <contexte> : en-tête du cadre (et des sous-processus).
+ui_header() {
+  UI_HDR_TITLE="$1"; UI_HDR_SUB="${2:-}"
+  export LOOMY_HDR_TITLE="$UI_HDR_TITLE" LOOMY_HDR_SUB="$UI_HDR_SUB"
+}
+
+# _ui_chrome : lignes d'en-tête (UI_HDR_LINES, UI_CHROME_H) et pied (UI_FOOTER) pour la taille du terminal.
+_ui_chrome() {
+  local l left right pad
+  UI_HDR_LINES=()
+  local head="${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE:-loomy}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}"
+  if (( UI_ROWS >= 20 && UI_COLS >= 40 )); then
+    _ui_logo_lines "  "
+    for l in "${UI_LINES[@]}"; do UI_HDR_LINES[${#UI_HDR_LINES[@]}]="$l"; done
+    UI_HDR_LINES[${#UI_HDR_LINES[@]}]=""
+  fi
+  UI_HDR_LINES[${#UI_HDR_LINES[@]}]="$head"
+  UI_CHROME_H=$(( ${#UI_HDR_LINES[@]} + 1 ))
+  left="${UI_FTR_KEYS:-Ctrl-C pour interrompre}"; right="loomy${UI_LOOMY_V:+ $UI_LOOMY_V}"
+  _ui_strlen "$left$right"; pad=$(( UI_COLS - 6 - UI_LEN )); (( pad < 2 )) && pad=2
+  UI_FOOTER="${C_RAIL}└${C_RESET}  ${C_DIM}${left}$(printf '%*s' "$pad" '')${right}${C_RESET}"
+}
+
+# _ui_page_draw [lignes-réservées] [suite] : dessine le cadre, puis dans le corps la page et <suite> (question en cours).
+# Le corps montre la fin de la page (ce qui vient d'arriver), ou à partir de la ligne UI_BODY_TOP (suivi, visionneuse).
 _ui_page_draw() {
-  local reserved="${1:-0}" tail="${2:-}" n=${#UI_PAGE_L[@]} avail start i out=$'\033[H'
-  _ui_term_size
-  avail=$(( UI_ROWS - 1 - reserved )); (( avail < 0 )) && avail=0
-  start=$(( n - avail )); (( start < 0 )) && start=0
-  for (( i = start; i < n; i++ )); do out="${out}${UI_PAGE_L[$i]}"$'\033[K\n'; done
-  printf '%s%s\033[J' "$out" "$tail" >&2
+  local reserved="${1:-0}" tail="${2:-}" n=${#UI_PAGE_L[@]} avail start end i l out=$'\033[H'
+  _ui_term_size; _ui_chrome
+  for l in "${UI_HDR_LINES[@]}"; do out="${out}${l}"$'\033[K\n'; done
+  avail=$(( UI_ROWS - UI_CHROME_H - reserved )); (( avail < 0 )) && avail=0
+  if [[ -n "$UI_BODY_TOP" ]]; then start=$UI_BODY_TOP; else start=$(( n - avail )); fi
+  (( start > n - avail )) && start=$(( n - avail )); (( start < 0 )) && start=0
+  UI_BODY_START=$start; end=$(( start + avail )); (( end > n )) && end=$n
+  for (( i = start; i < end; i++ )); do out="${out}${UI_PAGE_L[$i]:-}"$'\033[K\n'; done
+  printf '%s%s\033[J\033[%d;1H%s\033[K' "$out" "$tail" "$UI_ROWS" "$UI_FOOTER" >&2
 }
 
 # ---------------------------------------------------------------- activité en direct
@@ -184,9 +275,10 @@ _ui_bar() {
 # _ui_screen_row <index> : ligne d'écran (à partir de 1) où s'affiche UI_PAGE_L[index], ou 0 si elle est hors de l'écran.
 _ui_screen_row() {
   local n=${#UI_PAGE_L[@]} start
-  _ui_term_size
-  start=$(( n - (UI_ROWS - 1) )); (( start < 0 )) && start=0
+  _ui_term_size; _ui_chrome
+  start=$(( n - (UI_ROWS - UI_CHROME_H) )); (( start < 0 )) && start=0
   UI_ROW=$(( $1 - start + 1 )); (( UI_ROW < 1 )) && UI_ROW=0
+  (( UI_ROW > 0 )) && UI_ROW=$(( UI_ROW + ${#UI_HDR_LINES[@]} ))
   return 0
 }
 
@@ -363,8 +455,9 @@ _ui_term_size() {
   size="$( { stty size </dev/tty; } 2>/dev/null || true)"
   [[ -z "$size" && -n "${COLUMNS:-}" ]] && size="${LINES:-24} $COLUMNS"
   UI_ROWS="${size%% *}"; UI_COLS="${size##* }"
-  [[ "$UI_ROWS" =~ ^[0-9]+$ ]] || UI_ROWS=24
-  [[ "$UI_COLS" =~ ^[0-9]+$ ]] || UI_COLS=80
+  # Taille inconnue ou nulle (certains pseudo-terminaux) : 80 × 24.
+  [[ "$UI_ROWS" =~ ^[0-9]+$ ]] && (( UI_ROWS > 0 )) || UI_ROWS=24
+  [[ "$UI_COLS" =~ ^[0-9]+$ ]] && (( UI_COLS > 0 )) || UI_COLS=80
   UI_W=$(( UI_COLS - 2 )); (( UI_W > 78 )) && UI_W=78; (( UI_W < 40 )) && UI_W=40
   return 0
 }
@@ -398,11 +491,16 @@ _ui_logo_lines() {
 # ui_banner <titre> <sous-titre> : en-tête des commandes Loomy (logo, puis ouverture du fil).
 ui_banner() {
   local title="$1" subtitle="$2" l
+  # Dans l'écran de Loomy : l'en-tête du cadre, rien dans la page. Affiché dans une vue de l'application
+  # (LOOMY_NO_HEADER) : pas d'en-tête du tout, le cadre en a déjà un.
+  if [[ "$UI_SCREEN" == "1" ]]; then ui_header "$title" "$subtitle"; _ui_page_draw; return 0; fi
+  [[ -n "${LOOMY_NO_HEADER:-}" ]] && return 0
   ui_print ""
   if ui_logo_ok; then
     _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print ""
+    UI_PAGE_BODY=${#UI_PAGE_L[@]}   # le logo reste à l'écran, pas dans l'historique
     ui_print "${C_RAIL}┌${C_RESET}  ${C_TITLE}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   else
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_TITLE}· ${title}${C_RESET}"
@@ -426,7 +524,11 @@ ui_kv() {
 }
 
 # ---------------------------------------------------------------- fil conducteur (récapitulatifs)
-ui_rail_head() { ui_print ""; ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_DIM}$*${C_RESET}"; ui_print "${C_RAIL}│${C_RESET}"; }
+# ui_rail_head <texte> : ouvre un nouvel écran (récapitulatif…). Dans le cadre : nouvel en-tête et corps vide.
+ui_rail_head() {
+  if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L=(); ui_header "$*" ""; _ui_page_draw; return 0; fi
+  ui_print ""; ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_DIM}$*${C_RESET}"; ui_print "${C_RAIL}│${C_RESET}"
+}
 ui_rail_group() {
   local right="${2:-}"
   _ui_term_size
@@ -476,7 +578,7 @@ ui_form_begin() {
   UI_RQ=(); UI_RV=(); UI_TARGET=0
   ui_is_interactive || return 0
   UI_FORM_ACTIVE=1
-  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?25l' >&2; else printf '\033[?1049h\033[?25l' >&2; fi
+  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?25l' >&2; ui_header "Questionnaire" "$UI_FORM_TITLE"; else printf '\033[?1049h\033[?25l' >&2; fi
   stty -echo </dev/tty 2>/dev/null || true
   trap '_ui_restore' EXIT
   trap '_ui_restore; exit 130' INT TERM
@@ -550,6 +652,7 @@ _ui_q_end() {
     _ui_log answer "$label" "${UI_VALUE% (recommandé)}"
   fi
   _ui_reset_ctx
+  UI_FTR_KEYS=""
   return 0
 }
 
@@ -571,15 +674,18 @@ _ui_static() {
     logo=0; level=$(( pass - 1 )); if (( pass == 0 )); then logo=1; level=0; fi
     UI_FRAME=""; UI_FRAME_N=0
     if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
-      if (( logo )) && (( UI_COLS >= 40 )); then
+      # Écran de Loomy : logo et titre sont dans l'en-tête du cadre ; sinon, en tête du questionnaire.
+      if [[ "$UI_SCREEN" == "1" ]]; then _ui_add "${C_RAIL}│${C_RESET}"
+      elif (( logo )) && (( UI_COLS >= 40 )); then
         _ui_logo_lines " "
         for line in "${UI_LINES[@]}"; do _ui_add "$line"; done
         _ui_add ""
         _ui_add "${C_RAIL}┌${C_RESET}  ${C_DIM}${UI_FORM_TITLE}${C_RESET}"
+        _ui_add "${C_RAIL}│${C_RESET}"
       else
         _ui_add "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_DIM}${UI_FORM_TITLE}${C_RESET}"
+        _ui_add "${C_RAIL}│${C_RESET}"
       fi
-      _ui_add "${C_RAIL}│${C_RESET}"
       # Groupes terminés : une ligne chacun.
       if (( level < 3 )); then
         for g in ${UI_GROUPS[@]+"${UI_GROUPS[@]}"}; do
@@ -640,7 +746,8 @@ _ui_static() {
       done
     fi
     _ui_add "${C_RAIL}│${C_RESET}"
-    if [[ "$UI_FORM_ACTIVE" != "1" ]] || (( UI_FRAME_N + reserved <= UI_ROWS - 1 )); then break; fi
+    local room=$(( UI_ROWS - 1 )); [[ "$UI_SCREEN" == "1" ]] && { _ui_chrome; room=$(( UI_ROWS - UI_CHROME_H )); }
+    if [[ "$UI_FORM_ACTIVE" != "1" ]] || (( UI_FRAME_N + reserved <= room )); then break; fi
     if (( pass == 0 && UI_COLS < 50 )); then continue; fi
   done
   UI_STATIC="$UI_FRAME"; UI_STATIC_N=$UI_FRAME_N
@@ -677,7 +784,12 @@ _ui_boxes() {
 
 # _ui_render : affiche UI_STATIC + UI_FRAME (partie variable), plein écran ou sur place.
 _ui_render() {
-  if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
+  if [[ "$UI_FORM_ACTIVE" == "1" && "$UI_SCREEN" == "1" ]]; then
+    # Questionnaire dans le cadre : le corps ne montre que la question (la page est cachée le temps du formulaire).
+    local saved=(${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}); UI_PAGE_L=()
+    _ui_page_draw 0 "$UI_STATIC$UI_FRAME"
+    UI_PAGE_L=(${saved[@]+"${saved[@]}"})
+  elif [[ "$UI_FORM_ACTIVE" == "1" ]]; then
     printf '\033[H%s%s\033[J' "$UI_STATIC" "$UI_FRAME" >&2
   else
     if [[ "$UI_SCREEN" == "1" ]]; then _ui_page_draw $(( UI_STATIC_N + UI_FRAME_N )) "$UI_STATIC$UI_FRAME"; return 0; fi
@@ -709,6 +821,8 @@ _ui_show_cursor() { printf '\033[?25h' >&2; [[ "$UI_FORM_ACTIVE" == "1" ]] || st
 _ui_footer() {
   local keys="$1"
   if ui_can_go_back; then keys="$keys   ← question précédente"; fi
+  # Écran de Loomy : les touches vont dans le pied du cadre.
+  if [[ "$UI_SCREEN" == "1" ]]; then UI_FTR_KEYS="$keys"; return 0; fi
   _ui_add "${C_RAIL}└${C_RESET}  ${C_DIM}${keys}${C_RESET}"
 }
 
@@ -772,6 +886,9 @@ ui_choose() {
   if (( UI_HAS_PREV )); then for (( i = 0; i < n; i++ )); do [[ "${opts[$i]}" == "$UI_PREV" ]] && sel=$i; done; fi
   _ui_term_size; cw=$(( UI_W - 3 ))
   _ui_boxes "$cw"
+  # Option « Quitter » ou « Annuler » : la touche q la choisit directement.
+  local quit_i=""
+  for (( i = 0; i < n; i++ )); do case "${opts[$i]}" in Quitter|Annuler) quit_i=$i ;; esac; done
   _ui_static "$q" $(( n + (UI_BOX_H > 0 ? UI_BOX_H + 3 : 0) + 3 ))
   _ui_hide_cursor
   while true; do
@@ -790,13 +907,14 @@ ui_choose() {
     fi
     _ui_add "${C_RAIL}│${C_RESET}"
     _ui_upcoming
-    _ui_footer "↑↓ choisir   ⏎ valider   s défaut"
+    _ui_footer "↑↓ choisir   ⏎ valider   s défaut${quit_i:+   q ${opts[$quit_i]}}"
     _ui_render
     _ui_read_key
     case "$UI_KEY" in
       up) sel=$(( (sel - 1 + n) % n )) ;;
       down) sel=$(( (sel + 1) % n )) ;;
-      char) case "$UI_CH" in k) sel=$(( (sel - 1 + n) % n )) ;; j) sel=$(( (sel + 1) % n )) ;; s) sel="$def"; break ;; esac ;;
+      char) case "$UI_CH" in k) sel=$(( (sel - 1 + n) % n )) ;; j) sel=$(( (sel + 1) % n )) ;; s) sel="$def"; break ;;
+              q|Q) if [[ -n "$quit_i" ]]; then sel=$quit_i; break; fi ;; esac ;;
       enter) break ;;
       left) if ui_can_go_back; then UI_KEY="back"; break; fi ;;
     esac

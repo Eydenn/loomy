@@ -159,6 +159,7 @@ else
   (( off + UI_LEN > total )) && off=$(( total - UI_LEN ))
   _ui_pad "" "$off"
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}"
+  ui_print "${C_RAIL}│${C_RESET}"
   ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
   sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"

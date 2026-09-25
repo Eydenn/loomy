@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.20 — 2026-09-25
+
+### Modifié
+- `loomy status` et `loomy watch` : une ligne d'espace sous la frise des phases, pour aérer.
+
 ## 0.1.19 — 2026-09-25
 
 ### Modifié

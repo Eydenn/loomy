@@ -76,7 +76,7 @@ STATUS=$?
 set -e
 
 # Les anciennes versions de Claude Code refusent les identifiants de modèles récents : nouvel essai avec l'alias de la famille.
-if printf '%s' "$OUT" | grep -q 'does not support this model'; then
+if grep -q 'does not support this model' <<<"$OUT"; then
   ALIAS="$(ai_claude_alias "$MODEL")"
   echo "delegate-to-claude : cette version de Claude Code ne connaît pas $MODEL, nouvel essai avec '$ALIAS' (lancez 'claude update')." >&2
   set +e
@@ -93,7 +93,7 @@ T_CWRITE="$(ai_json_num "$OUT" cache_creation_input_tokens)"
 T_OUT="$(ai_json_num "$OUT" output_tokens)"
 COST="$(ai_json_num "$OUT" total_cost_usd)"
 RESULT="ok"
-if [[ $STATUS -ne 0 ]] || printf '%s' "$OUT" | grep -q '"is_error":true'; then RESULT="error"; fi
+if [[ $STATUS -ne 0 ]] || grep -q '"is_error":true' <<<"$OUT"; then RESULT="error"; fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"read-only\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":0,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 echo "delegate-to-claude : ${DURATION}s · tokens entrée $(( T_IN + T_CACHED + T_CWRITE )) (dont $T_CACHED en cache), sortie $T_OUT · coût \$$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2
 

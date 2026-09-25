@@ -15,11 +15,13 @@ export LC_NUMERIC=C
 # Texte : sans locale UTF-8, bash couperait les caractères accentués en deux. On en choisit une si besoin.
 _ui_probe="é"
 if [[ ${#_ui_probe} != 1 ]]; then
+  # Liste lue d'abord : avec pipefail, « locale -a | grep -q » échouerait (grep ferme le tube dès qu'il a trouvé).
+  _locs="$(locale -a 2>/dev/null || true)"
   for _l in C.UTF-8 en_US.UTF-8 fr_FR.UTF-8; do
-    if locale -a 2>/dev/null | grep -qixE "${_l/UTF-8/utf-?8}"; then export LC_CTYPE="$_l"; break; fi
+    if grep -qixE "${_l/UTF-8/utf-?8}" <<<"$_locs"; then export LC_CTYPE="$_l"; break; fi
   done
 fi
-unset _ui_probe _l
+unset _ui_probe _l _locs
 
 AI_CATALOG_DATE="2026-09-23"
 

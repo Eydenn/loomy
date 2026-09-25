@@ -97,7 +97,7 @@ privacy_tracked() {
   local p
   [[ -n "$(privacy_git_root "$1")" ]] || return 0
   for p in $LOOMY_AI_PATHS; do
-    git -C "$1" ls-files -- "$p" 2>/dev/null | head -1 | grep -q . && echo "$p"
+    [[ -n "$(git -C "$1" ls-files -- "$p" 2>/dev/null || true)" ]] && echo "$p"
   done
   return 0
 }

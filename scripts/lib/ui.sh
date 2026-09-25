@@ -88,6 +88,7 @@ ui_screen_end() {
 }
 
 _ui_restore() {
+  _ui_tick_stop
   ui_form_end
   ui_screen_end
   printf '\033[?25h' >&2
@@ -117,6 +118,176 @@ _ui_page_draw() {
   start=$(( n - avail )); (( start < 0 )) && start=0
   for (( i = start; i < n; i++ )); do out="${out}${UI_PAGE_L[$i]}"$'\033[K\n'; done
   printf '%s%s\033[J' "$out" "$tail" >&2
+}
+
+# ---------------------------------------------------------------- activité en direct
+# Deux composants, animés seulement dans l'écran de Loomy (ailleurs, seules les lignes finales s'affichent) :
+#   ui_wait <libellé> … ui_wait_end        une ligne « ◐ libellé…  1,2 s » le temps d'une vérification, puis effacée
+#   ui_steps_begin <titre> <étape>…        une liste d'étapes annoncées d'avance, avec barre de progression :
+#     ui_step_run <n>                      étape n (à partir de 0) en cours : toupie et chrono
+#     ui_step_done <n> <ok|warn|fail|skip> <libellé final> [détail]
+#     ui_steps_end                         barre finale et durée totale
+# L'animation tourne dans un processus à part, qui ne redessine que sa ligne (et la barre) : le travail reste au premier plan.
+UI_SPIN=("◐" "◓" "◑" "◒"); UI_TICK_PID=""; UI_WAIT_IDX=""
+UI_ST_L=(); UI_ST_S=(); UI_ST_D=(); UI_ST_T=(); UI_ST_BASE=-1; UI_ST_T0=0; UI_ST_CUR_T0=0
+
+# _ui_now_ms : horodatage en millisecondes dans UI_NOW.
+_ui_now_ms() {
+  UI_NOW="$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null)" || UI_NOW=""
+  [[ -n "$UI_NOW" ]] || UI_NOW=$(( $(date +%s) * 1000 ))
+}
+
+# _ui_dur <ms> : durée lisible dans UI_DUR (« 0,4 s », « 12 s », « 1 min 05 s »).
+_ui_dur() {
+  local ms=$1 s
+  if (( ms < 10000 )); then UI_DUR="$(( ms / 1000 )),$(( ms % 1000 / 100 )) s"
+  elif (( ms < 60000 )); then UI_DUR="$(( ms / 1000 )) s"
+  else s=$(( ms / 1000 )); UI_DUR="$(( s / 60 )) min $(printf '%02d' $(( s % 60 ))) s"; fi
+}
+
+# _ui_row <icône> <libellé> <détail> <durée> : ligne d'étape alignée (libellé, détail estompé, durée à droite) dans UI_LINE.
+_ui_row() {
+  local icon="$1" label="$2" detail="$3" dur="$4" lw="${UI_ROW_LW:-30}" dw
+  _ui_term_size
+  dw=$(( UI_W - 3 - 2 - lw - 9 )); (( dw < 8 )) && dw=8
+  _ui_fit "$label" "$lw"; _ui_pad "$UI_FIT" "$lw"; label="$UI_PADDED"
+  [[ "${UI_ROW_DIM:-}" == "1" ]] && label="${C_DIM}${label}${C_RESET}"
+  _ui_fit "$detail" "$dw"; _ui_pad "$UI_FIT" "$dw"; detail="$UI_PADDED"
+  _ui_strlen "$dur"; while (( UI_LEN < 8 )); do dur=" $dur"; UI_LEN=$(( UI_LEN + 1 )); done
+  UI_LINE="${C_RAIL}│${C_RESET}  ${icon} ${label}${C_DIM}${detail} ${dur}${C_RESET}"
+}
+
+# _ui_bar <fait> <total> [fini] : barre de progression dans UI_LINE.
+_ui_bar() {
+  local done_n=$1 total=$2 fin="${3:-}" bw fill i on="" off="" pct tail
+  _ui_term_size
+  bw=$(( UI_W - 3 - 22 )); (( bw < 10 )) && bw=10
+  (( total < 1 )) && total=1
+  fill=$(( done_n * bw / total )); pct=$(( done_n * 100 / total ))
+  for (( i = 0; i < bw; i++ )); do if (( i < fill )); then on="${on}━"; else off="${off}╌"; fi; done
+  if [[ -n "$fin" ]]; then tail="${C_GREEN}✓${C_RESET} ${C_DIM}${fin}${C_RESET}"; on="${C_GREEN}${on}${C_RESET}"
+  else tail="${C_DIM}${done_n}/${total} · ${pct} %${C_RESET}"; on="${C_BRAND}${on}${C_RESET}"; fi
+  UI_LINE="${C_RAIL}│${C_RESET}  ${on}${C_DIM}${off}${C_RESET}  ${tail}"
+}
+
+# _ui_screen_row <index> : ligne d'écran (à partir de 1) où s'affiche UI_PAGE_L[index], ou 0 si elle est hors de l'écran.
+_ui_screen_row() {
+  local n=${#UI_PAGE_L[@]} start
+  _ui_term_size
+  start=$(( n - (UI_ROWS - 1) )); (( start < 0 )) && start=0
+  UI_ROW=$(( $1 - start + 1 )); (( UI_ROW < 1 )) && UI_ROW=0
+  return 0
+}
+
+# _ui_tick_start <wait|step> : anime la ligne en cours (toupie et chrono) jusqu'à _ui_tick_stop.
+_ui_tick_start() {
+  [[ "$UI_SCREEN" == "1" ]] || return 0
+  local kind="$1"
+  (
+    trap - EXIT INT TERM
+    f=0
+    while :; do
+      _ui_now_ms
+      if [[ "$kind" == "wait" ]]; then
+        _ui_dur $(( UI_NOW - UI_WAIT_T0 ))
+        _ui_row "${C_BRAND}${UI_SPIN[$f]}${C_RESET}" "${UI_WAIT_LABEL}…" "" "$UI_DUR"; idx=$UI_WAIT_IDX
+      else
+        _ui_dur $(( UI_NOW - UI_ST_CUR_T0 ))
+        _ui_row "${C_BRAND}${UI_SPIN[$f]}${C_RESET}" "${UI_ST_L[$UI_ST_CUR]}…" "" "$UI_DUR"; idx=$(( UI_ST_BASE + 1 + UI_ST_CUR ))
+      fi
+      _ui_screen_row "$idx"
+      (( UI_ROW > 0 )) && printf '\033[%d;1H%s\033[K' "$UI_ROW" "$UI_LINE" >&2
+      f=$(( (f + 1) % 4 ))
+      sleep 0.12
+    done
+  ) &
+  UI_TICK_PID=$!
+  return 0
+}
+
+_ui_tick_stop() {
+  if [[ -n "$UI_TICK_PID" ]]; then kill "$UI_TICK_PID" 2>/dev/null || true; wait "$UI_TICK_PID" 2>/dev/null || true; UI_TICK_PID=""; fi
+  return 0
+}
+
+ui_wait() {
+  [[ "$UI_SCREEN" == "1" ]] || return 0
+  _ui_now_ms; UI_WAIT_T0=$UI_NOW; UI_WAIT_LABEL="$1"
+  _ui_row "${C_BRAND}${UI_SPIN[0]}${C_RESET}" "$1…" "" ""
+  UI_WAIT_IDX=${#UI_PAGE_L[@]}; UI_PAGE_L[$UI_WAIT_IDX]="$UI_LINE"
+  _ui_page_draw
+  _ui_tick_start wait
+}
+
+ui_wait_end() {
+  _ui_tick_stop
+  [[ -n "$UI_WAIT_IDX" ]] || return 0
+  unset "UI_PAGE_L[$UI_WAIT_IDX]"; UI_WAIT_IDX=""
+  return 0
+}
+
+# _ui_steps_line <n> : redessine la ligne de l'étape n et la barre dans la page.
+_ui_steps_paint() {
+  local i n=${#UI_ST_L[@]} icon done_n=0 label
+  for (( i = 0; i < n; i++ )); do
+    label="${UI_ST_L[$i]}"
+    case "${UI_ST_S[$i]}" in
+      ok) icon="${C_GREEN}✓${C_RESET}"; done_n=$(( done_n + 1 )) ;;
+      warn) icon="${C_YELLOW}!${C_RESET}"; done_n=$(( done_n + 1 )) ;;
+      fail) icon="${C_RED}✗${C_RESET}"; done_n=$(( done_n + 1 )) ;;
+      skip) icon="${C_DIM}–${C_RESET}"; done_n=$(( done_n + 1 )) ;;
+      run) icon="${C_BRAND}${UI_SPIN[0]}${C_RESET}"; label="${label}…" ;;
+      *) icon="${C_DIM}○${C_RESET}"; UI_ROW_DIM=1 ;;
+    esac
+    _ui_row "$icon" "$label" "${UI_ST_D[$i]}" "${UI_ST_T[$i]}"; UI_ROW_DIM=""
+    UI_PAGE_L[$(( UI_ST_BASE + 1 + i ))]="$UI_LINE"
+  done
+  UI_ST_DONE=$done_n
+  _ui_bar "$done_n" "$n" "${1:-}"
+  UI_PAGE_L[$UI_ST_BASE]="$UI_LINE"
+}
+
+ui_steps_begin() {
+  local title="$1" i; shift
+  UI_ST_L=("$@"); UI_ST_S=(); UI_ST_D=(); UI_ST_T=()
+  for (( i = 0; i < $#; i++ )); do UI_ST_S[$i]="todo"; UI_ST_D[$i]=""; UI_ST_T[$i]=""; done
+  _ui_now_ms; UI_ST_T0=$UI_NOW
+  # Colonne des libellés : juste assez large pour le plus long (libellés en cours, avec « … », ou finaux).
+  UI_ROW_LW=20
+  for (( i = 0; i < $#; i++ )); do _ui_strlen "${UI_ST_L[$i]}…"; (( UI_LEN + 2 > UI_ROW_LW )) && UI_ROW_LW=$(( UI_LEN + 2 )); done
+  (( UI_ROW_LW > 32 )) && UI_ROW_LW=32
+  ui_section "$title"
+  [[ "$UI_SCREEN" == "1" ]] || return 0
+  UI_ST_BASE=${#UI_PAGE_L[@]}
+  _ui_steps_paint
+  _ui_page_draw
+}
+
+ui_step_run() {
+  UI_ST_CUR=$1; UI_ST_S[$1]="run"
+  _ui_now_ms; UI_ST_CUR_T0=$UI_NOW
+  [[ "$UI_SCREEN" == "1" ]] || return 0
+  _ui_steps_paint; _ui_page_draw
+  _ui_tick_start step
+}
+
+ui_step_done() {
+  local n=$1 st="$2" label="$3" detail="${4:-}" icon
+  _ui_tick_stop
+  _ui_now_ms; _ui_dur $(( UI_NOW - UI_ST_CUR_T0 ))
+  UI_ST_S[$n]="$st"; UI_ST_L[$n]="$label"; UI_ST_D[$n]="$detail"; UI_ST_T[$n]="$UI_DUR"
+  [[ "$st" == "skip" ]] && UI_ST_T[$n]=""
+  if [[ "$UI_SCREEN" == "1" ]]; then _ui_steps_paint; _ui_page_draw; return 0; fi
+  case "$st" in ok) icon="${C_GREEN}✓${C_RESET}" ;; warn) icon="${C_YELLOW}!${C_RESET}" ;; fail) icon="${C_RED}✗${C_RESET}" ;; *) icon="${C_DIM}–${C_RESET}" ;; esac
+  printf '%s\n' "${C_RAIL}│${C_RESET}  ${icon} ${label} ${C_DIM}${detail}${C_RESET}" >&2
+}
+
+ui_steps_end() {
+  _ui_tick_stop
+  _ui_now_ms; _ui_dur $(( UI_NOW - UI_ST_T0 ))
+  if [[ "$UI_SCREEN" == "1" ]]; then _ui_steps_paint "terminé en $UI_DUR"; _ui_page_draw; fi
+  UI_ST_BASE=-1; UI_ROW_LW=""
+  return 0
 }
 
 # Sous-processus lancé pendant qu'un écran Loomy est ouvert : il dessine sur ce même écran.
@@ -149,7 +320,9 @@ _ui_pad() {
 # _ui_fit <texte> <largeur> : texte tronqué avec « … » s'il dépasse, dans UI_FIT.
 _ui_fit() {
   _ui_strlen "$1"
-  if (( UI_LEN <= $2 )); then UI_FIT="$1"; else UI_FIT="${1:0:$(( $2 - 1 ))}…"; fi
+  if (( UI_LEN <= $2 )); then UI_FIT="$1"; return 0; fi
+  # Coupe par caractères, quelle que soit la locale (sinon un caractère accentué peut être coupé en deux).
+  UI_FIT="$(perl -CSA -Mutf8 -e 'print substr($ARGV[0], 0, $ARGV[1]), "…"' "$1" $(( $2 - 1 )) 2>/dev/null)" || UI_FIT="${1:0:$(( $2 - 1 ))}…"
 }
 
 # _ui_wrap <texte> <largeur> : découpe en lignes (mots entiers) dans le tableau UI_LINES.

@@ -91,7 +91,7 @@ fi
 ui_section "CLI IA" "au moins une requise ; idéal : les deux, pour le mode hybride"
 HAS_C=0; HAS_X=0
 if ai_has_claude; then
-  v="$(ai_claude_version)"
+  ui_wait "Vérification de Claude Code"; v="$(ai_claude_version)"; ui_wait_end
   if ai_version_ge "${v:-0.0.0}" "$AI_MIN_CLAUDE_VERSION"; then
     HAS_C=1; ui_ok "claude $v" "Claude Code · $(command -v claude | sed "s|^$HOME|~|")"
   else
@@ -110,7 +110,7 @@ fi
 
 CODEX_BIN="$(ai_codex_bin || true)"
 if [[ -n "$CODEX_BIN" ]]; then
-  v="$(ai_codex_version)"
+  ui_wait "Vérification de Codex"; v="$(ai_codex_version)"; ui_wait_end
   if command -v codex >/dev/null 2>&1; then
     ui_ok "codex ${v:-?}" "Codex CLI · $(printf '%s' "$CODEX_BIN" | sed "s|^$HOME|~|")"
   else
@@ -156,7 +156,8 @@ fi
 # ---------------------------------------------------------------- confort
 ui_section "CONFORT" "facultatif"
 if command -v gh >/dev/null 2>&1; then
-  if gh auth status >/dev/null 2>&1; then ui_ok "gh" "authentifié"
+  ui_wait "Connexion GitHub (gh)"; gh_ok=0; gh auth status >/dev/null 2>&1 && gh_ok=1; ui_wait_end
+  if (( gh_ok )); then ui_ok "gh" "authentifié"
   else ui_warn "gh" "non authentifié — lancez : gh auth login"; missing_ideal "gh authentifié"; fi
 else
   ui_info "gh absent (utile pour créer un repo GitHub : brew install gh)"; missing_ideal "gh"
@@ -196,17 +197,20 @@ if (( LIVE )); then
     fam="${key%%:*}"; model="${key#*:}"
     if [[ "$fam" == "claude" ]]; then
       (( HAS_C )) || continue
+      ui_wait "Test de $model"
       out="$(cd "${TMPDIR:-/tmp}" && claude -p "Réponds exactement : OK" --output-format json --max-turns 1 --model "$model" --effort low 2>&1 || true)"
-      if printf '%s' "$out" | grep -q '"is_error":false'; then ok=1; why=""
+      if grep -q '"is_error":false' <<<"$out"; then ok=1; why=""
       else ok=0; why="$(printf '%s' "$out" | grep -oE '"result":"[^"]{0,120}' | head -1 | sed 's/"result":"//' || true)"; fi
     else
       (( HAS_X )) || continue
       tmpf="$(mktemp)"
+      ui_wait "Test de $model"
       if "$CODEX_BIN" exec -m "$model" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
            -o "$tmpf" "Réponds exactement : OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ok=1; why=""
       else ok=0; why="pas de réponse (connexion, forfait ou nom de modèle)"; fi
       rm -f "$tmpf"
     fi
+    ui_wait_end
     case "$routed" in *" $key "*) used="utilisé par ce projet" ;; *) used="" ;; esac
     if (( ok )); then ui_ok "$model" "répond${used:+ · $used}"
     elif [[ -n "$used" ]]; then ui_err "$model" "${why:-échec} · $used"; MIN_OK=0

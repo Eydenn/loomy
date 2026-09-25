@@ -682,29 +682,57 @@ while true; do
   esac
 done
 
-ui_rail ""
+# ---------------------------------------------------------------- mise en place, en direct
+steps=()
+[[ "$GIT_INIT" == "yes" ]] && steps+=("Initialisation du dépôt Git")
+[[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]] && steps+=("Création du dépôt GitHub")
+steps+=("Enregistrement du brief")
+[[ "$AI_FILES" != "versioned" ]] && steps+=("Réglage des fichiers IA")
+[[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("Mémorisation des forfaits")
+steps+=("Préparation de la session")
+ui_steps_begin "MISE EN PLACE" "${steps[@]}"
+st=0
 if [[ "$GIT_INIT" == "yes" ]]; then
-  git -C "$TARGET" init -q -b main && ui_rail "${C_GREEN}✓${C_RESET} Dépôt Git initialisé ${C_DIM}branche main${C_RESET}"
+  ui_step_run $st
+  if git -C "$TARGET" init -q -b main; then ui_step_done $st ok "Dépôt Git initialisé" "branche main"
+  else ui_step_done $st fail "Dépôt Git non initialisé" "git init a échoué"; fi
+  st=$(( st + 1 ))
 fi
+GH_FAIL=""
 if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
+  ui_step_run $st
   if gh_err="$(cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin 2>&1 >/dev/null)"; then
-    ui_rail "${C_GREEN}✓${C_RESET} Dépôt GitHub créé ${C_DIM}$GH_USER/$REPO_NAME ($GITHUB_REPO) · remote origin${C_RESET}"
+    ui_step_done $st ok "Dépôt GitHub créé" "$GH_USER/$REPO_NAME · $( [[ "$GITHUB_REPO" == "private" ]] && echo privé || echo public)"
   else
-    ui_rail "${C_YELLOW}!${C_RESET} Dépôt GitHub non créé ${C_DIM}: $(printf '%s' "$gh_err" | tail -1)${C_RESET}"
-    ui_rail "   ${C_DIM}à la main : gh repo create $REPO_NAME --$GITHUB_REPO --source=. --remote=origin${C_RESET}"
+    GH_FAIL="$(printf '%s' "$gh_err" | tail -1)"
+    ui_step_done $st warn "Dépôt GitHub non créé" "$GH_FAIL"
     GITHUB_REPO="no"
   fi
+  st=$(( st + 1 ))
 fi
+ui_step_run $st
 write_brief
+ui_step_done $st ok "Brief enregistré" "${BRIEF#"$TARGET"/}"
+st=$(( st + 1 ))
+AI_FAIL=0
 if [[ "$AI_FILES" != "versioned" ]]; then
-  bash "$SCRIPT_DIR/ai-privacy.sh" --root "$TARGET" apply --quiet \
-    || ui_rail "${C_YELLOW}!${C_RESET} Fichiers IA : réglage incomplet ${C_DIM}→ loomy privacy $AI_FILES${C_RESET}"
+  ui_step_run $st
+  if bash "$SCRIPT_DIR/ai-privacy.sh" --root "$TARGET" apply --quiet </dev/null >/dev/null 2>&1; then
+    ui_step_done $st ok "Fichiers IA réglés" "$( [[ "$AI_FILES" == "local" ]] && echo "locaux, hors Git" || echo "dépôt privé séparé")"
+  else
+    AI_FAIL=1; ui_step_done $st warn "Fichiers IA : réglage incomplet" "loomy privacy $AI_FILES"
+  fi
+  st=$(( st + 1 ))
 fi
-[[ -n "$PLAN_CLAUDE_NEW" ]] && loomy_config_set plan_claude "$PLAN_CLAUDE_NEW"
-[[ -n "$PLAN_CODEX_NEW" ]] && loomy_config_set plan_codex "$PLAN_CODEX_NEW"
-if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then ui_rail "${C_GREEN}✓${C_RESET} Forfaits mémorisés ${C_DIM}$(loomy_config_file | sed "s|^$HOME|~|")${C_RESET}"; fi
-ui_rail "${C_GREEN}✓${C_RESET} Brief enregistré ${C_DIM}${BRIEF#"$TARGET"/}${C_RESET}"
-
+if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then
+  ui_step_run $st
+  [[ -n "$PLAN_CLAUDE_NEW" ]] && loomy_config_set plan_claude "$PLAN_CLAUDE_NEW"
+  [[ -n "$PLAN_CODEX_NEW" ]] && loomy_config_set plan_codex "$PLAN_CODEX_NEW"
+  ui_step_done $st ok "Forfaits mémorisés" "$(loomy_config_file | sed "s|^$HOME|~|")"
+  st=$(( st + 1 ))
+fi
+ui_step_run $st
+PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"
 if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
   # Premier brief : la phase passe à Découverte. Brief refait en cours de route : la phase en cours est conservée.
   current_phase="$(sed -n 's/^phase=//p' "$TARGET/.loomy/state" 2>/dev/null | head -1 || true)"
@@ -712,8 +740,10 @@ if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
     "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
   fi
 fi
+ui_step_done $st ok "Session prête" "phase Découverte"
+ui_steps_end
+if [[ -n "$GH_FAIL" ]]; then ui_rail "   ${C_DIM}dépôt GitHub à la main : gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi
 
-PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"
 LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""
 ui_rail_group "Étape suivante"

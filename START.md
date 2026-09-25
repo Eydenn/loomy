@@ -39,7 +39,14 @@ Au début de chaque phase, **avant toute autre action**, enregistre-la : l'utili
 
 Si le script est absent, ignore cette étape sans le signaler.
 
-À chaque changement de phase, dis aussi à l'utilisateur, en une phrase, ce que tu fais maintenant et ce que tu attends de lui (réponses, validation, relecture) : il ne doit jamais se demander si c'est à lui d'agir.
+À chaque changement de phase, annonce-la à l'utilisateur sur une ligne qui commence par le numéro de phase, puis dis en une phrase ce que tu fais maintenant et ce que tu attends de lui (réponses, validation, relecture) : il ne doit jamais se demander si c'est à lui d'agir. Exemple :
+
+> **Phase 6/10 · Construction**. Je mets en place la structure, puis je confie la rédaction à Codex. Rien à faire de ton côté pour l'instant.
+
+Pendant un long travail, l'utilisateur ne voit qu'un indicateur d'attente : donne-lui des repères.
+- **Avant chaque délégation**, une ligne : rôle, modèle, ce qui est demandé, durée indicative. Exemple : « → Je confie la rédaction des e-mails à l'exécutant Codex (gpt-6-luna), 1 à 3 min. »
+- **Après chaque délégation**, une ligne : résultat et durée. Exemple : « ✓ Exécutant terminé en 1 min 41 s : 4 fichiers créés. Je vérifie. »
+- Entre deux étapes longues, une ligne de progression suffit (« 3 fichiers sur 5 relus »). Pas de pavé : l'utilisateur doit pouvoir suivre d'un coup d'œil.
 
 Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`. Avec Claude Code, le contexte de reprise (`.loomy/scripts/ai-context.sh`) est injecté automatiquement à l'ouverture de chaque session ; avec Codex, lance ce script en début de session.
 

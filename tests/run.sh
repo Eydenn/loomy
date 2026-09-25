@@ -312,6 +312,14 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   tmux -L loomy-test kill-server 2>/dev/null || true
 fi
 
+# Locale UTF-8 choisie même sous pipefail (sinon mesures de texte lentes et accents coupés).
+loc="$(env -i PATH=/usr/bin:/bin HOME="$HOME" bash -c 'set -euo pipefail; source "$1/scripts/lib/models.sh"; p="é"; echo "${#p}"' _ "$REPO")"
+[[ "$loc" == "1" ]] && ok "locale UTF-8 choisie sous pipefail" || ko "locale non choisie sous pipefail ($loc)"
+fit="$(env -i PATH=/usr/bin:/bin LC_ALL=C bash -c 'source "$1/scripts/lib/ui.sh"; _ui_fit "prompt de démarrage prêt" 13; printf "%s" "$UI_FIT"' _ "$REPO")"
+[[ "$fit" == "prompt de dé…" ]] && ok "troncature par caractères (accents intacts)" || ko "troncature : $fit"
+steps="$(env -i PATH=/usr/bin:/bin HOME="$HOME" bash -c 'source "$1/scripts/lib/ui.sh"; ui_steps_begin "MISE EN PLACE" "Étape A" "Étape B"; ui_step_run 0; ui_step_done 0 ok "A faite" "détail"; ui_step_run 1; ui_step_done 1 warn "B partielle" "à revoir"; ui_steps_end' _ "$REPO" 2>&1)"
+grep -q "✓ A faite détail" <<<"$steps" && grep -q "! B partielle à revoir" <<<"$steps" && ok "étapes : lignes finales hors écran plein" || ko "étapes : $steps"
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

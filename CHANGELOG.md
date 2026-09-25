@@ -2,6 +2,18 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.21 — 2026-09-25
+
+### Ajouté
+- **Mise en place en direct à la fin de `loomy init`.** Les étapes (dépôt Git, dépôt GitHub, brief, fichiers IA, session) sont annoncées d'avance, avec une barre de progression, une toupie et un chrono sur l'étape en cours, et la durée de chaque étape.
+- **Diagnostic en direct** : chaque vérification lente (Claude Code, Codex, connexion GitHub, test réel des modèles) affiche une ligne animée avec son chrono, au lieu d'un temps mort.
+- L'orchestrateur annonce chaque phase (« Phase 6/10 · Construction ») et chaque délégation, avant (rôle, modèle, tâche, durée indicative) et après (résultat, durée) : l'utilisateur sait toujours ce qui se passe.
+
+### Corrigé
+- **Questionnaire beaucoup plus réactif** : passage d'une question à l'autre en ~60 ms au lieu de 0,4 à 2,2 s, flèches en ~17 ms, dans les terminaux sans locale UTF-8 déclarée. La locale UTF-8 n'était jamais choisie à cause de `pipefail`, ce qui ralentissait chaque mesure de texte et coupait parfois un caractère accentué en deux.
+- Textes tronqués par caractères, quelle que soit la locale.
+- Tests de sortie des CLI (erreur d'une délégation, sortie d'un modèle, fichiers suivis par Git) fiables même sur de très longues sorties.
+
 ## 0.1.20 — 2026-09-25
 
 ### Modifié

@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.31 — 2026-09-25
+
+### Modifié
+- Titres et nom du projet en violet clair de la charte, en gras : visibles aussi dans les terminaux (ou via tmux) qui n'affichent pas le gras.
+
 ## 0.1.30 — 2026-09-25
 
 ### Modifié

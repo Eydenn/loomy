@@ -27,15 +27,16 @@ UI_KEY=""; UI_CH=""; UI_LEN=0; UI_LINES=()
 
 if [[ -z "${NO_COLOR:-}" ]] && { [[ -n "${LOOMY_FORCE_COLOR:-}" ]] || [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; }; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
-  C_TITLE=$'\033[1;97m'   # titres et nom du projet : gras et blanc vif (visible même si le terminal rend peu le gras)
+  C_TITLE=$'\033[1;97m'   # titres et nom du projet : gras (couleur de la charte ci-dessous, visible même sans gras, dans tmux par exemple)
   C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
   C_BLUE=$'\033[34m'; C_MAGENTA=$'\033[35m'; C_CYAN=$'\033[36m'
   if [[ "${TERM:-}" == *256color* || "${COLORTERM:-}" == truecolor || "${COLORTERM:-}" == 24bit ]]; then
     C_BRAND=$'\033[1;38;5;141m'   # « Loomy » : violet clair
     C_RAIL=$'\033[38;5;98m'       # fil conducteur et repères
     C_BOX=$'\033[38;5;74m'        # encadré des conséquences
+    C_TITLE=$'\033[1;38;5;141m'  # titres et nom du projet : violet clair en gras
   else
-    C_BRAND=$'\033[1;35m'; C_RAIL=$'\033[35m'; C_BOX=$'\033[36m'
+    C_BRAND=$'\033[1;35m'; C_RAIL=$'\033[35m'; C_BOX=$'\033[36m'; C_TITLE=$'\033[1;35m'
   fi
 else
   C_RESET=""; C_BOLD=""; C_DIM=""; C_TITLE=""; C_RED=""; C_GREEN=""; C_YELLOW=""

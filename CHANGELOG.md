@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.25 — 2026-09-25
+
+### Ajouté
+- **`loomy effort`** : règle l'effort de raisonnement de l'orchestrateur pour le projet (`loomy effort low`, ou un menu sans argument), ou celui d'un autre rôle (`loomy effort executor high`). Prioritaire sur le profil du brief, enregistré dans `.loomy/efforts`, pris en compte au prochain `loomy start` (nouvelle session ou reprise) et par les délégations suivantes. `--list` montre tous les rôles, `--reset` revient au profil.
+- Aide : `loomy log` et `loomy watch` décrits à jour.
+
 ## 0.1.24 — 2026-09-25
 
 ### Corrigé

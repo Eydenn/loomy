@@ -351,6 +351,17 @@ st="$(bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal
 [[ "$st" == open* ]] && ok "session reprise vue ouverte" || ko "session reprise : $st"
 kill "$RPID" 2>/dev/null || true
 
+# loomy effort : effort réglé par projet, prioritaire sur le profil, pris en compte par loomy start.
+if [[ -f "$PROJ/.loomy/brief.md" ]]; then
+  run "effort de l'orchestrateur réglé" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" low
+  grep -qx "lead=low" "$PROJ/.loomy/efforts" && ok "effort enregistré dans .loomy/efforts" || ko "effort non enregistré"
+  run "start --print avec l'effort réglé" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-start.sh" --root "$PROJ" --print
+  has "start utilise l'effort réglé" "effort low"
+  fails "effort : niveau inconnu refusé" 2 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" turbo
+  run "effort --reset" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" --reset
+  [[ ! -f "$PROJ/.loomy/efforts" ]] && ok "effort revenu au profil" || ko "réglage toujours présent"
+fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

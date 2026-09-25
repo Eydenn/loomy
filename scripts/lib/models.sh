@@ -217,6 +217,12 @@ ai_route() {
   esac
   cap="max"
   effort="$(ai_effort_shift "$effort" 0 "$cap")"
+  # Effort réglé pour ce projet (loomy effort) : prioritaire sur le profil.
+  R_EFFORT_SET=0
+  local o
+  for o in ${AI_OVERRIDES:-}; do
+    if [[ "${o%%=*}" == "$role" ]]; then effort="${o#*=}"; R_EFFORT_SET=1; fi
+  done
   case "$family:$tier" in
     claude:TOP) R_MODEL="$AI_MODEL_CLAUDE_TOP" ;;
     claude:MID) R_MODEL="$AI_MODEL_CLAUDE_MID" ;;
@@ -301,6 +307,8 @@ ai_detect_env() {
   AI_PROFILE="${AI_PROFILE:-equilibre}"
   ai_env_for "$AI_MODE" "$AI_LEAD"
   if [[ -n "${AI_ROUTE_ENV:-}" ]]; then AI_ENV="$AI_ROUTE_ENV"; AI_ENV_NOTE=""; fi
+  # Efforts réglés pour ce projet (.loomy/efforts, une ligne « rôle=effort ») : voir loomy effort.
+  AI_OVERRIDES="$(grep -E '^[a-z]+=(low|medium|high|xhigh|max)$' "$root/.loomy/efforts" 2>/dev/null | tr '\n' ' ' || true)"
 }
 
 ai_env_label() {

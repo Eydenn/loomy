@@ -196,7 +196,7 @@ ui_clear
 if [[ "$COMPACT" == "1" ]]; then
   # Vue resserrée : le logo aussi (sans lignes vides autour), si le terminal est assez large.
   if ui_logo_ok; then
-    _ui_logo_lines "  "
+    UI_LOGO_SIZE=small _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   else

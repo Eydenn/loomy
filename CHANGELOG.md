@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.27 — 2026-09-25
+
+### Modifié
+- Vue resserrée de `loomy watch` : petit logo (moitié de taille, trois lignes), même dessin et même curseur clignotant.
+
 ## 0.1.26 — 2026-09-25
 
 ### Modifié

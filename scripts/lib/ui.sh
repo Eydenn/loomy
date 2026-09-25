@@ -369,6 +369,13 @@ UI_LOGO=(
   '                                 {F}▀▀▀'
 )
 
+# Petit logo (moitié de taille, trois lignes) : même dessin en police de 3 × 5 pixels, pour les panneaux.
+UI_LOGO_SMALL=(
+  '{A}▀▄  {F} ▀█   ▄   ▄  ▄▄ ▄  ▄ ▄ {C}▄▄'
+  '{A} ▄▀ {F}  █  █ █ █ █ █ █ █ ▀▄█ {C}██'
+  '{A}▀   {F} ▀▀▀  ▀   ▀  ▀ ▀ ▀ ▄▄▀ {C}▀▀'
+)
+
 # ui_logo_ok : vrai si le terminal est assez large pour le logo.
 ui_logo_ok() { _ui_term_size; (( UI_COLS >= 50 )); }
 
@@ -378,7 +385,8 @@ _ui_logo_lines() {
   # Curseur éteint : même place, teinte à peine visible (le logo ne bouge pas).
   [[ "${LOOMY_LOGO_BLINK:-on}" == "off" && -n "$C_RESET" ]] && cursor=$'\033[38;5;237m'
   UI_LINES=()
-  for l in "${UI_LOGO[@]}"; do
+  local src=("${UI_LOGO[@]}"); [[ "${UI_LOGO_SIZE:-}" == "small" ]] && src=("${UI_LOGO_SMALL[@]}")
+  for l in "${src[@]}"; do
     l="${l//\{A\}/${C_RESET}${accent}}"; l="${l//\{C\}/${C_RESET}${cursor}}"; l="${l//\{F\}/${C_RESET}${text}}"
     UI_LINES+=("$1$l${C_RESET}")
   done

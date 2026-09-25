@@ -405,7 +405,7 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 | ✅&nbsp;0.3.5 | **Fixed-frame interface**: header (logo, project, context), a body that alone changes, footer (keys, version); the home screen opens status, journal, visibility and help inside the frame; nothing piles up in the terminal |
 | 🔜&nbsp;0.4 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
-| | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks |
+| | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |
 | | `loomy review`: on-demand cross review of the current branch or diff |
 | | Project templates (web, API, CLI, emails…) that prefill the brief and structure |
 | | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, shareable HTML page |
@@ -415,4 +415,5 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 | | Configurable color theme (`loomy config`) for terminals that don't render bold |
 | | Short README ("5 minutes to start"), full reference separately |
 | | Public repository and token-free Homebrew, when decided |
+| 💡 | [Jev](https://github.com/WXK-AI/jev-opus) integration: Opus 5.5 effort readjusted at every step during Claude delegations, when Jev is installed |
 | 💡 | Real subscription quota tracking, once Claude Code or Codex expose it |

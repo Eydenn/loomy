@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.3.7 — 2026-09-25
+
+### Ajouté
+- **Autonomie et points d'arrêt** dans les instructions générées pour les agents, selon les recommandations d'Anthropic pour Opus 5.5 : section dédiée dans le template `AGENTS.md` (avancer seul sur une tâche bornée ; s'arrêter et demander avant toute opération destructive ou difficile à annuler — suppression de données, migration, `push --force`, `reset --hard`, action en production — quand une erreur revient, ou avant de sortir du périmètre ; garder les confirmations de permission ; liste d'avancement et bilan vérifié / déduit / non testé pour les tâches longues). Rappel dans `CLAUDE.md` et consigne dans START.md.
+- Feuille de route : fichier d'avancement `TASKS.md` intégré au chantier `loomy task` (0.4).
+
 ## 0.3.6 — 2026-09-25
 
 ### Corrigé

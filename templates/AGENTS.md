@@ -31,6 +31,13 @@ Ne lis que les sources utiles à la tâche en cours.
 - N'affirme jamais que des tests ou vérifications sont passés s'ils n'ont pas réellement réussi.
 - Garde secrets et données sensibles hors du code, des logs, des commits et des exemples.
 
+## Autonomie et points d'arrêt
+- Pour une tâche comprise et bornée, avance sans demander à chaque étape : inspecte, modifie, vérifie, puis rends compte.
+- Arrête-toi et demande une validation explicite avant toute opération destructive ou difficile à annuler : suppression de fichiers ou de données, migration, réécriture de l'historique Git (`push --force`, `reset --hard`, rebase d'une branche partagée), changement de dépendances majeures, action sur un service externe ou de production.
+- Arrête-toi aussi quand l'information manquante change réellement le résultat, quand une même erreur revient après deux tentatives, ou avant de sortir du périmètre demandé.
+- Ne désactive pas les confirmations de permission de l'outil pour aller plus vite.
+- Pour une tâche longue, tiens à jour une courte liste d'avancement (fait, en cours, reste à faire) et termine par ce qui est vérifié, déduit ou non testé.
+
 ## Délégation adaptative
 Par défaut, l'agent Codex principal fait le travail.
 Ne délègue que si le travail est parallélisable, demande une expertise spécialisée, gagne à être isolé du contexte principal, ou nécessite une relecture indépendante.

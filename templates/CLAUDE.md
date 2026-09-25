@@ -15,6 +15,8 @@ Ne lis les sources durables du projet que lorsqu'elles sont utiles :
 
 Ne recopie pas ces documents ici. Garde le contexte léger.
 
+Autonomie : suis la section « Autonomie et points d'arrêt » d'`AGENTS.md`. En résumé, avance seul sur une tâche bornée, mais arrête-toi et demande avant toute opération destructive ou difficile à annuler (suppression de données, migration, `push --force`, `reset --hard`, action en production).
+
 Pour collaborer avec Codex :
 - ne modifie jamais les mêmes fichiers en même temps dans le même répertoire de travail ;
 - suis `.ai/AI_WORKFLOW.md` pour les modes SOLO, REVIEW, HANDOFF, PARALLEL et ORCHESTRATED ;

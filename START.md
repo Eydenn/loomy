@@ -245,6 +245,8 @@ Génère `CLAUDE.md` pour Claude Code, comme une fine couche de compatibilité.
 Génère `.ai/AI_WORKFLOW.md` à partir du template de workflow commun, pour que Codex et Claude suivent le même contrat de coordination sans dupliquer de longues instructions.
 Si un usage hybride est prévu, prévois `.ai/HANDOFF.md` comme fichier de coordination éphémère, pas comme mémoire permanente du projet.
 
+L'`AGENTS.md` généré reprend la section « Autonomie et points d'arrêt » du template : quand avancer seul, et quand s'arrêter pour demander (toujours avant une opération destructive ou difficile à annuler). Adapte-la au projet (ex. commandes de migration, environnements de production), sans l'affaiblir.
+
 Garde les fichiers d'instructions permanents courts. Les connaissances détaillées vont dans `PROJECT.md`, `ARCHITECTURE.md`, les ADR ou des skills spécialisés, et ne se chargent que lorsqu'elles sont utiles.
 
 ### Mise en place hybride Codex + Claude

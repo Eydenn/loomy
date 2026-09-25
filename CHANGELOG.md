@@ -2,6 +2,15 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.23 — 2026-09-25
+
+### Ajouté
+- **`loomy watch` plus vivant** : rafraîchi chaque seconde ; délégation en cours avec toupie, chrono et avancement estimé d'après les délégations passées du même rôle sur le même modèle (« ▰▰▰▱▱▱ 45 s / ~1 min 40 s », « plus long que d'habitude » au-delà) ; nouvelle phase et délégation tout juste terminée mises en évidence (✦) quelques secondes.
+- **Notifications** (macOS) et bip : changement de phase (avec ce qu'on attend de toi), délégation en échec, bootstrap terminé, session de l'orchestrateur fermée en plein bootstrap. `loomy config set notify no` pour les couper.
+- **Touches dans `loomy watch`** : `c` vue resserrée ou complète, `l` journal, `s` ouvrir la session, `q` quitter ; le pied d'écran reste visible même quand la vue complète dépasse.
+- **Bilan de fin** : « ✦ Projet prêt · bootstrap en 42 min · 8 délégations · $0.80 ».
+- **`loomy log` lisible** : phases, délégations (durée, coût), sessions, à l'heure locale ; `--raw` pour le JSON.
+
 ## 0.1.22 — 2026-09-25
 
 ### Ajouté

@@ -329,6 +329,18 @@ fit="$(env -i PATH=/usr/bin:/bin LC_ALL=C bash -c 'source "$1/scripts/lib/ui.sh"
 steps="$(env -i PATH=/usr/bin:/bin HOME="$HOME" bash -c 'source "$1/scripts/lib/ui.sh"; ui_steps_begin "MISE EN PLACE" "Étape A" "Étape B"; ui_step_run 0; ui_step_done 0 ok "A faite" "détail"; ui_step_run 1; ui_step_done 1 warn "B partielle" "à revoir"; ui_steps_end' _ "$REPO" 2>&1)"
 grep -q "✓ A faite détail" <<<"$steps" && grep -q "! B partielle à revoir" <<<"$steps" && ok "étapes : lignes finales hors écran plein" || ko "étapes : $steps"
 
+# Journal lisible et vues de loomy watch.
+if [[ -s "$PROJ/.loomy/logs/events.jsonl" ]]; then
+  run "loomy log lisible" bash "$REPO/scripts/ai-log.sh" --root "$PROJ" -n 5
+  if grep -q '^{' "$OUT"; then ko "loomy log : JSON brut au lieu du format lisible"; else ok "loomy log : format lisible"; fi
+  run "loomy log --raw" bash "$REPO/scripts/ai-log.sh" --root "$PROJ" -n 1 --raw
+  has "loomy log --raw : JSON" '^\{"ts"'
+  run "vue journal de watch" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$PROJ" --compact --journal
+  has "vue journal : section JOURNAL" "JOURNAL"
+fi
+run "vue resserrée" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$PROJ" --compact
+if grep -q "FICHIERS IA" "$OUT"; then ko "vue resserrée : sections détaillées présentes"; else ok "vue resserrée : sections détaillées absentes"; fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

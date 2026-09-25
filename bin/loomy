@@ -168,11 +168,12 @@ usage() {
 # Aide courte des commandes gérées directement ici.
 sub_help() {
   case "$1" in
-    log) echo "Usage : loomy log [-n N] [-f]"; echo "Affiche les N dernières lignes du journal (.loomy/logs/events.jsonl, 20 par défaut) ; -f le suit en continu." ;;
+    log) echo "Usage : loomy log [-n N] [-f] [--raw]"; echo "Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl)." ;;
     config) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"
             echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
             echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"
-            echo "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session)."
+            echo "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),"
+            echo "       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap)."
             echo "Fichier : $(loomy_config_file)" ;;
     delegate) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""
               echo "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."
@@ -211,14 +212,8 @@ case "$cmd" in
   watch) exec bash "$S/ai-status.sh" --root "$(project_root)" --watch "$@" ;;
 
   log|logs)
-    n=20; follow=0
-    while [[ $# -gt 0 ]]; do
-      case "$1" in -n) n="${2:-20}"; shift ;; -f|--follow) follow=1 ;; -h|--help) sub_help log; exit 0 ;; *) echo "Argument inconnu : $1" >&2; exit 2 ;; esac
-      shift
-    done
-    file="$(project_root)/.loomy/logs/events.jsonl"
-    [[ -f "$file" ]] || { echo "Aucun journal dans ce projet ($file)." >&2; exit 1; }
-    if (( follow )); then exec tail -n "$n" -f "$file"; else exec tail -n "$n" "$file"; fi ;;
+    case "${1:-}" in -h|--help) sub_help log; exit 0 ;; esac
+    exec bash "$S/ai-log.sh" --root "$(project_root)" "$@" ;;
 
   config)
     sub="${1:-list}"; [[ $# -gt 0 ]] && shift
@@ -232,8 +227,8 @@ case "$cmd" in
           plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { echo "plan_claude : api, pro, max5, max20, team ou enterprise" >&2; exit 2; } ;;
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { echo "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; exit 2; } ;;
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "$key : un prix mensuel en \$" >&2; exit 2; } ;;
-          start_watch) [[ "$val" =~ ^(yes|no)$ ]] || { echo "start_watch : yes ou no" >&2; exit 2; } ;;
-          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch)" >&2; exit 2 ;;
+          start_watch|notify) [[ "$val" =~ ^(yes|no)$ ]] || { echo "$key : yes ou no" >&2; exit 2; } ;;
+          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify)" >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; exit 2 ;;

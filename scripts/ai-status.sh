@@ -2,7 +2,7 @@
 # Statut du projet et du bootstrap pour Loomy. Compatible bash 3.2.
 #   ai-status.sh                 affiche le statut
 #   ai-status.sh set <phase>     enregistre la phase en cours du bootstrap (utilisé par les agents)
-#   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (2 par défaut), q pour quitter
+#   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (1 par défaut) ; q c l s (voir le pied d'écran)
 #   --compact / --full           vue resserrée (pour un panneau étroit) ou complète ; watch choisit selon la taille du terminal
 #   ai-status.sh --root <dir>    agit sur un autre dossier de projet
 set -euo pipefail
@@ -27,14 +27,16 @@ ROOT=""
 CMD="show"
 PHASE_ARG=""
 WATCH=0
-INTERVAL=2
+INTERVAL=1
 COMPACT=""
+JOURNAL_VIEW=0
 UNTIL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
     --watch|-w) WATCH=1; if [[ "${2:-}" =~ ^[0-9]+$ ]]; then INTERVAL="$2"; shift; fi ;;
     --compact) COMPACT=1 ;;
+    --journal) JOURNAL_VIEW=1 ;;
     --until-exit) UNTIL="${2:-}"; shift ;;
     --full) COMPACT=0 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
@@ -93,30 +95,84 @@ label_of() {
 }
 
 # ---------------------------------------------------------------- mode surveillance
-# Écran plein, redessiné sur place à chaque rafraîchissement (rien ne s'empile dans l'historique) ; q ou Ctrl-C pour quitter.
+# Écran plein, redessiné sur place chaque seconde (rien ne s'empile dans l'historique). Entre deux images, le suivi
+# repère ce qui change (phase, délégation terminée ou en échec, session fermée) : il le met en évidence quelques
+# secondes et prévient par une notification (macOS) et un bip. Touches : q quitter, c vue resserrée/complète,
+# l journal, s ouvrir la session.
+watch_notify() {
+  [[ "$(loomy_config_get notify 2>/dev/null || true)" == "no" ]] && return 0
+  printf '\a' >&2
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v osascript >/dev/null 2>&1; then
+    local t="${1//\"/\'}" m="${2//\"/\'}"
+    osascript -e "display notification \"$m\" with title \"Loomy · ${NAME_W//\"/\'}\" subtitle \"$t\"" >/dev/null 2>&1 &
+  fi
+  return 0
+}
+
 if (( WATCH )); then
   ui_screen_begin
   trap 'UI_PAGE_L=(); _ui_restore; exit 0' INT TERM
   printf '\033[?25l' >&2
   stty -echo </dev/tty 2>/dev/null || true
+  NAME_W="$(brief_get name 2>/dev/null || basename "$ROOT")"
+  J="$(ai_journal_file "$ROOT")"
+  tick=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
+  p_phase=""; p_done=0; p_err=0; p_sess=""
   while true; do
-    # Vue resserrée d'office dans un petit terminal ou un panneau (loomy start --watch).
-    _ui_term_size; view="--full"
-    if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then view="--compact"; fi
-    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · q pour quitter" "$0" --root "$ROOT" "$view" 2>&1)"
+    now="$(date +%s)"
+    # ---- ce qui a changé depuis l'image précédente
+    phase="$(sed -n 's/^phase=//p' "$STATE" 2>/dev/null | head -1 || true)"
+    n_done=0; n_err=0
+    if [[ -s "$J" ]]; then
+      read -r n_done n_err <<<"$(awk 'index($0, "\"type\":\"delegation\",") { n++; if (index($0, "\"status\":\"ok\"") == 0) e++ } END { print n + 0, e + 0 }' "$J")"
+    fi
+    sess="$(ai_session_state "$ROOT" 2>/dev/null || true)"; sess="${sess%%|*}"
+    if (( ! first )); then
+      if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
+        hl_phase=$(( now + 8 ))
+        if [[ "$phase" == "done" ]]; then watch_notify "✦ Projet prêt" "Bootstrap terminé : la suite se passe avec l'orchestrateur (loomy start)."
+        else watch_notify "Phase $(loomy_phase_index "$phase")/10 · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
+      fi
+      if (( n_done > p_done )); then hl_deleg_n=$(( n_done - p_done )); hl_deleg_until=$(( now + 8 )); fi
+      if (( n_err > p_err )); then watch_notify "Délégation en échec" "Voir le détail dans loomy watch (touche l) ou loomy log."; fi
+      if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
+        watch_notify "Session de l'orchestrateur fermée" "Bootstrap en cours : loomy start pour la reprendre."
+      fi
+    fi
+    first=0; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
+    # ---- image
+    _ui_term_size; size="--full"
+    if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
+    keys="q quitter · c $( [[ "$size" == "--compact" ]] && echo "vue complète" || echo "vue resserrée") · l $( [[ "$view" == "journal" ]] && echo "statut" || echo "journal")"
+    [[ -z "$UNTIL" ]] && keys="$keys · s session"
+    hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
+    hl_p=0; (( now < hl_phase )) && hl_p=1
+    extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
+    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+      LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · $keys" "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     UI_PAGE_L=()
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
       # La page commence en haut de l'écran ; ce qui dépasse en bas est coupé (le haut, le plus utile, reste visible).
-      _ui_term_size
-      (( ${#UI_PAGE_L[@]} > UI_ROWS - 1 )) && UI_PAGE_L=("${UI_PAGE_L[@]:0:$(( UI_ROWS - 1 ))}")
+      # Le pied (heure, touches) reste toujours visible, en bas.
+      n_l=${#UI_PAGE_L[@]}
+      if (( n_l > UI_ROWS - 1 )); then
+        foot="${UI_PAGE_L[$(( n_l - 1 ))]}"
+        UI_PAGE_L=("${UI_PAGE_L[@]:0:$(( UI_ROWS - 3 ))}" "${C_RAIL}│${C_RESET}  ${C_DIM}… vue complète plus haute que l'écran : c pour la vue resserrée${C_RESET}" "$foot")
+      fi
       _ui_page_draw
     else
       printf '%s\n' "$frame" >&2
     fi
+    tick=$(( tick + 1 ))
     key=""
     if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
-    [[ "$key" == "q" || "$key" == "Q" ]] && break
+    case "$key" in
+      q|Q) break ;;
+      c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
+      l|L) if [[ "$view" == "journal" ]]; then view="status"; else view="journal"; fi ;;
+      s|S) [[ -z "$UNTIL" ]] && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
+    esac
     # Suivi ouvert par loomy start --watch : il se ferme avec la session de l'agent.
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
   done
@@ -135,6 +191,20 @@ fi
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
 if [[ -n "$proj_v" && -n "$inst_v" && "$proj_v" != "$inst_v" && "$SCRIPT_DIR" != "$ROOT/.loomy/scripts" ]] && ai_version_ge "$inst_v" "$proj_v"; then
   ui_warn "Loomy $proj_v dans ce projet, $inst_v installé" "mets le projet à jour : loomy init --update"
+fi
+
+# ---------------------------------------------------------------- vue journal (touche l de loomy watch)
+if (( JOURNAL_VIEW )); then
+  ui_section "JOURNAL" "derniers événements, heure locale"
+  _ui_term_size
+  jn=$(( UI_ROWS - 9 )); (( jn < 5 )) && jn=5
+  if [[ -s "$(ai_journal_file "$ROOT")" ]]; then
+    while IFS= read -r l; do ui_rail "$l"; done < <(bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n "$jn" 2>/dev/null || true)
+  else
+    ui_info "journal vide pour l'instant"
+  fi
+  ui_end "${LOOMY_STATUS_FOOTER:-journal complet : loomy log}"
+  exit 0
 fi
 
 # ---------------------------------------------------------------- phases du bootstrap
@@ -173,8 +243,24 @@ else
   off=$(( (idx > 10 ? 9 : idx - 1) * (cw + 1) )); (( off < 0 )) && off=0
   (( off + UI_LEN > total )) && off=$(( total - UI_LEN ))
   _ui_pad "" "$off"
-  ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}"
+  hl=""; [[ "${LOOMY_HL_PHASE:-0}" == "1" ]] && hl="  ${C_BOLD}${C_BRAND}✦ nouvelle phase${C_RESET}"
+  ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}${hl}"
   ui_print "${C_RAIL}│${C_RESET}"
+  # Bootstrap terminé : le bilan (durée, délégations, coût), tiré du journal.
+  J_DONE="$(ai_journal_file "$ROOT")"
+  if [[ "$CURRENT" == "done" && -s "$J_DONE" ]]; then
+    read -r b_start b_end b_n b_cost <<<"$(awk '
+      function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+      index($0, "\"type\":\"phase\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
+      index($0, "\"type\":\"delegation\",") { n++; if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
+      END { printf "%s %s %d %.2f\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c }' "$J_DONE")"
+    s_ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$b_start" +%s 2>/dev/null || true)"; e_ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$b_end" +%s 2>/dev/null || true)"
+    took=""
+    if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
+      d=$(( e_ep - s_ep )); if (( d >= 3600 )); then took="$(( d / 3600 )) h $(( d % 3600 / 60 )) min"; else took="$(( d / 60 )) min"; fi
+    fi
+    ui_rail "${C_GREEN}${C_BOLD}✦ Projet prêt${C_RESET}${took:+ ${C_DIM}·${C_RESET} bootstrap en ${C_BOLD}$took${C_RESET}} ${C_DIM}·${C_RESET} ${b_n} délégation(s) ${C_DIM}·${C_RESET} \$${b_cost}"
+  fi
   [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
   sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"
@@ -216,17 +302,29 @@ if [[ -s "$JOURNAL" ]]; then
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
     /"type":"delegation_start"/ { id = field("id"); order[++n] = id
       line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" substr(field("task"), 1, 60); next }
-    /"type":"delegation",/ { finished[field("id")] = 1 }
-    END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) print line[order[i]] }' "$JOURNAL" |
-  while IFS='|' read -r pid ts role m task; do
+    /"type":"delegation",/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
+    END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) { split(line[order[i]], f, "|"); k = f[3] "|" f[4]
+            print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' "$JOURNAL" |
+  while IFS='|' read -r pid ts role m task est; do
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || continue
     since="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || date -u -d "$ts" +%s 2>/dev/null || true)"
-    el=""
-    if [[ -n "$since" ]]; then
-      el=$(( now_s - since ))
-      if (( el >= 3600 )); then el="$(( el / 3600 )) h $(( el % 3600 / 60 )) min"; else el="$(( el / 60 )) min $(( el % 60 )) s"; fi
+    # Toupie (une image par rafraîchissement de loomy watch), chrono, et avancement estimé d'après les délégations
+    # passées du même rôle sur le même modèle.
+    spin="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"
+    el_s=0; [[ -n "$since" ]] && el_s=$(( now_s - since )); (( el_s < 0 )) && el_s=0
+    _ui_dur $(( el_s * 1000 )); el="${UI_DUR/,? s/ s}"
+    prog=""
+    if [[ -n "$est" ]] && (( est > 0 )); then
+      fill=$(( el_s * 10 / est )); (( fill > 10 )) && fill=10
+      bar=""; for (( k = 0; k < 10; k++ )); do if (( k < fill )); then bar="${bar}▰"; else bar="${bar}▱"; fi; done
+      _ui_dur $(( est * 1000 )); est_txt="${UI_DUR/,? s/ s}"
+      if (( el_s > est * 3 / 2 )); then prog="${C_YELLOW}${bar}${C_RESET} ${el} ${C_DIM}· plus long que d'habitude (~${est_txt})${C_RESET}"
+      else prog="${C_BRAND}${bar}${C_RESET} ${el} ${C_DIM}/ ~${est_txt}${C_RESET}"; fi
+    else
+      prog="${el} ${C_DIM}· première fois pour ce rôle${C_RESET}"
     fi
-    ui_rail "${C_YELLOW}◐${C_RESET} ${C_BOLD}en cours${C_RESET}${el:+ ${C_DIM}depuis $el${C_RESET}} $(printf '%-11s %-17s' "$role" "$m")  ${C_DIM}${task}${C_RESET}"
+    ui_rail "${C_YELLOW}${spin} en cours${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
+    ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
     ui_info "aucune délégation terminée pour l'instant"
@@ -274,15 +372,20 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail ""
     ui_rail "${C_DIM}Dernières délégations${C_RESET}"
     fi
+    n_shown="$(grep -c '"type":"delegation",' "$JOURNAL" || true)"; (( n_shown > last_n )) && n_shown=$last_n
+    row=0
     grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
       { printf "%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40) }' |
     while IFS='|' read -r t st role m d cost task; do
+      row=$(( row + 1 ))
       # Journal en UTC, affichage à l'heure locale.
       ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$t" +%s 2>/dev/null || date -u -d "$t" +%s 2>/dev/null || true)"
       if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
+      # Délégation tout juste terminée (loomy watch) : mise en évidence quelques secondes.
+      if (( row > n_shown - ${LOOMY_HL_DELEG:-0} )); then mark="${mark}${C_BRAND}${C_BOLD}✦${C_RESET}"; t="${C_BOLD}${t}"; else mark="${mark} "; fi
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  $%.4f' "$role" "$m" "$d" "$cost")  ${C_DIM}${task}${C_RESET}"
     done
   fi

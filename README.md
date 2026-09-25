@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.2.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.3.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -190,7 +190,7 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 
 | Besoin | Commande |
 |---|---|
-| Mettre&nbsp;à&nbsp;jour&nbsp;Loomy | `loomy update`, puis `loomy init --update` dans chaque projet (garde brief, phase et journal) |
+| Mettre&nbsp;à&nbsp;jour&nbsp;Loomy | `loomy update` : tous tes projets en profitent aussitôt (leurs scripts sont des relais vers le Loomy installé). `loomy init --update` ne sert plus qu'aux nouveaux modèles de documents, et une fois pour les projets d'avant la 0.3 (garde brief, phase et journal) |
 | Projet&nbsp;déjà&nbsp;initialisé | `loomy init` propose : reprendre, mettre à jour, refaire le questionnaire, réinitialiser |
 | Refaire&nbsp;le&nbsp;questionnaire | `loomy brief` |
 | Recommencer&nbsp;le&nbsp;bootstrap | `loomy init --reset` : START.md recopié, phase remise à zéro, questionnaire relancé avec tes anciennes réponses |
@@ -255,7 +255,7 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 | <code>loomy&nbsp;status</code> | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi chaque seconde (ou toutes les N secondes) : délégation en cours avec toupie, chrono et avancement estimé, nouveautés mises en évidence, notification (macOS) et bip à chaque phase, échec ou fin de bootstrap. Touches : `q` quitter, `c` vue resserrée ou complète, `l` journal, `s` ouvrir la session. Vue resserrée d'office dans un petit terminal |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 La session de l'orchestrateur et le suivi en direct côte à côte (ou l'un au-dessus de l'autre si le terminal est étroit), via tmux ou iTerm2 ; le suivi se ferme avec la session |
-| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal lisible, à l'heure locale, éventuellement en continu (`--raw` : JSON brut) |
+| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal lisible, à l'heure locale, éventuellement en continu (`--raw` : JSON brut) ; `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts |
 
 **Ce qui est en direct.** L'écran relit le projet toutes les 2 secondes :
 - les **délégations** à Claude ou Codex s'affichent dès leur lancement, avec leur chrono, puis leur coût à la fin ; une délégation interrompue disparaît d'elle-même ;
@@ -438,11 +438,11 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
-| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy (puis `loomy init --update` dans chaque projet) et version ; `version --all` liste toutes les installations |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy, valable pour tous les projets ; `update --catalog` : seulement le catalogue des modèles et des prix ; `version --all` liste toutes les installations |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | montre comment désinstaller Loomy selon l'installation, et comment le retirer d'un projet |
 | ❓&nbsp;<code>loomy&nbsp;help&nbsp;[commande]</code> | aide générale, ou aide d'une commande |
 
-<sub>Les commandes trouvent le projet depuis n'importe lequel de ses sous-dossiers, y compris quand le projet Loomy vit dans un sous-dossier d'un dépôt Git plus large. Dans un projet, l'orchestrateur appelle directement les scripts de <code>.loomy/scripts/</code>, sans avoir besoin de la commande <code>loomy</code>. <code>LOOMY_NO_CLEAR=1</code> garde l'historique du terminal au lieu d'effacer l'écran.</sub>
+<sub>Les commandes trouvent le projet depuis n'importe lequel de ses sous-dossiers, y compris quand le projet Loomy vit dans un sous-dossier d'un dépôt Git plus large. Dans un projet, l'orchestrateur appelle les scripts de <code>.loomy/scripts/</code> : ce sont de petits relais vers le Loomy installé sur la machine (trouvé par <code>$LOOMY_HOME</code>, la commande <code>loomy</code> ou ses emplacements habituels). <code>LOOMY_NO_CLEAR=1</code> garde l'historique du terminal au lieu d'effacer l'écran.</sub>
 
 ---
 
@@ -558,11 +558,11 @@ loomy/
 | ✅ | Tests macOS et Linux à chaque push (GitHub Actions) |
 | ✅ | `loomy feedback` : issue GitHub pré-remplie (version, diagnostic, fin du journal, brief anonymisé) |
 | ✅ | Installation des testeurs simplifiée : `loomy doctor --fix` enchaîne les étapes `gh` |
-| 🔜&nbsp;0.3 | **Fiabiliser** |
-| | Plus de copie des scripts dans chaque projet : un lien vers le Loomy installé ; `loomy init --update` réservé aux changements de templates |
-| | Catalogue de modèles et de prix mis à jour sans nouvelle version (`loomy update --catalog`), alerte si un modèle routé disparaît |
-| | Coûts réels : sous-agents Claude (hook `SubagentStop`), tours de l'orchestrateur quand ils sont exposés, export CSV |
-| | Journal archivé chaque mois, `loomy log --since` |
+| ✅&nbsp;0.3 | **Fiabiliser** : fait |
+| ✅ | Plus de copie des scripts dans chaque projet : un lien vers le Loomy installé ; `loomy init --update` réservé aux changements de templates |
+| ✅ | Catalogue de modèles et de prix mis à jour sans nouvelle version (`loomy update --catalog`), alerte si un modèle routé disparaît |
+| ✅ | Coûts réels : orchestrateur Claude Code (hook `Stop`) et sous-agents (hook `SubagentStop`), mesurés dans la transcription au prix public ; export CSV |
+| ✅ | Journal archivé chaque mois, `loomy log --since` |
 | 🔜&nbsp;0.4 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit |
 | | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |

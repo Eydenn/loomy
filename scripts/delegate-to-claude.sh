@@ -60,7 +60,7 @@ $TASK
 Tu es un spécialiste. Ne prends pas la direction du projet. Ne modifie aucun fichier du dépôt. Rends ton résultat uniquement à l'orchestrateur. Réponds en français."
 
 run_claude() {
-  claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
+  LOOMY_DELEGATION=1 claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
     --model "$1" --effort "$EFFORT" \
     --disallowedTools "Edit,Write,NotebookEdit"
 }

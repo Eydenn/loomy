@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/journal.sh
+source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
 
@@ -201,6 +203,12 @@ done
 
 # ---------------------------------------------------------------- routage
 ai_detect_env "$ROOT"
+ui_section "CATALOGUE" "modèles et prix"
+cat_ep="$(ai_ts_epoch "${AI_CATALOG_DATE}T00:00:00Z")"; age=""
+[[ -n "$cat_ep" ]] && age=$(( ( $(date +%s) - cat_ep ) / 86400 ))
+if [[ -n "$age" ]] && (( age > 60 )); then ui_warn "catalogue du $AI_CATALOG_DATE ($AI_CATALOG_SOURCE)" "il a $age jours : loomy update --catalog"
+else ui_ok "catalogue du $AI_CATALOG_DATE" "$AI_CATALOG_SOURCE"; fi
+
 ui_section "ROUTAGE"
 ui_ok "$(ai_env_label "$AI_ENV")" "profil $(ai_profile_label "$AI_PROFILE")"
 [[ -n "$AI_ENV_NOTE" ]] && ui_warn "Repli" "$AI_ENV_NOTE"

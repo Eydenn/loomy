@@ -24,6 +24,30 @@ fi
 unset _ui_probe _l _locs
 
 AI_CATALOG_DATE="2026-09-23"
+AI_CATALOG_SOURCE="intégré"
+AI_PRICES_EXTRA=""   # prix du catalogue téléchargé : "modèle=entrée sortie cache;…"
+
+# Catalogue téléchargé (loomy update --catalog) : utilisé s'il est plus récent que celui livré avec Loomy.
+# Lu ligne par ligne, jamais exécuté ; une variable AI_MODEL_* déjà définie dans l'environnement reste prioritaire.
+ai_catalog_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/catalog.conf"; }
+_ai_catalog_load() {
+  local f="$1" line k v d
+  [[ -f "$f" ]] || return 0
+  d="$(sed -n 's/^date=\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)$/\1/p' "$f" | head -1)"
+  [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
+  AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="téléchargé"
+  while IFS= read -r line; do
+    [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9._-]+)$ ]] || \
+    [[ "$line" =~ ^price\.([A-Za-z0-9._-]+)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]] || continue
+    if [[ "$line" == model.* ]]; then
+      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"; v="${BASH_REMATCH[3]}"
+      eval "[[ -n \"\${AI_MODEL_${k}:-}\" ]] || AI_MODEL_${k}=\"\$v\""
+    else
+      AI_PRICES_EXTRA="${AI_PRICES_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
+    fi
+  done <"$f"
+}
+_ai_catalog_load "$(ai_catalog_file)"
 
 : "${AI_MODEL_CLAUDE_TOP:=claude-opus-5-5}"    # meilleur raisonnement, code agentique, travail de bureau
 : "${AI_MODEL_CLAUDE_MID:=claude-sonnet-5}"    # travail courant
@@ -38,6 +62,12 @@ AI_MIN_CODEX_VERSION="0.155.0"   # version de la CLI Codex vérifiée avec les m
 # Prix publics en $ par million de tokens : "entrée sortie lecture-cache" (vérifiés le 23/09/2026).
 # Servent à estimer le coût quand l'outil ne le rapporte pas (Codex).
 ai_price() {
+  # Prix du catalogue téléchargé d'abord (préfixe du modèle, comme ci-dessous).
+  local e
+  local IFS=';'
+  for e in $AI_PRICES_EXTRA; do
+    [[ -n "$e" && "$1" == "${e%%=*}"* ]] && { echo "${e#*=}"; return 0; }
+  done
   case "$1" in
     claude-opus-5-5*) echo "4 20 0.20" ;;
     claude-sonnet-5*) echo "2 10 0.20" ;;
@@ -341,6 +371,8 @@ ai_start_prompt() {
 # sinon la racine Git, sinon le dossier courant. Un projet Loomy peut ainsi vivre dans un sous-dossier d'un dépôt.
 ai_project_root() {
   local d
+  # Lancé par un relais du projet (.loomy/scripts/*.sh) : le relais donne le projet.
+  if [[ -n "${LOOMY_PROJECT_ROOT:-}" && -d "$LOOMY_PROJECT_ROOT/.loomy" ]]; then echo "$LOOMY_PROJECT_ROOT"; return 0; fi
   d="$(pwd -P)"
   while [[ -n "$d" && "$d" != "/" ]]; do
     if [[ -d "$d/.loomy" && ( -f "$d/.loomy/VERSION" || -f "$d/.loomy/brief.md" ) ]]; then echo "$d"; return 0; fi

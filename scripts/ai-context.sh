@@ -3,6 +3,8 @@
 #   ai-context.sh               affiche le contexte (Codex le lit en début de session, voir AGENTS.md)
 #   ai-context.sh --hook start  hook SessionStart de Claude Code : note l'ouverture de la session, puis affiche le contexte
 #   ai-context.sh --hook end    hook SessionEnd de Claude Code : note la fermeture ; en mode dépôt privé, sauvegarde les fichiers IA
+#   ai-context.sh --hook stop     hook Stop de Claude Code : coût réel du tour de l'orchestrateur (journal « usage »)
+#   ai-context.sh --hook subagent  hook SubagentStop : coût réel d'un sous-agent natif
 #   --tool codex                 mêmes hooks pour Codex (.codex/hooks.json)
 # Ne bloque jamais une session : en cas de problème, il se tait.
 set -uo pipefail
@@ -35,6 +37,15 @@ ROOT="$(cd "${ROOT:-$(ai_project_root)}" 2>/dev/null && pwd -P)" || exit 0
 # ---------------------------------------------------------------- hooks : ouverture et fermeture de session
 if [[ -n "$HOOK" ]]; then
   input=""; [[ -t 0 ]] || input="$(cat 2>/dev/null || true)"
+  # Session lancée par un bridge Loomy (claude -p) : déjà journalisée comme délégation, coût compris.
+  [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0
+  # Fin de tour de l'orchestrateur, fin d'un sous-agent natif : coût réel lu dans la transcription, rien à afficher.
+  if [[ "$HOOK" == "stop" || "$HOOK" == "subagent" ]]; then
+    jget() { printf '%s' "$input" | sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | head -1; }
+    if [[ "$HOOK" == "stop" ]]; then ai_usage_record "$ROOT" "$(jget transcript_path)" lead
+    else ai_usage_record "$ROOT" "$(jget agent_transcript_path)" subagent "$(jget agent_type)"; fi
+    exit 0
+  fi
   sid="$(printf '%s' "$input" | sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p' | head -1)"
   src="$(printf '%s' "$input" | sed -n 's/.*"source" *: *"\([^"]*\)".*/\1/p' | head -1)"
   # Processus de l'agent (ancêtre du hook) : sa présence dit si la session est encore ouverte.

@@ -95,6 +95,10 @@ ui_kv "Phase" "${C_BOLD}$(phase_label "$PHASE")${C_RESET}"
 ui_kv "Orchestrateur" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
 if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}une session précédente existe sur cette machine${C_RESET}"
 else ui_kv "Session" "${C_DIM}aucune session précédente sur cette machine${C_RESET}"; fi
+# Modèle de l'orchestrateur absent du catalogue local de Codex (renommé ou retiré) : on prévient avant de lancer.
+if [[ "$TOOL" == "codex" && -f "$HOME/.codex/models_cache.json" ]] && ! grep -qF "\"$MODEL\"" "$HOME/.codex/models_cache.json"; then
+  ui_warn "$MODEL absent du catalogue local de Codex" "mets à jour le catalogue Loomy (loomy update --catalog) ou Codex, puis loomy doctor --live"
+fi
 if (( ! CLI_OK )); then
   ui_err "$tool_label introuvable" "installez-le : $INSTALL"
   ui_end "diagnostic complet : loomy doctor"

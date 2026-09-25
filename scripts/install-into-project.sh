@@ -117,11 +117,42 @@ NEW_V="$(cat "$LOOMY_ROOT/VERSION")"
 
 # Copie des fichiers gérés par Loomy. Brief, phase (state) et journal (logs) ne sont jamais touchés.
 copy_loomy_files() {
-  local d
+  local d f
   mkdir -p "$L"
-  for d in templates agents skills scripts external-skills; do
+  # Modèles de documents : copiés, les agents les lisent dans le projet.
+  for d in templates agents skills external-skills; do
     rm -rf "${L:?}/$d"
     cp -R "$LOOMY_ROOT/$d" "$L/"
+  done
+  # Scripts : plus de copie, des relais vers le Loomy installé sur la machine (mêmes noms, mêmes arguments).
+  # Une mise à jour de Loomy vaut donc pour tous les projets, sans loomy init --update.
+  rm -rf "${L:?}/scripts"; mkdir -p "$L/scripts"
+  cat >"$L/scripts/_loomy.sh" <<'RELAIS'
+# Généré par Loomy : trouve le Loomy installé sur cette machine, puis lance le script demandé pour ce projet.
+# Ordre : $LOOMY_HOME, la commande loomy du PATH, puis les emplacements d'installation habituels.
+_loomy_run() {
+  local name="$1" here home="" c; shift
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [ -n "${LOOMY_HOME:-}" ] && [ -f "$LOOMY_HOME/scripts/$name" ]; then home="$LOOMY_HOME"; fi
+  if [ -z "$home" ]; then
+    # LOOMY_RELAY_PATHS remplace la liste des emplacements habituels (vide : aucun).
+    for c in "$(command -v loomy 2>/dev/null)" ${LOOMY_RELAY_PATHS-/opt/homebrew/bin/loomy /usr/local/bin/loomy "$HOME/.local/bin/loomy" "$HOME/.bun/bin/loomy" "$HOME/.npm-global/bin/loomy"}; do
+      [ -n "$c" ] && [ -x "$c" ] || continue
+      home="$("$c" __home 2>/dev/null)" && [ -f "$home/scripts/$name" ] && break
+      home=""
+    done
+  fi
+  if [ -z "$home" ]; then
+    echo "Loomy n'est pas installé sur cette machine (ou trop ancien) : installe-le, voir le README du projet Loomy." >&2
+    return 127
+  fi
+  LOOMY_PROJECT_ROOT="$(dirname "$(dirname "$here")")" LOOMY_HOME="$home" exec bash "$home/scripts/$name" "$@"
+}
+RELAIS
+  for f in "$LOOMY_ROOT"/scripts/*.sh; do
+    printf '#!/usr/bin/env bash\n# Relais Loomy : lance %s du Loomy installé (voir _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' \
+      "$(basename "$f")" "$(basename "$f")" >"$L/scripts/$(basename "$f")"
+    chmod +x "$L/scripts/$(basename "$f")"
   done
   cp "$LOOMY_ROOT/VERSION" "$L/VERSION"
   install_claude_hooks
@@ -136,12 +167,16 @@ copy_loomy_files() {
 # ajouté d'office ; à la fermeture, la session est notée. Fusion avec un .claude/settings.json existant, sans rien écraser.
 LOOMY_HOOK_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook start'
 LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook end'
+# Fin de tour de l'orchestrateur et fin de sous-agent : coût réel lu dans la transcription de la session.
+LOOMY_HOOK_STOP='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook stop'
+LOOMY_HOOK_SUB='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook subagent'
 
 # _hooks_json : bloc « hooks » de Loomy, en JSON.
 _hooks_json() {
-  local s e
+  local s e t u
   s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
-  printf '{\n  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ]\n  }\n}\n' "$s" "$e"
+  t="$(printf '%s' "$LOOMY_HOOK_STOP" | sed 's/"/\\"/g')"; u="$(printf '%s' "$LOOMY_HOOK_SUB" | sed 's/"/\\"/g')"
+  printf '{\n  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u"
 }
 
 # Codex lance ses hooks depuis le dossier de la session : la commande remonte jusqu'au projet Loomy.
@@ -176,16 +211,19 @@ out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.w
 install_claude_hooks() {
   local f="$TARGET/.claude/settings.json" merger
   mkdir -p "$TARGET/.claude"
-  if [[ -f "$f" ]] && grep -q 'ai-context.sh' "$f"; then return 0; fi
+  if [[ -f "$f" ]] && grep -q 'ai-context.sh" --hook subagent' "$f"; then return 0; fi
   if [[ ! -f "$f" ]]; then _hooks_json >"$f"; return 0; fi
+  # Fusion : chaque hook Loomy manquant est ajouté (projets d'avant la 0.3 : Stop et SubagentStop), rien n'est retiré.
   merger='import json, sys
-path, start, end = sys.argv[1:4]
+path, start, end, stop, sub = sys.argv[1:6]
 data = json.load(open(path))
 hooks = data.setdefault("hooks", {})
-hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
-hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 3}]})
+for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Stop", stop, 10), ("SubagentStop", sub, 10)):
+    groups = hooks.setdefault(event, [])
+    if not any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
+        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": t}]})
 out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
-  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" 2>/dev/null; then return 0; fi
+  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" 2>/dev/null; then return 0; fi
   _hooks_json >"$L/claude-hooks.json"
   ui_warn ".claude/settings.json existant non modifié" "ajoute-y les hooks de .loomy/claude-hooks.json"
   return 0
@@ -195,7 +233,7 @@ run_wizard() {
   local wants_yes=0 a
   for a in ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}; do [[ "$a" == "--yes" || "$a" == "-y" ]] && wants_yes=1; done
   if [[ -t 0 && -t 2 ]] || (( wants_yes )); then
-    ui_exec "$L/scripts/init-wizard.sh" "$TARGET" "$@" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}
+    ui_exec "$LOOMY_ROOT/scripts/init-wizard.sh" "$TARGET" "$@" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}
   fi
   return 0
 }
@@ -246,7 +284,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
     ui_print "${C_RAIL}│${C_RESET}"
     opts=("Reprendre la session de l'orchestrateur"); descs=("Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.")
     if [[ "$OLD_V" != "$NEW_V" ]]; then
-      opts+=("Mettre à jour Loomy dans ce projet (v$OLD_V → v$NEW_V)"); descs+=("Recopie scripts et modèles de la version installée. Brief, phase et journal conservés. Recommandé.")
+      opts+=("Mettre à jour Loomy dans ce projet (v$OLD_V → v$NEW_V)"); descs+=("Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.")
     else
       opts+=("Réinstaller les fichiers Loomy du projet"); descs+=("Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.")
     fi
@@ -285,7 +323,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
       exit 0 ;;
     brief)
       ui_end "questionnaire…"
-      ui_exec "$L/scripts/init-wizard.sh" "$TARGET" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
+      ui_exec "$LOOMY_ROOT/scripts/init-wizard.sh" "$TARGET" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
     reset)
       do_reset
       if (( RUN_WIZARD )); then

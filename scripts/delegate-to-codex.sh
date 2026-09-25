@@ -77,7 +77,7 @@ DELEG_ID="$(ai_delegation_id)"
 ai_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK"
 STARTED="$(date +%s)"
 set +e
-"$CODEX" exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
+LOOMY_DELEGATION=1 "$CODEX" exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
   --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
 STATUS=$?
 set -e

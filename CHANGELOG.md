@@ -2,6 +2,22 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.3.0 — 2026-09-25
+
+Deuxième étape de la feuille de route : fiabiliser.
+
+### Modifié
+- **Plus de copie des scripts dans les projets.** `.loomy/scripts/` ne contient plus que de petits relais (mêmes noms, mêmes arguments) vers le Loomy installé, trouvé par `$LOOMY_HOME`, la commande `loomy` ou ses emplacements habituels. Une mise à jour de Loomy vaut aussitôt pour tous les projets ; `loomy init --update` ne sert plus qu'aux nouveaux modèles de documents (et une fois, pour convertir les projets d'avant la 0.3 : `loomy status` le signale). L'avertissement de version à chaque mise à jour disparaît.
+
+### Ajouté
+- **Coût réel de Claude Code** : hooks `Stop` (réponses de l'orchestrateur) et `SubagentStop` (sous-agents natifs). Les tokens sont lus dans la transcription de la session (sans doublon, sans relecture), et le coût est calculé au prix public, cache d'écriture de 5 min ou d'1 h compris : identique au coût que rapporte Claude Code. Affiché dans `loomy status` et `loomy watch`, compté dans la valeur du forfait et dans le bilan du bootstrap. Les délégations Loomy ne sont pas comptées deux fois (ni notées comme sessions).
+- **Catalogue des modèles et des prix mis à jour sans nouvelle version** : `loomy update --catalog` récupère `catalog/models.conf` du dépôt ; lu ligne par ligne (jamais exécuté), utilisé s'il est plus récent. `loomy doctor` affiche sa date et prévient au-delà de 60 jours.
+- **Journal archivé chaque mois** (`.loomy/logs/archive/`) ; `loomy log --since AAAA-MM-JJ` remonte dans les archives ; `loomy log --csv` exporte les coûts (délégations et Claude Code, sans le texte des tâches).
+- Les projets existants reçoivent les nouveaux hooks par `loomy init --update`, fusionnés sans toucher à tes propres hooks.
+
+### Intégration continue
+- Linux seulement (macOS est testé en local avant chaque version).
+
 ## 0.2.0 — 2026-09-25
 
 Première étape de la feuille de route : consolider avant l'arrivée des testeurs.

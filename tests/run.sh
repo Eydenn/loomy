@@ -17,6 +17,8 @@ trap 'rm -rf "$WORK"' EXIT
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1
 export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
+# Relais des projets (.loomy/scripts/*.sh) : le Loomy « installé » est ce dépôt.
+export LOOMY_HOME="$REPO"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 # GitHub simulé : la doublure gh crée les dépôts dans $GH_STUB_REMOTES, et Git y redirige https://github.com/.
@@ -372,6 +374,60 @@ has "feedback : message joint" "un retour de test"
 has "feedback : versions jointes" "\| Loomy \|"
 has "feedback : état du projet joint" "phase build"
 if grep -qE "NomSecret42|ObjectifSecret42|TacheSecrete42|$FB" "$OUT"; then ko "feedback : données du projet divulguées"; else ok "feedback : ni nom, ni objectif, ni chemin, ni texte des tâches"; fi
+
+# Relais des projets : plus de copie des scripts ; ils retrouvent Loomy par la commande loomy du PATH.
+if [[ -d "$PROJ/.loomy/scripts" ]]; then
+  [[ ! -d "$PROJ/.loomy/scripts/lib" ]] && ok "relais : plus de bibliothèque copiée dans le projet" || ko "relais : lib copiée"
+  mkdir -p "$WORK/bin-loomy" && ln -sf "$REPO/bin/loomy" "$WORK/bin-loomy/loomy"
+  run "relais sans LOOMY_HOME, via le PATH" env -u LOOMY_HOME PATH="$WORK/bin-loomy:$PATH" bash "$PROJ/.loomy/scripts/ai-route.sh" lead
+  has "relais : routage de l'orchestrateur" "claude|codex"
+  fails "relais : message clair sans Loomy" 127 env -u LOOMY_HOME LOOMY_RELAY_PATHS= PATH=/usr/bin:/bin bash "$PROJ/.loomy/scripts/ai-route.sh" lead
+fi
+
+# Catalogue : celui du dépôt reprend les valeurs intégrées ; un catalogue téléchargé plus récent les remplace,
+# sans jamais exécuter son contenu.
+cat_vals="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_DATE $AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"' _ "$REPO")"
+file_vals="$(awk -F= '/^date=/{d=$2} /^model\.claude\.top=/{a=$2} /^model\.claude\.mid=/{b=$2} /^model\.claude\.fast=/{c=$2} /^model\.codex\.top=/{e=$2} /^model\.codex\.mid=/{f=$2} /^model\.codex\.fast=/{g=$2} END{print d, a, b, c, e, f, g}' "$REPO/catalog/models.conf")"
+[[ "$cat_vals" == "$file_vals" ]] && ok "catalogue du dépôt = valeurs intégrées" || ko "catalogue : $cat_vals ≠ $file_vals"
+mkdir -p "$XDG_CONFIG_HOME/loomy"
+sed 's/^date=.*/date=2099-01-01/; s/^model.codex.fast=.*/model.codex.fast=luna-test/; s/^price.gpt-6-sol=.*/price.gpt-6-sol=9 9 9/' "$REPO/catalog/models.conf" >"$XDG_CONFIG_HOME/loomy/catalog.conf"
+echo 'model.claude.top=$(touch '"$WORK"'/injecte)' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_MODEL_CODEX_FAST $AI_MODEL_CLAUDE_TOP $(ai_price gpt-6-sol)"' _ "$REPO")"
+[[ "$got" == "téléchargé luna-test claude-opus-5-5 9 9 9" ]] && ok "catalogue téléchargé pris en compte" || ko "catalogue téléchargé : $got"
+[[ ! -e "$WORK/injecte" ]] && ok "catalogue : contenu jamais exécuté" || ko "catalogue : injection exécutée"
+rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
+
+# Coût réel de Claude Code : hooks Stop et SubagentStop, lu dans la transcription (sans doublons, sans relecture).
+US="$WORK/usage"; mkdir -p "$US/.loomy"; : >"$US/.loomy/brief.md"
+TR="$WORK/transcript.jsonl"
+for i in 1 1 2; do printf '{"type":"assistant","message":{"id":"msg_%s","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' "$i"; done >"$TR"
+printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/ai-context.sh" --root "$US" --hook stop
+printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/ai-context.sh" --root "$US" --hook stop
+n_usage="$(grep -c '"type":"usage"' "$US/.loomy/logs/events.jsonl" 2>/dev/null || echo 0)"
+[[ "$n_usage" == "1" ]] && ok "usage : un événement, transcription pas relue" || ko "usage : $n_usage événement(s)"
+grep -q '"messages":2,.*"cost_usd":2.000000' "$US/.loomy/logs/events.jsonl" && ok "usage : doublons écartés, coût au prix public" || ko "usage : $(cat "$US/.loomy/logs/events.jsonl")"
+printf '{"session_id":"s2","transcript_path":"%s"}' "$TR" | LOOMY_DELEGATION=1 bash "$REPO/scripts/ai-context.sh" --root "$US" --hook start
+grep -q '"session":"s2"' "$US/.loomy/logs/events.jsonl" && ko "délégation Loomy comptée comme session" || ok "délégations Loomy ignorées par les hooks"
+run "status : coût de l'orchestrateur" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$US"
+has "status : orchestrateur mesuré" "Orchestrateur .*2 réponse"
+run "log --csv" bash "$REPO/scripts/ai-log.sh" --root "$US" --csv
+has "csv : en-tête" "^date_utc,type,role"
+has "csv : coût de l'orchestrateur" "usage,lead,,claude,claude-haiku-4-5-20251001,ok"
+
+# Journal : archive mensuelle, historique complet pour --since.
+AR="$WORK/archive"; mkdir -p "$AR/.loomy/logs"; : >"$AR/.loomy/brief.md"
+printf '%s\n' '{"ts":"2000-01-05T10:00:00Z","type":"phase","phase":"build"}' >"$AR/.loomy/logs/events.jsonl"
+bash "$REPO/scripts/ai-status.sh" --root "$AR" set verify >/dev/null
+[[ -f "$AR/.loomy/logs/archive/events-2000-01.jsonl" ]] && ok "journal : mois précédent archivé" || ko "journal : pas d'archive"
+run "log --since dans les archives" bash "$REPO/scripts/ai-log.sh" --root "$AR" --since 2000-01-01
+has "log --since : événement archivé" "Construction"
+
+# Hooks Claude Code : Stop et SubagentStop ajoutés à un settings.json existant, sans toucher aux hooks de l'utilisateur.
+HK="$WORK/hooks"; mkdir -p "$HK/.claude"
+printf '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo perso"}]}]}}\n' >"$HK/.claude/settings.json"
+UI_ASSUME_DEFAULTS=1 bash "$LOOMY" init "$HK" --yes >/dev/null 2>&1 || true
+grep -q 'echo perso' "$HK/.claude/settings.json" && grep -q -- '--hook stop' "$HK/.claude/settings.json" && grep -q -- '--hook subagent' "$HK/.claude/settings.json" \
+  && ok "hooks Stop et SubagentStop ajoutés, hooks existants conservés" || ko "hooks : $(cat "$HK/.claude/settings.json")"
 
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init

@@ -208,8 +208,11 @@ else
 fi
 # Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
-if [[ -n "$proj_v" && -n "$inst_v" && "$proj_v" != "$inst_v" && "$SCRIPT_DIR" != "$ROOT/.loomy/scripts" ]] && ai_version_ge "$inst_v" "$proj_v"; then
-  ui_warn "Loomy $proj_v dans ce projet, $inst_v installé" "mets le projet à jour : loomy init --update"
+# Depuis la 0.3, le projet n'a plus que des relais vers le Loomy installé : rien à faire à chaque version.
+if [[ -d "$ROOT/.loomy/scripts/lib" ]]; then
+  ui_warn "scripts Loomy copiés dans ce projet (avant la 0.3)" "une fois pour toutes : loomy init --update"
+elif [[ -n "$proj_v" && -n "$inst_v" ]] && ! ai_version_ge "$inst_v" "$proj_v"; then
+  ui_warn "Loomy $inst_v installé, plus ancien que ce projet ($proj_v)" "loomy update"
 fi
 
 # ---------------------------------------------------------------- vue journal (touche l de loomy watch)
@@ -266,13 +269,15 @@ else
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}${hl}"
   ui_print "${C_RAIL}│${C_RESET}"
   # Bootstrap terminé : le bilan (durée, délégations, coût), tiré du journal.
+  # Bilan du bootstrap (archives comprises) : durée, délégations, coût des délégations et de Claude Code jusqu'à la fin.
   J_DONE="$(ai_journal_file "$ROOT")"
   if [[ "$CURRENT" == "done" && -s "$J_DONE" ]]; then
     read -r b_start b_end b_n b_cost <<<"$(awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       index($0, "\"type\":\"phase\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
-      index($0, "\"type\":\"delegation\",") { n++; if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
-      END { printf "%s %s %d %.2f\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c }' "$J_DONE")"
+      e == "" && index($0, "\"type\":\"delegation\",") { n++; if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
+      e == "" && index($0, "\"type\":\"usage\"") { if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
+      END { printf "%s %s %d %.2f\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c }' < <(ai_journal_all "$ROOT"))"
     s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
@@ -345,6 +350,19 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail "${C_YELLOW}${spin} en cours${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
     ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
+  # Travail direct de Claude Code (orchestrateur, sous-agents natifs) : coût mesuré par les hooks Stop et SubagentStop.
+  HAS_USAGE=0
+  if grep -q '"type":"usage"' "$JOURNAL"; then
+    HAS_USAGE=1
+    read -r u_ln u_lc u_sn u_sc <<<"$(awk '
+      index($0, "\"type\":\"usage\"") {
+        c = 0; if (match($0, /"cost_usd":[0-9.]+/)) c = substr($0, RSTART + 11, RLENGTH - 11)
+        m = 0; if (match($0, /"messages":[0-9]+/)) m = substr($0, RSTART + 11, RLENGTH - 11)
+        if (index($0, "\"scope\":\"lead\"")) { ln += m; lc += c } else { sn++; sc += c } }
+      END { printf "%d %.4f %d %.4f\n", ln, lc, sn, sc }' "$JOURNAL")"
+    ui_kv "Orchestrateur" "${C_BOLD}${u_ln}${C_RESET} réponse(s) · coût ${C_BOLD}\$${u_lc}${C_RESET} ${C_DIM}(mesuré)${C_RESET}"
+    (( u_sn > 0 )) && ui_kv "Sous-agents" "${C_BOLD}${u_sn}${C_RESET} · coût ${C_BOLD}\$${u_sc}${C_RESET} ${C_DIM}(mesuré)${C_RESET}"
+  fi
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
     ui_info "aucune délégation terminée pour l'instant"
     ui_rail "${C_DIM}  elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex${C_RESET}"
@@ -373,7 +391,7 @@ if [[ -s "$JOURNAL" ]]; then
     month="$(date -u +%Y-%m)"
     for fam in claude codex; do
       value="$(awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$month" '
-        index($0, "\"type\":\"delegation\",") && index($0, fam) && index($0, ts) {
+        (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) {
           if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART+11, RLENGTH-11) }
         END { printf (c >= 1 ? "%.2f" : "%.4f"), c }' "$JOURNAL")"
       plan="$(loomy_plan "$fam")"; monthly="$(loomy_plan_monthly "$fam")"
@@ -387,7 +405,8 @@ if [[ -s "$JOURNAL" ]]; then
         ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · valeur API ce mois : ${C_BOLD}\$${value}${C_RESET}"
       fi
     done
-    ui_info "valeurs issues des délégations journalisées uniquement (le travail direct de l'orchestrateur n'est pas compté)"
+    if (( HAS_USAGE )); then ui_info "délégations et travail de Claude Code (orchestrateur, sous-agents), au prix public"
+    else ui_info "valeurs issues des délégations journalisées (orchestrateur compté à partir de loomy 0.3, hooks Stop et SubagentStop)"; fi
     ui_rail ""
     ui_rail "${C_DIM}Dernières délégations${C_RESET}"
     fi

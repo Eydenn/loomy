@@ -161,7 +161,7 @@ usage() {
   _h_group "MACHINE"
   _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
   _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
-  _h_cmd update "" "Met à jour Loomy selon sa méthode d'installation ; puis loomy init --update dans chaque projet"
+  _h_cmd update "[--catalog]" "Met à jour Loomy selon sa méthode d'installation ; --catalog : seulement le catalogue des modèles et des prix"
   _h_cmd version "[--all]" "Version et méthode d'installation ; --all liste toutes les installations trouvées"
   _h_cmd uninstall "" "Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet"
   printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy help <commande>%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
@@ -170,7 +170,7 @@ usage() {
 # Aide courte des commandes gérées directement ici.
 sub_help() {
   case "$1" in
-    log) echo "Usage : loomy log [-n N] [-f] [--raw]"; echo "Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl)." ;;
+    log) echo "Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]"; echo "Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl)." ;;
     config) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"
             echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
             echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"
@@ -239,7 +239,28 @@ case "$cmd" in
     esac ;;
 
   update|upgrade)
-    case "${1:-}" in -h|--help) echo "Usage : loomy update"; echo "Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell), puis rappelle de mettre à niveau chaque projet avec loomy init --update."; exit 0 ;; esac
+    case "${1:-}" in -h|--help) echo "Usage : loomy update [--catalog]"; echo "Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell)."; echo "--catalog : met à jour seulement le catalogue des modèles et des prix (sans nouvelle version de Loomy)."; exit 0 ;; esac
+    if [[ "${1:-}" == "--catalog" ]]; then
+      # Catalogue des modèles et des prix, publié dans le dépôt : lu par gh (dépôt privé), sinon par une URL publique.
+      tmp="$(mktemp)"
+      if ! { command -v gh >/dev/null 2>&1 && gh api -H "Accept: application/vnd.github.raw" "repos/$LOOMY_REPO/contents/catalog/models.conf" >"$tmp" 2>/dev/null; } \
+         && ! curl -fsSL "https://raw.githubusercontent.com/$LOOMY_REPO/main/catalog/models.conf" -o "$tmp" 2>/dev/null; then
+        rm -f "$tmp"; ui_err "Catalogue introuvable" "vérifie ta connexion et gh auth status"; exit 1
+      fi
+      newd="$(sed -n 's/^date=\([0-9-]*\)$/\1/p' "$tmp" | head -1)"
+      [[ -n "$newd" ]] || { rm -f "$tmp"; ui_err "Catalogue illisible" "aucune date"; exit 1; }
+      ui_rail_head "catalogue des modèles"
+      if [[ ! "$newd" > "$AI_CATALOG_DATE" ]]; then
+        rm -f "$tmp"; ui_ok "Catalogue à jour" "du $AI_CATALOG_DATE ($AI_CATALOG_SOURCE)"; ui_end ""; exit 0
+      fi
+      old_models="$AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"
+      mkdir -p "$(dirname "$(ai_catalog_file)")"; mv "$tmp" "$(ai_catalog_file)"
+      new_models="$(bash -c 'source "$1/lib/models.sh"; echo "$AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"' _ "$S")"
+      ui_ok "Catalogue mis à jour" "du $AI_CATALOG_DATE au $newd"
+      if [[ "$old_models" != "$new_models" ]]; then ui_info "modèles routés : $new_models"; ui_info "vérifie qu'ils répondent : loomy doctor --live"; fi
+      ui_end "pris en compte par les prochaines sessions et délégations"
+      exit 0
+    fi
     method="$(install_method)"
     echo "Mise à jour de Loomy (installation : $method)…" >&2
     rc=0
@@ -274,6 +295,8 @@ case "$cmd" in
     ui_info "tes projets gardent leur version de Loomy : dans chacun, loomy init --update les met à niveau"
     if (( $(loomy_installs | wc -l) > 1 )); then ui_section "INSTALLATIONS"; show_installs; fi
     ;;
+
+  __home) echo "$LOOMY_HOME" ;;   # utilisé par les relais des projets (.loomy/scripts/_loomy.sh)
 
   version|--version|-v)
     echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"

@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.2.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.3.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -167,7 +167,7 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 
 | Need | Command |
 |---|---|
-| Update&nbsp;Loomy | `loomy update`, then `loomy init --update` in each project (keeps brief, phase and journal) |
+| Update&nbsp;Loomy | `loomy update`: every project benefits right away (its scripts are relays to the installed Loomy); `loomy init --update` is only for new document templates, and once for pre-0.3 projects (keeps brief, phase and journal) |
 | Project&nbsp;already&nbsp;initialized | `loomy init` offers: resume, update, redo the questionnaire, reset |
 | Redo&nbsp;the&nbsp;questionnaire | `loomy brief` |
 | Restart&nbsp;the&nbsp;bootstrap | `loomy init --reset`: START.md copied again, phase reset, questionnaire rerun with your previous answers |
@@ -232,7 +232,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. Keys: `q` quit, `c` compact or full view, `l` journal, `s` open the session. Compact view in a small terminal |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
-| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON) |
+| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
 **What is live.** The screen rereads the project every 2 seconds. Delegations to Claude or Codex appear as soon as they start, with their timer, then their cost; an interrupted one disappears on its own. The phase changes when the lead agent records it (`START.md` asks it to at each step). Work the lead agent does itself, in its session, is not journaled: you follow it in its session.
 
@@ -377,7 +377,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
-| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy (then `loomy init --update` in each project) and version; `version --all` lists every install |
+| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
 | ❓&nbsp;<code>loomy&nbsp;help&nbsp;[command]</code> | general help, or help for one command |
 
@@ -395,11 +395,11 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 | ✅ | macOS and Linux tests on every push (GitHub Actions) |
 | ✅ | `loomy feedback`: prefilled GitHub issue (version, doctor, end of journal, anonymized brief) |
 | ✅ | Simpler tester install: `loomy doctor --fix` chains the `gh` steps |
-| 🔜&nbsp;0.3 | **Harden** |
-| | No more script copies in each project: a link to the installed Loomy; `loomy init --update` only for template changes |
-| | Model and price catalog updated without a new release (`loomy update --catalog`), warning when a routed model disappears |
-| | Real costs: Claude sub-agents (`SubagentStop` hook), lead turns when exposed, CSV export |
-| | Monthly journal archive, `loomy log --since` |
+| ✅&nbsp;0.3 | **Harden**: done |
+| ✅ | No more script copies in each project: a link to the installed Loomy; `loomy init --update` only for template changes |
+| ✅ | Model and price catalog updated without a new release (`loomy update --catalog`), warning when a routed model disappears |
+| ✅ | Real costs: Claude Code lead (`Stop` hook) and sub-agents (`SubagentStop` hook), measured from the transcript at list price; CSV export |
+| ✅ | Monthly journal archive, `loomy log --since` |
 | 🔜&nbsp;0.4 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit |
 | | `loomy review`: on-demand cross review of the current branch or diff |

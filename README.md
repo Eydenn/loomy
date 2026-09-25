@@ -380,7 +380,7 @@ flowchart TB
 
 | | 🟢 Minimum | ⭐ Idéal |
 |---|---|---|
-| **Système** | macOS ou Linux, bash ≥ 3.2 (celui de macOS convient), `git` | + `gh` connecté |
+| **Système** | macOS, bash ≥ 3.2 (celui de macOS convient), `git` ; Linux : testé automatiquement (intégration continue), pas encore validé en usage réel | + `gh` connecté |
 | **IA** | **une** CLI : Claude Code ≥ 2.1.280 **ou** Codex ≥ 0.155, connectée | **les deux**, installées dans le terminal et détectées par `loomy doctor` : mode hybride |
 | **Modèles** | ceux de ton outil | tous répondent à `loomy doctor --live` |
 | **Confort** | aucun (questionnaire intégré, sans dépendance) | presse-papiers, pour copier le prompt de démarrage |

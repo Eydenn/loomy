@@ -55,6 +55,11 @@ ai_task_excerpt() {
 
 # ai_session_state <racine> : « open|<heure locale>|<outil> », « closed|<heure>|<outil> » ou « none ».
 # Une session est ouverte si elle a commencé, n'a pas fini, et que son processus (Claude Code ou Codex) tourne encore.
+# ai_ts_epoch <horodatage ISO UTC> : secondes depuis 1970 (date de macOS ou GNU), vide si illisible.
+ai_ts_epoch() {
+  date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || date -u -d "$1" +%s 2>/dev/null || true
+}
+
 ai_session_state() {
   local j line pid ts tool state="none" s hhmm
   j="$(ai_journal_file "$1")"
@@ -79,7 +84,7 @@ ai_session_state() {
     }' "$j" 2>/dev/null)
   [[ "$state" == "none" ]] && { echo "none"; return 0; }
   ts="$(printf '%s' "$state" | cut -d'|' -f2)"
-  s="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || date -u -d "$ts" +%s 2>/dev/null || true)"
+  s="$(ai_ts_epoch "$ts")"
   hhmm="$( [[ -n "$s" ]] && { date -r "$s" +%H:%M 2>/dev/null || date -d "@$s" +%H:%M 2>/dev/null; } )"
   echo "$(printf '%s' "$state" | cut -d'|' -f1)|${hhmm:-?}|$(printf '%s' "$state" | cut -d'|' -f3)"
 }

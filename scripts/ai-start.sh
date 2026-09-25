@@ -104,25 +104,30 @@ fi
 # ---------------------------------------------------------------- session + suivi en direct, côte à côte
 # Côte à côte si le terminal est large (≥ 160 colonnes), sinon l'un au-dessus de l'autre (session en haut, 2/3).
 # Le suivi se ferme de lui-même à la fin de la session de l'agent (--until-exit).
+# Petit script de lancement du suivi : il s'efface dès qu'il démarre (rien ne s'accumule dans le dossier temporaire).
+# watch_script <fichier> [pid de l'agent]
 watch_script() {
-  local f="${TMPDIR:-/tmp}/loomy-watch-$$.sh"
-  printf '#!/bin/bash\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane --until-exit %s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$1" >"$f"
+  local f="$1" until=""
+  [[ -n "${2:-}" ]] && until=" --until-exit $2"
+  printf '#!/bin/bash\nrm -f -- "$0"\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane%s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$until" >"$f"
   chmod +x "$f"; echo "$f"
 }
 
 start_with_watch() {
-  local side=0 w agent name
+  local side=0 w agent name n
   _ui_term_size; (( UI_COLS >= 160 )) && side=1
+  # Scripts de suivi laissés par les versions précédentes (avant l'effacement automatique).
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-watch-*.sh' -mmin +5 -delete 2>/dev/null || true
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     # Déjà dans tmux : un panneau de suivi à côté, puis l'agent dans le panneau courant (même processus : exec).
-    w="$(watch_script $$)"
+    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
     WATCH_NOTE="suivi en direct dans le panneau tmux $( (( side )) && echo "de droite" || echo "du bas"), fermé avec la session"
     return 0
   fi
   if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
-    w="$(watch_script $$)"
+    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="suivi en direct dans le panneau iTerm2 voisin, fermé avec la session"
       return 0
@@ -131,22 +136,34 @@ start_with_watch() {
   if command -v tmux >/dev/null 2>&1; then
     # Session tmux dédiée : l'agent à gauche (ou en haut), le suivi à côté ; tout se ferme avec l'agent.
     name="loomy-$(printf '%s' "$(basename "$ROOT")" | tr -c 'A-Za-z0-9_-' '-')"
-    tmux kill-session -t "$name" 2>/dev/null || true
+    # Session déjà ouverte (autre terminal) : on la rejoint plutôt que de la fermer, sauf demande contraire.
+    if tmux has-session -t "=$name" 2>/dev/null; then
+      UI_LABEL="Session ouverte"
+      UI_DESCS=("L'agent et le suivi de ce projet tournent déjà dans une session tmux : tu la retrouves telle quelle, dans ce terminal." \
+        "Ouvre une seconde session, à côté de la première (deux agents sur le même dossier : à éviter sauf besoin précis)." \
+        "Ne lance rien.")
+      ui_choose "Une session Loomy est déjà ouverte pour ce projet. Que faire ?" 0 "La rejoindre" "En ouvrir une autre" "Annuler"
+      case "$UI_VALUE" in
+        La*) ui_end "retour dans la session ouverte · clic ou Ctrl-b + flèche pour changer de panneau"; ui_exec tmux attach-session -t "=$name" ;;
+        Annuler) ui_end "rien n'a été lancé"; exit 0 ;;
+      esac
+      n=2; while tmux has-session -t "=$name-$n" 2>/dev/null; do n=$(( n + 1 )); done
+      name="$name-$n"
+    fi
     agent="$(printf '%q ' "${AGENT_CMD[@]}")"
     env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name"
     tmux set-option -t "$name" mouse on >/dev/null
     tmux set-option -t "$name" status off >/dev/null
     tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
     tmux set-option -t "$name" pane-active-border-style "fg=colour141" >/dev/null
-    w="${TMPDIR:-/tmp}/loomy-watch-$name.sh"
-    printf '#!/bin/bash\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" >"$w"
+    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$name.sh")"
     if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
     ui_end "ouverture de ${tool_label} et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau"
     ui_exec tmux attach-session -t "$name"
   fi
   if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
-    w="$(watch_script $$)"
+    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="suivi en direct dans une nouvelle fenêtre Terminal, fermée avec la session"
       return 0

@@ -273,7 +273,7 @@ else
       index($0, "\"type\":\"phase\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
       index($0, "\"type\":\"delegation\",") { n++; if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
       END { printf "%s %s %d %.2f\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c }' "$J_DONE")"
-    s_ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$b_start" +%s 2>/dev/null || true)"; e_ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$b_end" +%s 2>/dev/null || true)"
+    s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
       d=$(( e_ep - s_ep )); if (( d >= 3600 )); then took="$(( d / 3600 )) h $(( d % 3600 / 60 )) min"; else took="$(( d / 60 )) min"; fi
@@ -326,7 +326,7 @@ if [[ -s "$JOURNAL" ]]; then
             print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' "$JOURNAL" |
   while IFS='|' read -r pid ts role m task est; do
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || continue
-    since="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$ts" +%s 2>/dev/null || date -u -d "$ts" +%s 2>/dev/null || true)"
+    since="$(ai_ts_epoch "$ts")"
     # Toupie (une image par rafraîchissement de loomy watch), chrono, et avancement estimé d'après les délégations
     # passées du même rôle sur le même modèle.
     spin="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"
@@ -400,7 +400,7 @@ if [[ -s "$JOURNAL" ]]; then
     while IFS='|' read -r t st role m d cost task; do
       row=$(( row + 1 ))
       # Journal en UTC, affichage à l'heure locale.
-      ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$t" +%s 2>/dev/null || date -u -d "$t" +%s 2>/dev/null || true)"
+      ep="$(ai_ts_epoch "$t")"
       if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
       # Délégation tout juste terminée (loomy watch) : mise en évidence quelques secondes.

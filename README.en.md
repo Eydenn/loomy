@@ -324,7 +324,7 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | | 🟢 Minimum | ⭐ Ideal |
 |---|---|---|
-| **System** | macOS or Linux, bash ≥ 3.2 (the macOS one works), `git` | + `gh` logged in |
+| **System** | macOS, bash ≥ 3.2 (the macOS one works), `git`; Linux: tested automatically (CI), not yet validated in real use | + `gh` logged in |
 | **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, installed in the terminal and detected by `loomy doctor`: hybrid mode |
 | **Models** | those of your tool | all answer `loomy doctor --live` |
 | **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |

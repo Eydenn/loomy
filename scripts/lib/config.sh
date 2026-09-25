@@ -27,14 +27,15 @@ loomy_config_set() {
   touch "$file"
   tmp="$file.tmp.$$"
   grep -v "^$1=" "$file" >"$tmp" || true
-  echo "$1=$2" >>"$tmp"
+  # « auto » : retire le réglage (valeur par défaut ou choix du catalogue).
+  [[ "$2" == "auto" ]] || echo "$1=$2" >>"$tmp"
   mv "$tmp" "$file"
 }
 
 loomy_config_list() {
   local file
   file="$(loomy_config_file)"
-  [[ -f "$file" ]] && grep -E '^[a-z_]+=' "$file" || true
+  [[ -f "$file" ]] && grep -E '^[a-z_.]+=' "$file" || true
 }
 
 # Prix mensuels par défaut des forfaits en $ (vérifiés le 23/09/2026). Vide = facturation à l'usage ou sur devis.

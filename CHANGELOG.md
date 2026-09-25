@@ -2,6 +2,16 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.3.8 — 2026-09-25
+
+### Ajouté
+- **Chaînes de repli par niveau de modèle** dans le catalogue (`model.claude.mid=claude-sonnet-5-5, claude-sonnet-5`) : le premier modèle disponible sur la machine est utilisé, les suivants servent de repli pour qui n'a pas accès aux derniers modèles.
+- **Disponibilité apprise sur chaque machine** : liste locale des modèles de Codex ; `loomy doctor --live` teste chaque modèle des chaînes et retient le résultat ; une délégation refusée (modèle inexistant ou pas d'accès) note le modèle indisponible et repart aussitôt sur le suivant.
+- **Modèle épinglé par machine** : `loomy config set model.<claude|codex>.<top|mid|fast> <modèle>` (`auto` pour revenir au catalogue).
+- **Rééquilibrage sans nouvelle version** : `route.<famille>.<rôle>=<NIVEAU> <effort>` dans le catalogue.
+- **Nouveau catalogue signalé** dans l'accueil et `loomy doctor` (vérification en arrière-plan, au plus une fois par jour ; `LOOMY_CATALOG_CHECK=0` la coupe).
+- **Protocole de mise à jour des modèles** dans `docs/MODEL_CATALOG.md`.
+
 ## 0.3.7 — 2026-09-25
 
 ### Ajouté

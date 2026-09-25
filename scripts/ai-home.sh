@@ -69,6 +69,8 @@ while true; do
     *) ui_kv "Session" "${C_DIM}pas encore ouverte${C_RESET}" ;;
   esac
   ui_kv "À toi" "$(loomy_you_now "$PHASE" "$sess")"
+  newcat="$(bash "$SCRIPT_DIR/ai-catalog-check.sh" 2>/dev/null || true)"
+  [[ -n "$newcat" ]] && ui_kv "Modèles" "${C_YELLOW}nouveau catalogue du $newcat${C_RESET} ${C_DIM}→ loomy update --catalog${C_RESET}"
   ui_print "${C_RAIL}│${C_RESET}"
 
   opts=("Ouvrir ou reprendre la session de l'orchestrateur" "Suivre en direct" "Statut détaillé" "Journal" "Visibilité des fichiers IA" "Aide" "Quitter")

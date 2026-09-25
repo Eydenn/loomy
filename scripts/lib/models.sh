@@ -26,9 +26,22 @@ unset _ui_probe _l _locs
 AI_CATALOG_DATE="2026-09-23"
 AI_CATALOG_SOURCE="intégré"
 AI_PRICES_EXTRA=""   # prix du catalogue téléchargé : "modèle=entrée sortie cache;…"
+AI_ROUTE_EXTRA=""    # répartition du catalogue téléchargé : "famille:rôle=NIVEAU effort;…"
+
+# Chaînes de modèles par niveau : le premier modèle disponible pour cette machine est utilisé, les suivants servent de
+# repli (tout le monde n'a pas accès aux derniers modèles). Le catalogue téléchargé peut les remplacer.
+AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # meilleur raisonnement, code agentique, travail de bureau
+AI_CHAIN_CLAUDE_MID="claude-sonnet-5"                # travail courant
+AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # recherche, résumés
+AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # raisonnement de pointe, pilotage d'interfaces
+AI_CHAIN_CODEX_MID="gpt-6-sol"                       # cheval de trait, workflows
+AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # exécutant capable le moins cher
 
 # Catalogue téléchargé (loomy update --catalog) : utilisé s'il est plus récent que celui livré avec Loomy.
-# Lu ligne par ligne, jamais exécuté ; une variable AI_MODEL_* déjà définie dans l'environnement reste prioritaire.
+# Lu ligne par ligne, jamais exécuté. Lignes reconnues (voir catalog/models.conf et docs/MODEL_CATALOG.md) :
+#   model.<claude|codex>.<top|mid|fast>=<modèle>[, <repli>…]
+#   price.<modèle>=<entrée> <sortie> <lecture-cache>
+#   route.<claude|codex>.<rôle>=<TOP|MID|FAST> <effort>
 ai_catalog_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/catalog.conf"; }
 _ai_catalog_load() {
   local f="$1" line k v d
@@ -37,24 +50,75 @@ _ai_catalog_load() {
   [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
   AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="téléchargé"
   while IFS= read -r line; do
-    [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9._-]+)$ ]] || \
-    [[ "$line" =~ ^price\.([A-Za-z0-9._-]+)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]] || continue
-    if [[ "$line" == model.* ]]; then
-      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"; v="${BASH_REMATCH[3]}"
-      eval "[[ -n \"\${AI_MODEL_${k}:-}\" ]] || AI_MODEL_${k}=\"\$v\""
-    else
+    if [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9._,\ -]+)$ ]]; then
+      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
+      v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+      [[ -n "$v" ]] && eval "AI_CHAIN_${k}=\"\$v\""
+    elif [[ "$line" =~ ^price\.([A-Za-z0-9._-]+)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
       AI_PRICES_EXTRA="${AI_PRICES_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
+    elif [[ "$line" =~ ^route\.(claude|codex)\.([a-z]+)=(TOP|MID|FAST)\ (low|medium|high|xhigh|max)$ ]]; then
+      AI_ROUTE_EXTRA="${AI_ROUTE_EXTRA}${BASH_REMATCH[1]}:${BASH_REMATCH[2]}=${BASH_REMATCH[3]} ${BASH_REMATCH[4]};"
     fi
   done <"$f"
 }
 _ai_catalog_load "$(ai_catalog_file)"
 
-: "${AI_MODEL_CLAUDE_TOP:=claude-opus-5-5}"    # meilleur raisonnement, code agentique, travail de bureau
-: "${AI_MODEL_CLAUDE_MID:=claude-sonnet-5}"    # travail courant
-: "${AI_MODEL_CLAUDE_FAST:=claude-haiku-4-5}"  # recherche, résumés
-: "${AI_MODEL_CODEX_TOP:=gpt-6-astra}"         # raisonnement de pointe, pilotage d'interfaces
-: "${AI_MODEL_CODEX_MID:=gpt-6-sol}"           # cheval de trait, workflows
-: "${AI_MODEL_CODEX_FAST:=gpt-6-luna}"         # exécutant capable le moins cher
+# Disponibilité des modèles sur cette machine (~/.config/loomy/models.state, « modèle=ok|ko ») : écrite par
+# loomy doctor --live et par les bridges quand un modèle est refusé. Codex : sa liste locale de modèles fait foi.
+ai_models_state_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/models.state"; }
+ai_model_mark() {
+  local f; f="$(ai_models_state_file)"
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  { grep -v "^$1=" "$f" 2>/dev/null || true; echo "$1=$2"; } >"$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  return 0
+}
+ai_model_usable() {
+  local m="$1" fam="$2" cache="${CODEX_HOME:-$HOME/.codex}/models_cache.json"
+  grep -qx "$m=ko" "$(ai_models_state_file)" 2>/dev/null && return 1
+  if [[ "$fam" == "codex" && -f "$cache" ]] && ! grep -qF "\"$m\"" "$cache"; then return 1; fi
+  return 0
+}
+# ai_model_pick <famille> <niveau> : premier modèle disponible de la chaîne (le premier de la chaîne si aucun ne l'est).
+ai_model_pick() {
+  local chain m fam="$1" k
+  k="$(printf '%s' "${1}_${2}" | tr 'a-z' 'A-Z')"
+  eval "chain=\"\${AI_CHAIN_${k}:-}\""
+  for m in $chain; do ai_model_usable "$m" "$fam" && { echo "$m"; return 0; }; done
+  echo "${chain%% *}"
+}
+# ai_model_next <famille> <modèle> : repli suivant dans sa chaîne (vide s'il n'y en a pas), pour les bridges.
+ai_model_next() {
+  local fam="$1" m="$2" t chain seen c k
+  for t in TOP MID FAST; do
+    k="$(printf '%s' "$fam" | tr 'a-z' 'A-Z')_$t"
+    eval "chain=\"\${AI_CHAIN_${k}:-}\""
+    seen=0
+    for c in $chain; do
+      if (( seen )) && ai_model_usable "$c" "$fam"; then echo "$c"; return 0; fi
+      [[ "$c" == "$m" ]] && seen=1
+    done
+    (( seen )) && return 0
+  done
+  return 0
+}
+
+# Modèle de chaque niveau : variable d'environnement AI_MODEL_*, sinon modèle épinglé (loomy config set
+# model.<famille>.<niveau> <modèle>), sinon premier modèle disponible de la chaîne.
+_ai_pin() {
+  local f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"
+  [[ -f "$f" ]] || return 0
+  sed -n "s/^model\\.$1\\.$2=\\([A-Za-z0-9._-]*\\)$/\\1/p" "$f" 2>/dev/null | head -1 || true
+}
+for _f in claude codex; do
+  for _t in top mid fast; do
+    _k="$(printf '%s' "${_f}_${_t}" | tr 'a-z' 'A-Z')"
+    eval "_cur=\"\${AI_MODEL_${_k}:-}\""
+    [[ -z "$_cur" ]] && _cur="$(_ai_pin "$_f" "$_t")"
+    [[ -z "$_cur" ]] && _cur="$(ai_model_pick "$_f" "$_t")"
+    eval "AI_MODEL_${_k}=\"\$_cur\""
+  done
+done
+unset _f _t _k _cur
 
 AI_MIN_CLAUDE_VERSION="2.1.280"  # première version de Claude Code qui accepte claude-opus-5-5
 AI_MIN_CODEX_VERSION="0.155.0"   # version de la CLI Codex vérifiée avec les modèles gpt-6-*
@@ -202,6 +266,10 @@ ai_family_for_role() {
 
 # Matrice de base (profil "equilibre") : "<NIVEAU> <effort>".
 _ai_base() {
+  # Répartition du catalogue téléchargé d'abord (rééquilibrage sans nouvelle version de Loomy).
+  local e
+  local IFS=';'
+  for e in $AI_ROUTE_EXTRA; do [[ "${e%%=*}" == "$1:$2" ]] && { echo "${e#*=}"; return 0; }; done
   case "$1:$2" in
     claude:lead|claude:architect|claude:debugger|claude:security) echo "TOP high" ;;
     claude:reviewer) echo "MID high" ;;

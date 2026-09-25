@@ -76,11 +76,26 @@ echo "delegate-to-codex : rôle=$ROLE modèle=$MODEL effort=$EFFORT sandbox=$SAN
 DELEG_ID="$(ai_delegation_id)"
 ai_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK"
 STARTED="$(date +%s)"
+run_codex() {
+  LOOMY_DELEGATION=1 "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
+    --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
+}
 set +e
-LOOMY_DELEGATION=1 "$CODEX" exec -m "$MODEL" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
-  --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
+run_codex "$MODEL"
 STATUS=$?
 set -e
+# Modèle refusé (inexistant ou pas d'accès pour ce compte) : noté pour cette machine, puis repli sur le suivant de sa chaîne.
+while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not supported|unavailable|not available)|unknown model|model_not_found" "$TMP/log.txt"; do
+  ai_model_mark "$MODEL" ko
+  NEXT="$(ai_model_next codex "$MODEL")"
+  [[ -n "$NEXT" ]] || break
+  echo "delegate-to-codex : $MODEL indisponible pour ce compte, repli sur $NEXT (noté pour les prochaines fois)." >&2
+  MODEL="$NEXT"
+  set +e
+  run_codex "$MODEL"
+  STATUS=$?
+  set -e
+done
 DURATION=$(( $(date +%s) - STARTED ))
 
 # Consommation rapportée par les événements "turn.completed" de codex exec --json.

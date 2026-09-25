@@ -85,6 +85,20 @@ if grep -q 'does not support this model' <<<"$OUT"; then
   set -e
 fi
 
+# Modèle refusé (inexistant ou pas d'accès pour ce compte) : noté pour cette machine, puis repli sur le modèle suivant
+# de sa chaîne dans le catalogue (tout le monde n'a pas accès aux derniers modèles).
+while grep -qiE "may not exist|not have access|model.*not (found|available)|invalid model|not_found_error" <<<"$OUT"; do
+  ai_model_mark "$MODEL" ko
+  NEXT="$(ai_model_next claude "$MODEL")"
+  [[ -n "$NEXT" ]] || break
+  echo "delegate-to-claude : $MODEL indisponible pour ce compte, repli sur $NEXT (noté pour les prochaines fois)." >&2
+  MODEL="$NEXT"
+  set +e
+  OUT="$(run_claude "$MODEL")"
+  STATUS=$?
+  set -e
+done
+
 DURATION=$(( $(date +%s) - STARTED ))
 # Coût et tokens rapportés par la sortie JSON de claude -p.
 T_IN="$(ai_json_num "$OUT" input_tokens)"

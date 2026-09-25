@@ -64,11 +64,50 @@ Lancez `ai-route.sh --profile <profil> all` pour voir les matrices exactes.
 - **Abonnements :** avec les forfaits Claude ou ChatGPT, le « coût » correspond à la consommation de quota. Les rapports entre modèles restent valables.
 
 ## Mettre à jour le catalogue
-1. Modifiez les six valeurs `AI_MODEL_*` et les versions minimales des CLI dans `scripts/lib/models.sh`, et ajustez `_ai_base` si le classement a changé.
-2. Lancez `scripts/ai-doctor.sh --live` pour vérifier que chaque modèle routé répond.
-3. Mettez à jour ce fichier (date, tableaux, sources) et `CHANGELOG.md`.
 
-Pour essayer d'autres modèles sur une machine sans rien modifier, utilisez des variables d'environnement, par exemple `AI_MODEL_CODEX_FAST=gpt-6-sol ai-route.sh`.
+Les modèles changent souvent : le catalogue se met à jour **sans nouvelle version de Loomy**. Le fichier de référence est `catalog/models.conf`, dans le dépôt ; chacun le récupère avec `loomy update --catalog`, et `loomy` (accueil) comme `loomy doctor` signalent quand un catalogue plus récent est publié.
+
+### Format de `catalog/models.conf`
+
+Une valeur par ligne, lue strictement (jamais exécutée) :
+
+```
+date=2026-10-15                                   # obligatoire : un catalogue n'est utilisé que s'il est plus récent
+model.claude.mid=claude-sonnet-5-5, claude-sonnet-5   # chaîne : le premier modèle disponible est utilisé
+model.codex.top=gpt-6-5-astra, gpt-6-astra            # les suivants servent de repli
+price.claude-sonnet-5-5=2 10 0.20                 # $ par million de tokens : entrée, sortie, lecture de cache
+route.claude.explorer=MID low                     # facultatif : rééquilibrer un rôle (niveau TOP|MID|FAST, effort)
+```
+
+### Chaînes de repli : tout le monde n'a pas accès aux derniers modèles
+
+Chaque niveau (top, mid, fast) de chaque outil est une **chaîne**, du modèle le plus récent au plus ancien. Sur chaque machine, Loomy prend le premier modèle **disponible** :
+- **Codex** : la liste locale des modèles de Codex (`~/.codex/models_cache.json`) fait foi ;
+- **Claude** : `loomy doctor --live` teste chaque modèle des chaînes et retient le résultat (`~/.config/loomy/models.state`) ;
+- **en cours de route** : quand une délégation est refusée (« modèle inexistant ou pas d'accès »), le modèle est noté indisponible et la délégation repart aussitôt sur le suivant de sa chaîne.
+
+Un modèle noté indisponible le reste jusqu'au prochain `loomy doctor --live` (après un changement de forfait, par exemple).
+
+### Priorités (de la plus forte à la plus faible)
+
+1. Variable d'environnement `AI_MODEL_<CLAUDE|CODEX>_<TOP|MID|FAST>` (un essai ponctuel) ;
+2. modèle épinglé sur la machine : `loomy config set model.claude.mid <modèle>` (`auto` pour revenir au catalogue) ;
+3. chaîne du catalogue téléchargé, s'il est plus récent que celui livré avec Loomy ;
+4. chaîne intégrée à Loomy (`scripts/lib/models.sh`).
+
+L'effort se règle à part, par projet et par rôle : `loomy effort`.
+
+### Protocole à la sortie d'un nouveau modèle
+
+1. **Ajouter le modèle en tête de sa chaîne**, sans retirer l'ancien (repli pour ceux qui n'y ont pas accès) : `model.claude.mid=claude-sonnet-5-5, claude-sonnet-5`.
+2. **Ajouter son prix** : `price.<modèle>=…`.
+3. **Revoir la répartition** si le nouveau modèle change l'équilibre (ex. un Haiku 5 assez bon pour l'explorateur, un Sonnet 5.5 pour le relecteur) : lignes `route.…`, et ce document (tableaux, constats).
+4. **Changer la date** : `date=AAAA-MM-JJ`.
+5. **Vérifier** : `loomy doctor --live` (chaque modèle des chaînes répond-il ?), puis `bash tests/run.sh`.
+6. **Publier** : commit et push sur `main`. Chacun le reçoit avec `loomy update --catalog` ; l'accueil le leur signale.
+7. **Plus tard**, quand l'ancien modèle n'est plus proposé nulle part : le retirer de la chaîne, et reporter la nouvelle chaîne dans `scripts/lib/models.sh` (valeurs intégrées) à la version suivante de Loomy. Un test vérifie que le catalogue du dépôt et les valeurs intégrées restent cohérents.
+
+Pour essayer un modèle sur une machine sans rien modifier : `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`.
 
 ## Sources
 - [Lancement de GPT-6 Sol et Luna (VentureBeat)](https://venturebeat.com/technology/openai-releases-gpt-6-sol-and-luna-models-slashing-api-costs-50-or-more)

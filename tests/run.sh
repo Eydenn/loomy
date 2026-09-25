@@ -19,6 +19,8 @@ export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 # Relais des projets (.loomy/scripts/*.sh) : le Loomy « installé » est ce dépôt.
 export LOOMY_HOME="$REPO"
+# Pas de vérification réseau du catalogue publié pendant les tests.
+export LOOMY_CATALOG_CHECK=0
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 # GitHub simulé : la doublure gh crée les dépôts dans $GH_STUB_REMOTES, et Git y redirige https://github.com/.
@@ -411,6 +413,17 @@ got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_
 [[ "$got" == "téléchargé luna-test claude-opus-5-5 9 9 9" ]] && ok "catalogue téléchargé pris en compte" || ko "catalogue téléchargé : $got"
 [[ ! -e "$WORK/injecte" ]] && ok "catalogue : contenu jamais exécuté" || ko "catalogue : injection exécutée"
 rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
+
+# Chaînes de repli : premier modèle disponible, repli si refusé ou absent de Codex, épinglage, rééquilibrage.
+CH="$WORK/chaines"; mkdir -p "$CH/cfg/loomy" "$CH/codex"
+printf '%s\n' 'date=2099-01-01' 'model.claude.mid=claude-sonnet-9, claude-sonnet-5' 'model.codex.top=gpt-9-astra, gpt-6-astra' 'route.claude.explorer=MID low' >"$CH/cfg/loomy/catalog.conf"
+echo '{"models":[{"slug":"gpt-6-astra"}]}' >"$CH/codex/models_cache.json"
+chq() { XDG_CONFIG_HOME="$CH/cfg" CODEX_HOME="$CH/codex" bash -c 'source "$1/scripts/lib/models.sh"; ai_route explorer claude equilibre; echo "$AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_TOP $R_MODEL $R_EFFORT"' _ "$REPO"; }
+[[ "$(chq)" == "claude-sonnet-9 gpt-6-astra claude-sonnet-9 low" ]] && ok "chaînes : plus récent d'abord, Codex limité à ses modèles, rôle rééquilibré" || ko "chaînes : $(chq)"
+echo "claude-sonnet-9=ko" >"$CH/cfg/loomy/models.state"
+[[ "$(chq)" == "claude-sonnet-5 gpt-6-astra claude-sonnet-5 low" ]] && ok "chaînes : repli quand le modèle est refusé" || ko "repli : $(chq)"
+echo "model.claude.mid=claude-sonnet-4" >"$CH/cfg/loomy/config"
+[[ "$(chq)" == "claude-sonnet-4 gpt-6-astra claude-sonnet-4 low" ]] && ok "chaînes : modèle épinglé prioritaire" || ko "épinglage : $(chq)"
 
 # Coût réel de Claude Code : hooks Stop et SubagentStop, lu dans la transcription (sans doublons, sans relecture).
 US="$WORK/usage"; mkdir -p "$US/.loomy"; : >"$US/.loomy/brief.md"

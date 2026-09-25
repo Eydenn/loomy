@@ -212,6 +212,11 @@ cat_ep="$(ai_ts_epoch "${AI_CATALOG_DATE}T00:00:00Z")"; age=""
 [[ -n "$cat_ep" ]] && age=$(( ( $(date +%s) - cat_ep ) / 86400 ))
 if [[ -n "$age" ]] && (( age > 60 )); then ui_warn "catalogue du $AI_CATALOG_DATE ($AI_CATALOG_SOURCE)" "il a $age jours : loomy update --catalog"
 else ui_ok "catalogue du $AI_CATALOG_DATE" "$AI_CATALOG_SOURCE"; fi
+newcat="$(bash "$SCRIPT_DIR/ai-catalog-check.sh" 2>/dev/null || true)"
+[[ -n "$newcat" ]] && ui_warn "catalogue du $newcat publié" "loomy update --catalog"
+# Modèles d'une chaîne refusés sur cette machine (repli en cours) : à retester après un changement de forfait.
+ko="$(grep '=ko$' "$(ai_models_state_file)" 2>/dev/null | cut -d= -f1 | paste -sd ',' - | sed 's/,/, /g' || true)"
+[[ -n "$ko" ]] && ui_info "indisponibles ici (repli utilisé) : $ko · à retester : loomy doctor --live"
 
 ui_section "ROUTAGE"
 ui_ok "$(ai_env_label "$AI_ENV")" "profil $(ai_profile_label "$AI_PROFILE")"
@@ -226,8 +231,11 @@ if (( LIVE )); then
   # Modèles utilisés par le routage courant : un échec y est bloquant, ailleurs c'est un avertissement.
   routed=" "
   for r in $AI_ROLES; do ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"; routed="$routed$R_FAMILY:$R_MODEL "; done
-  for key in "claude:$AI_MODEL_CLAUDE_TOP" "claude:$AI_MODEL_CLAUDE_MID" "claude:$AI_MODEL_CLAUDE_FAST" \
-             "codex:$AI_MODEL_CODEX_TOP" "codex:$AI_MODEL_CODEX_MID" "codex:$AI_MODEL_CODEX_FAST"; do
+  # Tous les modèles des chaînes du catalogue (repli compris) ; le résultat est retenu pour cette machine.
+  keys=""
+  for m in $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST; do keys="$keys claude:$m"; done
+  for m in $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST; do keys="$keys codex:$m"; done
+  for key in $keys; do
     fam="${key%%:*}"; model="${key#*:}"
     if [[ "$fam" == "claude" ]]; then
       (( HAS_C )) || continue
@@ -245,6 +253,7 @@ if (( LIVE )); then
       rm -f "$tmpf"
     fi
     ui_wait_end
+    if (( ok )); then ai_model_mark "$model" ok; else ai_model_mark "$model" ko; fi
     case "$routed" in *" $key "*) used="utilisé par ce projet" ;; *) used="" ;; esac
     if (( ok )); then ui_ok "$model" "répond${used:+ · $used}"
     elif [[ -n "$used" ]]; then ui_err "$model" "${why:-échec} · $used"; MIN_OK=0

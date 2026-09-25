@@ -196,15 +196,15 @@ ui_clear
 if [[ "$COMPACT" == "1" ]]; then
   # Vue resserrée : le logo aussi (sans lignes vides autour), si le terminal est assez large.
   if ui_logo_ok; then
-    UI_LOGO_SIZE=small _ui_logo_lines "  "
+    _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print ""
-    ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_TITLE}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   else
-    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_TITLE}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   fi
 else
-  ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
+  ui_banner "Statut du projet" "${C_RESET}${C_TITLE}$(brief_get name 2>/dev/null || basename "$ROOT")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 fi
 # Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
@@ -303,7 +303,7 @@ if [[ -f "$BRIEF" && "$COMPACT" != "1" ]]; then
   ui_section "BRIEF"
   risk="$(brief_get risk)"
   risk_c="$C_GREEN"; [[ "$risk" == "MEDIUM" ]] && risk_c="$C_YELLOW"; [[ "$risk" == "HIGH" ]] && risk_c="$C_RED"
-  ui_kv "Nom" "${C_BOLD}$(brief_get name)${C_RESET} · $(label_of "$(brief_get type)") · $(label_of "$(brief_get stage)")"
+  ui_kv "Nom" "${C_TITLE}$(brief_get name)${C_RESET} · $(label_of "$(brief_get type)") · $(label_of "$(brief_get stage)")"
   ui_kv "Risque" "${risk_c}${risk:-?}${C_RESET}"
   ui_kv "Mode IA" "${C_MAGENTA}$(brief_get ai_mode)${C_RESET} · lead $(label_of "$(brief_get ai_lead)")"
   ui_kv "Budget" "$(label_of "$(brief_get budget)")"

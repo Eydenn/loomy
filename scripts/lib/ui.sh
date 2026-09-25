@@ -27,6 +27,7 @@ UI_KEY=""; UI_CH=""; UI_LEN=0; UI_LINES=()
 
 if [[ -z "${NO_COLOR:-}" ]] && { [[ -n "${LOOMY_FORCE_COLOR:-}" ]] || [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; }; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+  C_TITLE=$'\033[1;97m'   # titres et nom du projet : gras et blanc vif (visible même si le terminal rend peu le gras)
   C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
   C_BLUE=$'\033[34m'; C_MAGENTA=$'\033[35m'; C_CYAN=$'\033[36m'
   if [[ "${TERM:-}" == *256color* || "${COLORTERM:-}" == truecolor || "${COLORTERM:-}" == 24bit ]]; then
@@ -37,7 +38,7 @@ if [[ -z "${NO_COLOR:-}" ]] && { [[ -n "${LOOMY_FORCE_COLOR:-}" ]] || [[ -t 2 &&
     C_BRAND=$'\033[1;35m'; C_RAIL=$'\033[35m'; C_BOX=$'\033[36m'
   fi
 else
-  C_RESET=""; C_BOLD=""; C_DIM=""; C_RED=""; C_GREEN=""; C_YELLOW=""
+  C_RESET=""; C_BOLD=""; C_DIM=""; C_TITLE=""; C_RED=""; C_GREEN=""; C_YELLOW=""
   C_BLUE=""; C_MAGENTA=""; C_CYAN=""; C_BRAND=""; C_RAIL=""; C_BOX=""
 fi
 
@@ -359,25 +360,17 @@ _ui_term_size() {
 }
 
 # ---------------------------------------------------------------- messages simples
-# Logo : la grille de pixels de docs/assets/loomy-*.svg, en demi-blocs (deux pixels par caractère).
+# Logo : le dessin de docs/assets/loomy-*.svg aux deux tiers (proportions et style conservés), en demi-blocs
+# (deux pixels par caractère), sur trois lignes.
 # {A} = accent violet (invite), {C} = curseur (clignote dans loomy watch : LOOMY_LOGO_BLINK=off l'éteint), {F} = texte.
 UI_LOGO=(
-  '         {F}▀█'
-  '{A}▀▄        {F}█   ▄▀▀▀▄ ▄▀▀▀▄ █▀▄▀▄ █   █ {C}███'
-  ' {A}▄▀       {F}█   █   █ █   █ █ █ █ █   █ {C}███'
-  '{A}▀        {F}▀▀▀   ▀▀▀   ▀▀▀  ▀ ▀ ▀  ▀▀▀█ {C}▀▀▀'
-  '                                 {F}▀▀▀'
-)
-
-# Petit logo (trois lignes) : le grand logo redessiné aux deux tiers, proportions et style conservés.
-UI_LOGO_SMALL=(
   '{A}▀▄ {F}    ▀█   ▄▄   ▄▄  ▄▄ ▄  ▄  ▄ {C}▄▄'
   '{A} ▄▀{F}     █  █  █ █  █ █ █ █ ▀▄▄█ {C}██'
   '{A}▀  {F}    ▀▀▀  ▀▀   ▀▀  ▀ ▀ ▀  ▄▄▀ {C}▀▀'
 )
 
 # ui_logo_ok : vrai si le terminal est assez large pour le logo.
-ui_logo_ok() { _ui_term_size; (( UI_COLS >= 50 )); }
+ui_logo_ok() { _ui_term_size; (( UI_COLS >= 40 )); }
 
 # _ui_logo_lines <préfixe> : lignes colorées du logo dans UI_LINES.
 _ui_logo_lines() {
@@ -385,8 +378,7 @@ _ui_logo_lines() {
   # Curseur éteint : même place, teinte à peine visible (le logo ne bouge pas).
   [[ "${LOOMY_LOGO_BLINK:-on}" == "off" && -n "$C_RESET" ]] && cursor=$'\033[38;5;237m'
   UI_LINES=()
-  local src=("${UI_LOGO[@]}"); [[ "${UI_LOGO_SIZE:-}" == "small" ]] && src=("${UI_LOGO_SMALL[@]}")
-  for l in "${src[@]}"; do
+  for l in "${UI_LOGO[@]}"; do
     l="${l//\{A\}/${C_RESET}${accent}}"; l="${l//\{C\}/${C_RESET}${cursor}}"; l="${l//\{F\}/${C_RESET}${text}}"
     UI_LINES+=("$1$l${C_RESET}")
   done
@@ -401,15 +393,15 @@ ui_banner() {
     _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print ""
-    ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_TITLE}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   else
-    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_BOLD}· ${title}${C_RESET}"
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_TITLE}· ${title}${C_RESET}"
     ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   fi
 }
 
 # Sortie des commandes : un fil conducteur violet, des sections ◇, une ligne de fin └.
-ui_section() { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}◇${C_RESET}  ${C_BOLD}$1${C_RESET}${2:+  ${C_DIM}$2${C_RESET}}"; }
+ui_section() { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}$1${C_RESET}${2:+  ${C_DIM}$2${C_RESET}}"; }
 ui_ok()   { if _ui_form_note ok "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_GREEN}✓${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
 ui_warn() { if _ui_form_note warn "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_YELLOW}!${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
 ui_err()  { ui_print "${C_RAIL}│${C_RESET}  ${C_RED}✗${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
@@ -429,7 +421,7 @@ ui_rail_group() {
   local right="${2:-}"
   _ui_term_size
   _ui_pad "$1" $(( UI_W - 3 - ${#right} ))
-  ui_print "${C_RAIL}◇${C_RESET}  ${C_BOLD}${UI_PADDED}${C_RESET}${C_DIM}${right}${C_RESET}"
+  ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}${UI_PADDED}${C_RESET}${C_DIM}${right}${C_RESET}"
 }
 ui_rail_kv() { _ui_pad "$1" 15; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"; }
 ui_rail() { ui_print "${C_RAIL}│${C_RESET}  $*"; }
@@ -569,7 +561,7 @@ _ui_static() {
     logo=0; level=$(( pass - 1 )); if (( pass == 0 )); then logo=1; level=0; fi
     UI_FRAME=""; UI_FRAME_N=0
     if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
-      if (( logo )) && (( UI_COLS >= 50 )); then
+      if (( logo )) && (( UI_COLS >= 40 )); then
         _ui_logo_lines " "
         for line in "${UI_LINES[@]}"; do _ui_add "$line"; done
         _ui_add ""
@@ -601,7 +593,7 @@ _ui_static() {
           text="question ${UI_STEP_CUR}/${UI_STEP_TOTAL}  "
         fi
         _ui_strlen "$text$bar_on$bar_off"; _ui_pad "$UI_GROUP" $(( cw - UI_LEN ))
-        _ui_add "${C_RAIL}◇${C_RESET}  ${C_BOLD}${UI_PADDED}${C_RESET}${C_DIM}${text}${C_RESET}${C_RAIL}${bar_on}${C_RESET}${C_DIM}${bar_off}${C_RESET}"
+        _ui_add "${C_RAIL}◇${C_RESET}  ${C_TITLE}${UI_PADDED}${C_RESET}${C_DIM}${text}${C_RESET}${C_RAIL}${bar_on}${C_RESET}${C_DIM}${bar_off}${C_RESET}"
         if (( level == 0 )); then
           for (( i = 0; i < ${#UI_LOG_G[@]}; i++ )); do
             [[ "${UI_LOG_G[$i]}" == "$UI_GROUP" ]] || continue

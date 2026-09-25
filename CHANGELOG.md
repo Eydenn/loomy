@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.30 — 2026-09-25
+
+### Modifié
+- **Un seul logo dans le terminal** : le logo aux deux tiers (3 lignes, proportions et style du dessin d'origine) remplace le grand partout (accueil, statut, démarrage, questionnaire, aide, suivi). Les logos SVG de la documentation ne changent pas.
+- **Titres et nom du projet en gras et blanc vif** (PHASES, ACTIVITÉ, GIT, titres d'écran, groupes du questionnaire, nom du projet dans les en-têtes) : bien visibles même dans un terminal qui rend peu le gras.
+
 ## 0.1.29 — 2026-09-25
 
 ### Modifié

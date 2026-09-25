@@ -654,7 +654,7 @@ FORM_GROUPS="PROJET|EXIGENCES|ÉQUIPE IA|LIVRABLES"
 if (( TOTAL == 13 )); then FORM_GROUPS="$FORM_GROUPS|FORFAITS"; fi
 while true; do
   # Plein écran pendant les questions ; ← rejoue la passe jusqu'à la question précédente.
-  ui_form_begin "v$LOOMY_VERSION · brief de démarrage · $(basename "$TARGET")" "$FORM_GROUPS"
+  ui_form_begin "v$LOOMY_VERSION · brief de démarrage · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
   while true; do
     ui_form_pass
     ask_all

@@ -89,7 +89,7 @@ short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $
 
 # ---------------------------------------------------------------- affichage
 ui_clear
-ui_banner "Démarrer ou reprendre" "${NAME:-$(basename "$ROOT")} · ${ROOT/#$HOME/~}"
+ui_banner "Démarrer ou reprendre" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 ui_section "SESSION"
 ui_kv "Phase" "${C_BOLD}$(phase_label "$PHASE")${C_RESET}"
 ui_kv "Orchestrateur" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"

@@ -369,11 +369,13 @@ UI_LOGO=(
   '                                 {F}▀▀▀'
 )
 
-# Petit logo (moitié de taille, trois lignes) : même dessin en police de 3 × 5 pixels, pour les panneaux.
+# Petit logo (moitié de largeur) : exactement les pixels du grand, quatre par caractère (quadrants).
 UI_LOGO_SMALL=(
-  '{A}▀▄  {F} ▀█   ▄   ▄  ▄▄ ▄  ▄ ▄ {C}▄▄'
-  '{A} ▄▀ {F}  █  █ █ █ █ █ █ █ ▀▄█ {C}██'
-  '{A}▀   {F} ▀▀▀  ▀   ▀  ▀ ▀ ▀ ▄▄▀ {C}▀▀'
+  '{A}  {F}  ▝▌             '
+  '{A}▚ {F}   ▌ ▞▀▖▞▀▖▛▞▖▌ ▌{C}█▌'
+  '{A}▗▘{F}   ▌ ▌ ▌▌ ▌▌▌▌▌ ▌{C}█▌'
+  '{A}▘ {F}  ▝▀ ▝▀ ▝▀ ▘▘▘▝▀▌{C}▀▘'
+  '{A}  {F}              ▝▀ '
 )
 
 # ui_logo_ok : vrai si le terminal est assez large pour le logo.

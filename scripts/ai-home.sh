@@ -26,9 +26,9 @@ if [[ ! -f "$ROOT/.loomy/brief.md" ]]; then
     "Toutes les commandes.")
   ui_choose "Que veux-tu faire ?" 0 "Créer un projet" "Vérifier la machine" "Aide"
   case "$UI_VALUE" in
-    Créer*) exec "$LOOMY_BIN" init ;;
-    Vérifier*) exec "$LOOMY_BIN" doctor ;;
-    *) exec "$LOOMY_BIN" help ;;
+    Créer*) ui_exec "$LOOMY_BIN" init ;;
+    Vérifier*) ui_exec "$LOOMY_BIN" doctor ;;
+    *) ui_exec "$LOOMY_BIN" help ;;
   esac
 fi
 
@@ -63,9 +63,9 @@ default=0; [[ "$sess" == open* ]] && default=1
 UI_DESCS=("${descs[@]}"); UI_LABEL="Choix"
 ui_choose "Que veux-tu faire ?" "$default" "${opts[@]}"
 case "$UI_VALUE" in
-  Ouvrir*) exec "$LOOMY_BIN" start ;;
-  Suivre*) exec "$LOOMY_BIN" watch ;;
-  Statut*) exec "$LOOMY_BIN" status ;;
-  Visibilité*) exec "$LOOMY_BIN" privacy ;;
-  *) exec "$LOOMY_BIN" help ;;
+  Ouvrir*) ui_exec "$LOOMY_BIN" start ;;
+  Suivre*) ui_exec "$LOOMY_BIN" watch ;;
+  Statut*) ui_exec "$LOOMY_BIN" status ;;
+  Visibilité*) ui_exec "$LOOMY_BIN" privacy ;;
+  *) ui_exec "$LOOMY_BIN" help ;;
 esac

@@ -195,7 +195,7 @@ run_wizard() {
   local wants_yes=0 a
   for a in ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}; do [[ "$a" == "--yes" || "$a" == "-y" ]] && wants_yes=1; done
   if [[ -t 0 && -t 2 ]] || (( wants_yes )); then
-    exec "$L/scripts/init-wizard.sh" "$TARGET" "$@" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}
+    ui_exec "$L/scripts/init-wizard.sh" "$TARGET" "$@" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"}
   fi
   return 0
 }
@@ -260,7 +260,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
     default=0; [[ "$OLD_V" != "$NEW_V" ]] && default=1
     ui_choose "Que veux-tu faire ?" "$default" "${opts[@]}"
     case "$UI_VALUE" in
-      Reprendre*) ui_end "ouverture de loomy start…"; exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" ;;
+      Reprendre*) ui_end "ouverture de loomy start…"; ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" ;;
       Mettre*|Réinstaller*) ACTION="update" ;;
       Refaire*) ACTION="brief" ;;
       Créer*)
@@ -268,7 +268,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
         ui_input "Nom du nouveau projet" "mon-projet"
         export LOOMY_PROJECT_NAME="$UI_VALUE"
         ui_end "création de ./$(loomy_slug "$UI_VALUE")…"
-        exec bash "$0" "$TARGET/$(loomy_slug "$UI_VALUE")" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
+        ui_exec bash "$0" "$TARGET/$(loomy_slug "$UI_VALUE")" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
       Réinitialiser*)
         UI_DESCS=("Repart de la phase Brief. Rien n'est supprimé en dehors de .loomy/state." "Ne modifie rien.")
         UI_LABEL="Confirmation"
@@ -285,7 +285,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
       exit 0 ;;
     brief)
       ui_end "questionnaire…"
-      exec "$L/scripts/init-wizard.sh" "$TARGET" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
+      ui_exec "$L/scripts/init-wizard.sh" "$TARGET" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
     reset)
       do_reset
       if (( RUN_WIZARD )); then

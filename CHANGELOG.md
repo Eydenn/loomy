@@ -2,6 +2,12 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.19 — 2026-09-25
+
+### Modifié
+- **Interface plein écran, mise à jour sur place.** Les commandes interactives (`loomy`, `loomy init`, `loomy start`, `loomy watch`, menus) s'affichent dans l'écran alternatif du terminal, comme une application : chaque mise à jour redessine le même écran, rien ne s'empile dans l'historique à faire défiler, et les lignes trop longues sont coupées au lieu de passer à la ligne. En sortant, l'écran normal revient avec, une seule fois, le dernier écran affiché. `LOOMY_NO_CLEAR=1` garde l'ancien affichage ligne à ligne.
+- `loomy watch` : `q` pour quitter (Ctrl-C marche toujours) ; plus aucune copie de l'écran dans l'historique à chaque rafraîchissement.
+
 ## 0.1.18 — 2026-09-25
 
 ### Corrigé

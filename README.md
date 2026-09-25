@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.18-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.19-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -253,7 +253,7 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 | Commande | Vue |
 |---|---|
 | <code>loomy&nbsp;status</code> | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi toutes les N secondes (2 par défaut), Ctrl-C pour quitter |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi toutes les N secondes (2 par défaut), q pour quitter |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal brut, éventuellement en continu |
 
 **Ce qui est en direct.** L'écran relit le projet toutes les 2 secondes :

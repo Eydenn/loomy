@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.18-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.1.19-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -230,7 +230,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | Command | View |
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every N seconds (2 by default), Ctrl-C to quit |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every N seconds (2 by default), q to quit |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Raw journal, optionally streamed |
 
 **What is live.** The screen rereads the project every 2 seconds. Delegations to Claude or Codex appear as soon as they start, with their timer, then their cost; an interrupted one disappears on its own. The phase changes when the lead agent records it (`START.md` asks it to at each step). Work the lead agent does itself, in its session, is not journaled: you follow it in its session.

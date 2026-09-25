@@ -150,4 +150,4 @@ cd "$ROOT"
 if [[ "$TOOL" == "codex" ]]; then
   ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
 fi
-if [[ "$MODE" == "resume" ]]; then exec "${RESUME_CMD[@]}"; else exec "${NEW_CMD[@]}"; fi
+if [[ "$MODE" == "resume" ]]; then ui_exec "${RESUME_CMD[@]}"; else ui_exec "${NEW_CMD[@]}"; fi

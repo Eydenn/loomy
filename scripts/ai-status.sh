@@ -2,7 +2,7 @@
 # Statut du projet et du bootstrap pour Loomy. Compatible bash 3.2.
 #   ai-status.sh                 affiche le statut
 #   ai-status.sh set <phase>     enregistre la phase en cours du bootstrap (utilisé par les agents)
-#   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (2 par défaut), Ctrl-C pour quitter
+#   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (2 par défaut), q pour quitter
 #   ai-status.sh --root <dir>    agit sur un autre dossier de projet
 set -euo pipefail
 
@@ -87,14 +87,30 @@ label_of() {
 }
 
 # ---------------------------------------------------------------- mode surveillance
+# Écran plein, redessiné sur place à chaque rafraîchissement (rien ne s'empile dans l'historique) ; q ou Ctrl-C pour quitter.
 if (( WATCH )); then
-  trap 'printf "\033[?25h\n" >&2; exit 0' INT TERM
+  ui_screen_begin
+  trap 'UI_PAGE_L=(); _ui_restore; exit 0' INT TERM
   printf '\033[?25l' >&2
+  stty -echo </dev/tty 2>/dev/null || true
   while true; do
-    frame="$(LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · session de l'agent fermée ? loomy start · Ctrl-C pour quitter" "$0" --root "$ROOT" 2>&1)"
-    printf '\033[H\033[2J%s\n' "$frame" >&2
-    sleep "$INTERVAL"
+    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · session de l'agent fermée ? loomy start · q pour quitter" "$0" --root "$ROOT" 2>&1)"
+    UI_PAGE_L=()
+    while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
+    if [[ "$UI_SCREEN" == "1" ]]; then
+      # La page commence en haut de l'écran ; ce qui dépasse en bas est coupé (le haut, le plus utile, reste visible).
+      _ui_term_size
+      (( ${#UI_PAGE_L[@]} > UI_ROWS - 1 )) && UI_PAGE_L=("${UI_PAGE_L[@]:0:$(( UI_ROWS - 1 ))}")
+      _ui_page_draw
+    else
+      printf '%s\n' "$frame" >&2
+    fi
+    key=""
+    if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
+    [[ "$key" == "q" || "$key" == "Q" ]] && break
   done
+  UI_PAGE_L=()
+  exit 0
 fi
 
 # ---------------------------------------------------------------- en-tête

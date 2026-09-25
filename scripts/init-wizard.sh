@@ -122,7 +122,7 @@ env_check() {
   # L'affichage, le contrôle des prérequis et les corrections guidées sont confiés à ai-doctor.sh.
   local doctor_args=(--root "$TARGET" --compact)
   ui_is_interactive && doctor_args+=(--fix)
-  "$SCRIPT_DIR/ai-doctor.sh" "${doctor_args[@]}" || ui_warn "Prérequis minimum non atteints" "le brief reste possible, corrigez avant de lancer l'agent"
+  ui_run "$SCRIPT_DIR/ai-doctor.sh" "${doctor_args[@]}" || ui_warn "Prérequis minimum non atteints" "le brief reste possible, corrigez avant de lancer l'agent"
 
   if command -v git >/dev/null 2>&1; then
     HAS_GIT=1
@@ -759,7 +759,7 @@ if ui_is_interactive && [[ -x "$SCRIPT_DIR/ai-start.sh" ]]; then
   UI_DESCS=("Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage." "Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.")
   ui_choose "Ouvrir la session de l'orchestrateur maintenant ?" 0 "Oui, maintenant" "Plus tard"
   if [[ "$UI_VALUE" == Oui* ]]; then
-    exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" --new
+    ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" --new
   fi
 fi
 ui_rail_end "routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log"

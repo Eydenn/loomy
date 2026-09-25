@@ -43,13 +43,88 @@ fi
 
 ui_is_interactive() { [[ "$UI_ASSUME_DEFAULTS" != "1" && -t 0 && -t 2 ]]; }
 
-ui_print() { printf '%s\n' "$*" >&2; }
+ui_print() {
+  if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L[${#UI_PAGE_L[@]}]="$*"; _ui_page_draw; return 0; fi
+  printf '%s\n' "$*" >&2
+}
 
-# ui_clear : efface l'écran avant un affichage Loomy, seulement dans un terminal interactif (LOOMY_NO_CLEAR=1 pour garder l'historique).
-ui_clear() {
-  if [[ -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive; then printf '\033[H\033[2J' >&2; fi
+# ---------------------------------------------------------------- écran
+# Dans un terminal interactif, Loomy s'affiche dans l'écran alternatif, comme une application plein écran : chaque mise
+# à jour redessine le même écran depuis le haut, rien ne s'empile dans l'historique, et les lignes trop longues sont
+# coupées au lieu de passer à la ligne. La « page » (UI_PAGE_L) est ce que le script a affiché ; seule sa fin visible
+# est dessinée. En sortant, l'écran normal revient et la dernière page y est recopiée, une seule fois.
+# Le processus qui ouvre l'écran le possède (LOOMY_SCREEN_OWNER = son PID). Un sous-processus Loomy lancé pendant ce
+# temps dessine sur le même écran ; sa page est rendue au parent par le fichier LOOMY_PAGE_OUT (voir ui_run).
+# LOOMY_NO_CLEAR=1 : pas d'écran alternatif, sortie ligne à ligne.
+UI_SCREEN=0; UI_PAGE_L=()
+
+ui_screen_begin() {
+  if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L=(); printf '\033[H\033[2J' >&2; return 0; fi
+  [[ -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive || return 0
+  UI_SCREEN=1; UI_PAGE_L=()
+  if [[ -z "${LOOMY_SCREEN_OWNER:-}" ]]; then export LOOMY_SCREEN_OWNER=$$; printf '\033[?1049h' >&2; fi
+  printf '\033[?7l\033[H\033[2J' >&2
+  trap '_ui_restore' EXIT
+  trap '_ui_restore; exit 130' INT TERM
   return 0
 }
+
+# ui_clear : ouvre l'écran de Loomy, ou le vide s'il est déjà ouvert.
+ui_clear() { ui_screen_begin; }
+
+# ui_screen_end : referme l'écran (propriétaire) et recopie la page dans l'écran normal ; sous-processus : rend la page au parent.
+ui_screen_end() {
+  [[ "$UI_SCREEN" == "1" ]] || return 0
+  UI_SCREEN=0
+  local l
+  if [[ "${LOOMY_SCREEN_OWNER:-}" == "$$" ]]; then
+    printf '\033[?7h\033[?25h\033[?1049l' >&2; unset LOOMY_SCREEN_OWNER
+    for l in ${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}; do printf '%s\n' "$l" >&2; done
+  elif [[ -n "${LOOMY_PAGE_OUT:-}" ]]; then
+    for l in ${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}; do printf '%s\n' "$l"; done >>"$LOOMY_PAGE_OUT"
+  fi
+  UI_PAGE_L=()
+  return 0
+}
+
+_ui_restore() {
+  ui_form_end
+  ui_screen_end
+  printf '\033[?25h' >&2
+  stty echo </dev/tty 2>/dev/null || true
+}
+
+# ui_exec <commande>... : quitte l'écran de Loomy (la page reste dans l'historique), puis lance la commande à sa place.
+ui_exec() { _ui_restore; trap - EXIT INT TERM; exec "$@"; }
+
+# ui_run <commande>... : lance un sous-processus Loomy qui dessine sur le même écran, puis ajoute sa page à la page courante.
+ui_run() {
+  local out rc=0 l
+  if [[ "$UI_SCREEN" != "1" ]]; then "$@"; return $?; fi
+  out="$(mktemp "${TMPDIR:-/tmp}/loomy-page.XXXXXX")"
+  LOOMY_PAGE_OUT="$out" "$@" || rc=$?
+  while IFS= read -r l || [[ -n "$l" ]]; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$l"; done <"$out"
+  rm -f "$out"
+  _ui_page_draw
+  return $rc
+}
+
+# _ui_page_draw [lignes-réservées] [suite] : dessine la fin de la page qui tient à l'écran, puis <suite> (question en cours).
+_ui_page_draw() {
+  local reserved="${1:-0}" tail="${2:-}" n=${#UI_PAGE_L[@]} avail start i out=$'\033[H'
+  _ui_term_size
+  avail=$(( UI_ROWS - 1 - reserved )); (( avail < 0 )) && avail=0
+  start=$(( n - avail )); (( start < 0 )) && start=0
+  for (( i = start; i < n; i++ )); do out="${out}${UI_PAGE_L[$i]}"$'\033[K\n'; done
+  printf '%s%s\033[J' "$out" "$tail" >&2
+}
+
+# Sous-processus lancé pendant qu'un écran Loomy est ouvert : il dessine sur ce même écran.
+if [[ -n "${LOOMY_SCREEN_OWNER:-}" && "$LOOMY_SCREEN_OWNER" != "$$" && -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive; then
+  UI_SCREEN=1
+  trap '_ui_restore' EXIT
+  trap '_ui_restore; exit 130' INT TERM
+fi
 
 # ---------------------------------------------------------------- mesure et découpage du texte
 # _ui_strlen <texte> : largeur visible (UTF-8) dans UI_LEN, sans sous-processus si la locale est UTF-8.
@@ -216,10 +291,10 @@ ui_form_begin() {
   UI_RQ=(); UI_RV=(); UI_TARGET=0
   ui_is_interactive || return 0
   UI_FORM_ACTIVE=1
-  printf '\033[?1049h\033[?25l' >&2
+  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?25l' >&2; else printf '\033[?1049h\033[?25l' >&2; fi
   stty -echo </dev/tty 2>/dev/null || true
-  trap 'ui_form_end' EXIT
-  trap 'ui_form_end; exit 130' INT TERM
+  trap '_ui_restore' EXIT
+  trap '_ui_restore; exit 130' INT TERM
   return 0
 }
 
@@ -231,9 +306,12 @@ ui_form_pass() {
 ui_form_again() { [[ "$UI_BACK" == "1" ]]; }
 
 ui_form_end() {
-  if [[ "$UI_FORM_ACTIVE" == "1" ]]; then printf '\033[?25h\033[?1049l' >&2; stty echo </dev/tty 2>/dev/null || true; fi
+  if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
+    if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?25h' >&2; _ui_page_draw; else printf '\033[?25h\033[?1049l' >&2; fi
+    stty echo </dev/tty 2>/dev/null || true
+  fi
   UI_FORM_ACTIVE=0
-  trap - INT TERM
+  [[ "$UI_SCREEN" == "1" ]] || trap - INT TERM
   return 0
 }
 
@@ -417,6 +495,7 @@ _ui_render() {
   if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
     printf '\033[H%s%s\033[J' "$UI_STATIC" "$UI_FRAME" >&2
   else
+    if [[ "$UI_SCREEN" == "1" ]]; then _ui_page_draw $(( UI_STATIC_N + UI_FRAME_N )) "$UI_STATIC$UI_FRAME"; return 0; fi
     if (( UI_INLINE_N > 0 )); then printf '\033[%dA' "$UI_INLINE_N" >&2; fi
     printf '%s%s\033[J' "$UI_STATIC" "$UI_FRAME" >&2
     UI_INLINE_N=$(( UI_STATIC_N + UI_FRAME_N ))
@@ -437,7 +516,7 @@ _ui_inline_done() {
 _ui_hide_cursor() {
   printf '\033[?25l' >&2
   stty -echo </dev/tty 2>/dev/null || true
-  if [[ "$UI_FORM_ACTIVE" != "1" ]]; then trap 'printf "\033[?25h" >&2; stty echo </dev/tty 2>/dev/null || true' EXIT; fi
+  if [[ "$UI_FORM_ACTIVE" != "1" ]]; then trap '_ui_restore' EXIT; fi
   return 0
 }
 _ui_show_cursor() { printf '\033[?25h' >&2; [[ "$UI_FORM_ACTIVE" == "1" ]] || stty echo </dev/tty 2>/dev/null || true; return 0; }

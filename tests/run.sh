@@ -299,6 +299,19 @@ EXP
   rm -f "$XDG_CONFIG_HOME/loomy/config"
 fi
 
+# Écran plein : loomy watch se redessine sur place, sans rien empiler dans l'historique du terminal ; q quitte.
+TMUX_BIN="$(PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" command -v tmux || true)"
+tmux() { "$TMUX_BIN" "$@"; }
+if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
+  tmux -L loomy-test kill-server 2>/dev/null || true
+  tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
+  sleep 4
+  [[ "$(tmux -L loomy-test display -p -t w '#{history_size}')" == "0" ]] && ok "watch : rien ne s'empile dans l'historique" || ko "watch : historique $(tmux -L loomy-test display -p -t w '#{history_size}')"
+  tmux -L loomy-test send-keys -t w q; sleep 1.5
+  tmux -L loomy-test capture-pane -t w -p | grep -q SORTIE_OK && ok "watch : q quitte et rend l'écran normal" || ko "watch : q ne quitte pas"
+  tmux -L loomy-test kill-server 2>/dev/null || true
+fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

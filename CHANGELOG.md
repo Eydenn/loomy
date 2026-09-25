@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.26 — 2026-09-25
+
+### Modifié
+- Le logo Loomy est aussi en tête de la vue resserrée (`loomy watch` dans un panneau), et son curseur violet clignote au rythme du rafraîchissement, comme un curseur de terminal.
+
 ## 0.1.25 — 2026-09-25
 
 ### Ajouté

@@ -150,7 +150,7 @@ if (( WATCH )); then
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
     extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
-    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on) LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · $keys" "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Chaque ligne est coupée à la largeur du terminal (« … »), séquences de couleur comprises : pas de retour à la
     # ligne, même dans un terminal qui ignore la désactivation du retour automatique.
@@ -194,7 +194,14 @@ fi
 # ---------------------------------------------------------------- en-tête
 ui_clear
 if [[ "$COMPACT" == "1" ]]; then
-  ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+  # Vue resserrée : le logo aussi (sans lignes vides autour), si le terminal est assez large.
+  if ui_logo_ok; then
+    _ui_logo_lines "  "
+    for l in "${UI_LINES[@]}"; do ui_print "$l"; done
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+  else
+    ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+  fi
 else
   ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
 fi

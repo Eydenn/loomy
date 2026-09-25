@@ -360,12 +360,12 @@ _ui_term_size() {
 
 # ---------------------------------------------------------------- messages simples
 # Logo : la grille de pixels de docs/assets/loomy-*.svg, en demi-blocs (deux pixels par caractère).
-# {A} = accent violet (invite et curseur), {F} = texte.
+# {A} = accent violet (invite), {C} = curseur (clignote dans loomy watch : LOOMY_LOGO_BLINK=off l'éteint), {F} = texte.
 UI_LOGO=(
   '         {F}▀█'
-  '{A}▀▄        {F}█   ▄▀▀▀▄ ▄▀▀▀▄ █▀▄▀▄ █   █ {A}███'
-  ' {A}▄▀       {F}█   █   █ █   █ █ █ █ █   █ {A}███'
-  '{A}▀        {F}▀▀▀   ▀▀▀   ▀▀▀  ▀ ▀ ▀  ▀▀▀█ {A}▀▀▀'
+  '{A}▀▄        {F}█   ▄▀▀▀▄ ▄▀▀▀▄ █▀▄▀▄ █   █ {C}███'
+  ' {A}▄▀       {F}█   █   █ █   █ █ █ █ █   █ {C}███'
+  '{A}▀        {F}▀▀▀   ▀▀▀   ▀▀▀  ▀ ▀ ▀  ▀▀▀█ {C}▀▀▀'
   '                                 {F}▀▀▀'
 )
 
@@ -374,10 +374,12 @@ ui_logo_ok() { _ui_term_size; (( UI_COLS >= 50 )); }
 
 # _ui_logo_lines <préfixe> : lignes colorées du logo dans UI_LINES.
 _ui_logo_lines() {
-  local l accent="${C_RAIL}" text="${C_BOLD}"
+  local l accent="${C_RAIL}" text="${C_BOLD}" cursor="${C_RAIL}"
+  # Curseur éteint : même place, teinte à peine visible (le logo ne bouge pas).
+  [[ "${LOOMY_LOGO_BLINK:-on}" == "off" && -n "$C_RESET" ]] && cursor=$'\033[38;5;237m'
   UI_LINES=()
   for l in "${UI_LOGO[@]}"; do
-    l="${l//\{A\}/${C_RESET}${accent}}"; l="${l//\{F\}/${C_RESET}${text}}"
+    l="${l//\{A\}/${C_RESET}${accent}}"; l="${l//\{C\}/${C_RESET}${cursor}}"; l="${l//\{F\}/${C_RESET}${text}}"
     UI_LINES+=("$1$l${C_RESET}")
   done
   return 0

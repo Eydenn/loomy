@@ -176,7 +176,8 @@ sub_help() {
             echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
             echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"
             echo "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),"
-            echo "       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap)."
+            echo "       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap),"
+            echo "       screen (alt : écran séparé ; clear : écran et historique vidés, pour les terminaux sans écran séparé ; auto)."
             echo "Fichier : $(loomy_config_file)" ;;
     delegate) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""
               echo "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."
@@ -233,7 +234,8 @@ case "$cmd" in
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { echo "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; exit 2; } ;;
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "$key : un prix mensuel en \$" >&2; exit 2; } ;;
           start_watch|notify) [[ "$val" =~ ^(yes|no)$ ]] || { echo "$key : yes ou no" >&2; exit 2; } ;;
-          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify)" >&2; exit 2 ;;
+          screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { echo "screen : auto, alt ou clear" >&2; exit 2; } ;;
+          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify, screen)" >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; exit 2 ;;

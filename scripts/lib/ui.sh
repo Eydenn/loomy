@@ -60,12 +60,26 @@ ui_print() {
 # LOOMY_NO_CLEAR=1 : pas d'écran alternatif, sortie ligne à ligne.
 UI_SCREEN=0; UI_PAGE_L=(); UI_PAGE_BODY=0
 
+# Terminaux sans écran séparé (celui de l'app Claude, par exemple) : l'écran ET l'historique sont vidés à l'entrée et
+# à la sortie, pour que Loomy soit seul à l'écran. Réglage : LOOMY_SCREEN=alt|clear, ou loomy config set screen.
+_ui_screen_mode() {
+  local m="${LOOMY_SCREEN:-}"
+  if [[ -z "$m" ]]; then
+    m="$(sed -n 's/^screen=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null | head -1)"
+  fi
+  case "$m" in alt|clear) echo "$m"; return 0 ;; esac
+  case "${TERM_PROGRAM:-}" in claude-desktop) echo clear ;; *) echo alt ;; esac
+}
+
 ui_screen_begin() {
   UI_PAGE_BODY=0
   if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L=(); printf '\033[H\033[2J' >&2; return 0; fi
   [[ -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive || return 0
   UI_SCREEN=1; UI_PAGE_L=()
-  if [[ -z "${LOOMY_SCREEN_OWNER:-}" ]]; then export LOOMY_SCREEN_OWNER=$$; printf '\033[?1049h' >&2; fi
+  if [[ -z "${LOOMY_SCREEN_OWNER:-}" ]]; then
+    export LOOMY_SCREEN_OWNER=$$
+    if [[ "$(_ui_screen_mode)" == "clear" ]]; then printf '\033[H\033[2J\033[3J' >&2; else printf '\033[?1049h' >&2; fi
+  fi
   printf '\033[?7l\033[H\033[2J' >&2
   trap '_ui_restore' EXIT
   trap '_ui_restore; exit 130' INT TERM
@@ -81,7 +95,9 @@ ui_screen_end() {
   UI_SCREEN=0
   local l
   if [[ "${LOOMY_SCREEN_OWNER:-}" == "$$" ]]; then
-    printf '\033[?7h\033[?25h\033[?1049l' >&2; unset LOOMY_SCREEN_OWNER
+    if [[ "$(_ui_screen_mode)" == "clear" ]]; then printf '\033[?7h\033[?25h\033[H\033[2J\033[3J' >&2
+    else printf '\033[?7h\033[?25h\033[?1049l' >&2; fi
+    unset LOOMY_SCREEN_OWNER
     # Ce qui reste dans l'historique : le contenu de la dernière page, sans le logo ; rien quand on passe à un autre
     # écran (ui_exec), pour que les écrans ne s'empilent pas.
     if [[ -z "${UI_NO_DUMP:-}" ]] && (( ${#UI_PAGE_L[@]} > 0 )); then
@@ -107,9 +123,16 @@ _ui_restore() {
 # ui_external <commande>... : lance une commande interactive (gh auth login…) hors de l'écran de Loomy, puis y revient.
 ui_external() {
   local rc=0
-  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?7h\033[?25h\033[?1049l' >&2; stty echo </dev/tty 2>/dev/null || true; fi
+  local mode; mode="$(_ui_screen_mode)"
+  if [[ "$UI_SCREEN" == "1" ]]; then
+    if [[ "$mode" == "clear" ]]; then printf '\033[?7h\033[?25h\033[H\033[2J' >&2; else printf '\033[?7h\033[?25h\033[?1049l' >&2; fi
+    stty echo </dev/tty 2>/dev/null || true
+  fi
   "$@" || rc=$?
-  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?1049h\033[?7l' >&2; _ui_page_draw; fi
+  if [[ "$UI_SCREEN" == "1" ]]; then
+    if [[ "$mode" == "clear" ]]; then printf '\033[H\033[2J\033[3J\033[?7l' >&2; else printf '\033[?1049h\033[?7l' >&2; fi
+    _ui_page_draw
+  fi
   return $rc
 }
 

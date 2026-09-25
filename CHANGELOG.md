@@ -2,6 +2,11 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.3.6 — 2026-09-25
+
+### Corrigé
+- **Terminaux sans écran séparé** (celui de l'app Claude, `TERM_PROGRAM=claude-desktop`) : Loomy s'affichait à la suite des commandes précédentes, qui restaient visibles en remontant. L'écran et l'historique du terminal sont maintenant vidés à l'entrée et à la sortie : Loomy est seul à l'écran, son en-tête tout en haut ; en sortant, seul le résultat éventuel reste. Réglage : `loomy config set screen auto|alt|clear` (ou `LOOMY_SCREEN`).
+
 ## 0.3.5 — 2026-09-25
 
 ### Modifié

@@ -551,8 +551,26 @@ loomy/
 
 | Statut | Fonctionnalité |
 |---|---|
-| ✅&nbsp;0.1 | Commande `loomy`, questionnaire, diagnostic, routage orchestrateur + rôles, bridges, journal, suivi terminal en direct, forfaits, installation Homebrew, npm, bun et shell, suite de tests |
-| 🎯&nbsp;1.0 | Validation complète en conditions réelles |
-| 🔜 | Journalisation des sous-agents Claude natifs (hook `SubagentStop`) et des tours Codex (notification de fin de tour) |
-| 🔜 | Comparaison entre projets et export CSV des coûts |
+| ✅&nbsp;0.1 | Commande `loomy`, questionnaire, diagnostic, routage orchestrateur + rôles, bridges, journal, suivi terminal en direct (plein écran, `start --watch`, notifications), effort réglable par projet, forfaits, installation Homebrew, npm, bun et shell, suite de tests |
+| 🔜&nbsp;0.2 | **Consolider, avant l'arrivée des testeurs** |
+| | `loomy start --watch` rejoint une session déjà ouverte au lieu de la fermer ; nettoyage des scripts temporaires ; macOS seul annoncé tant que Linux n'est pas testé |
+| | Tests macOS et Linux à chaque push (GitHub Actions) |
+| | `loomy feedback` : issue GitHub pré-remplie (version, diagnostic, fin du journal, brief anonymisé) |
+| | Installation des testeurs simplifiée : `loomy doctor --fix` enchaîne les étapes `gh` |
+| 🔜&nbsp;0.3 | **Fiabiliser** |
+| | Plus de copie des scripts dans chaque projet : un lien vers le Loomy installé ; `loomy init --update` réservé aux changements de templates |
+| | Catalogue de modèles et de prix mis à jour sans nouvelle version (`loomy update --catalog`), alerte si un modèle routé disparaît |
+| | Coûts réels : sous-agents Claude (hook `SubagentStop`), tours de l'orchestrateur quand ils sont exposés, export CSV |
+| | Journal archivé chaque mois, `loomy log --since` |
+| 🔜&nbsp;0.4 | **Le quotidien après le bootstrap** |
+| | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit |
+| | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |
+| | Modèles de projet (web, API, CLI, e-mails…) qui pré-remplissent le brief et la structure |
+| | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, page HTML à partager |
+| 🎯&nbsp;1.0 | **Validation en conditions réelles** |
+| | Retours des testeurs (`loomy feedback`) traités |
+| | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |
+| | Thème de couleurs réglable (`loomy config`), pour les terminaux qui n'affichent pas le gras |
+| | README court (« 5 minutes pour démarrer »), référence complète à part |
+| | Dépôt public et Homebrew sans jeton, sur décision |
 | 💡 | Suivi du quota réel des forfaits, dès que Claude Code ou Codex l'exposeront |

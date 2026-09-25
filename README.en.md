@@ -388,8 +388,26 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 
 | Status | Feature |
 |---|---|
-| ✅&nbsp;0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking, subscriptions, Homebrew, npm, bun and shell installs, test suite |
-| 🎯&nbsp;1.0 | Full validation in real conditions |
-| 🔜 | Journaling of native Claude sub-agents (`SubagentStop` hook) and Codex turns (turn-end notification) |
-| 🔜 | Cross-project comparison and CSV cost export |
+| ✅&nbsp;0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking (full screen, `start --watch`, notifications), per-project effort, subscriptions, Homebrew, npm, bun and shell installs, test suite |
+| 🔜&nbsp;0.2 | **Consolidate, before testers arrive** |
+| | `loomy start --watch` joins an open session instead of closing it; temporary scripts cleaned up; only macOS announced until Linux is tested |
+| | macOS and Linux tests on every push (GitHub Actions) |
+| | `loomy feedback`: prefilled GitHub issue (version, doctor, end of journal, anonymized brief) |
+| | Simpler tester install: `loomy doctor --fix` chains the `gh` steps |
+| 🔜&nbsp;0.3 | **Harden** |
+| | No more script copies in each project: a link to the installed Loomy; `loomy init --update` only for template changes |
+| | Model and price catalog updated without a new release (`loomy update --catalog`), warning when a routed model disappears |
+| | Real costs: Claude sub-agents (`SubagentStop` hook), lead turns when exposed, CSV export |
+| | Monthly journal archive, `loomy log --since` |
+| 🔜&nbsp;0.4 | **Day-to-day work after bootstrap** |
+| | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit |
+| | `loomy review`: on-demand cross review of the current branch or diff |
+| | Project templates (web, API, CLI, emails…) that prefill the brief and structure |
+| | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, shareable HTML page |
+| 🎯&nbsp;1.0 | **Validation in real conditions** |
+| | Tester feedback (`loomy feedback`) processed |
+| | Questionnaire and UI split into smaller modules, tests grouped by topic |
+| | Configurable color theme (`loomy config`) for terminals that don't render bold |
+| | Short README ("5 minutes to start"), full reference separately |
+| | Public repository and token-free Homebrew, when decided |
 | 💡 | Real subscription quota tracking, once Claude Code or Codex expose it |

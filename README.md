@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.1.31-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.2.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -429,7 +429,8 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`, `--watch`) |
-| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, `--live` teste chaque modèle) |
+| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | vérifie les prérequis (`--fix` corrige, y compris GitHub : installation de `gh`, connexion, accès de git au dépôt Loomy ; `--live` teste chaque modèle) |
+| 💬&nbsp;<code>loomy&nbsp;feedback</code> | signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé, sans nom, objectif ni texte des tâches), envoyée seulement après ton accord ; `--print` pour voir le texte |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
@@ -552,11 +553,11 @@ loomy/
 | Statut | Fonctionnalité |
 |---|---|
 | ✅&nbsp;0.1 | Commande `loomy`, questionnaire, diagnostic, routage orchestrateur + rôles, bridges, journal, suivi terminal en direct (plein écran, `start --watch`, notifications), effort réglable par projet, forfaits, installation Homebrew, npm, bun et shell, suite de tests |
-| 🔜&nbsp;0.2 | **Consolider, avant l'arrivée des testeurs** |
-| | `loomy start --watch` rejoint une session déjà ouverte au lieu de la fermer ; nettoyage des scripts temporaires ; macOS seul annoncé tant que Linux n'est pas testé |
-| | Tests macOS et Linux à chaque push (GitHub Actions) |
-| | `loomy feedback` : issue GitHub pré-remplie (version, diagnostic, fin du journal, brief anonymisé) |
-| | Installation des testeurs simplifiée : `loomy doctor --fix` enchaîne les étapes `gh` |
+| ✅&nbsp;0.2 | **Consolider, avant l'arrivée des testeurs** : fait |
+| ✅ | `loomy start --watch` rejoint une session déjà ouverte au lieu de la fermer ; nettoyage des scripts temporaires ; plateformes annoncées au plus juste (macOS, Linux testé automatiquement) |
+| ✅ | Tests macOS et Linux à chaque push (GitHub Actions) |
+| ✅ | `loomy feedback` : issue GitHub pré-remplie (version, diagnostic, fin du journal, brief anonymisé) |
+| ✅ | Installation des testeurs simplifiée : `loomy doctor --fix` enchaîne les étapes `gh` |
 | 🔜&nbsp;0.3 | **Fiabiliser** |
 | | Plus de copie des scripts dans chaque projet : un lien vers le Loomy installé ; `loomy init --update` réservé aux changements de templates |
 | | Catalogue de modèles et de prix mis à jour sans nouvelle version (`loomy update --catalog`), alerte si un modèle routé disparaît |

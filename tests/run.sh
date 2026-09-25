@@ -362,6 +362,17 @@ if [[ -f "$PROJ/.loomy/brief.md" ]]; then
   [[ ! -f "$PROJ/.loomy/efforts" ]] && ok "effort revenu au profil" || ko "réglage toujours présent"
 fi
 
+# loomy feedback : texte de l'issue anonymisé (ni nom, ni objectif, ni texte des tâches), rien d'envoyé avec --print.
+FB="$WORK/retour"; mkdir -p "$FB/.loomy/logs"
+printf -- '---\nname: "NomSecret42"\ngoal: "ObjectifSecret42"\ntype: web\nai_mode: ORCHESTRATED\nai_lead: claude\n---\n' >"$FB/.loomy/brief.md"
+printf 'phase=build\n' >"$FB/.loomy/state"
+printf '%s\n' '{"ts":"2026-09-25T10:00:00Z","type":"delegation","id":"f1","role":"executor","family":"codex","model":"gpt-6-luna","status":"ok","duration_s":5,"cost_usd":0.001,"task":"TacheSecrete42"}' >"$FB/.loomy/logs/events.jsonl"
+run "feedback --print" bash "$REPO/scripts/ai-feedback.sh" --root "$FB" --print "un retour de test"
+has "feedback : message joint" "un retour de test"
+has "feedback : versions jointes" "\| Loomy \|"
+has "feedback : état du projet joint" "phase build"
+if grep -qE "NomSecret42|ObjectifSecret42|TacheSecrete42|$FB" "$OUT"; then ko "feedback : données du projet divulguées"; else ok "feedback : ni nom, ni objectif, ni chemin, ni texte des tâches"; fi
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

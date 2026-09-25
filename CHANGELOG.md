@@ -2,6 +2,21 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.2.0 — 2026-09-25
+
+Première étape de la feuille de route : consolider avant l'arrivée des testeurs.
+
+### Ajouté
+- **`loomy feedback`** : prépare une issue GitHub avec ton message et le contexte utile (versions de Loomy, du système, de bash, git, Claude Code, Codex et gh ; type, stade, mode IA et phase du projet ; derniers événements du journal). Anonymisé : ni nom, ni objectif, ni chemin, ni texte des tâches. Aperçu, puis au choix : créer l'issue, l'ouvrir pré-remplie dans le navigateur, copier le texte ou annuler. `--print` affiche seulement le texte.
+- **`loomy doctor --fix` s'occupe de GitHub** : installe `gh` (Homebrew), lance la connexion (`gh auth login`), puis vérifie que git accède vraiment au dépôt Loomy (privé pendant la pré-version) et configure `gh auth setup-git` si besoin ; sinon, rappelle le lien d'invitation.
+- **Tests automatiques sur macOS et Ubuntu** à chaque push (GitHub Actions) ; les 276 contrôles passent sur les deux.
+
+### Corrigé
+- **`loomy start --watch` ne ferme plus une session déjà ouverte** pour le même projet : il propose de la rejoindre (par défaut), d'en ouvrir une autre à côté, ou d'annuler.
+- **Scripts temporaires du suivi** : chacun s'efface dès son lancement ; les restes des versions précédentes sont nettoyés.
+- Dates du journal lues de la même façon sur macOS et Linux (le bilan « Projet prêt » ne fonctionnait que sur macOS).
+- README : macOS annoncé, Linux « testé automatiquement, pas encore validé en usage réel ».
+
 ## 0.1.31 — 2026-09-25
 
 ### Modifié

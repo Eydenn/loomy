@@ -155,12 +155,34 @@ fi
 
 # ---------------------------------------------------------------- confort
 ui_section "CONFORT" "facultatif"
+# GitHub : gh installé, connecté, et git qui s'authentifie avec lui (dépôts privés, dont le tap Loomy).
+# Avec --fix, les trois étapes s'enchaînent.
+if ! command -v gh >/dev/null 2>&1; then
+  ui_warn "gh absent" "utile pour créer les dépôts GitHub et installer Loomy depuis le tap privé"
+  if command -v brew >/dev/null 2>&1 && offer_fix "Installer gh (brew install gh) ?" ui_external brew install gh; then :; else missing_ideal "gh"; fi
+fi
 if command -v gh >/dev/null 2>&1; then
   ui_wait "Connexion GitHub (gh)"; gh_ok=0; gh auth status >/dev/null 2>&1 && gh_ok=1; ui_wait_end
-  if (( gh_ok )); then ui_ok "gh" "authentifié"
-  else ui_warn "gh" "non authentifié — lancez : gh auth login"; missing_ideal "gh authentifié"; fi
-else
-  ui_info "gh absent (utile pour créer un repo GitHub : brew install gh)"; missing_ideal "gh"
+  if (( ! gh_ok )); then
+    ui_warn "gh" "non connecté à GitHub"
+    offer_fix "Te connecter à GitHub maintenant (gh auth login) ?" ui_external gh auth login && gh auth status >/dev/null 2>&1 && gh_ok=1
+  fi
+  if (( gh_ok )); then
+    ui_ok "gh" "connecté à GitHub"
+    # Accès réel de git au dépôt de Loomy (privé pendant la pré-version) : c'est ce dont le tap Homebrew a besoin.
+    loomy_repo="https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}.git"
+    ui_wait "Accès de git au dépôt Loomy"; git_ok=0
+    GIT_TERMINAL_PROMPT=0 git ls-remote "$loomy_repo" HEAD >/dev/null 2>&1 && git_ok=1; ui_wait_end
+    if (( ! git_ok )); then
+      ui_warn "git → dépôt Loomy" "accès refusé : git ne s'authentifie pas auprès de GitHub (ou invitation pas encore acceptée)"
+      if offer_fix "Configurer git pour utiliser ton compte gh (gh auth setup-git) ?" gh auth setup-git \
+         && GIT_TERMINAL_PROMPT=0 git ls-remote "$loomy_repo" HEAD >/dev/null 2>&1; then git_ok=1
+      else ui_info "invitation au dépôt : https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}/invitations"; missing_ideal "accès git au dépôt Loomy"; fi
+    fi
+    (( git_ok )) && ui_ok "git → dépôt Loomy" "accès vérifié (mises à jour Homebrew possibles)"
+  else
+    missing_ideal "gh connecté"
+  fi
 fi
 if command -v pbcopy >/dev/null 2>&1 || command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1; then
   ui_ok "presse-papiers" "copie automatique du prompt de démarrage"

@@ -97,6 +97,15 @@ _ui_restore() {
   stty echo </dev/tty 2>/dev/null || true
 }
 
+# ui_external <commande>... : lance une commande interactive (gh auth login…) hors de l'écran de Loomy, puis y revient.
+ui_external() {
+  local rc=0
+  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?7h\033[?25h\033[?1049l' >&2; stty echo </dev/tty 2>/dev/null || true; fi
+  "$@" || rc=$?
+  if [[ "$UI_SCREEN" == "1" ]]; then printf '\033[?1049h\033[?7l' >&2; _ui_page_draw; fi
+  return $rc
+}
+
 # ui_exec <commande>... : quitte l'écran de Loomy (la page reste dans l'historique), puis lance la commande à sa place.
 ui_exec() { _ui_restore; trap - EXIT INT TERM; exec "$@"; }
 

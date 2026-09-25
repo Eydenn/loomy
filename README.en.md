@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.1.31-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.2.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -368,7 +368,8 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`) |
-| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, `--live` tests every model) |
+| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, GitHub included: installs `gh`, logs in, checks git access to the Loomy repository; `--live` tests every model) |
+| 💬&nbsp;<code>loomy&nbsp;feedback</code> | reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
@@ -389,11 +390,11 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 | Status | Feature |
 |---|---|
 | ✅&nbsp;0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking (full screen, `start --watch`, notifications), per-project effort, subscriptions, Homebrew, npm, bun and shell installs, test suite |
-| 🔜&nbsp;0.2 | **Consolidate, before testers arrive** |
-| | `loomy start --watch` joins an open session instead of closing it; temporary scripts cleaned up; only macOS announced until Linux is tested |
-| | macOS and Linux tests on every push (GitHub Actions) |
-| | `loomy feedback`: prefilled GitHub issue (version, doctor, end of journal, anonymized brief) |
-| | Simpler tester install: `loomy doctor --fix` chains the `gh` steps |
+| ✅&nbsp;0.2 | **Consolidate, before testers arrive**: done |
+| ✅ | `loomy start --watch` joins an open session instead of closing it; temporary scripts cleaned up; platforms stated accurately (macOS, Linux tested automatically) |
+| ✅ | macOS and Linux tests on every push (GitHub Actions) |
+| ✅ | `loomy feedback`: prefilled GitHub issue (version, doctor, end of journal, anonymized brief) |
+| ✅ | Simpler tester install: `loomy doctor --fix` chains the `gh` steps |
 | 🔜&nbsp;0.3 | **Harden** |
 | | No more script copies in each project: a link to the installed Loomy; `loomy init --update` only for template changes |
 | | Model and price catalog updated without a new release (`loomy update --catalog`), warning when a routed model disappears |

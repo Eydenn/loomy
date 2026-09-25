@@ -157,6 +157,7 @@ usage() {
   _h_cmd status "" "Statut du projet : phases, délégations en cours, activité, coûts, Git"
   _h_cmd watch "[N]" "Suivi en direct (touches : q, c vue, l journal, s session)"
   _h_cmd log "[-n N] [-f] [--raw]" "Journal lisible des phases, délégations et sessions (--raw : JSON)"
+  _h_cmd feedback "[\"message\"]" "Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord"
   _h_group "MACHINE"
   _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
   _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
@@ -199,6 +200,7 @@ case "$cmd" in
   privacy) exec bash "$S/ai-privacy.sh" --root "$(project_root)" "$@" ;;
   route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
   effort) exec bash "$S/ai-effort.sh" --root "$(project_root)" "$@" ;;
+  feedback) exec bash "$S/ai-feedback.sh" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
   worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;

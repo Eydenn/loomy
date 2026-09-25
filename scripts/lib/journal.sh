@@ -69,7 +69,8 @@ ai_session_state() {
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
     /"type":"session"/ {
       key = field("session"); if (key == "") key = "pid" num("pid")
-      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool") }
+      # Une session reprise (claude --continue) garde son identifiant : un nouveau début annule la fin précédente.
+      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool"); delete ended[key] }
       else { ended[key] = field("ts") "|" field("tool"); last_end = field("ts") "|" field("tool") }
     }
     END {

@@ -341,6 +341,16 @@ fi
 run "vue resserrée" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$PROJ" --compact
 if grep -q "FICHIERS IA" "$OUT"; then ko "vue resserrée : sections détaillées présentes"; else ok "vue resserrée : sections détaillées absentes"; fi
 
+# Session reprise (claude --continue) : même identifiant, un nouveau début après une fin = session ouverte.
+RS="$WORK/reprise"; mkdir -p "$RS/.loomy/logs"; : >"$RS/.loomy/brief.md"
+sleep 60 & RPID=$!
+printf '%s\n' '{"ts":"2026-09-25T00:00:00Z","type":"session","event":"start","tool":"claude","session":"abc","pid":1}' \
+  '{"ts":"2026-09-25T00:10:00Z","type":"session","event":"end","tool":"claude","session":"abc","pid":1}' \
+  "{\"ts\":\"2026-09-25T09:00:00Z\",\"type\":\"session\",\"event\":\"start\",\"tool\":\"claude\",\"session\":\"abc\",\"pid\":$RPID}" >"$RS/.loomy/logs/events.jsonl"
+st="$(bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_session_state "$2"' _ "$REPO" "$RS")"
+[[ "$st" == open* ]] && ok "session reprise vue ouverte" || ko "session reprise : $st"
+kill "$RPID" 2>/dev/null || true
+
 # Aides et commandes annexes.
 run "help init" "$LOOMY" help init
 has "help <commande> : aide de la commande" "Usage : loomy init"

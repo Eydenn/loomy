@@ -106,7 +106,7 @@ fi
 # Le suivi se ferme de lui-même à la fin de la session de l'agent (--until-exit).
 watch_script() {
   local f="${TMPDIR:-/tmp}/loomy-watch-$$.sh"
-  printf '#!/bin/bash\nexec bash %q --root %q --watch --compact --until-exit %s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$1" >"$f"
+  printf '#!/bin/bash\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane --until-exit %s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$1" >"$f"
   chmod +x "$f"; echo "$f"
 }
 
@@ -133,13 +133,13 @@ start_with_watch() {
     name="loomy-$(printf '%s' "$(basename "$ROOT")" | tr -c 'A-Za-z0-9_-' '-')"
     tmux kill-session -t "$name" 2>/dev/null || true
     agent="$(printf '%q ' "${AGENT_CMD[@]}")"
-    tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name"
+    env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name"
     tmux set-option -t "$name" mouse on >/dev/null
     tmux set-option -t "$name" status off >/dev/null
     tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
     tmux set-option -t "$name" pane-active-border-style "fg=colour141" >/dev/null
     w="${TMPDIR:-/tmp}/loomy-watch-$name.sh"
-    printf '#!/bin/bash\nexec bash %q --root %q --watch --compact\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" >"$w"
+    printf '#!/bin/bash\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" >"$w"
     if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
     ui_end "ouverture de ${tool_label} et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau"

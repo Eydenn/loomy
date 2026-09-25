@@ -31,6 +31,7 @@ INTERVAL=1
 COMPACT=""
 JOURNAL_VIEW=0
 UNTIL=""
+IN_PANE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --compact) COMPACT=1 ;;
     --journal) JOURNAL_VIEW=1 ;;
     --until-exit) UNTIL="${2:-}"; shift ;;
+    --pane) IN_PANE=1 ;;
     --full) COMPACT=0 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -144,12 +146,21 @@ if (( WATCH )); then
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
     keys="q quitter · c $( [[ "$size" == "--compact" ]] && echo "vue complète" || echo "vue resserrée") · l $( [[ "$view" == "journal" ]] && echo "statut" || echo "journal")"
-    [[ -z "$UNTIL" ]] && keys="$keys · s session"
+    [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s session"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
     extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
     frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · $keys" "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
+    # Chaque ligne est coupée à la largeur du terminal (« … »), séquences de couleur comprises : pas de retour à la
+    # ligne, même dans un terminal qui ignore la désactivation du retour automatique.
+    frame="$(printf '%s\n' "$frame" | perl -CS -Mutf8 -ne '
+      chomp; my ($w, $out, $vis) = ('"$(( UI_COLS - 1 ))"', "", 0);
+      while (length) {
+        if (s/^(\e\[[0-9;?]*[A-Za-z])//) { $out .= $1; next }
+        s/^(.)//s; if ($vis >= $w - 1 && length) { $out .= "…"; $vis++; last } $out .= $1; $vis++;
+      }
+      print $out, "\e[0m\n";' 2>/dev/null || printf '%s' "$frame")"
     UI_PAGE_L=()
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
@@ -171,7 +182,7 @@ if (( WATCH )); then
       q|Q) break ;;
       c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
       l|L) if [[ "$view" == "journal" ]]; then view="status"; else view="journal"; fi ;;
-      s|S) [[ -z "$UNTIL" ]] && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
+      s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
     esac
     # Suivi ouvert par loomy start --watch : il se ferme avec la session de l'agent.
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break

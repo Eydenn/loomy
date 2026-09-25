@@ -2,6 +2,13 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.24 — 2026-09-25
+
+### Corrigé
+- **Suivi compact dans `loomy start --watch`** : les lignes passaient à la ligne et cassaient le rail. Le panneau héritait de l'écran du processus qui l'avait ouvert ; il ouvre maintenant le sien. En plus, chaque ligne de `loomy watch` est coupée à la largeur du terminal (« … »), même dans un terminal qui ignore la désactivation du retour à la ligne.
+- **Session reprise vue fermée** : `claude --continue` garde l'identifiant de session ; un nouveau début après une fin compte désormais comme une session ouverte.
+- Dans le panneau de suivi, la touche `s` (ouvrir une session) n'est plus proposée : l'agent est déjà à côté.
+
 ## 0.1.23 — 2026-09-25
 
 ### Ajouté

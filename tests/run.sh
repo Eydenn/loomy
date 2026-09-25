@@ -310,6 +310,15 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   tmux -L loomy-test send-keys -t w q; sleep 1.5
   tmux -L loomy-test capture-pane -t w -p | grep -q SORTIE_OK && ok "watch : q quitte et rend l'écran normal" || ko "watch : q ne quitte pas"
   tmux -L loomy-test kill-server 2>/dev/null || true
+  # loomy start --watch dans tmux : un panneau de suivi à côté de l'agent, fermé avec lui.
+  mkdir -p "$WORK/lent"
+  printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"
+  tmux -L loomy-test new-session -d -s s -x 120 -y 50 -c "$PARD/sous-projet" "PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$LOOMY' start --new --watch; sleep 30"
+  sleep 2.5
+  [[ "$(tmux -L loomy-test list-panes -t s | wc -l | tr -d ' ')" == "2" ]] && ok "start --watch : panneau de suivi ouvert" || ko "start --watch : $(tmux -L loomy-test list-panes -t s | wc -l) panneau(x)"
+  sleep 5
+  [[ "$(tmux -L loomy-test list-panes -t s | wc -l | tr -d ' ')" == "1" ]] && ok "start --watch : suivi fermé avec la session" || ko "start --watch : suivi toujours ouvert"
+  tmux -L loomy-test kill-server 2>/dev/null || true
 fi
 
 # Locale UTF-8 choisie même sous pipefail (sinon mesures de texte lentes et accents coupés).

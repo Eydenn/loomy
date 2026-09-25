@@ -2,6 +2,15 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.1.22 — 2026-09-25
+
+### Ajouté
+- **`loomy start --watch`** : la session de l'orchestrateur et le suivi en direct dans le même terminal, côte à côte (≥ 160 colonnes) ou l'un au-dessus de l'autre. Déjà dans tmux : un panneau s'ouvre à côté ; iTerm2 : panneau natif ; sinon une session tmux dédiée (souris activée, tout se ferme avec l'agent) ; Terminal.app sans tmux : une seconde fenêtre. Le suivi se ferme de lui-même à la fin de la session. `loomy config set start_watch yes` pour l'avoir à chaque fois.
+- **Vue resserrée de `loomy watch`** (`--compact`) : frise, « À toi », session, délégations en cours et 3 dernières, Git en une ligne. Choisie d'office dans un petit terminal ou un panneau ; `--full` pour la vue complète.
+
+### Corrigé
+- Heures des délégations affichées à l'heure locale (elles l'étaient en UTC).
+
 ## 0.1.21 — 2026-09-25
 
 ### Ajouté

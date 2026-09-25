@@ -3,6 +3,7 @@
 #   ai-status.sh                 affiche le statut
 #   ai-status.sh set <phase>     enregistre la phase en cours du bootstrap (utilisé par les agents)
 #   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (2 par défaut), q pour quitter
+#   --compact / --full           vue resserrée (pour un panneau étroit) ou complète ; watch choisit selon la taille du terminal
 #   ai-status.sh --root <dir>    agit sur un autre dossier de projet
 set -euo pipefail
 
@@ -27,10 +28,15 @@ CMD="show"
 PHASE_ARG=""
 WATCH=0
 INTERVAL=2
+COMPACT=""
+UNTIL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
     --watch|-w) WATCH=1; if [[ "${2:-}" =~ ^[0-9]+$ ]]; then INTERVAL="$2"; shift; fi ;;
+    --compact) COMPACT=1 ;;
+    --until-exit) UNTIL="${2:-}"; shift ;;
+    --full) COMPACT=0 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
@@ -94,7 +100,10 @@ if (( WATCH )); then
   printf '\033[?25l' >&2
   stty -echo </dev/tty 2>/dev/null || true
   while true; do
-    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · session de l'agent fermée ? loomy start · q pour quitter" "$0" --root "$ROOT" 2>&1)"
+    # Vue resserrée d'office dans un petit terminal ou un panneau (loomy start --watch).
+    _ui_term_size; view="--full"
+    if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then view="--compact"; fi
+    frame="$(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR=1 LOOMY_STATUS_FOOTER="en direct · $(date '+%H:%M:%S') · q pour quitter" "$0" --root "$ROOT" "$view" 2>&1)"
     UI_PAGE_L=()
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
@@ -108,6 +117,8 @@ if (( WATCH )); then
     key=""
     if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
     [[ "$key" == "q" || "$key" == "Q" ]] && break
+    # Suivi ouvert par loomy start --watch : il se ferme avec la session de l'agent.
+    [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
   done
   UI_PAGE_L=()
   exit 0
@@ -115,7 +126,11 @@ fi
 
 # ---------------------------------------------------------------- en-tête
 ui_clear
-ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
+if [[ "$COMPACT" == "1" ]]; then
+  ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_BOLD}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
+else
+  ui_banner "Statut du projet" "${ROOT/#$HOME/~}"
+fi
 # Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
 if [[ -n "$proj_v" && -n "$inst_v" && "$proj_v" != "$inst_v" && "$SCRIPT_DIR" != "$ROOT/.loomy/scripts" ]] && ai_version_ge "$inst_v" "$proj_v"; then
@@ -160,7 +175,7 @@ else
   _ui_pad "" "$off"
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}"
   ui_print "${C_RAIL}│${C_RESET}"
-  ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
+  [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
   sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"
   you="$(loomy_you_now "$CURRENT" "$sess")"
@@ -170,7 +185,7 @@ else
     closed*) ui_rail "${C_DIM}○ Session de l'orchestrateur fermée à $(printf '%s' "$sess" | cut -d'|' -f2) ($tool_name) → loomy start pour la reprendre${C_RESET}" ;;
     *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ Aucune session de l'orchestrateur enregistrée → loomy start${C_RESET}" ;;
   esac
-  if (( idx >= 1 && idx < 10 )); then
+  if (( idx >= 1 && idx < 10 )) && [[ "$COMPACT" != "1" ]]; then
     next=""; i=0
     for p in $LOOMY_PHASES; do i=$(( i + 1 )); (( i > idx )) && next="${next:+$next → }$(loomy_phase_label "$p")"; done
     _ui_term_size; _ui_fit "ensuite : $next" $(( UI_W - 3 ))
@@ -179,7 +194,7 @@ else
 fi
 
 # ---------------------------------------------------------------- brief
-if [[ -f "$BRIEF" ]]; then
+if [[ -f "$BRIEF" && "$COMPACT" != "1" ]]; then
   ui_section "BRIEF"
   risk="$(brief_get risk)"
   risk_c="$C_GREEN"; [[ "$risk" == "MEDIUM" ]] && risk_c="$C_YELLOW"; [[ "$risk" == "HIGH" ]] && risk_c="$C_RED"
@@ -226,6 +241,8 @@ if [[ -s "$JOURNAL" ]]; then
             for (m in calls) printf "MODEL %s %d %.4f %d\n", m, calls[m], cost[m], tok[m] }')"
     read -r _ n_calls total_cost n_err <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
     ui_kv "Délégations" "${C_BOLD}${n_calls}${C_RESET} · coût ${C_BOLD}\$${total_cost}${C_RESET}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s en échec%s' "$C_RED" "$n_err" "$C_RESET")"
+    last_n=5
+    if [[ "$COMPACT" == "1" ]]; then last_n=3; else
     printf '%s\n' "$summary" | grep '^MODEL' | sort -k4 -rn | while read -r _ m c cost tok; do
       width=0
       if awk -v t="$total_cost" 'BEGIN{exit !(t>0)}'; then width="$(awk -v c="$cost" -v t="$total_cost" 'BEGIN{printf "%d", (c/t)*24 + 0.5}')"; fi
@@ -256,11 +273,15 @@ if [[ -s "$JOURNAL" ]]; then
     ui_info "valeurs issues des délégations journalisées uniquement (le travail direct de l'orchestrateur n'est pas compté)"
     ui_rail ""
     ui_rail "${C_DIM}Dernières délégations${C_RESET}"
-    grep '"type":"delegation"' "$JOURNAL" | tail -5 | awk '
+    fi
+    grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { t = substr(field("ts"), 12, 5); printf "%s|%s|%s|%s|%s|%s|%s\n", t, field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40) }' |
+      { printf "%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40) }' |
     while IFS='|' read -r t st role m d cost task; do
+      # Journal en UTC, affichage à l'heure locale.
+      ep="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$t" +%s 2>/dev/null || date -u -d "$t" +%s 2>/dev/null || true)"
+      if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  $%.4f' "$role" "$m" "$d" "$cost")  ${C_DIM}${task}${C_RESET}"
     done
@@ -272,6 +293,7 @@ else
 fi
 
 # ---------------------------------------------------------------- fichiers IA
+if [[ "$COMPACT" != "1" ]]; then
 ui_section "FICHIERS IA" "$(privacy_label "$(privacy_mode "$ROOT")")"
 if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then
   if ! privacy_companion_ready "$ROOT"; then ui_warn "dépôt privé absent sur cette machine" "loomy privacy restore <compte/dépôt>"
@@ -302,9 +324,16 @@ if [[ -f "$ROOT/.ai/HANDOFF.md" ]]; then
   ui_warn ".ai/HANDOFF.md" "passage de relais actif : $(sed -n 's/^De *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1)"
 fi
 
+fi
+
 # ---------------------------------------------------------------- git
 ui_section "GIT"
-if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [[ "$COMPACT" == "1" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "détachée")"
+  dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
+  if [[ "$dirty" == "0" ]]; then ui_ok "$branch propre" "${last:0:48}"; else ui_warn "$branch" "$dirty fichier(s) non commité(s)"; fi
+elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "détachée")"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"

@@ -147,7 +147,7 @@ usage() {
   _h_group "PROJET"
   _h_cmd init "[dossier] [options]" "Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset"
   _h_cmd brief "" "Relance le questionnaire du projet courant"
-  _h_cmd start "[--resume|--new|--print]" "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici)"
+  _h_cmd start "[--resume|--new|--print] [--watch]" "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici) ; --watch ouvre le suivi en direct à côté"
   _h_cmd route "[commande]" "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)"
   _h_cmd delegate "<claude|codex> <rôle> \"tâche\"" "Confie un rôle à Claude ou à Codex via les bridges"
   _h_cmd privacy "[mode|sync|restore]" "Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé"
@@ -171,7 +171,8 @@ sub_help() {
     log) echo "Usage : loomy log [-n N] [-f]"; echo "Affiche les N dernières lignes du journal (.loomy/logs/events.jsonl, 20 par défaut) ; -f le suit en continu." ;;
     config) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"
             echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
-            echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public)."
+            echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"
+            echo "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session)."
             echo "Fichier : $(loomy_config_file)" ;;
     delegate) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""
               echo "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."
@@ -231,7 +232,8 @@ case "$cmd" in
           plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { echo "plan_claude : api, pro, max5, max20, team ou enterprise" >&2; exit 2; } ;;
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { echo "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; exit 2; } ;;
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "$key : un prix mensuel en \$" >&2; exit 2; } ;;
-          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price)" >&2; exit 2 ;;
+          start_watch) [[ "$val" =~ ^(yes|no)$ ]] || { echo "start_watch : yes ou no" >&2; exit 2; } ;;
+          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch)" >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; exit 2 ;;

@@ -4,6 +4,8 @@
 #   ai-start.sh --resume     reprend directement la dernière session de ce dossier (sur cette machine)
 #   ai-start.sh --new        ouvre une nouvelle session avec le prompt adapté à la phase du projet
 #   ai-start.sh --print      affiche seulement les commandes
+#   ai-start.sh --watch      ouvre aussi le suivi en direct à côté de la session (tmux, iTerm2 ou nouvelle fenêtre)
+#                            (par défaut si loomy config start_watch yes ; --no-watch pour l'éviter)
 #   ai-start.sh --root <dir> agit sur un autre dossier de projet
 set -euo pipefail
 
@@ -14,15 +16,19 @@ source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
+# shellcheck source=lib/config.sh
+source "$SCRIPT_DIR/lib/config.sh"
 
-ROOT=""; MODE="menu"
+ROOT=""; MODE="menu"; WATCH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
     --resume|-r) MODE="resume" ;;
     --new|-n) MODE="new" ;;
     --print|-p) MODE="print" ;;
-    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//; s/ai-start.sh/loomy start/'; exit 0 ;;
+    --watch|-w) WATCH=1 ;;
+    --no-watch) WATCH=0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//; s/ai-start.sh/loomy start/'; exit 0 ;;
     *) echo "Argument inconnu : $1" >&2; exit 2 ;;
   esac
   shift
@@ -95,6 +101,61 @@ if (( ! CLI_OK )); then
   exit 1
 fi
 
+# ---------------------------------------------------------------- session + suivi en direct, côte à côte
+# Côte à côte si le terminal est large (≥ 160 colonnes), sinon l'un au-dessus de l'autre (session en haut, 2/3).
+# Le suivi se ferme de lui-même à la fin de la session de l'agent (--until-exit).
+watch_script() {
+  local f="${TMPDIR:-/tmp}/loomy-watch-$$.sh"
+  printf '#!/bin/bash\nexec bash %q --root %q --watch --compact --until-exit %s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$1" >"$f"
+  chmod +x "$f"; echo "$f"
+}
+
+start_with_watch() {
+  local side=0 w agent name
+  _ui_term_size; (( UI_COLS >= 160 )) && side=1
+  if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
+    # Déjà dans tmux : un panneau de suivi à côté, puis l'agent dans le panneau courant (même processus : exec).
+    w="$(watch_script $$)"
+    if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
+    else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
+    WATCH_NOTE="suivi en direct dans le panneau tmux $( (( side )) && echo "de droite" || echo "du bas"), fermé avec la session"
+    return 0
+  fi
+  if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
+    w="$(watch_script $$)"
+    if osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
+      WATCH_NOTE="suivi en direct dans le panneau iTerm2 voisin, fermé avec la session"
+      return 0
+    fi
+  fi
+  if command -v tmux >/dev/null 2>&1; then
+    # Session tmux dédiée : l'agent à gauche (ou en haut), le suivi à côté ; tout se ferme avec l'agent.
+    name="loomy-$(printf '%s' "$(basename "$ROOT")" | tr -c 'A-Za-z0-9_-' '-')"
+    tmux kill-session -t "$name" 2>/dev/null || true
+    agent="$(printf '%q ' "${AGENT_CMD[@]}")"
+    tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name"
+    tmux set-option -t "$name" mouse on >/dev/null
+    tmux set-option -t "$name" status off >/dev/null
+    tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
+    tmux set-option -t "$name" pane-active-border-style "fg=colour141" >/dev/null
+    w="${TMPDIR:-/tmp}/loomy-watch-$name.sh"
+    printf '#!/bin/bash\nexec bash %q --root %q --watch --compact\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" >"$w"
+    if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
+    else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
+    ui_end "ouverture de ${tool_label} et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau"
+    ui_exec tmux attach-session -t "$name"
+  fi
+  if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
+    w="$(watch_script $$)"
+    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
+      WATCH_NOTE="suivi en direct dans une nouvelle fenêtre Terminal, fermée avec la session"
+      return 0
+    fi
+  fi
+  WATCH_NOTE="suivi côte à côte indisponible ici (brew install tmux) : lance loomy watch dans un autre terminal"
+  return 0
+}
+
 print_cmds() {
   ui_section "COMMANDES" "à lancer à la racine du projet"
   if (( HAS_SESSION )); then
@@ -144,10 +205,14 @@ esac
 if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
   ui_info "premier lancement de Codex dans ce projet : accepte de faire confiance au dossier, puis approuve les hooks Loomy (reprise automatique)"
 fi
-ui_end "ouverture de ${tool_label}… · suivi en direct dans un autre terminal : loomy watch"
+[[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "yes" ]] && WATCH=1 || WATCH=0; }
+if [[ "$MODE" == "resume" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); fi
+WATCH_NOTE="suivi en direct dans un autre terminal : loomy watch (ou loomy start --watch)"
+if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
+ui_end "ouverture de ${tool_label}… · $WATCH_NOTE"
 cd "$ROOT"
 # Codex n'a pas de hooks par projet : la session est notée ici. Après exec, Codex garde ce pid.
 if [[ "$TOOL" == "codex" ]]; then
   ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
 fi
-if [[ "$MODE" == "resume" ]]; then ui_exec "${RESUME_CMD[@]}"; else ui_exec "${NEW_CMD[@]}"; fi
+ui_exec "${AGENT_CMD[@]}"

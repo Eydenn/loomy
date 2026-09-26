@@ -315,24 +315,33 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   tmux -L loomy-test capture-pane -t w -p | grep -q SORTIE_OK && ok "watch : q quitte et rend l'écran normal" || ko "watch : q ne quitte pas"
   tmux -L loomy-test kill-server 2>/dev/null || true
   # Accueil : application plein écran à cadre fixe ; les vues s'ouvrent dans le cadre, q quitte sans rien laisser.
-  tmux -L loomy-test new-session -d -s h -x 100 -y 34 -c "$PARD/sous-projet" "bash '$LOOMY'; echo FIN_ACCUEIL; sleep 30"
-  sleep 3
-  tmux -L loomy-test capture-pane -t h -p | grep -q "Que veux-tu faire" && tmux -L loomy-test capture-pane -t h -p | tail -1 | grep -q "loomy" \
+  # Attente active (machines d'intégration continue plus lentes) : jusqu'à 20 s que le texte attendu apparaisse.
+  tw() { local k=0; until tmux -L loomy-test capture-pane -t h -p 2>/dev/null | grep -q "$1"; do sleep 0.25; k=$(( k + 1 )); (( k > 80 )) && return 1; done; return 0; }
+  # Le serveur tmux du test précédent doit être arrêté avant d'en relancer un sous le même nom (sinon « server exited
+  # unexpectedly » sur les machines lentes) ; lancement retenté au besoin.
+  tstart() {
+    local k=0
+    while tmux -L loomy-test ls >/dev/null 2>&1 && (( k < 20 )); do tmux -L loomy-test kill-server 2>/dev/null || true; sleep 0.25; k=$(( k + 1 )); done
+    for k in 1 2 3; do tmux -L loomy-test new-session -d "$@" 2>/dev/null && return 0; sleep 0.5; done
+    return 1
+  }
+  tstart -s h -x 100 -y 34 -c "$PARD/sous-projet" "bash '$LOOMY'; echo FIN_ACCUEIL; sleep 60"
+  tw "Que veux-tu faire" && tmux -L loomy-test capture-pane -t h -p | tail -1 | grep -q "loomy" \
     && ok "accueil : cadre (menu dans le corps, version dans le pied)" || ko "accueil : cadre absent"
-  tmux -L loomy-test send-keys -t h Down Down; sleep 0.4; tmux -L loomy-test send-keys -t h Enter; sleep 2.5
-  tmux -L loomy-test capture-pane -t h -p | grep -q "Statut détaillé" && tmux -L loomy-test capture-pane -t h -p | grep -q "PHASES" \
+  tmux -L loomy-test send-keys -t h Down Down; sleep 0.5; tmux -L loomy-test send-keys -t h Enter
+  tw "PHASES" && tmux -L loomy-test capture-pane -t h -p | grep -q "Statut détaillé" \
     && ok "accueil : statut affiché dans le cadre" || ko "accueil : vue statut absente"
-  tmux -L loomy-test send-keys -t h Enter; sleep 2
-  tmux -L loomy-test capture-pane -t h -p | grep -q "Que veux-tu faire" && ok "accueil : retour depuis la vue" || ko "accueil : pas de retour"
-  tmux -L loomy-test send-keys -t h q; sleep 1.5
-  if tmux -L loomy-test capture-pane -t h -p | grep -q "FIN_ACCUEIL" && ! tmux -L loomy-test capture-pane -t h -p -S -200 | grep -q "Que veux-tu faire"; then
+  tmux -L loomy-test send-keys -t h Enter
+  tw "Que veux-tu faire" && ok "accueil : retour depuis la vue" || ko "accueil : pas de retour"
+  tmux -L loomy-test send-keys -t h q
+  if tw "FIN_ACCUEIL" && ! tmux -L loomy-test capture-pane -t h -p -S -200 | grep -q "Que veux-tu faire"; then
     ok "accueil : q quitte, rien ne reste dans le terminal"
   else ko "accueil : sortie"; fi
   tmux -L loomy-test kill-server 2>/dev/null || true
   # loomy start --watch dans tmux : un panneau de suivi à côté de l'agent, fermé avec lui.
   mkdir -p "$WORK/lent"
   printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"
-  tmux -L loomy-test new-session -d -s s -x 120 -y 50 -c "$PARD/sous-projet" "PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$LOOMY' start --new --watch; sleep 30"
+  tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$LOOMY' start --new --watch; sleep 30"
   sleep 2.5
   [[ "$(tmux -L loomy-test list-panes -t s | wc -l | tr -d ' ')" == "2" ]] && ok "start --watch : panneau de suivi ouvert" || ko "start --watch : $(tmux -L loomy-test list-panes -t s | wc -l) panneau(x)"
   sleep 5

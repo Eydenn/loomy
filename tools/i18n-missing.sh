@@ -17,6 +17,27 @@ for f in sorted(files):
     for m in pat.finditer(text):
         s = m.group(1).replace("\\\"", "\"").replace("\\$", "$").replace("\\\\", "\\")
         if s and s not in known and s not in missing: missing.append(s)
+# Questions à choix du questionnaire : choose_coded VAR "question" "défaut" "aide" "code|libellé|description"…
+qs = re.compile(r'"((?:[^"\\]|\\.)*)"')
+for f in sorted(files):
+    lines = open(f, encoding="utf-8").read().split("\n")
+    k = 0
+    while k < len(lines):
+        if re.match(r'\s*choose_coded\s', lines[k]):
+            stmt = lines[k]
+            while stmt.rstrip().endswith("\\") and k + 1 < len(lines):
+                k += 1; stmt = stmt.rstrip()[:-1] + " " + lines[k]
+            args = [a.replace('\\"', '"') for a in qs.findall(stmt)]
+            cands = []
+            if len(args) > 0: cands.append(args[0])
+            if len(args) > 2: cands.append(args[2])
+            for o in args[3:]:
+                parts = o.split("|")
+                if len(parts) >= 2 and re.match(r'^[a-z0-9_-]+$', parts[0]):
+                    cands += parts[1:3]
+            for c in cands:
+                if c and "$" not in c and re.search(r"[A-Za-zÀ-ÿ]{2,}", c) and c not in known and c not in missing: missing.append(c)
+        k += 1
 for s in missing: print(s)
 sys.exit(1 if missing else 0)
 PY

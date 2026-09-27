@@ -907,8 +907,13 @@ ui_choose() {
   local q="$1" def="$2"; shift 2
   local opts=("$@") n=$# i sel mark cw line
   _ui_q_begin "$q"
+  UI_INDEX="$def"
   if ! ui_is_interactive || [[ "$UI_MODE" == "skip" ]]; then UI_VALUE="${opts[$def]}"; UI_KEY=""; _ui_q_end "$q"; return 0; fi
-  if [[ "$UI_MODE" == "replay" ]]; then UI_VALUE="$UI_PREV"; UI_KEY=""; _ui_q_end "$q"; return 0; fi
+  if [[ "$UI_MODE" == "replay" ]]; then
+    UI_VALUE="$UI_PREV"
+    for (( i = 0; i < n; i++ )); do [[ "${opts[$i]}" == "$UI_PREV" ]] && UI_INDEX=$i; done
+    UI_KEY=""; _ui_q_end "$q"; return 0
+  fi
   sel="$def"
   if (( UI_HAS_PREV )); then for (( i = 0; i < n; i++ )); do [[ "${opts[$i]}" == "$UI_PREV" ]] && sel=$i; done; fi
   _ui_term_size; cw=$(( UI_W - 3 ))

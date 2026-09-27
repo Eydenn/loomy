@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
     --answers) ANSWERS_FILE="${2:-}"; [[ -z "$ANSWERS_FILE" ]] && { usage; exit 2; }; shift ;;
     --no-clipboard) USE_CLIPBOARD=0 ;;
     -h|--help) usage; exit 0 ;;
-    -*) echo "Option inconnue : $1" >&2; usage; exit 2 ;;
+    -*) t "Option inconnue : %s" "$1" >&2; echo >&2; usage; exit 2 ;;
     *) TARGET_INPUT="$1" ;;
   esac
   shift
@@ -51,13 +51,13 @@ if [[ -z "$TARGET_INPUT" ]]; then
     TARGET_INPUT="."
   fi
 fi
-[[ -d "$TARGET_INPUT" ]] || { echo "Erreur : dossier introuvable : $TARGET_INPUT" >&2; exit 1; }
+[[ -d "$TARGET_INPUT" ]] || { t "Erreur : dossier introuvable : %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; }
 TARGET="$(cd "$TARGET_INPUT" && pwd)"
 BRIEF="$TARGET/.loomy/brief.md"
 mkdir -p "$TARGET/.loomy"
 
 if [[ "$UI_ASSUME_DEFAULTS" != "1" ]] && ! ui_is_interactive; then
-  echo "Terminal non interactif : relancez avec --yes (et éventuellement --answers FILE)." >&2
+  t "Terminal non interactif : relancez avec --yes (et éventuellement --answers FILE)." >&2; echo >&2
   exit 2
 fi
 
@@ -66,7 +66,7 @@ LOOMY_VERSION="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 # ---------------------------------------------------------------- fichier de réponses
 load_answers() {
   local file="$1" line key value in_fm=0
-  [[ -f "$file" ]] || { echo "Erreur : fichier de réponses introuvable : $file" >&2; exit 1; }
+  [[ -f "$file" ]] || { t "Erreur : fichier de réponses introuvable : %s" "$file" >&2; echo >&2; exit 1; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" == "---" ]]; then
       if (( in_fm )); then break; else in_fm=1; continue; fi
@@ -92,20 +92,19 @@ fi
 choose_coded() {
   local var="$1" q="$2" defcode="$3" hint="$4"; shift 4
   local labels=() codes=() descs=() i=0 defi=0 item rest
+  # Question, aide, libellés et descriptions passent par t (langue de l'interface) ; les codes restent fixes.
   for item in "$@"; do
     codes[$i]="${item%%|*}"; rest="${item#*|}"
-    labels[$i]="${rest%%|*}"
-    if [[ "$rest" == *"|"* ]]; then descs[$i]="${rest#*|}"; else descs[$i]=""; fi
+    labels[$i]="$(t "${rest%%|*}")"
+    if [[ "$rest" == *"|"* ]]; then descs[$i]="$(t "${rest#*|}")"; else descs[$i]=""; fi
     if [[ "${codes[$i]}" == "$defcode" ]]; then defi=$i; fi
     i=$(( i + 1 ))
   done
-  UI_HINT="$hint"; UI_DESCS=("${descs[@]}")
-  ui_choose "$q" "$defi" "${labels[@]}"
-  for (( i = 0; i < ${#labels[@]}; i++ )); do
-    if [[ "${labels[$i]}" == "$UI_VALUE" ]]; then
-      printf -v "$var" '%s' "${codes[$i]}"; printf -v "${var}_LABEL" '%s' "${labels[$i]}"; return 0
-    fi
-  done
+  UI_HINT="$( [[ -n "$hint" ]] && t "$hint")"; UI_DESCS=("${descs[@]}")
+  ui_choose "$(t "$q")" "$defi" "${labels[@]}"
+  if [[ -n "${UI_INDEX:-}" && -n "${codes[$UI_INDEX]:-}" ]]; then
+    printf -v "$var" '%s' "${codes[$UI_INDEX]}"; printf -v "${var}_LABEL" '%s' "${labels[$UI_INDEX]}"; return 0
+  fi
   printf -v "$var" '%s' "$defcode"; printf -v "${var}_LABEL" '%s' "$defcode"
 }
 
@@ -122,7 +121,7 @@ env_check() {
   # L'affichage, le contrôle des prérequis et les corrections guidées sont confiés à ai-doctor.sh.
   local doctor_args=(--root "$TARGET" --compact)
   ui_is_interactive && doctor_args+=(--fix)
-  ui_run "$SCRIPT_DIR/ai-doctor.sh" "${doctor_args[@]}" || ui_warn "Prérequis minimum non atteints" "le brief reste possible, corrigez avant de lancer l'agent"
+  ui_run "$SCRIPT_DIR/ai-doctor.sh" "${doctor_args[@]}" || ui_warn "$(t "Prérequis minimum non atteints")" "$(t "le brief reste possible, corrigez avant de lancer l'agent")"
 
   if command -v git >/dev/null 2>&1; then
     HAS_GIT=1
@@ -151,9 +150,9 @@ env_check() {
   local count
   # Ce que Loomy vient d'ajouter (START.md, .loomy, .gitignore) ne fait pas un projet existant.
   count="$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.loomy' ! -name 'START.md' ! -name '.gitignore' ! -name '.claude' ! -name '.codex' ! -name '.DS_Store' | wc -l | tr -d ' ')"
-  if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_end "détecté : dossier vide (nouveau projet)"
-  elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_end "détecté : projet existant (1 élément à la racine)"
-  else DETECTED_REPO="existing"; ui_end "détecté : projet existant ($count éléments à la racine)"; fi
+  if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_end "$(t "détecté : dossier vide (nouveau projet)")"
+  elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_end "$(t "détecté : projet existant (1 élément à la racine)")"
+  else DETECTED_REPO="existing"; ui_end "$(t "détecté : projet existant (%s éléments à la racine)" "$count")"; fi
 }
 
 # ---------------------------------------------------------------- questionnaire
@@ -173,29 +172,29 @@ ask_all() {
   local tbd="tbd|À décider|L'agent proposera une option argumentée pendant l'entretien."
   FORCE_AUTH=0
 
-  ui_group "PROJET"
+  ui_group "$(t "PROJET")"
   ui_step 1 $TOTAL
-  UI_LABEL="Nom"
-  UI_HINT="Sert de nom au projet dans la documentation générée."
-  ui_input "Nom du projet" "$(ans name "${LOOMY_PROJECT_NAME:-$(basename "$TARGET")}")"
+  UI_LABEL="$(t "Nom")"
+  UI_HINT="$(t "Sert de nom au projet dans la documentation générée.")"
+  ui_input "$(t "Nom du projet")" "$(ans name "${LOOMY_PROJECT_NAME:-$(basename "$TARGET")}")"
   NAME="$UI_VALUE"
   SLUG="$(loomy_slug "$NAME")"
 
   ui_step 2 $TOTAL
-  UI_LABEL="Objectif"
-  UI_HINT="Une phrase suffit : l'agent la reprend dans PROJECT.md et pose moins de questions. Entrée pour laisser vide."
-  ui_input "Objectif en une phrase" "$(ans goal "")" "Ex. : Permettre aux freelances de suivre leurs factures"
+  UI_LABEL="$(t "Objectif")"
+  UI_HINT="$(t "Une phrase suffit : l'agent la reprend dans PROJECT.md et pose moins de questions. Entrée pour laisser vide.")"
+  ui_input "$(t "Objectif en une phrase")" "$(ans goal "")" "$(t "Ex. : Permettre aux freelances de suivre leurs factures")"
   GOAL="$UI_VALUE"
 
   ui_step 3 $TOTAL
-  UI_LABEL="Point de départ"
+  UI_LABEL="$(t "Point de départ")"
   choose_coded REPO "Nouveau projet ou projet existant ?" "$(ans repo "$DETECTED_REPO")" \
     "Oriente la découverte (détecté automatiquement, à confirmer)." \
     "new|Nouveau projet|L'agent propose la stack et la structure à partir de zéro." \
     "existing|Projet existant à standardiser|L'agent analyse d'abord l'existant et ne propose que des changements de standardisation, sans casser l'architecture."
 
   ui_step 4 $TOTAL
-  UI_LABEL="Type"
+  UI_LABEL="$(t "Type")"
   choose_coded TYPE "Quel type de projet ?" "$(ans type web)" \
     "Détermine les questions suivantes et les vérifications proposées (build, tests, déploiement)." \
     "web|Application web / SaaS|Front et éventuel back, déploiement web ; accessibilité et SEO à considérer." \
@@ -210,93 +209,93 @@ ask_all() {
   local d1="" d2=""
   case "$TYPE" in
     web)
-      UI_LABEL="Hébergement"
+      UI_LABEL="$(t "Hébergement")"
       choose_coded X1 "Hébergement cible ?" "$(ans detail1 tbd)" "Influence le framework, le runtime et la chaîne de déploiement." \
         "vercel|Vercel / Netlify|Déploiement simple et serverless, idéal pour un front moderne." \
         "cloudflare|Cloudflare|Exécution en edge, très économique, avec des contraintes de runtime." \
         "server|Serveur / VPS / Docker|Contrôle total, mais davantage d'exploitation à gérer." "$tbd"
-      UI_LABEL="Comptes"
+      UI_LABEL="$(t "Comptes")"
       choose_coded X2 "Comptes utilisateurs ?" "$(ans detail2 tbd)" "L'authentification augmente le risque et le périmètre." \
         "yes|Oui|Authentification et sessions à prévoir : risque au moins MEDIUM." \
         "no|Non|Pas d'authentification à prévoir." "$tbd"
-      d1="Hébergement : $X1_LABEL"; d2="Comptes utilisateurs : $X2_LABEL"
+      d1="$(t "Hébergement : %s" "$X1_LABEL")"; d2="$(t "Comptes utilisateurs : %s" "$X2_LABEL")"
       [[ "$X2" == "yes" ]] && FORCE_AUTH=1 ;;
     api)
-      UI_LABEL="Style d'API"
+      UI_LABEL="$(t "Style d'API")"
       choose_coded X1 "Style d'API ?" "$(ans detail1 tbd)" "Structure les contrats, la documentation et les tests." \
         "rest|REST|Standard, simple à consommer et à documenter (OpenAPI)." \
         "graphql|GraphQL|Requêtes flexibles côté client, schéma typé, plus de complexité serveur." \
         "rpc|RPC / gRPC|Performant entre services, moins adapté aux clients web publics." "$tbd"
-      UI_LABEL="Base de données"
+      UI_LABEL="$(t "Base de données")"
       choose_coded X2 "Base de données ?" "$(ans detail2 tbd)" "Oriente la persistance et les migrations." \
         "sql|SQL|Relations et intégrité fortes (PostgreSQL, SQLite…)." \
         "nosql|NoSQL|Schéma souple, montée en charge horizontale." \
         "none|Aucune|Pas de persistance à prévoir." "$tbd"
-      d1="Style d'API : $X1_LABEL"; d2="Base de données : $X2_LABEL" ;;
+      d1="$(t "Style d'API : %s" "$X1_LABEL")"; d2="$(t "Base de données : %s" "$X2_LABEL")" ;;
     mobile)
-      UI_LABEL="Approche"
+      UI_LABEL="$(t "Approche")"
       choose_coded X1 "Approche ?" "$(ans detail1 tbd)" "Détermine le langage, l'outillage et le nombre de bases de code." \
         "expo|Expo / React Native|Un seul code JS/TS pour iOS et Android, itérations rapides." \
         "native|Natif (Swift / Kotlin)|Meilleure intégration et performance, mais deux bases de code." \
         "flutter|Flutter|Un seul code Dart multi-plateforme, rendu propre au framework." "$tbd"
-      UI_LABEL="Plateformes"
+      UI_LABEL="$(t "Plateformes")"
       choose_coded X2 "Plateformes ?" "$(ans detail2 both)" "Chaque plateforme ajoute builds, tests et publication." \
         "both|iOS et Android|Builds, tests et publication sur les deux stores." \
         "ios|iOS|Une seule plateforme : plus simple à livrer." \
         "android|Android|Une seule plateforme : plus simple à livrer."
-      d1="Approche : $X1_LABEL"; d2="Plateformes : $X2_LABEL" ;;
+      d1="$(t "Approche : %s" "$X1_LABEL")"; d2="$(t "Plateformes : %s" "$X2_LABEL")" ;;
     desktop)
-      UI_LABEL="Systèmes"
+      UI_LABEL="$(t "Systèmes")"
       choose_coded X1 "Systèmes cibles ?" "$(ans detail1 multi)" "Chaque OS ajoute packaging, signature et tests." \
         "macos|macOS|Une seule cible : signature et packaging simplifiés." \
         "windows|Windows|Une seule cible : signature et packaging simplifiés." \
         "linux|Linux|Une seule cible : packaging simplifié." \
         "multi|Multi-plateforme|Builds et tests à prévoir pour chaque OS."
-      UI_LABEL="Technologie"
+      UI_LABEL="$(t "Technologie")"
       choose_coded X2 "Technologie ?" "$(ans detail2 tbd)" "Arbitrage entre poids des binaires, écosystème et intégration native." \
         "tauri|Tauri|Léger (Rust + webview), binaires petits." \
         "electron|Electron|Écosystème mature, binaires lourds." \
         "native|Natif|Meilleure intégration, un code par OS." "$tbd"
-      d1="Systèmes : $X1_LABEL"; d2="Technologie : $X2_LABEL" ;;
+      d1="$(t "Systèmes : %s" "$X1_LABEL")"; d2="$(t "Technologie : %s" "$X2_LABEL")" ;;
     cli)
-      UI_LABEL="Langage"
+      UI_LABEL="$(t "Langage")"
       choose_coded X1 "Langage / runtime ?" "$(ans detail1 tbd)" "Détermine l'écosystème, le packaging et la distribution." \
         "node|Node.js|Distribution via npm, démarrage rapide." \
         "python|Python|Écosystème riche, packaging pip/uv." \
         "go|Go|Binaire unique, sans runtime à installer." \
         "rust|Rust|Binaire unique et rapide, compilation plus exigeante." \
         "bash|Bash|Zéro dépendance, limité aux scripts simples." "$tbd"
-      UI_LABEL="Distribution"
+      UI_LABEL="$(t "Distribution")"
       choose_coded X2 "Distribution ?" "$(ans detail2 tbd)" "Fixe le niveau d'exigence sur la stabilité de l'interface." \
         "registry|Registre public (npm, PyPI, crates…)|Versioning sémantique et API publique à stabiliser." \
         "binary|Binaire|Builds multi-OS et releases à automatiser." \
         "internal|Usage interne|Contraintes de compatibilité plus légères." "$tbd"
-      d1="Runtime : $X1_LABEL"; d2="Distribution : $X2_LABEL" ;;
+      d1="$(t "Runtime : %s" "$X1_LABEL")"; d2="$(t "Distribution : %s" "$X2_LABEL")" ;;
     ai)
-      UI_LABEL="Fournisseur"
+      UI_LABEL="$(t "Fournisseur")"
       choose_coded X1 "Fournisseur de modèles ?" "$(ans detail1 tbd)" "Détermine SDK, coûts et conditions d'usage des données." \
         "anthropic|Anthropic (Claude)|SDK et modèles d'un seul fournisseur." \
         "openai|OpenAI|SDK et modèles d'un seul fournisseur." \
         "multi|Plusieurs|Couche d'abstraction à prévoir entre fournisseurs." \
         "local|Modèles locaux|Pas de coût d'API, performances liées au matériel." "$tbd"
-      UI_LABEL="Données exposées"
+      UI_LABEL="$(t "Données exposées")"
       choose_coded X2 "Données envoyées aux modèles ?" "$(ans detail2 internal)" "Conditionne les garde-fous et le niveau de risque." \
         "public|Publiques|Peu de contraintes." \
         "internal|Internes|Vérifier la rétention et l'usage des données chez le fournisseur." \
         "sensitive|Sensibles|Risque HIGH : anonymisation, garde-fous et revues de sécurité en DEEP."
-      d1="Fournisseur : $X1_LABEL"; d2="Données exposées : $X2_LABEL" ;;
+      d1="$(t "Fournisseur : %s" "$X1_LABEL")"; d2="$(t "Données exposées : %s" "$X2_LABEL")" ;;
     *)
-      UI_LABEL="Type précisé"
-      UI_HINT="Quelques mots suffisent ; l'agent complétera pendant l'entretien."
-      ui_input "Décrivez le type de projet" "$(ans detail1 "")"
-      X1="$UI_VALUE"; X2=""; d1="Type précisé : $UI_VALUE" ;;
+      UI_LABEL="$(t "Type précisé")"
+      UI_HINT="$(t "Quelques mots suffisent ; l'agent complétera pendant l'entretien.")"
+      ui_input "$(t "Décrivez le type de projet")" "$(ans detail1 "")"
+      X1="$UI_VALUE"; X2=""; d1="$(t "Type précisé : %s" "$UI_VALUE")" ;;
   esac
   DETAIL1="${X1:-}"; DETAIL2="${X2:-}"
   DETAILS="$d1${d2:+ · $d2}"
 
-  ui_group "EXIGENCES"
+  ui_group "$(t "EXIGENCES")"
   ui_step 6 $TOTAL
-  UI_LABEL="Stade"
+  UI_LABEL="$(t "Stade")"
   choose_coded STAGE "Stade visé ?" "$(ans stage mvp)" \
     "Fixe dès le départ le niveau d'exigence : tests, CI, sécurité." \
     "prototype|Prototype / exploration|Vitesse avant tout : tests minimaux, pas de CI obligatoire." \
@@ -305,57 +304,59 @@ ask_all() {
 
   ui_step 7 $TOTAL
   local sens_def="" c
+  # Libellés dans la langue de l'interface ; les codes (auth, payments…) restent fixes.
+  local L_AUTH L_PAY L_PERS L_INFRA
+  L_AUTH="$(t "Authentification / comptes")"; L_PAY="$(t "Paiements")"; L_PERS="$(t "Données personnelles")"; L_INFRA="$(t "Secrets / infra de production")"
   for c in $(printf '%s' "$(ans sensitive "")" | tr ',' ' '); do
     case "$c" in
-      auth) sens_def="${sens_def:+$sens_def,}Authentification / comptes" ;;
-      payments) sens_def="${sens_def:+$sens_def,}Paiements" ;;
-      personal) sens_def="${sens_def:+$sens_def,}Données personnelles" ;;
-      infra) sens_def="${sens_def:+$sens_def,}Secrets / infra de production" ;;
+      auth) sens_def="${sens_def:+$sens_def,}$L_AUTH" ;;
+      payments) sens_def="${sens_def:+$sens_def,}$L_PAY" ;;
+      personal) sens_def="${sens_def:+$sens_def,}$L_PERS" ;;
+      infra) sens_def="${sens_def:+$sens_def,}$L_INFRA" ;;
     esac
   done
-  if [[ "${FORCE_AUTH:-0}" == "1" && "$sens_def" != *Authentification* ]]; then
-    sens_def="${sens_def:+$sens_def,}Authentification / comptes"
+  if [[ "${FORCE_AUTH:-0}" == "1" && "$sens_def" != *"$L_AUTH"* ]]; then
+    sens_def="${sens_def:+$sens_def,}$L_AUTH"
   fi
-  UI_LABEL="Éléments sensibles"
-  UI_HINT="Chaque élément coché élève le risque et impose des revues plus poussées (modèles DEEP). Rien de coché = aucun."
-  UI_DESCS=("Risque MEDIUM : sessions, permissions, stockage des mots de passe." \
-    "Risque HIGH : conformité, idempotence, revue de sécurité systématique." \
-    "Risque HIGH : RGPD, minimisation et protection des données." \
-    "Risque HIGH : gestion des secrets, opérations irréversibles.")
-  ui_multi "Éléments sensibles ?" "$sens_def" \
-    "Authentification / comptes" "Paiements" "Données personnelles" "Secrets / infra de production"
-  SENSITIVE=""; SENSITIVE_LABEL="${UI_VALUE:-aucun}"
-  case "$UI_VALUE" in *Authentification*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}auth" ;; esac
-  case "$UI_VALUE" in *Paiements*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}payments" ;; esac
-  case "$UI_VALUE" in *personnelles*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}personal" ;; esac
-  case "$UI_VALUE" in *infra*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}infra" ;; esac
+  UI_LABEL="$(t "Éléments sensibles")"
+  UI_HINT="$(t "Chaque élément coché élève le risque et impose des revues plus poussées (modèles DEEP). Rien de coché = aucun.")"
+  UI_DESCS=("$(t "Risque MEDIUM : sessions, permissions, stockage des mots de passe.")" \
+    "$(t "Risque HIGH : conformité, idempotence, revue de sécurité systématique.")" \
+    "$(t "Risque HIGH : RGPD, minimisation et protection des données.")" \
+    "$(t "Risque HIGH : gestion des secrets, opérations irréversibles.")")
+  ui_multi "$(t "Éléments sensibles ?")" "$sens_def" "$L_AUTH" "$L_PAY" "$L_PERS" "$L_INFRA"
+  SENSITIVE=""; SENSITIVE_LABEL="${UI_VALUE:-$(t "aucun")}"
+  case "$UI_VALUE" in *"$L_AUTH"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}auth" ;; esac
+  case "$UI_VALUE" in *"$L_PAY"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}payments" ;; esac
+  case "$UI_VALUE" in *"$L_PERS"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}personal" ;; esac
+  case "$UI_VALUE" in *"$L_INFRA"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}infra" ;; esac
   RISK="LOW"
   case ",$SENSITIVE," in *,auth,*) RISK="MEDIUM" ;; esac
   case ",$SENSITIVE," in *,payments,*|*,personal,*|*,infra,*) RISK="HIGH" ;; esac
   if [[ "$RISK" == "LOW" && "$STAGE" == "production" ]]; then RISK="MEDIUM"; fi
   if [[ "$TYPE" == "ai" && "$DETAIL2" == "sensitive" ]]; then RISK="HIGH"; fi
-  ui_fact "Risque estimé" "risque $RISK"
+  ui_fact "$(t "Risque estimé")" "$(t "risque %s" "$RISK")"
 
-  ui_group "ÉQUIPE IA"
+  ui_group "$(t "ÉQUIPE IA")"
   ui_step 8 $TOTAL
   local mode_def="SOLO" lead_def="claude"
   if (( HAS_CODEX && HAS_CLAUDE )); then mode_def="ORCHESTRATED"
   elif (( HAS_CODEX )); then lead_def="codex"; fi
-  UI_LABEL="Collaboration"
+  UI_LABEL="$(t "Collaboration")"
   choose_coded MODE "Mode de collaboration IA ?" "$(ans ai_mode "$mode_def")" \
     "Définit comment Codex et Claude Code se partagent le travail. Pré-sélection selon les outils détectés." \
     "SOLO|SOLO|Un seul outil à la fois : le plus simple et le moins coûteux." \
     "HYBRID|HYBRID|Les deux outils travaillent tour à tour, coordonnés par Git et .ai/HANDOFF.md." \
     "ORCHESTRATED|ORCHESTRATED|L'orchestrateur délègue chaque rôle au meilleur modèle des deux familles (exécution sur GPT-6-Luna, architecture et sécurité sur Opus 5.5, revue croisée) : meilleur rapport qualité/coût." \
     "PARALLEL|PARALLEL|Les deux en même temps sur des worktrees séparés : plus rapide, intégration à soigner."
-  UI_LABEL="Outil principal"
+  UI_LABEL="$(t "Outil principal")"
   choose_coded LEAD "Outil principal (lead) ?" "$(ans ai_lead "$lead_def")" \
     "L'outil principal porte l'orchestrateur : il planifie, délègue, décide et vérifie. C'est lui qui mérite le meilleur raisonnement." \
     "claude|Claude Code|Orchestrateur sur Opus 5.5, en tête des benchmarks de raisonnement et de travail agentique ; délègue à Codex via delegate-to-codex.sh (recommandé)." \
     "codex|Codex|Orchestrateur sur GPT-6-Astra ; délègue à Claude via delegate-to-claude.sh (lecture seule)."
 
   ui_step 9 $TOTAL
-  UI_LABEL="Profil"
+  UI_LABEL="$(t "Profil")"
   choose_coded BUDGET "Profil de coût / qualité des modèles ?" "$(ans budget equilibre)" \
     "L'orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route)." \
     "econome|Économe|Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles." \
@@ -366,18 +367,18 @@ ask_all() {
   ai_resolve lead "$ROUTE_ENV" "$BUDGET"; LEAD_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve executor "$ROUTE_ENV" "$BUDGET"; EXEC_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve architect "$ROUTE_ENV" "$BUDGET"; DEEP_LINE="$R_MODEL ($R_EFFORT)"
-  ui_fact "Orchestrateur" "orchestrateur ${LEAD_LINE}"
+  ui_fact "$(t "Orchestrateur")" "$(t "orchestrateur %s" "${LEAD_LINE}")"
 
-  ui_group "LIVRABLES"
+  ui_group "$(t "LIVRABLES")"
   ui_step 10 $TOTAL
-  UI_LABEL="Langue des docs"
+  UI_LABEL="$(t "Langue des docs")"
   choose_coded DOCLANG "Langue de la documentation du projet ?" "$(ans doc_language fr)" \
     "Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais." \
     "fr|Français|Documentation rédigée en français." \
     "en|English|Documentation en anglais : préférable si le projet est partagé à l'international."
 
   ui_step 11 $TOTAL
-  UI_LABEL="START.md ensuite"
+  UI_LABEL="$(t "START.md ensuite")"
   choose_coded HISTORY "Après l'initialisation, que faire de START.md ?" "$(ans bootstrap_history archive)" \
     "START.md n'a plus d'autorité une fois le projet initialisé." \
     "archive|L'archiver dans .ai/bootstrap/ (recommandé)|Garde une trace de l'initialisation, consultable plus tard." \
@@ -386,7 +387,7 @@ ask_all() {
   ui_step 12 $TOTAL
   GIT_INIT="no"; COMMIT="no"; PUSH="no"
   if (( HAS_GIT )) && [[ -n "$PARENT_REPO" ]]; then
-    UI_LABEL="Dépôt Git"
+    UI_LABEL="$(t "Dépôt Git")"
     git_def="yes"; [[ "$REPO" == "existing" ]] && git_def="no"
     choose_coded GIT_INIT "Créer un dépôt Git propre à ce projet ?" "$(ans git_init "$git_def")" \
       "Ce dossier est à l'intérieur du dépôt Git ${PARENT_REPO/#$HOME/~}." \
@@ -394,7 +395,7 @@ ask_all() {
       "no|Non, rester dans le dépôt parent (monorepo)|Commits dans le dépôt parent ; pas de dépôt GitHub propre au projet."
     if [[ "$GIT_INIT" == "no" ]]; then IS_REPO=1; GIT_REMOTE="$PARENT_REMOTE"; fi
   elif (( HAS_GIT )) && (( ! IS_REPO )); then
-    UI_LABEL="Dépôt Git"
+    UI_LABEL="$(t "Dépôt Git")"
     choose_coded GIT_INIT "Initialiser un dépôt Git (branche main) maintenant ?" "$(ans git_init yes)" \
       "Le versionnement est nécessaire pour les commits, les worktrees et les handoffs." \
       "yes|Oui|Crée le dépôt local maintenant, rien n'est envoyé en ligne." \
@@ -407,11 +408,11 @@ ask_all() {
       remote_name="$(basename "${GIT_REMOTE#* }" .git)"
       [[ -n "$remote_name" ]] && REPO_NAME="$remote_name"
       if [[ -n "$remote_name" && "$remote_name" != "$SLUG" ]]; then
-        REMOTE_NAME_NOTE="dépôt distant « $remote_name », nom du projet « $SLUG »"
-        ui_warn "Nom du dépôt différent du projet" "$remote_name ≠ $SLUG"
+        REMOTE_NAME_NOTE="$(t "dépôt distant « %s », nom du projet « %s »" "$remote_name" "$SLUG")"
+        ui_warn "$(t "Nom du dépôt différent du projet")" "$remote_name ≠ $SLUG"
       fi
     elif [[ -n "$GH_USER" && ( -z "$PARENT_REPO" || "$GIT_INIT" == "yes" ) ]]; then
-      UI_LABEL="Dépôt GitHub"
+      UI_LABEL="$(t "Dépôt GitHub")"
       # Jamais de création de dépôt en ligne sans question (mode --yes : non, sauf réponse explicite).
       gh_def="private"; [[ "$UI_ASSUME_DEFAULTS" == "1" ]] && gh_def="no"
       choose_coded GITHUB_REPO "Créer un dépôt GitHub pour ce projet ?" "$(ans github_repo "$gh_def")" \
@@ -420,68 +421,68 @@ ask_all() {
         "public|Oui, public|Visible par tous : pense à la visibilité des fichiers IA, question suivante." \
         "no|Non, plus tard|Aucun dépôt en ligne pour l'instant ; tu pourras le créer avec gh repo create."
       if [[ "$GITHUB_REPO" != "no" ]]; then
-        UI_LABEL="Nom du dépôt"
-        UI_HINT="Proposé d'après le nom du projet ; modifie-le si besoin (lettres, chiffres, tirets)."
-        ui_input "Nom du dépôt GitHub ($GH_USER/…)" "$(ans repo_name "$SLUG")"
+        UI_LABEL="$(t "Nom du dépôt")"
+        UI_HINT="$(t "Proposé d'après le nom du projet ; modifie-le si besoin (lettres, chiffres, tirets).")"
+        ui_input "$(t "Nom du dépôt GitHub (%s/…)" "$GH_USER")" "$(ans repo_name "$SLUG")"
         REPO_NAME="$(loomy_slug "$UI_VALUE")"
         GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
         REMOTE_VIS="$(printf '%s' "$GITHUB_REPO" | tr '[:lower:]' '[:upper:]')"
       fi
     fi
-    UI_LABEL="Commit initial"
+    UI_LABEL="$(t "Commit initial")"
     choose_coded COMMIT "Commit initial une fois le setup vérifié ?" "$(ans commit_after_setup yes)" \
       "Autorise l'agent à clôturer l'initialisation par un commit." \
       "yes|Oui, l'agent committe|Commit « chore: initialize project » seulement si toutes les vérifications passent." \
       "no|Non, je committerai moi-même|Les changements restent non commités ; vous gardez la main."
     if [[ "$COMMIT" == "yes" ]]; then
       if [[ -n "$GIT_REMOTE" ]]; then
-        UI_LABEL="Push"
-        choose_coded PUSH "Pousser vers ${GIT_REMOTE%% *} après le commit ?" "$(ans push_after_commit no)" \
-          "Remote détecté : ${GIT_REMOTE#* }" \
+        UI_LABEL="$(t "Push")"
+        choose_coded PUSH "$(t "Pousser vers %s après le commit ?" "${GIT_REMOTE%% *}")" "$(ans push_after_commit no)" \
+          "$(t "Remote détecté : %s" "${GIT_REMOTE#* }")" \
           "no|Non, je pousserai moi-même|Rien ne quitte votre machine sans vous." \
           "yes|Oui, push de la branche courante|La branche est poussée après le commit initial, jamais de force-push."
       else
-        ui_fact "Push" "pas de remote, pas de push"
+        ui_fact "Push" "$(t "pas de remote, pas de push")"
       fi
     fi
   else
-    ui_fact "Git" "pas de dépôt Git : ni commit ni push"
+    ui_fact "Git" "$(t "pas de dépôt Git : ni commit ni push")"
   fi
 
   # Fichiers IA : GitHub règle la visibilité par dépôt, pas par fichier.
   local files_def="versioned" vis_txt=""
   case "$REMOTE_VIS" in
-    PUBLIC) files_def="private"; [[ -z "$GH_USER" ]] && files_def="local"; vis_txt=" Ton dépôt GitHub est public." ;;
-    PRIVATE|INTERNAL) vis_txt=" Ton dépôt GitHub est privé." ;;
+    PUBLIC) files_def="private"; [[ -z "$GH_USER" ]] && files_def="local"; vis_txt=" $(t "Ton dépôt GitHub est public.")" ;;
+    PRIVATE|INTERNAL) vis_txt=" $(t "Ton dépôt GitHub est privé.")" ;;
   esac
-  UI_LABEL="Fichiers IA"
+  UI_LABEL="$(t "Fichiers IA")"
   choose_coded AI_FILES "Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .ai/, .loomy/…) ?" "$(ans ai_files "$files_def")" \
-    "Ce sont tes règles de travail avec les agents. GitHub règle la visibilité par dépôt, pas par fichier.$vis_txt" \
+    "$(t "Ce sont tes règles de travail avec les agents. GitHub règle la visibilité par dépôt, pas par fichier.")$vis_txt" \
     "versioned|Versionnés avec le projet|Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent." \
     "local|Locaux uniquement|Jamais envoyés sur GitHub : exclus via .git/info/exclude, invisible dans le dépôt. Perdus si tu changes de machine." \
-    "private|Dans un dépôt privé séparé|Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé ($(basename "$TARGET")-ai), avec loomy privacy sync."
+    "private|$(t "Dans un dépôt privé séparé")|$(t "Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé (%s), avec loomy privacy sync." "$(basename "$TARGET")-ai")"
   if [[ "$AI_FILES" == "private" ]]; then
     while true; do
-      UI_LABEL="Dépôt privé IA"
-      UI_HINT="Dépôt privé qui ne contiendra que les fichiers IA ; modifie le nom si besoin."
-      ui_input "Nom du dépôt privé des fichiers IA${GH_USER:+ ($GH_USER/…)}" "$(ans ai_repo_name "${AI_REPO_NAME:-$REPO_NAME-ai}")"
+      UI_LABEL="$(t "Dépôt privé IA")"
+      UI_HINT="$(t "Dépôt privé qui ne contiendra que les fichiers IA ; modifie le nom si besoin.")"
+      ui_input "$(t "Nom du dépôt privé des fichiers IA")${GH_USER:+ ($GH_USER/…)}" "$(ans ai_repo_name "${AI_REPO_NAME:-$REPO_NAME-ai}")"
       AI_REPO_NAME="$(loomy_slug "$UI_VALUE")"
       [[ "$GITHUB_REPO" == "no" ]] && break
       # Deux dépôts à créer : confirmation des deux noms ensemble.
-      UI_LABEL="Deux dépôts"
-      UI_DESCS=("Crée $GH_USER/$REPO_NAME ($(if [[ "$GITHUB_REPO" == public ]]; then echo public; else echo privé; fi)) pour le projet et $GH_USER/$AI_REPO_NAME (privé) pour les fichiers IA." \
-        "Repose les deux noms.")
-      ui_choose "Créer ces deux dépôts : $REPO_NAME et $AI_REPO_NAME ?" 0 "Oui, créer les deux" "Modifier les noms"
-      [[ "$UI_VALUE" == Oui* ]] && break
-      UI_LABEL="Nom du dépôt"
-      ui_input "Nom du dépôt GitHub ($GH_USER/…)" "$REPO_NAME"
+      UI_LABEL="$(t "Deux dépôts")"
+      UI_DESCS=("$(t "Crée %s (%s) pour le projet et %s (privé) pour les fichiers IA." "$GH_USER/$REPO_NAME" "$( [[ "$GITHUB_REPO" == public ]] && t "public" || t "privé")" "$GH_USER/$AI_REPO_NAME")" \
+        "$(t "Repose les deux noms.")")
+      ui_choose "$(t "Créer ces deux dépôts : %s et %s ?" "$REPO_NAME" "$AI_REPO_NAME")" 0 "$(t "Oui, créer les deux")" "$(t "Modifier les noms")"
+      [[ "$UI_INDEX" == "0" ]] && break
+      UI_LABEL="$(t "Nom du dépôt")"
+      ui_input "$(t "Nom du dépôt GitHub (%s/…)" "$GH_USER")" "$REPO_NAME"
       REPO_NAME="$(loomy_slug "$UI_VALUE")"; GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
     done
   fi
 
-  if (( TOTAL == 13 )); then ui_group "FORFAITS"; ui_step 13 $TOTAL; fi
+  if (( TOTAL == 13 )); then ui_group "$(t "FORFAITS")"; ui_step 13 $TOTAL; fi
   if (( ASK_PLAN_CLAUDE )); then
-    UI_LABEL="Forfait Claude"
+    UI_LABEL="$(t "Forfait Claude")"
     choose_coded PLAN_CLAUDE_NEW "Quel est ton forfait Claude ?" "${PLAN_CLAUDE_NEW:-api}" \
       "Demandé une seule fois, mémorisé dans ta configuration Loomy. Sert à afficher la valeur consommée face au prix du forfait." \
       "api|API|Paiement à l'usage : Loomy affiche le coût réel." \
@@ -491,7 +492,7 @@ ask_all() {
       "team|Claude Team ou Enterprise|Prix ajustable ensuite avec loomy config set plan_claude_price <prix>."
   fi
   if (( ASK_PLAN_CODEX )); then
-    UI_LABEL="Forfait Codex"
+    UI_LABEL="$(t "Forfait Codex")"
     choose_coded PLAN_CODEX_NEW "Quel est ton forfait ChatGPT / Codex ?" "${PLAN_CODEX_NEW:-api}" \
       "Demandé une seule fois, mémorisé dans ta configuration Loomy." \
       "api|API|Paiement à l'usage : Loomy affiche le coût estimé à partir des tokens." \
@@ -510,41 +511,41 @@ show_recap() {
   if [[ "$GIT_INIT" == "yes" ]]; then parts="git init"; fi
   if [[ "$COMMIT" == "yes" ]]; then parts="${parts:+$parts + }commit après vérification"; fi
   if [[ "$PUSH" == "yes" ]]; then parts="${parts:+$parts + }push vers ${GIT_REMOTE%% *}"; fi
-  ui_rail_head "v$LOOMY_VERSION · brief de démarrage · $(basename "$TARGET")"
-  ui_rail_group "Brief du projet" ".loomy/brief.md"
-  ui_rail_kv "Nom" "${C_BOLD}${NAME}${C_RESET}"
-  ui_rail_kv "Objectif" "$goal_txt"
-  ui_rail_kv "Projet" "$REPO_LABEL · $TYPE_LABEL · $STAGE_LABEL"
-  ui_rail_kv "Précisions" "$DETAILS"
-  ui_rail_kv "Sensible" "$SENSITIVE_LABEL"
-  ui_rail_kv "Risque" "${risk_c}${RISK}${C_RESET}"
+  ui_rail_head "v$LOOMY_VERSION · $(t "brief de démarrage") · $(basename "$TARGET")"
+  ui_rail_group "$(t "Brief du projet")" ".loomy/brief.md"
+  ui_rail_kv "$(t "Nom")" "${C_BOLD}${NAME}${C_RESET}"
+  ui_rail_kv "$(t "Objectif")" "$goal_txt"
+  ui_rail_kv "$(t "Projet")" "$REPO_LABEL · $TYPE_LABEL · $STAGE_LABEL"
+  ui_rail_kv "$(t "Précisions")" "$DETAILS"
+  ui_rail_kv "$(t "Sensible")" "$SENSITIVE_LABEL"
+  ui_rail_kv "$(t "Risque")" "${risk_c}${RISK}${C_RESET}"
   ui_rail ""
-  ui_rail_group "Équipe IA"
-  ui_rail_kv "Mode" "${C_BOLD}${MODE}${C_RESET} · lead ${LEAD_LABEL}"
-  ui_rail_kv "Profil" "${BUDGET_LABEL% (recommandé)}"
+  ui_rail_group "$(t "Équipe IA")"
+  ui_rail_kv "$(t "Mode")" "${C_BOLD}${MODE}${C_RESET} · $(t "lead %s" "${LEAD_LABEL}")"
+  ui_rail_kv "$(t "Profil")" "${BUDGET_LABEL% (recommandé)}"
   if [[ "$BUDGET" == "econome" && "$RISK" == "HIGH" ]]; then
-    ui_rail_kv "" "${C_YELLOW}! risque HIGH en profil Économe : passe la sécurité en effort high sur les changements sensibles${C_RESET}"
+    ui_rail_kv "" "${C_YELLOW}! $(t "risque HIGH en profil Économe : passe la sécurité en effort high sur les changements sensibles")${C_RESET}"
   fi
-  ui_rail_kv "Routage" "$(ai_env_label "$ROUTE_ENV")"
+  ui_rail_kv "$(t "Routage")" "$(ai_env_label "$ROUTE_ENV")"
   if [[ -n "$ROUTE_NOTE" ]]; then ui_rail_kv "" "${C_YELLOW}! ${ROUTE_NOTE}${C_RESET}"; fi
-  ui_rail_kv "Orchestrateur" "${C_BRAND}${LEAD_LINE}${C_RESET}"
-  ui_rail_kv "Exécution" "$EXEC_LINE"
-  ui_rail_kv "Architecture" "$DEEP_LINE"
+  ui_rail_kv "$(t "Orchestrateur")" "${C_BRAND}${LEAD_LINE}${C_RESET}"
+  ui_rail_kv "$(t "Exécution")" "$EXEC_LINE"
+  ui_rail_kv "$(t "Architecture")" "$DEEP_LINE"
   ui_rail ""
-  ui_rail_group "Livrables"
-  ui_rail_kv "Docs" "$DOCLANG_LABEL · START.md : ${HISTORY_LABEL% (recommandé)}"
-  ui_rail_kv "Nom technique" "$SLUG ${C_DIM}(dossier, noms techniques)${C_RESET}"
-  if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }dépôt GitHub $GITHUB_REPO $GH_USER/$REPO_NAME"; fi
-  ui_rail_kv "Git" "${parts:-aucune action}"
+  ui_rail_group "$(t "Livrables")"
+  ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · START.md : ${HISTORY_LABEL% (recommandé)}"
+  ui_rail_kv "$(t "Nom technique")" "$SLUG ${C_DIM}($(t "dossier, noms techniques"))${C_RESET}"
+  if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }$(t "dépôt GitHub %s %s" "$GITHUB_REPO" "$GH_USER/$REPO_NAME")"; fi
+  ui_rail_kv "$(t "Git")" "${parts:-$(t "aucune action")}"
   if [[ -n "$REMOTE_NAME_NOTE" ]]; then
     ui_rail_kv "" "${C_YELLOW}! $REMOTE_NAME_NOTE${C_RESET} ${C_DIM}→ gh repo rename $SLUG${C_RESET}"
   fi
-  ui_rail_kv "Fichiers IA" "$AI_FILES_LABEL${AI_REPO_NAME:+ · dépôt privé ${GH_USER:+$GH_USER/}$AI_REPO_NAME}"
+  ui_rail_kv "$(t "Fichiers IA")" "$AI_FILES_LABEL${AI_REPO_NAME:+ · $(t "dépôt privé") ${GH_USER:+$GH_USER/}$AI_REPO_NAME}"
   if [[ "$COMMIT" == "yes" && -z "$GIT_REMOTE" ]]; then
-    ui_rail_kv "" "${C_DIM}pas de remote : push à faire plus tard${GH_USER:+ (gh repo create --private --source=. --push)}${C_RESET}"
+    ui_rail_kv "" "${C_DIM}$(t "pas de remote : push à faire plus tard")${GH_USER:+ (gh repo create --private --source=. --push)}${C_RESET}"
   fi
   if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then
-    ui_rail_kv "Forfaits" "${PLAN_CLAUDE_NEW:+Claude : $PLAN_CLAUDE_NEW_LABEL}${PLAN_CLAUDE_NEW:+${PLAN_CODEX_NEW:+ · }}${PLAN_CODEX_NEW:+Codex : $PLAN_CODEX_NEW_LABEL}"
+    ui_rail_kv "$(t "Forfaits")" "${PLAN_CLAUDE_NEW:+Claude : $PLAN_CLAUDE_NEW_LABEL}${PLAN_CLAUDE_NEW:+${PLAN_CODEX_NEW:+ · }}${PLAN_CODEX_NEW:+Codex : $PLAN_CODEX_NEW_LABEL}"
   fi
   ui_rail ""
 }
@@ -636,25 +637,25 @@ write_brief() {
 
 # ---------------------------------------------------------------- programme principal
 ui_clear
-ui_banner "Brief de démarrage" "v$LOOMY_VERSION · Codex + Claude Code · $TARGET"
+ui_banner "$(t "Brief de démarrage")" "v$LOOMY_VERSION · Codex + Claude Code · $TARGET"
 DETECTED_REPO="new"
 env_check
 
 if [[ -f "$BRIEF" && -z "$ANSWERS_FILE" ]] && ui_is_interactive; then
   ui_print ""
-  UI_LABEL="Brief existant"
+  UI_LABEL="$(t "Brief existant")"
   choose_coded REDO "Un brief existe déjà. Que faire ?" "redo" "Ses réponses servent de valeurs par défaut si tu le refais." \
     "redo|Le refaire|Le fichier n'est remplacé qu'à la fin, après ta confirmation." \
     "keep|Le garder et quitter|Rien n'est modifié."
-  if [[ "$REDO" == "keep" ]]; then ui_ok "Brief conservé" "$BRIEF"; exit 0; fi
+  if [[ "$REDO" == "keep" ]]; then ui_ok "$(t "Brief conservé")" "$BRIEF"; exit 0; fi
 fi
 
 plan_questions
-FORM_GROUPS="PROJET|EXIGENCES|ÉQUIPE IA|LIVRABLES"
-if (( TOTAL == 13 )); then FORM_GROUPS="$FORM_GROUPS|FORFAITS"; fi
+FORM_GROUPS="$(t "PROJET")|$(t "EXIGENCES")|$(t "ÉQUIPE IA")|$(t "LIVRABLES")"
+if (( TOTAL == 13 )); then FORM_GROUPS="$FORM_GROUPS|$(t "FORFAITS")"; fi
 while true; do
   # Plein écran pendant les questions ; ← rejoue la passe jusqu'à la question précédente.
-  ui_form_begin "v$LOOMY_VERSION · brief de démarrage · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
+  ui_form_begin "v$LOOMY_VERSION · $(t "brief de démarrage") · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
   while true; do
     ui_form_pass
     ask_all
@@ -666,7 +667,7 @@ while true; do
   [[ "$GIT_INIT" == "yes" ]] && save_desc="Écrit .loomy/brief.md et initialise le dépôt Git (branche main)."
   [[ "$GITHUB_REPO" != "no" ]] && save_desc="$save_desc Crée le dépôt GitHub $GH_USER/$REPO_NAME ($GITHUB_REPO)."
   [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc Crée le dépôt privé ${GH_USER:+$GH_USER/}$AI_REPO_NAME pour les fichiers IA."
-  UI_LABEL="Brief"
+  UI_LABEL="$(t "Brief")"
   choose_coded CONFIRM "Enregistrer ce brief ?" "save" "Rien n'est écrit avant ta confirmation." \
     "save|Oui, enregistrer|$save_desc" \
     "again|Revoir les questions|Tes réponses actuelles deviennent les valeurs par défaut." \
@@ -684,43 +685,43 @@ done
 
 # ---------------------------------------------------------------- mise en place, en direct
 steps=()
-[[ "$GIT_INIT" == "yes" ]] && steps+=("Initialisation du dépôt Git")
-[[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]] && steps+=("Création du dépôt GitHub")
-steps+=("Enregistrement du brief")
-[[ "$AI_FILES" != "versioned" ]] && steps+=("Réglage des fichiers IA")
-[[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("Mémorisation des forfaits")
-steps+=("Préparation de la session")
-ui_steps_begin "MISE EN PLACE" "${steps[@]}"
+[[ "$GIT_INIT" == "yes" ]] && steps+=("$(t "Initialisation du dépôt Git")")
+[[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]] && steps+=("$(t "Création du dépôt GitHub")")
+steps+=("$(t "Enregistrement du brief")")
+[[ "$AI_FILES" != "versioned" ]] && steps+=("$(t "Réglage des fichiers IA")")
+[[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("$(t "Mémorisation des forfaits")")
+steps+=("$(t "Préparation de la session")")
+ui_steps_begin "$(t "MISE EN PLACE")" "${steps[@]}"
 st=0
 if [[ "$GIT_INIT" == "yes" ]]; then
   ui_step_run $st
-  if git -C "$TARGET" init -q -b main; then ui_step_done $st ok "Dépôt Git initialisé" "branche main"
-  else ui_step_done $st fail "Dépôt Git non initialisé" "git init a échoué"; fi
+  if git -C "$TARGET" init -q -b main; then ui_step_done $st ok "$(t "Dépôt Git initialisé")" "$(t "branche main")"
+  else ui_step_done $st fail "$(t "Dépôt Git non initialisé")" "$(t "git init a échoué")"; fi
   st=$(( st + 1 ))
 fi
 GH_FAIL=""
 if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
   ui_step_run $st
   if gh_err="$(cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin 2>&1 >/dev/null)"; then
-    ui_step_done $st ok "Dépôt GitHub créé" "$GH_USER/$REPO_NAME · $( [[ "$GITHUB_REPO" == "private" ]] && echo privé || echo public)"
+    ui_step_done $st ok "$(t "Dépôt GitHub créé")" "$GH_USER/$REPO_NAME · $( [[ "$GITHUB_REPO" == "private" ]] && t "privé" || t "public")"
   else
     GH_FAIL="$(printf '%s' "$gh_err" | tail -1)"
-    ui_step_done $st warn "Dépôt GitHub non créé" "$GH_FAIL"
+    ui_step_done $st warn "$(t "Dépôt GitHub non créé")" "$GH_FAIL"
     GITHUB_REPO="no"
   fi
   st=$(( st + 1 ))
 fi
 ui_step_run $st
 write_brief
-ui_step_done $st ok "Brief enregistré" "${BRIEF#"$TARGET"/}"
+ui_step_done $st ok "$(t "Brief enregistré")" "${BRIEF#"$TARGET"/}"
 st=$(( st + 1 ))
 AI_FAIL=0
 if [[ "$AI_FILES" != "versioned" ]]; then
   ui_step_run $st
   if bash "$SCRIPT_DIR/ai-privacy.sh" --root "$TARGET" apply --quiet </dev/null >/dev/null 2>&1; then
-    ui_step_done $st ok "Fichiers IA réglés" "$( [[ "$AI_FILES" == "local" ]] && echo "locaux, hors Git" || echo "dépôt privé séparé")"
+    ui_step_done $st ok "$(t "Fichiers IA réglés")" "$( [[ "$AI_FILES" == "local" ]] && t "locaux, hors Git" || t "dépôt privé séparé")"
   else
-    AI_FAIL=1; ui_step_done $st warn "Fichiers IA : réglage incomplet" "loomy privacy $AI_FILES"
+    AI_FAIL=1; ui_step_done $st warn "$(t "Fichiers IA : réglage incomplet")" "loomy privacy $AI_FILES"
   fi
   st=$(( st + 1 ))
 fi
@@ -728,7 +729,7 @@ if [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]]; then
   ui_step_run $st
   [[ -n "$PLAN_CLAUDE_NEW" ]] && loomy_config_set plan_claude "$PLAN_CLAUDE_NEW"
   [[ -n "$PLAN_CODEX_NEW" ]] && loomy_config_set plan_codex "$PLAN_CODEX_NEW"
-  ui_step_done $st ok "Forfaits mémorisés" "$(loomy_config_file | sed "s|^$HOME|~|")"
+  ui_step_done $st ok "$(t "Forfaits mémorisés")" "$(loomy_config_file | sed "s|^$HOME|~|")"
   st=$(( st + 1 ))
 fi
 ui_step_run $st
@@ -740,42 +741,42 @@ if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
     "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
   fi
 fi
-ui_step_done $st ok "Session prête" "phase Découverte"
+ui_step_done $st ok "$(t "Session prête")" "$(t "phase Découverte")"
 ui_steps_end
-if [[ -n "$GH_FAIL" ]]; then ui_rail "   ${C_DIM}dépôt GitHub à la main : gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi
+if [[ -n "$GH_FAIL" ]]; then ui_rail "   ${C_DIM}$(t "dépôt GitHub à la main :") gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi
 
 LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""
-ui_rail_group "Étape suivante"
+ui_rail_group "$(t "Étape suivante")"
 step=1
 # Projet créé ailleurs que dans le dossier d'où loomy init a été lancé : il faut s'y rendre.
 from="${LOOMY_INVOKED_FROM:-$TARGET}"
 if [[ "$(cd "$from" 2>/dev/null && pwd -P)" != "$(cd "$TARGET" && pwd -P)" ]]; then
   rel="${TARGET#"$from"/}"; [[ "$rel" == "$TARGET" ]] && rel="${TARGET/#$HOME/~}"
-  ui_rail "${C_BRAND}${step}${C_RESET}  Va dans le dossier du projet : ${C_BOLD}cd $rel${C_RESET}"
+  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Va dans le dossier du projet :") ${C_BOLD}cd $rel${C_RESET}"
   ui_rail ""
   step=$(( step + 1 ))
 fi
 if command -v loomy >/dev/null 2>&1; then
-  ui_rail "${C_BRAND}${step}${C_RESET}  Ouvre la session de l'orchestrateur : ${C_BOLD}loomy start${C_RESET}"
-  ui_rail "   ${C_DIM}ou à la main : ${LEAD_CMD}, puis colle le prompt de démarrage${C_RESET}"
+  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Ouvre la session de l'orchestrateur :") ${C_BOLD}loomy start${C_RESET}"
+  ui_rail "   ${C_DIM}$(t "ou à la main : %s, puis colle le prompt de démarrage" "${LEAD_CMD}")${C_RESET}"
 else
-  ui_rail "${C_BRAND}${step}${C_RESET}  Lance l'orchestrateur à la racine du projet :"
+  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Lance l'orchestrateur à la racine du projet :")"
   ui_rail "   ${C_BOLD}${LEAD_CMD}${C_RESET}"
-  ui_rail "   puis colle le prompt de démarrage :"
+  ui_rail "   $(t "puis colle le prompt de démarrage :")"
   _ui_term_size
   _ui_wrap "$PROMPT" $(( UI_W - 8 ))
   for line in ${UI_LINES[@]+"${UI_LINES[@]}"}; do ui_rail "   ${C_DIM}${line}${C_RESET}"; done
 fi
 if [[ "${ROUTE_ENV#hybrid-}" == "codex" ]]; then
-  ui_rail "   ${C_DIM}(ou dans l'app Codex : modèle ${LEAD_LINE%% *}, effort ${LEAD_LINE##*(})${C_RESET}"
+  ui_rail "   ${C_DIM}($(t "ou dans l'app Codex : modèle %s, effort %s" "${LEAD_LINE%% *}" "${LEAD_LINE##*(}"))${C_RESET}"
 fi
 if (( USE_CLIPBOARD )) && ui_is_interactive && ui_copy "$PROMPT"; then
-  ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}prompt de démarrage copié dans le presse-papiers${C_RESET}"
+  ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}$(t "prompt de démarrage copié dans le presse-papiers")${C_RESET}"
 fi
 step=$(( step + 1 ))
 ui_rail ""
-ui_rail "${C_BRAND}${step}${C_RESET}  Suis l'avancement en direct dans un autre terminal :"
+ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Suis l'avancement en direct dans un autre terminal :")"
 if command -v loomy >/dev/null 2>&1; then
   ui_rail "   ${C_BOLD}loomy watch${C_RESET}"
 else
@@ -785,11 +786,11 @@ fi
 # Proposer d'ouvrir tout de suite la session, dans le dossier du projet (sans cd).
 if ui_is_interactive && [[ -x "$SCRIPT_DIR/ai-start.sh" ]]; then
   ui_rail ""
-  UI_LABEL="Session"
-  UI_DESCS=("Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage." "Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.")
-  ui_choose "Ouvrir la session de l'orchestrateur maintenant ?" 0 "Oui, maintenant" "Plus tard"
-  if [[ "$UI_VALUE" == Oui* ]]; then
+  UI_LABEL="$(t "Session")"
+  UI_DESCS=("$(t "Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage.")" "$(t "Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.")")
+  ui_choose "$(t "Ouvrir la session de l'orchestrateur maintenant ?")" 0 "$(t "Oui, maintenant")" "$(t "Plus tard")"
+  if [[ "$UI_INDEX" == "0" ]]; then
     ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" --new
   fi
 fi
-ui_rail_end "routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log"
+ui_rail_end "$(t "routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log")"

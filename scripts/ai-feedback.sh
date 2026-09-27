@@ -33,16 +33,16 @@ ver() { "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || t
 LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 
 body() {
-  echo "## Retour"
+  echo "## $(t "Retour")"
   echo
-  echo "${MSG:-_(à compléter)_}"
+  echo "${MSG:-_($(t "à compléter"))_}"
   echo
-  echo "## Contexte (joint par \`loomy feedback\`, anonymisé)"
+  echo "## $(t "Contexte (joint par loomy feedback, anonymisé)")"
   echo
   echo "| | |"
   echo "|---|---|"
   echo "| Loomy | $LOOMY_V |"
-  echo "| Système | $(uname -s) $(uname -r) $(uname -m) |"
+  echo "| $(t "Système") | $(uname -s) $(uname -r) $(uname -m) |"
   echo "| bash | ${BASH_VERSION%%(*} |"
   echo "| git | $(ver git --version) |"
   echo "| Claude Code | $(ver claude --version || true) |"
@@ -52,12 +52,12 @@ body() {
   if (( IN_PROJECT )); then
     local b="$ROOT/.loomy/brief.md" phase
     phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
-    echo "| Projet | $(_ai_brief_get "$b" type) · $(_ai_brief_get "$b" stage) · $(_ai_brief_get "$b" ai_mode) · lead $(_ai_brief_get "$b" ai_lead) · profil $(_ai_brief_get "$b" budget) · fichiers IA $(_ai_brief_get "$b" ai_files) |"
-    echo "| Loomy du projet | $(cat "$ROOT/.loomy/VERSION" 2>/dev/null || echo "?") · phase ${phase:-?} |"
+    echo "| $(t "Projet") | $(_ai_brief_get "$b" type) · $(_ai_brief_get "$b" stage) · $(_ai_brief_get "$b" ai_mode) · lead $(_ai_brief_get "$b" ai_lead) · $(t "profil") $(_ai_brief_get "$b" budget) · $(t "fichiers IA") $(_ai_brief_get "$b" ai_files) |"
+    echo "| $(t "Loomy du projet") | $(cat "$ROOT/.loomy/VERSION" 2>/dev/null || echo "?") · phase ${phase:-?} |"
     local j; j="$(ai_journal_file "$ROOT")"
     if [[ -s "$j" ]]; then
       echo
-      echo "<details><summary>Derniers événements du journal (sans le texte des tâches)</summary>"
+      echo "<details><summary>$(t "Derniers événements du journal (sans le texte des tâches)")</summary>"
       echo
       echo '```'
       # ROOT pointe ici sur une copie du journal dont le texte des tâches a été vidé (voir plus bas).
@@ -83,35 +83,35 @@ fi
 if (( PRINT )) || ! ui_is_interactive; then body; exit 0; fi
 
 ui_clear
-ui_banner "Retour sur Loomy" "issue GitHub sur $REPO · rien n'est envoyé sans ton accord"
+ui_banner "$(t "Retour sur Loomy")" "$(t "issue GitHub sur %s · rien n'est envoyé sans ton accord" "$REPO")"
 if [[ -z "$MSG" ]]; then
   ui_print "${C_RAIL}│${C_RESET}"
-  UI_LABEL="Retour"; UI_HINT="Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais."
-  ui_input "Ton retour, en une ou deux phrases" "" "Ex. : loomy watch ne voit pas ma session Codex"
+  UI_LABEL="$(t "Retour")"; UI_HINT="$(t "Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais.")"
+  ui_input "$(t "Ton retour, en une ou deux phrases")" "" "$(t "Ex. : loomy watch ne voit pas ma session Codex")"
   MSG="$UI_VALUE"
-  [[ -n "$MSG" ]] || { ui_end "rien à envoyer"; exit 0; }
+  [[ -n "$MSG" ]] || { ui_end "$(t "rien à envoyer")"; exit 0; }
 fi
-TITLE="Retour : $(printf '%s' "$MSG" | cut -c1-70)"
+TITLE="$(t "Retour :") $(printf '%s' "$MSG" | cut -c1-70)"
 BODY_FILE="$(mktemp)"; body >"$BODY_FILE"
-ui_section "APERÇU" "texte de l'issue"
+ui_section "$(t "APERÇU")" "$(t "texte de l'issue")"
 while IFS= read -r l; do ui_rail "${C_DIM}${l}${C_RESET}"; done <"$BODY_FILE"
 ui_print "${C_RAIL}│${C_RESET}"
-opts=(); UI_DESCS=()
+opts=(); UI_DESCS=(); codes=()
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  opts+=("Créer l'issue maintenant"); UI_DESCS+=("gh issue create sur $REPO, avec ce titre et ce texte.")
-  opts+=("L'ouvrir dans le navigateur"); UI_DESCS+=("Formulaire GitHub pré-rempli : tu relis et tu envoies toi-même.")
+  opts+=("$(t "Créer l'issue maintenant")"); codes+=(create); UI_DESCS+=("$(t "gh issue create sur %s, avec ce titre et ce texte." "$REPO")")
+  opts+=("$(t "L'ouvrir dans le navigateur")"); codes+=(web); UI_DESCS+=("$(t "Formulaire GitHub pré-rempli : tu relis et tu envoies toi-même.")")
 fi
-opts+=("Copier le texte"); UI_DESCS+=("Dans le presse-papiers, à coller où tu veux.")
-opts+=("Annuler"); UI_DESCS+=("Rien n'est envoyé.")
-UI_LABEL="Envoi"
-ui_choose "Que faire de ce retour ?" 0 "${opts[@]}"
-case "$UI_VALUE" in
-  Créer*)
-    if url="$(gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" 2>&1)"; then ui_ok "Issue créée" "$url"
-    else ui_warn "Issue non créée" "$(printf '%s' "$url" | tail -1)"; fi ;;
-  L*ouvrir*) gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" --web >/dev/null 2>&1 && ui_ok "Formulaire ouvert dans le navigateur" ;;
-  Copier*) if ui_copy "$(cat "$BODY_FILE")"; then ui_ok "Texte copié" "titre : $TITLE"; else ui_warn "Presse-papiers indisponible" "loomy feedback --print"; fi ;;
-  *) ui_end "rien n'a été envoyé"; rm -f "$BODY_FILE"; exit 0 ;;
+opts+=("$(t "Copier le texte")"); codes+=(copy); UI_DESCS+=("$(t "Dans le presse-papiers, à coller où tu veux.")")
+opts+=("$(t "Annuler")"); codes+=(cancel); UI_DESCS+=("$(t "Rien n'est envoyé.")")
+UI_LABEL="$(t "Envoi")"
+ui_choose "$(t "Que faire de ce retour ?")" 0 "${opts[@]}"
+case "${codes[$UI_INDEX]}" in
+  create)
+    if url="$(gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" 2>&1)"; then ui_ok "$(t "Issue créée")" "$url"
+    else ui_warn "$(t "Issue non créée")" "$(printf '%s' "$url" | tail -1)"; fi ;;
+  web) gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" --web >/dev/null 2>&1 && ui_ok "$(t "Formulaire ouvert dans le navigateur")" ;;
+  copy) if ui_copy "$(cat "$BODY_FILE")"; then ui_ok "$(t "Texte copié")" "$(t "titre : %s" "$TITLE")"; else ui_warn "$(t "Presse-papiers indisponible")" "loomy feedback --print"; fi ;;
+  *) ui_end "$(t "rien n'a été envoyé")"; rm -f "$BODY_FILE"; exit 0 ;;
 esac
 rm -f "$BODY_FILE"
-ui_end "merci ! suivi des retours : https://github.com/$REPO/issues"
+ui_end "$(t "merci ! suivi des retours : %s" "https://github.com/$REPO/issues")"

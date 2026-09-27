@@ -389,13 +389,13 @@ ai_env_for() {
   case "$mode" in
     HYBRID|ORCHESTRATED|PARALLEL)
       if (( lead_ok && other_ok )); then AI_ENV="hybrid-$lead"
-      elif (( lead_ok )); then AI_ENV="$lead"; AI_ENV_NOTE="mode $mode demandé mais $other est absent : repli full $lead"
-      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="lead $lead absent : repli full $other"
-      else AI_ENV="$lead"; AI_ENV_NOTE="aucune CLI IA détectée : matrice théorique"; fi ;;
+      elif (( lead_ok )); then AI_ENV="$lead"; AI_ENV_NOTE="$(t "mode %s demandé mais %s est absent : repli full %s" "$mode" "$other" "$lead")"
+      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "lead %s absent : repli full %s" "$lead" "$other")"
+      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "aucune CLI IA détectée : matrice théorique")"; fi ;;
     *)
       if (( lead_ok )); then AI_ENV="$lead"
-      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="lead $lead absent : repli full $other"
-      else AI_ENV="$lead"; AI_ENV_NOTE="aucune CLI IA détectée : matrice théorique"; fi ;;
+      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "lead %s absent : repli full %s" "$lead" "$other")"
+      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "aucune CLI IA détectée : matrice théorique")"; fi ;;
   esac
 }
 
@@ -430,13 +430,14 @@ ai_profile_label() {
 # ai_start_prompt <mode> <lead> : prompt de démarrage du bootstrap pour l'orchestrateur (questionnaire et loomy start).
 ai_start_prompt() {
   local MODE="${1:-SOLO}" LEAD="${2:-claude}"
-  local p="Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation."
+  local p
+  p="$(t "Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation.")"
   case "$MODE" in
     ORCHESTRATED)
-      if [[ "$LEAD" == "codex" ]]; then p="$p Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur."
-      else p="$p Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh."; fi ;;
-    HYBRID) p="$p Configure le mode HYBRID Codex + Claude Code sans multiplier les agents." ;;
-    PARALLEL) p="$p Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités." ;;
+      if [[ "$LEAD" == "codex" ]]; then p="$p $(t "Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur.")"
+      else p="$p $(t "Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh.")"; fi ;;
+    HYBRID) p="$p $(t "Configure le mode HYBRID Codex + Claude Code sans multiplier les agents.")" ;;
+    PARALLEL) p="$p $(t "Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités.")" ;;
   esac
   printf '%s' "$p"
 }

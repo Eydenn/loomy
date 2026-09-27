@@ -236,3 +236,190 @@ Hybride, lead Codex	Hybrid, Codex lead
 locaux uniquement	local only
 dépôt privé séparé	separate private repository
 versionnés avec le projet	versioned with the project
+# Effort
+rapide et économe : suffit souvent pour orchestrer	fast and thrifty: often enough to orchestrate
+bon compromis vitesse / réflexion	good speed / reasoning trade-off
+réflexion poussée, plus lent et plus coûteux	deeper reasoning, slower and costlier
+très poussé : décisions délicates	very deep: tricky decisions
+maximum : lent et coûteux, pour les cas difficiles	maximum: slow and costly, for hard cases
+profil %s	%s profile
+réglé pour ce projet	set for this project
+pris en compte au prochain loomy start (et par les délégations suivantes) · retour au profil : %s	applied at the next loomy start (and by the next delegations) · back to the profile: %s
+Usage : loomy effort [<rôle>] [low|medium|high|xhigh|max|--reset]	Usage: loomy effort [<role>] [low|medium|high|xhigh|max|--reset]
+Rôle inconnu : %s (%s)	Unknown role: %s (%s)
+régler : loomy effort [<rôle>] <niveau>	set: loomy effort [<role>] <level>
+Efforts revenus à ceux du profil	Efforts back to the profile's
+tous les rôles	all roles
+Effort de %s revenu à celui du profil	%s effort back to the profile's
+régler : loomy effort <low|medium|high|xhigh|max>	set: loomy effort <low|medium|high|xhigh|max>
+Revenir au profil	Back to the profile
+Supprime le réglage : l'effort suit le profil du brief (%s).	Removes the setting: the effort follows the brief's profile (%s).
+Effort de l'orchestrateur (%s) ?	Lead agent effort (%s)?
+Niveau inconnu : %s (%s)	Unknown level: %s (%s)
+Effort de %s réglé	%s effort set
+# Retours
+Retour	Feedback
+à compléter	to be completed
+Contexte (joint par loomy feedback, anonymisé)	Context (attached by loomy feedback, anonymized)
+Système	System
+Projet	Project
+profil	profile
+fichiers IA	AI files
+Loomy du projet	Project's Loomy
+Derniers événements du journal (sans le texte des tâches)	Latest journal events (without task text)
+Retour sur Loomy	Feedback on Loomy
+issue GitHub sur %s · rien n'est envoyé sans ton accord	GitHub issue on %s · nothing is sent without your approval
+Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais.	A bug, an annoyance, an idea: what happened, and what you expected.
+Ton retour, en une ou deux phrases	Your feedback, in one or two sentences
+Ex. : loomy watch ne voit pas ma session Codex	E.g.: loomy watch doesn't see my Codex session
+rien à envoyer	nothing to send
+Retour :	Feedback:
+APERÇU	PREVIEW
+texte de l'issue	issue text
+Créer l'issue maintenant	Create the issue now
+gh issue create sur %s, avec ce titre et ce texte.	gh issue create on %s, with this title and text.
+L'ouvrir dans le navigateur	Open it in the browser
+Formulaire GitHub pré-rempli : tu relis et tu envoies toi-même.	Prefilled GitHub form: you review and submit it yourself.
+Copier le texte	Copy the text
+Dans le presse-papiers, à coller où tu veux.	To the clipboard, to paste wherever you want.
+Annuler	Cancel
+Rien n'est envoyé.	Nothing is sent.
+Envoi	Sending
+Que faire de ce retour ?	What to do with this feedback?
+Issue créée	Issue created
+Issue non créée	Issue not created
+Formulaire ouvert dans le navigateur	Form opened in the browser
+Texte copié	Text copied
+titre : %s	title: %s
+Presse-papiers indisponible	Clipboard unavailable
+rien n'a été envoyé	nothing was sent
+merci ! suivi des retours : %s	thanks! feedback tracking: %s
+# Visibilité des fichiers IA
+Argument inconnu : %s (loomy privacy --help)	Unknown argument: %s (loomy privacy --help)
+Pas de projet Loomy dans %s : loomy init d'abord (ou loomy privacy restore <compte/dépôt> pour récupérer ses fichiers IA).	No Loomy project in %s: loomy init first (or loomy privacy restore <account/repo> to recover its AI files).
+Impossible de créer le dépôt privé %s	Can't create the private repository %s
+gh absent ou non connecté : gh auth login, ou indique un dépôt existant avec --remote URL	gh missing or not logged in: gh auth login, or give an existing repository with --remote URL
+Compte GitHub introuvable	GitHub account not found
+gh auth login	gh auth login
+Dépôt privé	Private repository
+Dépôt GitHub privé qui ne contiendra que les fichiers IA.	Private GitHub repository that will only hold the AI files.
+Nom du dépôt privé (%s/…)	Private repository name (%s/…)
+dépôt %s déjà présent : utilisé tel quel	repository %s already exists: used as is
+Création du dépôt privé échouée	Private repository creation failed
+Dépôt privé créé	Private repository created
+Pas de dépôt privé pour ce projet	No private repository for this project
+loomy privacy private	loomy privacy private
+aucun fichier IA à sauvegarder	no AI file to back up
+Les fichiers IA ont changé des deux côtés	The AI files changed on both sides
+résous à la main : git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main	resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main
+Envoi vers le dépôt privé échoué	Push to the private repository failed
+Fichiers IA sauvegardés	AI files backed up
+Encore suivis par le dépôt du projet	Still tracked by the project repository
+pour arrêter de les suivre (ils restent sur ton disque) :	to stop tracking them (they stay on your disk):
+ce qui a déjà été envoyé reste dans l'historique du dépôt	what was already pushed stays in the repository history
+le dépôt privé (.loomy/ai.git) reste en place ; il n'est plus mis à jour	the private repository (.loomy/ai.git) stays in place; it's no longer updated
+pas encore de dépôt Git : l'exclusion sera posée par loomy privacy %s une fois le dépôt créé	no Git repository yet: loomy privacy %s will set the exclusion once the repository exists
+Mode	Mode
+Dépôt Git	Git repository
+aucun	none
+Exclusion	Exclusion
+active	active
+.git/info/exclude, propre à cette machine	.git/info/exclude, specific to this machine
+absente sur cette machine	missing on this machine
+Sauvegarde	Backup
+à jour	up to date
+%s changement(s) à sauvegarder	%s change(s) to back up
+absent sur cette machine	missing on this machine
+loomy privacy restore <compte/dépôt>, ou loomy privacy private pour le créer	loomy privacy restore <account/repo>, or loomy privacy private to create it
+CHANGER	CHANGE
+versionnés avec le projet (dépôt privé : recommandé)	versioned with the project (private repository: recommended)
+jamais envoyés sur GitHub, propres à cette machine	never pushed to GitHub, specific to this machine
+hors du dépôt du projet, sauvegardés dans un dépôt privé (dépôt public : recommandé)	outside the project repository, backed up in a private repository (public repository: recommended)
+GitHub ne gère pas la visibilité fichier par fichier : un dépôt est entièrement public ou privé	GitHub doesn't handle visibility file by file: a repository is entirely public or private
+MODE	MODE
+mode inchangé : %s	mode unchanged: %s
+Mode enregistré	Mode saved
+dans .loomy/brief.md	in .loomy/brief.md
+état : loomy privacy	status: loomy privacy
+sauvegarde : loomy privacy sync	backup: loomy privacy sync
+Ce projet n'utilise pas de dépôt privé séparé (mode : %s).	This project doesn't use a separate private repository (mode: %s).
+Usage : loomy privacy restore <URL | compte/dépôt>	Usage: loomy privacy restore <URL | account/repo>
+Le dépôt privé est déjà présent (.loomy/ai.git) : loomy privacy sync	The private repository is already here (.loomy/ai.git): loomy privacy sync
+Clonage impossible : %s	Can't clone: %s
+Restauration impossible : %s	Can't restore: %s
+%s fichier(s) local(aux) différent(s) mis de côté	%s different local file(s) set aside
+Fichiers IA récupérés	AI files recovered
+# Routage
+Environnement inconnu : %s	Unknown environment: %s
+Profil inconnu : %s	Unknown profile: %s
+Rôle inconnu : « %s »	Unknown role: "%s"
+Routage des modèles	Model routing
+catalogue du %s	catalog from %s
+Repli	Fallback
+RÔLES	ROLES
+modèle · effort · comment l'appeler	model · effort · how to call it
+couleurs :	colors:
+pointe	top
+standard	standard
+rapide	fast
+LANCER L'ORCHESTRATEUR	START THE LEAD AGENT
+comparer les environnements : loomy route all · autre profil : loomy route --profile qualite	compare environments: loomy route all · other profile: loomy route --profile qualite
+mode %s demandé mais %s est absent : repli full %s	%s mode requested but %s is missing: falling back to full %s
+lead %s absent : repli full %s	%s lead missing: falling back to full %s
+aucune CLI IA détectée : matrice théorique	no AI CLI detected: theoretical matrix
+# Démarrer
+Pas de brief Loomy dans %s : lancez d'abord loomy init (nouveau projet) ou loomy brief.	No Loomy brief in %s: run loomy init first (new project) or loomy brief.
+démarrage du bootstrap	bootstrap start
+Reprends l'initialisation de ce projet en suivant START.md, là où elle s'est arrêtée : phase « %s ». Lance d'abord .loomy/scripts/ai-context.sh pour le contexte (phase, attentes, dernières délégations). Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer.	Resume this project's setup by following START.md, where it stopped: phase "%s". First run .loomy/scripts/ai-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on.
+reprise à la phase %s	resuming at phase %s
+Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh.	Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .ai/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.
+travail courant (bootstrap terminé)	everyday work (bootstrap done)
+Démarrer ou reprendre	Start or resume
+une session précédente existe sur cette machine	a previous session exists on this machine
+aucune session précédente sur cette machine	no previous session on this machine
+%s absent du catalogue local de Codex	%s missing from Codex's local catalog
+mets à jour le catalogue Loomy (loomy update --catalog) ou Codex, puis loomy doctor --live	update the Loomy catalog (loomy update --catalog) or Codex, then loomy doctor --live
+%s introuvable	%s not found
+installez-le : %s	install it: %s
+diagnostic complet : loomy doctor	full check: loomy doctor
+suivi en direct dans le panneau tmux de droite, fermé avec la session	live tracking in the right tmux pane, closed with the session
+suivi en direct dans le panneau tmux du bas, fermé avec la session	live tracking in the bottom tmux pane, closed with the session
+suivi en direct dans le panneau iTerm2 voisin, fermé avec la session	live tracking in the next iTerm2 pane, closed with the session
+L'agent et le suivi de ce projet tournent déjà dans une session tmux : tu la retrouves telle quelle, dans ce terminal.	This project's agent and tracking already run in a tmux session: you get it back as is, in this terminal.
+Ouvre une seconde session, à côté de la première (deux agents sur le même dossier : à éviter sauf besoin précis).	Opens a second session next to the first (two agents on the same folder: avoid unless you really need it).
+Ne lance rien.	Starts nothing.
+Une session Loomy est déjà ouverte pour ce projet. Que faire ?	A Loomy session is already open for this project. What now?
+La rejoindre	Join it
+En ouvrir une autre	Open another one
+retour dans la session ouverte · clic ou Ctrl-b + flèche pour changer de panneau	back in the open session · click or Ctrl-b + arrow to switch panes
+rien n'a été lancé	nothing was started
+ouverture de %s et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau	opening %s and live tracking, side by side (tmux) · click or Ctrl-b + arrow to switch panes
+suivi en direct dans une nouvelle fenêtre Terminal, fermée avec la session	live tracking in a new Terminal window, closed with the session
+suivi côte à côte indisponible ici (brew install tmux) : lance loomy watch dans un autre terminal	side-by-side tracking unavailable here (brew install tmux): run loomy watch in another terminal
+COMMANDES	COMMANDS
+à lancer à la racine du projet	to run at the project root
+reprendre :	resume:
+nouvelle  :	new:   
+puis colle le prompt :	then paste the prompt:
+prompt copié dans le presse-papiers	prompt copied to the clipboard
+l'app Claude (onglet Code)	the Claude app (Code tab)
+l'app Codex	the Codex app
+dans l'app :	in the app:
+ouvre ce dossier dans %s, modèle %s, effort %s, puis colle le prompt	open this folder in %s, model %s, effort %s, then paste the prompt
+Reprendre la dernière session	Resume the last session
+Reprend la conversation la plus récente de ce dossier, avec son historique : %s	Resumes this folder's latest conversation, with its history: %s
+Nouvelle session	New session
+Ouvre %s avec le prompt de %s. L'agent relit START.md, le brief et l'état du projet.	Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state.
+Afficher les commandes	Show the commands
+N'ouvre rien : affiche les commandes et copie le prompt, pour les lancer toi-même.	Opens nothing: shows the commands and copies the prompt, so you run them yourself.
+suivi en direct : loomy watch	live tracking: loomy watch
+Aucune session à reprendre	No session to resume
+ouverture d'une nouvelle session	opening a new session
+premier lancement de Codex dans ce projet : accepte de faire confiance au dossier, puis approuve les hooks Loomy (reprise automatique)	first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)
+suivi en direct dans un autre terminal : loomy watch (ou loomy start --watch)	live tracking in another terminal: loomy watch (or loomy start --watch)
+ouverture de %s…	opening %s…
+Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation.	Set up this project by strictly following START.md. The starting brief is in .loomy/brief.md: use it as answers already given, confirm it and only ask the missing questions. You are the lead agent: delegate each role according to .loomy/scripts/ai-route.sh. Stay in analysis/plan mode until I approve.
+Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur.	Codex leads; delegate architecture, security and hard debugging to Claude via delegate-to-claude.sh, only when it adds real value.
+Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh.	Claude Code leads; delegate bounded execution and cross review to Codex via delegate-to-codex.sh.
+Configure le mode HYBRID Codex + Claude Code sans multiplier les agents.	Set up the HYBRID Codex + Claude Code mode without multiplying agents.
+Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités.	Plan the PARALLEL mode with separate worktrees and a clear split of responsibilities.

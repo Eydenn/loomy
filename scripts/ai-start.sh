@@ -104,29 +104,30 @@ fi
 # Side by side when the terminal is wide (≥ 160 columns), otherwise one above the other (session on top, 2/3).
 # Tracking closes by itself when the agent session ends (--until-exit).
 # Small tracking launch script: it deletes itself as soon as it starts (nothing piles up in the temp folder).
-# watch_script <fichier> [pid de l'agent]
+# watch_script [agent pid]: creates the script with mktemp (random name, private, never an existing file or link).
 watch_script() {
-  local f="$1" until=""
-  [[ -n "${2:-}" ]] && until=" --until-exit $2"
+  local f until=""
+  f="$(mktemp "${TMPDIR:-/tmp}/loomy-watch-XXXXXXXX")" || return 1
+  [[ -n "${1:-}" ]] && until=" --until-exit $1"
   printf '#!/bin/bash\nrm -f -- "$0"\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane%s\n' "$SCRIPT_DIR/ai-status.sh" "$ROOT" "$until" >"$f"
-  chmod +x "$f"; echo "$f"
+  chmod u+x "$f"; echo "$f"
 }
 
 start_with_watch() {
   local side=0 w agent name n
   _ui_term_size; (( UI_COLS >= 160 )) && side=1
   # Tracking scripts left by previous versions (before automatic deletion).
-  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-watch-*.sh' -mmin +5 -delete 2>/dev/null || true
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-watch-*' -user "$(id -u)" -mmin +5 -delete 2>/dev/null || true
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     # Already in tmux: a tracking pane alongside, then the agent in the current pane (same process: exec).
-    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
+    w="$(watch_script $$)"
     if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
     WATCH_NOTE="$( (( side )) && t "live tracking in the right tmux pane, closed with the session" || t "live tracking in the bottom tmux pane, closed with the session")"
     return 0
   fi
   if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
-    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
+    w="$(watch_script $$)"
     if osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in the next iTerm2 pane, closed with the session")"
       return 0
@@ -155,14 +156,14 @@ start_with_watch() {
     tmux set-option -t "$name" status off >/dev/null
     tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
     tmux set-option -t "$name" pane-active-border-style "fg=colour141" >/dev/null
-    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$name.sh")"
+    w="$(watch_script)"
     if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
     ui_end "$(t "opening %s and live tracking, side by side (tmux) · click or Ctrl-b + arrow to switch panes" "$tool_label")"
     ui_exec tmux attach-session -t "$name"
   fi
   if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
-    w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
+    w="$(watch_script $$)"
     if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in a new Terminal window, closed with the session")"
       return 0

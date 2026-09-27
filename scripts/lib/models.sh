@@ -56,11 +56,13 @@ _ai_catalog_load() {
   [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
   AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="downloaded"
   while IFS= read -r line; do
-    if [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9._,\ -]+)$ ]]; then
+    if [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._,\ -]*)$ ]]; then
       k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
       v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+      # Every model id starts with a letter or digit (never an option for the CLIs).
+      [[ " $v" == *" -"* ]] && continue
       [[ -n "$v" ]] && eval "AI_CHAIN_${k}=\"\$v\""
-    elif [[ "$line" =~ ^price\.([A-Za-z0-9._-]+)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
+    elif [[ "$line" =~ ^price\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
       AI_PRICES_EXTRA="${AI_PRICES_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
     elif [[ "$line" =~ ^route\.(claude|codex)\.([a-z]+)=(TOP|MID|FAST)\ (low|medium|high|xhigh|max)$ ]]; then
       AI_ROUTE_EXTRA="${AI_ROUTE_EXTRA}${BASH_REMATCH[1]}:${BASH_REMATCH[2]}=${BASH_REMATCH[3]} ${BASH_REMATCH[4]};"
@@ -113,7 +115,7 @@ ai_model_next() {
 _ai_pin() {
   local f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"
   [[ -f "$f" ]] || return 0
-  sed -n "s/^model\\.$1\\.$2=\\([A-Za-z0-9._-]*\\)$/\\1/p" "$f" 2>/dev/null | head -1 || true
+  sed -n "s/^model\\.$1\\.$2=\\([A-Za-z0-9][A-Za-z0-9._-]*\\)$/\\1/p" "$f" 2>/dev/null | head -1 || true
 }
 for _f in claude codex; do
   for _t in top mid fast; do
@@ -371,7 +373,8 @@ ai_lead_command() {
 _ai_brief_get() {
   local brief="$1" key="$2"
   [[ -f "$brief" ]] || return 0
-  sed -n '/^---$/,/^---$/p' "$brief" | sed -n "s/^$key:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//'
+  # Control characters removed: a brief can come from a cloned repository, its values must not drive the terminal.
+  sed -n '/^---$/,/^---$/p' "$brief" | sed -n "s/^$key:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//' | LC_ALL=C tr -d '\000-\010\013-\037\177'
 }
 
 # ai_env_for <mode> <lead>: works out the environment from the mode, the requested main tool and the installed tools.
@@ -466,6 +469,6 @@ loomy_slug() {
   fi
   if [[ -z "$s" ]] && command -v iconv >/dev/null 2>&1; then s="$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || true)"; fi
   [[ -n "$s" ]] || s="$1"
-  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+  s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')"
   echo "${s:-my-project}"
 }

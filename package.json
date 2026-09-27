@@ -36,7 +36,8 @@
     "VERSION",
     "README.md",
     "README.fr.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "os": [
     "darwin",

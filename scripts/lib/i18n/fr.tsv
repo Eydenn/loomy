@@ -1307,3 +1307,5 @@ Opens nothing.	N'ouvre rien.
 main session	session principale
 subagent %s	sous-agent %s
 %s (lead: %s)	%s (lead : %s)
+MB	Mo
+remove %s from your PATH	retire %s de ton PATH

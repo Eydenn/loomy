@@ -530,7 +530,7 @@ La suite exerce chaque commande en conditions réelles (bash, git, pseudo-termin
 loomy/
 ├── bin/loomy                  # commande unique
 ├── install.sh · package.json  # installation shell, npm et bun
-├── START.md · VERSION · CHANGELOG.md · README.md · README.fr.md
+├── START.md · VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
 ├── scripts/
 │   ├── install-into-project.sh · init-wizard.sh · ai-doctor.sh · ai-route.sh · ai-status.sh
 │   ├── delegate-to-claude.sh · delegate-to-codex.sh · detect-ai-tools.sh
@@ -545,6 +545,12 @@ loomy/
 ```
 
 </details>
+
+---
+
+## 🔐 Sécurité
+
+Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existants intacts, catalogue lu comme de simples données, fichiers de projet non fiables assainis, fichiers temporaires privés) et comment signaler une faille : [SECURITY.md](SECURITY.md) (en anglais).
 
 ---
 

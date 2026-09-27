@@ -2,6 +2,27 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.2 — 2026-09-27
+
+Security, robustness and good-practice review.
+
+### Security
+- `loomy start --watch`: the tracking launch script was written to a predictable path in the temporary folder before being run (a local user could plant a link or swap it); it is now created with `mktemp` (random name, owner-only).
+- Values read from `.loomy/brief.md`, which may come from a cloned repository, are stripped of control characters (no escape sequence can reach the terminal), and every brief read goes through the same function.
+- The private AI files repository name is always reduced to a plain technical name before reaching `gh` and `git`; technical names can no longer be only dots or start with a hyphen.
+- Downloaded catalog and pinned models: a model id must start with a letter or digit, so it can never be read as an option by the CLIs.
+- `.claude/settings.json` merge written atomically (temporary file, then replace).
+- `SECURITY.md`: what Loomy guarantees, and how to report a vulnerability.
+
+### Fixed
+- After Ctrl-C in a menu or the questionnaire, the terminal stayed in raw mode (no line editing for the next programs): the terminal settings are now saved at start and fully restored.
+- `loomy uninstall` suggested `rm <clone>/bin/loomy` when a clone's `bin/` is in the PATH, which would damage the clone: it now suggests removing that folder from the PATH (or `install.sh --uninstall`).
+- `loomy update` with npm installs the latest release instead of the tip of `main`.
+- `loomy assess`: file names with spaces were cut in "most changed files"; large files are found from Git's index (fast on large repositories); sizes in MB / Mo.
+
+### Tests
+- Hostile brief (command substitution, backticks, escape sequence, path traversal), catalog option injection, technical names, Ctrl-C terminal restore, uninstall advice for a clone, names with spaces, version consistency across VERSION, package.json, READMEs and CHANGELOG.
+
 ## 0.5.1 — 2026-09-27
 
 ### Fixed

@@ -201,7 +201,11 @@ data = json.load(open(path)) if os.path.exists(path) else {}
 hooks = data.setdefault("hooks", {})
 hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
 hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 3}]})
-out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
+import os
+tmp = path + ".loomy-tmp"
+with open(tmp, "w") as out:
+    json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")
+os.replace(tmp, path)'
   if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$start" "$end" 2>/dev/null; then return 0; fi
   if [[ ! -f "$f" ]]; then
     local s e
@@ -227,7 +231,11 @@ for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Sto
     groups = hooks.setdefault(event, [])
     if not any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
         groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": t}]})
-out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
+import os
+tmp = path + ".loomy-tmp"
+with open(tmp, "w") as out:
+    json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")
+os.replace(tmp, path)'
   if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" 2>/dev/null; then return 0; fi
   _hooks_json >"$L/claude-hooks.json"
   ui_warn "$(t "existing .claude/settings.json left unchanged")" "$(t "add the hooks from .loomy/claude-hooks.json to it")"

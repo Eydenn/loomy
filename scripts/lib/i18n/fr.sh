@@ -1312,5 +1312,7 @@ _t_fr() {
     'main session') _T='session principale' ;;
     'subagent %s') _T='sous-agent %s' ;;
     '%s (lead: %s)') _T='%s (lead : %s)' ;;
+    'MB') _T='Mo' ;;
+    'remove %s from your PATH') _T='retire %s de ton PATH' ;;
   esac
 }

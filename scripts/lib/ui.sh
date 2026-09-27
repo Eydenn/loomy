@@ -118,12 +118,15 @@ ui_screen_end() {
   return 0
 }
 
+# Terminal settings when Loomy started: restored on exit, even after Ctrl-C in the middle of a key read
+# (bash's read -n leaves the terminal in raw mode when it is interrupted).
+UI_STTY="$( { [[ -t 0 ]] && stty -g </dev/tty; } 2>/dev/null || true)"
 _ui_restore() {
   _ui_tick_stop
   ui_form_end
   ui_screen_end
   printf '\033[?25h' >&2
-  stty echo </dev/tty 2>/dev/null || true
+  if [[ -n "$UI_STTY" ]]; then stty "$UI_STTY" </dev/tty 2>/dev/null || true; else stty echo icanon </dev/tty 2>/dev/null || true; fi
 }
 
 # ui_external <command>...: runs an interactive command (gh auth login…) outside the Loomy screen, then comes back.
@@ -682,7 +685,7 @@ _ui_q_end() {
     UI_BACK=1; UI_TARGET=$(( UI_QI - 1 ))
   elif [[ "$UI_FORM_ACTIVE" == "1" && "$UI_MODE" != "skip" ]]; then
     UI_RQ[$UI_QI]="$1"; UI_RV[$UI_QI]="$UI_VALUE"
-    _ui_log answer "$label" "${UI_VALUE% ($(t "recommended"))}"
+    _ui_log answer "$label" "${UI_VALUE% " ($(t "recommended"))"}"
   fi
   _ui_reset_ctx
   UI_FTR_KEYS=""

@@ -76,6 +76,9 @@ if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' "$REPO/bin/loomy" "$REPO"/
 section "loomy command"
 run "loomy version" "$LOOMY" version
 has "version shown from VERSION" "^loomy $(cat "$REPO/VERSION") "
+V="$(cat "$REPO/VERSION")"
+grep -q "\"version\": \"$V\"" "$REPO/package.json" && grep -q "badge/version-$V-" "$REPO/README.md" && grep -q "badge/version-$V-" "$REPO/README.fr.md" && grep -q "^## $V " "$REPO/CHANGELOG.md" \
+  && ok "version consistent: VERSION, package.json, README badges, CHANGELOG" || ko "version mismatch around $V"
 run "loomy help" "$LOOMY" help
 has "help: structured sections" "◇  TRACKING"
 hasnt "help: no colour outside a terminal" $'\033\\['
@@ -423,6 +426,9 @@ echo 'model.claude.top=$(touch '"$WORK"'/injecte)' >>"$XDG_CONFIG_HOME/loomy/cat
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_MODEL_CODEX_FAST $AI_MODEL_CLAUDE_TOP $(ai_price gpt-6-sol)"' _ "$REPO")"
 [[ "$got" == "downloaded luna-test claude-opus-5-5 9 9 9" ]] && ok "downloaded catalog taken into account" || ko "downloaded catalog: $got"
 [[ ! -e "$WORK/injecte" ]] && ok "catalog: content never executed" || ko "catalog: injection executed"
+echo 'model.claude.mid=--dangerously-skip-permissions, claude-sonnet-5' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got" != -* ]] && ok "catalog: a model id never starts with a hyphen" || ko "catalog: option injected ($got)"
 rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
 
 # Fallback chains: first available model, fallback when refused or missing from Codex, pinning, rebalancing.
@@ -824,6 +830,32 @@ run "route markdown" "$LOOMY" route --root "$PROJ" markdown
 if awk 'prev == "" && $0 == "" { bad = 1 } { prev = $0 } END { exit !bad }' "$OUT"; then ko "route markdown: double blank line"; else ok "route markdown: no double blank line"; fi
 run "every command help in English" bash -c 'for c in init brief assess start effort route privacy worktrees status log feedback doctor; do "$1" "$c" --help; done' _ "$LOOMY"
 hasnt "help: no French left" "[éèàù]| : "
+
+section "Hardening"
+[[ "$(bash -c 'source "$1/scripts/lib/models.sh"; loomy_slug ".."; loomy_slug "../../etc"; loomy_slug "-rf"' _ "$REPO" | tr '\n' ' ')" == "my-project etc rf " ]] && ok "slug: no dots, slashes or leading hyphen" || ko "slug: $(bash -c 'source "$1/scripts/lib/models.sh"; loomy_slug ".."; loomy_slug "../../etc"' _ "$REPO" | tr '\n' ' ')"
+HB="$WORK/hostile"; mkdir -p "$HB/.loomy"; touch "$HB/START.md"
+printf -- '---\nname: "evil $(touch %s/pwned) `touch %s/pwned` \033[31mRED"\nai_mode: SOLO\nai_lead: claude\nai_repo_name: ../../etc\n---\n' "$WORK" "$WORK" >"$HB/.loomy/brief.md"
+run "status on a hostile brief" "$LOOMY" status --root "$HB"
+[[ ! -e "$WORK/pwned" ]] && ok "hostile brief: nothing executed" || ko "hostile brief: command executed"
+if grep -q $'\033\\[31m' "$OUT"; then ko "hostile brief: escape sequence reached the terminal"; else ok "hostile brief: escape sequences removed"; fi
+run "context on a hostile brief" bash "$REPO/scripts/ai-context.sh" --root "$HB"
+[[ ! -e "$WORK/pwned" ]] && ok "hostile brief: context executes nothing" || ko "hostile brief: context executed a command"
+mkdir -p "$WORK/clone/bin" && cp "$REPO/bin/loomy" "$WORK/clone/bin/" && cp "$REPO/VERSION" "$WORK/clone/" && ln -s "$REPO/scripts" "$WORK/clone/scripts"
+PATH="$WORK/clone/bin:$PATH" "$WORK/clone/bin/loomy" uninstall >"$OUT" 2>&1
+hasnt "uninstall: never suggests deleting the clone's own file" "rm .*/clone/bin/loomy"
+has "uninstall: clone in the PATH" "from your PATH"
+SP="$WORK/spaced repo"; mkdir -p "$SP/src dir" && printf '// TODO\n' >"$SP/src dir/a file.js" && git -C "$SP" init -q -b main && git -C "$SP" add -A && git -C "$SP" commit -qm x
+run "assess with spaces in names" "$LOOMY" assess --root "$SP" --print
+has "assess: file names with spaces kept whole" '`src dir/a file.js`'
+if [[ -n "$TMUX_BIN" ]]; then
+  tstart -s k -x 100 -y 30 -c "$PROJ" "bash"
+  sleep 1; tmux -L loomy-test send-keys -t k "bash '$LOOMY'" Enter
+  k=0; until tmux -L loomy-test capture-pane -t k -p | grep -q "What do you want to do"; do sleep 0.25; k=$(( k + 1 )); (( k > 80 )) && break; done
+  tmux -L loomy-test send-keys -t k C-c; sleep 1
+  tmux -L loomy-test send-keys -t k "stty -a | grep -oE ' -?icanon | -?echo ' | tr -d ' \n'; echo :STTY" Enter; sleep 1
+  tmux -L loomy-test capture-pane -t k -p | grep -q '^icanonecho:STTY\|^echoicanon:STTY' && ok "Ctrl-C: terminal restored (echo, canonical mode)" || ko "Ctrl-C: terminal left in raw mode ($(tmux -L loomy-test capture-pane -t k -p | grep STTY | tail -1))"
+  tmux -L loomy-test kill-server 2>/dev/null || true
+fi
 
 # ------------------------------------------------------------------ interface language
 section "Interface language"

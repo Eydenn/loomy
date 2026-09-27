@@ -139,7 +139,7 @@ if (( IS_GIT )) && git rev-parse HEAD >/dev/null 2>&1; then
   tot="$(git log -200 --format=%s 2>/dev/null | grep -c . | tr -d ' ')"
   (( tot > 0 )) && GIT_LINES+=("$(t "Conventional commits: %s of the last %s messages" "$conv" "$tot")")
   HOT="$(git log --since=180.days --name-only --format= 2>/dev/null | grep -v '^$' | grep -vE '^(\.loomy/|START\.md$)' | sort | uniq -c | sort -rn | head -8 |
-    awk '{ printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $2, $1 }')"
+    awk '{ n = $1; sub(/^ *[0-9]+ /, ""); printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $0, n }')"
   [[ -n "$HOT" ]] && GIT_LINES+=("$(t "Most changed files (180 days): %s" "$HOT")")
   DIRTY="$(git status --porcelain 2>/dev/null | grep -v -E ' (\.loomy/|START\.md|\.gitignore|\.claude/|\.codex/)' | grep -c . | tr -d ' ')"
 fi
@@ -153,7 +153,8 @@ SECRETS="$(grep -E '(^|/)(\.env(\..+)?|.*\.pem|id_rsa|id_ed25519|.*\.p12|.*\.key
 if (( IS_GIT )); then
   TODO_N="$(git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | awk -F: '{ s += $NF } END { print s + 0 }')"
   TODO_TOP="$(git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | sort -t: -k2 -rn | head -5 | awk -F: '{ printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $1, $2 }')"
-  BIG="$(git ls-files -z 2>/dev/null | xargs -0 ls -l 2>/dev/null | awk '$5 > 1048576 { printf "%s`%s` (%.1f MB)", (n++ ? ", " : ""), $NF, $5 / 1048576 }' | cut -c1-400)"
+  # Sizes from Git's index (fast on large repositories, safe with spaces in names).
+  BIG="$(git ls-tree -r -l HEAD 2>/dev/null | awk -F '\t' -v mb="$(t "MB")" '{ split($1, a, " "); if (a[4] + 0 > 1048576) printf "%s`%s` (%.1f %s)", (n++ ? ", " : ""), $2, a[4] / 1048576, mb }' | cut -c1-400)"
 else
   TODO_N="$(tr '\n' '\0' <"$FILES" | xargs -0 grep -I -hc -w -E 'TODO|FIXME|HACK|XXX' 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')"; TODO_TOP=""; BIG=""
 fi

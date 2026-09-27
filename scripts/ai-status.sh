@@ -81,8 +81,7 @@ if [[ "$CMD" == "set" ]]; then
 fi
 
 brief_get() {
-  [[ -f "$BRIEF" ]] || return 0
-  sed -n '/^---$/,/^---$/p' "$BRIEF" | sed -n "s/^$1:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//'
+  _ai_brief_get "$BRIEF" "$1"
 }
 
 label_of() {

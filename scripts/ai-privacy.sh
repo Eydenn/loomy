@@ -37,14 +37,16 @@ elif [[ ! -d "$ROOT/.loomy" ]]; then t "No Loomy project in %s: loomy init first
 GIT_ROOT="$(privacy_git_root "$ROOT")"
 MODE="$(privacy_mode "$ROOT")"
 # Private repository name: the project's (brief slug), so that everything has the same name.
-NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^slug:[[:space:]]*//p' | head -1 || true)"
+NAME="$(loomy_slug "$(_ai_brief_get "$ROOT/.loomy/brief.md" slug)")"; [[ "$NAME" == "my-project" ]] && NAME=""
 if [[ -z "$NAME" ]]; then
-  NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^name:[[:space:]]*//p' | head -1 | sed 's/^"//; s/"$//' || true)"
+  NAME="$(_ai_brief_get "$ROOT/.loomy/brief.md" name)"
   NAME="$(loomy_slug "${NAME:-$(basename "$ROOT")}")"
 fi
 # Private repository name: --name, otherwise the brief's (validated in the questionnaire), otherwise <project>-ai.
-AI_REPO="${AI_REPO_OPT:-$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^ai_repo_name:[[:space:]]*//p' | head -1 || true)}"
+AI_REPO="${AI_REPO_OPT:-$(_ai_brief_get "$ROOT/.loomy/brief.md" ai_repo_name)}"
 AI_REPO="${AI_REPO:-$NAME-ai}"
+# Whatever the brief says, the repository name is a plain technical name (it ends up in gh and git commands).
+AI_REPO="$(loomy_slug "$AI_REPO")"
 
 # ---------------------------------------------------------------- separate private repository
 create_companion() {
@@ -67,7 +69,7 @@ create_companion() {
     if gh repo view "$owner/$AI_REPO" >/dev/null 2>&1; then
       ui_info "$(t "repository %s already exists: used as is" "$owner/$AI_REPO")"
     else
-      gh repo create "$owner/$AI_REPO" --private --description "Fichiers IA du projet $NAME (Loomy)" >/dev/null || { ui_err "$(t "Private repository creation failed")" "$owner/$AI_REPO"; return 1; }
+      gh repo create "$owner/$AI_REPO" --private --description "AI files of the $NAME project (Loomy)" >/dev/null || { ui_err "$(t "Private repository creation failed")" "$owner/$AI_REPO"; return 1; }
       ui_ok "$(t "Private repository created")" "$owner/$AI_REPO"
     fi
     url="https://github.com/$owner/$AI_REPO.git"

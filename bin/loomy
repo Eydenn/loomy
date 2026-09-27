@@ -68,7 +68,12 @@ loomy_installs() {
 uninstall_cmd() {
   case "$1" in
     brew) echo "brew uninstall eydenn/tap/loomy" ;; npm) echo "npm uninstall -g loomy" ;;
-    bun) echo "bun remove -g loomy" ;; *) echo "rm $3" ;;
+    bun) echo "bun remove -g loomy" ;;
+    *)
+      # The command found in the PATH is the clone's own bin/loomy: removing it would damage the clone.
+      if [[ "$(cd "$(dirname "$3")" 2>/dev/null && pwd -P)/$(basename "$3")" == "$(cd "$2" 2>/dev/null && pwd -P)/bin/loomy" ]]; then t "remove %s from your PATH" "$2/bin"
+      elif [[ -f "$2/install.sh" ]]; then echo "sh $2/install.sh --uninstall"
+      else echo "rm $3"; fi ;;
   esac
 }
 
@@ -241,7 +246,7 @@ case "$cmd" in
           lang) [[ "$val" =~ ^(auto|fr|en)$ ]] || { t "lang: auto, fr or en" >&2; echo >&2; exit 2; } ;;
           screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { t "screen: auto, alt or clear" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
-            [[ "$val" =~ ^[A-Za-z0-9._-]+$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
+            [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
           *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
@@ -287,7 +292,9 @@ case "$cmd" in
         { gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && bun add -g "$tmp"/loomy-*.tgz; } || rc=$?
         rm -rf "$tmp" ;;
       # Same prefix as the existing install, whatever Node is active (nvm).
-      npm) npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO" || rc=$? ;;
+      # The latest release, not the tip of main (which may hold unreleased work).
+      npm) tag="$(gh release view -R "$LOOMY_REPO" --json tagName -q .tagName 2>/dev/null || true)"
+           npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO${tag:+#$tag}" || rc=$? ;;
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) t "Unknown install method: reinstall Loomy (see README)." >&2; echo >&2; exit 1 ;;
     esac

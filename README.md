@@ -463,7 +463,7 @@ To try another model on a single machine without changing anything: `AI_MODEL_CO
 loomy/
 ├── bin/loomy                  # single command
 ├── install.sh · package.json  # shell, npm and bun install
-├── START.md · VERSION · CHANGELOG.md · README.md · README.fr.md
+├── START.md · VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
 ├── scripts/
 │   ├── install-into-project.sh · init-wizard.sh · ai-doctor.sh · ai-route.sh · ai-status.sh
 │   ├── delegate-to-claude.sh · delegate-to-codex.sh · detect-ai-tools.sh
@@ -480,6 +480,12 @@ loomy/
 ```
 
 </details>
+
+---
+
+## 🔐 Security
+
+What Loomy guarantees (your project never pushed or deleted without you, existing projects untouched, catalog read as data, untrusted project files sanitised, private temporary files) and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 
 ---
 

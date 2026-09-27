@@ -516,3 +516,81 @@ Forfait Claude	Claude plan
 Forfait Codex	Codex plan
 corrections guidées : loomy doctor --fix	guided fixes: loomy doctor --fix
 test réel des modèles : loomy doctor --live · corrections guidées : loomy doctor --fix	live model test: loomy doctor --live · guided fixes: loomy doctor --fix
+# Init : dossier, projet existant
+Erreur : option inconnue %s	Error: unknown option %s
+Nouveau projet	New project
+dossier courant : %s	current folder: %s
+PROJET	PROJECT
+Il sert de nom au projet et, si tu crées un dossier, de nom de dossier.	It names the project and, if you create a folder, the folder too.
+Nom du projet	Project name
+Nouveau dossier ./%s	New folder ./%s
+Crée %s et y installe Loomy.	Creates %s and installs Loomy there.
+Dossier courant (%s)	Current folder (%s)
+Installe Loomy ici : pour un dossier vide ou un projet existant à standardiser.	Installs Loomy here: for an empty folder or an existing project to standardize.
+Autre emplacement…	Somewhere else…
+Tu indiques le chemin du dossier ; il est créé s'il n'existe pas.	You give the folder path; it's created if it doesn't exist.
+Dossier	Folder
+Où créer le projet ?	Where to create the project?
+Chemin	Path
+Chemin du dossier du projet	Project folder path
+installation de Loomy dans %s…	installing Loomy in %s…
+Erreur : %s n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet	Error: %s isn't a project folder. Give the folder to create: loomy init my-project
+Erreur : le dossier n'existe pas : %s	Error: the folder doesn't exist: %s
+Erreur : impossible de créer le dossier %s	Error: can't create the folder %s
+.codex/hooks.json existant non modifié	existing .codex/hooks.json left unchanged
+ajoute-y les hooks Loomy à la main (voir .loomy/scripts/ai-context.sh)	add the Loomy hooks to it by hand (see .loomy/scripts/ai-context.sh)
+.claude/settings.json existant non modifié	existing .claude/settings.json left unchanged
+ajoute-y les hooks de .loomy/claude-hooks.json	add the hooks from .loomy/claude-hooks.json to it
+Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé.	Error: %s exists but doesn't come from Loomy (no .loomy folder). Refusing to overwrite.
+Loomy mis à jour dans le projet	Loomy updated in the project
+brief, phase et journal conservés	brief, phase and journal kept
+Bootstrap réinitialisé	Bootstrap reset
+START.md recopié, phase remise à zéro ; ancien brief : .loomy/brief.previous.md	START.md copied again, phase reset; previous brief: .loomy/brief.previous.md
+Fichiers déjà créés par l'agent conservés	Files already created by the agent kept
+AGENTS.md, CLAUDE.md, PROJECT.md… l'orchestrateur les reprendra	AGENTS.md, CLAUDE.md, PROJECT.md… the lead agent will pick them up
+Projet déjà initialisé	Project already set up
+ÉTAT	STATE
+v%s dans le projet · v%s installé	v%s in the project · v%s installed
+en cours · phase %s	in progress · phase %s
+Version du projet différente	Different project version
+la mise à jour garde ton brief, ta phase et ton journal	the update keeps your brief, phase and journal
+QUE FAIRE ?	WHAT NOW?
+reprendre la session de l'orchestrateur	resume the lead agent session
+mettre à jour les fichiers Loomy du projet	update the project's Loomy files
+refaire le questionnaire	redo the questionnaire
+réinitialiser le bootstrap	reset the bootstrap
+rien n'a été modifié	nothing was changed
+Reprendre la session de l'orchestrateur	Resume the lead agent session
+Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.	Opens loomy start: resumes this folder's last session, or opens a new one at the right point of the project.
+Mettre à jour Loomy dans ce projet (v%s → v%s)	Update Loomy in this project (v%s → v%s)
+Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.	Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.
+Réinstaller les fichiers Loomy du projet	Reinstall the project's Loomy files
+Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.	Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.
+Refaire le questionnaire	Redo the questionnaire
+Tes réponses actuelles servent de valeurs par défaut ; le brief n'est remplacé qu'après confirmation.	Your current answers are the defaults; the brief is only replaced after confirmation.
+Réinitialiser le projet	Reset the project
+Repart du début du bootstrap : START.md recopié, phase remise à zéro, questionnaire relancé. Les fichiers déjà créés par l'agent restent.	Starts the bootstrap over: START.md copied again, phase reset, questionnaire run again. Files already created by the agent stay.
+Créer un nouveau projet dans un sous-dossier	Create a new project in a subfolder
+Ce dossier est lui-même un projet Loomy : crée un nouveau projet à côté, dans ./<nom-du-projet>.	This folder is itself a Loomy project: creates a new project next to it, in ./<project-name>.
+Ne modifie rien.	Changes nothing.
+ouverture de loomy start…	opening loomy start…
+Il donne aussi le nom du dossier créé ici.	It also names the folder created here.
+Nom du nouveau projet	New project name
+mon-projet	my-project
+création de ./%s…	creating ./%s…
+Repart de la phase Brief. Rien n'est supprimé en dehors de .loomy/state.	Starts again from the Brief phase. Nothing is deleted apart from .loomy/state.
+Confirmation	Confirmation
+Réinitialiser le bootstrap de ce projet ?	Reset this project's bootstrap?
+Oui, réinitialiser	Yes, reset
+reprendre : loomy start · suivi : loomy watch	resume: loomy start · tracking: loomy watch
+questionnaire…	questionnaire…
+questionnaire (tes anciennes réponses servent de valeurs par défaut)…	questionnaire (your previous answers are the defaults)…
+remplis le brief : loomy brief · puis : loomy start	fill in the brief: loomy brief · then: loomy start
+Erreur : pas de projet Loomy dans %s à mettre à jour. Lancez loomy init pour le créer.	Error: no Loomy project in %s to update. Run loomy init to create it.
+Loomy installé	Loomy installed
+Terminal non interactif	Non-interactive terminal
+questionnaire ignoré	questionnaire skipped
+ÉTAPE SUIVANTE	NEXT STEP
+Remplis le brief du projet :	Fill in the project brief:
+Lance l'orchestrateur :	Start the lead agent:
+START.md, .loomy/ et une ligne de .gitignore ajoutés ; rien d'autre n'est modifié	START.md, .loomy/ and one .gitignore line added; nothing else is changed

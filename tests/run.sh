@@ -21,6 +21,8 @@ export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 export LOOMY_HOME="$REPO"
 # Pas de vérification réseau du catalogue publié pendant les tests.
 export LOOMY_CATALOG_CHECK=0
+# Interface en français pour ces tests (les tests de langue la règlent eux-mêmes).
+export LOOMY_LANG=fr
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 # GitHub simulé : la doublure gh crée les dépôts dans $GH_STUB_REMOTES, et Git y redirige https://github.com/.

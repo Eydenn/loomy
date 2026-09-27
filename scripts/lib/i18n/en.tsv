@@ -1,0 +1,91 @@
+# Dictionnaire français → anglais de l interface. Une ligne par phrase : français<TAB>anglais.
+# Après modification : tools/i18n-build.sh (compile en.sh), puis bash tests/run.sh.
+# Cadre, menus, touches
+⏎ ← retour · q quitter	⏎ ← back · q quit
+↑↓ espace b défiler	↑↓ space b scroll
+Ctrl-C pour interrompre	Ctrl-C to interrupt
+terminé en %s	done in %s
+recommandé	recommended
+question %s/%s	question %s/%s
+Ce que ça implique	What it means
+question précédente	previous question
+ensuite :	next:
+par défaut	default
+⏎ valider   ⌫ effacer	⏎ confirm   ⌫ clear
+↑↓ choisir   ⏎ valider   s défaut	↑↓ choose   ⏎ confirm   s default
+↑↓ choisir   espace cocher   ⏎ valider	↑↓ choose   space toggle   ⏎ confirm
+Quitter	Quit
+Choix	Choice
+Que veux-tu faire ?	What do you want to do?
+Aide	Help
+Toutes les commandes.	All commands.
+Ferme Loomy.	Closes Loomy.
+# Accueil
+Bienvenue	Welcome
+aucun projet Loomy dans %s	no Loomy project in %s
+Crée le dossier du projet (ou utilise celui-ci), puis le questionnaire et l'orchestrateur.	Creates the project folder (or uses this one), then the questionnaire and the lead agent.
+Vérifie Claude Code, Codex, les modèles et les prérequis de la machine (les corrections se font avec loomy doctor --fix).	Checks Claude Code, Codex, the models and the machine's prerequisites (fixes are done with loomy doctor --fix).
+Créer un projet	Create a project
+Vérifier la machine	Check the machine
+Diagnostic de la machine	Machine check
+OÙ EN EST LE PROJET	WHERE THE PROJECT STANDS
+terminé	done
+développement au quotidien	day-to-day development
+Phase	Phase
+étape %s sur 10	step %s of 10
+ouverte	open
+depuis %s	since %s
+fermée à %s	closed at %s
+pas encore ouverte	not opened yet
+À toi	Your turn
+Modèles	Models
+nouveau catalogue du %s	new catalog from %s
+Ouvrir ou reprendre la session de l'orchestrateur	Open or resume the lead agent session
+Suivre en direct	Live tracking
+Statut détaillé	Detailed status
+Journal	Journal
+Visibilité des fichiers IA	AI files visibility
+loomy start : reprend la dernière session de ce projet, ou en ouvre une nouvelle au bon endroit.	loomy start: resumes this project's last session, or opens a new one at the right place.
+loomy watch : phases, délégations en cours et activité, en direct.	loomy watch: phases, running delegations and activity, live.
+loomy status : phases, brief, activité, coûts, fichiers IA et Git (ici, sans quitter l'accueil).	loomy status: phases, brief, activity, costs, AI files and Git (here, without leaving home).
+loomy log : phases, délégations, sessions et coûts, à l'heure locale.	loomy log: phases, delegations, sessions and costs, in local time.
+loomy privacy : fichiers IA versionnés, locaux ou dans un dépôt privé.	loomy privacy: AI files versioned, local or in a private repository.
+# Phases
+Brief	Brief
+Découverte	Discovery
+Entretien	Interview
+Proposition	Proposal
+Validation	Approval
+Construction	Build
+Vérification	Verification
+Documentation	Documentation
+Commit	Commit
+Clôture	Wrap-up
+Terminé	Done
+Non démarré	Not started
+Le questionnaire est rempli ; l'orchestrateur n'a pas encore démarré.	The questionnaire is filled in; the lead agent hasn't started yet.
+L'orchestrateur lit le brief et explore le dossier du projet.	The lead agent reads the brief and explores the project folder.
+L'orchestrateur pose les questions qui manquent encore au brief.	The lead agent asks the questions the brief still lacks.
+L'orchestrateur présente la stack, la structure du dépôt et le plan.	The lead agent presents the stack, the repository layout and the plan.
+L'orchestrateur attend ton feu vert avant de créer quoi que ce soit.	The lead agent waits for your go-ahead before creating anything.
+L'orchestrateur met en place le projet et délègue aux rôles dédiés.	The lead agent sets up the project and delegates to dedicated roles.
+Tests, relecture croisée et contrôles de sécurité du travail livré.	Tests, cross review and security checks of the delivered work.
+Rédaction de PROJECT.md, ARCHITECTURE.md et des règles .ai/.	Writing PROJECT.md, ARCHITECTURE.md and the .ai/ rules.
+Commit initial, si tu l'as autorisé dans le questionnaire.	Initial commit, if you allowed it in the questionnaire.
+START.md est archivé ou supprimé : le bootstrap se termine.	START.md is archived or deleted: the bootstrap is ending.
+Le projet est initialisé ; l'orchestrateur suit maintenant AGENTS.md et CLAUDE.md.	The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md.
+Aucune phase enregistrée pour l'instant.	No phase recorded yet.
+lance l'orchestrateur avec loomy start.	start the lead agent with loomy start.
+rien pour l'instant ; garde sa session ouverte.	nothing for now; keep its session open.
+réponds à ses questions dans sa session.	answer its questions in its session.
+lis la proposition, pose tes questions.	read the proposal, ask your questions.
+valide la proposition ou demande des changements dans sa session.	approve the proposal or ask for changes in its session.
+suis les délégations ici ; l'agent te sollicite si un choix se présente.	follow the delegations here; the agent will ask you if a choice comes up.
+regarde les constats de relecture qu'il te remonte.	look at the review findings it reports.
+relis PROJECT.md et ARCHITECTURE.md quand il te les signale.	review PROJECT.md and ARCHITECTURE.md when it points you to them.
+vérifie le commit proposé (git log, git show).	check the proposed commit (git log, git show).
+rien ; le bootstrap est presque fini.	nothing; the bootstrap is almost over.
+demande tes évolutions à l'orchestrateur (loomy start ouvre sa session).	ask the lead agent for your changes (loomy start opens its session).
+loomy start pour ouvrir la session de l'orchestrateur.	loomy start to open the lead agent session.
+rouvre la session de l'orchestrateur avec loomy start ; il reprendra à cette phase.	reopen the lead agent session with loomy start; it will resume at this phase.
+ouvre la session de l'orchestrateur avec loomy start.	open the lead agent session with loomy start.

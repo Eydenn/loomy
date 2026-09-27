@@ -89,3 +89,150 @@ demande tes évolutions à l'orchestrateur (loomy start ouvre sa session).	ask t
 loomy start pour ouvrir la session de l'orchestrateur.	loomy start to open the lead agent session.
 rouvre la session de l'orchestrateur avec loomy start ; il reprendra à cette phase.	reopen the lead agent session with loomy start; it will resume at this phase.
 ouvre la session de l'orchestrateur avec loomy start.	open the lead agent session with loomy start.
+# Journal
+Argument inconnu : %s	Unknown argument: %s
+-n : un nombre	-n: a number
+--since : une date AAAA-MM-JJ	--since: a YYYY-MM-DD date
+Aucun journal dans ce projet (%s).	No journal in this project (%s).
+démarre	starts
+en 	in 
+échec après 	failed after 
+Bootstrap terminé	Bootstrap done
+réponse(s)	reply(ies)
+sous-agent	sub-agent
+Session ouverte	Session opened
+Session fermée	Session closed
+# Statut et suivi
+Phase inconnue : « %s ». Phases : %s	Unknown phase: "%s". Phases: %s
+Phase enregistrée : %s (%s)	Phase recorded: %s (%s)
+Application web / SaaS	Web app / SaaS
+API / backend	API / backend
+Application mobile	Mobile app
+Application desktop	Desktop app
+CLI / bibliothèque	CLI / library
+Application IA / LLM	AI / LLM app
+Prototype	Prototype
+Autre	Other
+MVP	MVP
+Production	Production
+Économe	Thrifty
+Équilibré	Balanced
+Qualité max	Max quality
+Codex	Codex
+Claude Code	Claude Code
+oui	yes
+non	no
+Projet prêt	Project ready
+Bootstrap terminé : la suite se passe avec l'orchestrateur (loomy start).	Bootstrap done: what comes next happens with the lead agent (loomy start).
+Délégation en échec	Delegation failed
+Voir le détail dans loomy watch (touche l) ou loomy log.	See the details in loomy watch (key l) or loomy log.
+Session de l'orchestrateur fermée	Lead agent session closed
+Bootstrap en cours : loomy start pour la reprendre.	Bootstrap in progress: loomy start to resume it.
+quitter	quit
+vue complète	full view
+vue resserrée	compact view
+statut	status
+journal	journal
+session	session
+suivi en direct	live tracking
+défiler	scroll
+Statut du projet	Project status
+scripts Loomy copiés dans ce projet (avant la 0.3)	Loomy scripts copied into this project (before 0.3)
+une fois pour toutes : loomy init --update	once and for all: loomy init --update
+Loomy %s installé, plus ancien que ce projet (%s)	Loomy %s installed, older than this project (%s)
+JOURNAL	JOURNAL
+derniers événements, heure locale	latest events, local time
+journal vide pour l'instant	journal empty for now
+journal complet : loomy log	full journal: loomy log
+bootstrap terminé	bootstrap done
+START.md présent mais brief vide : lance loomy brief	START.md present but brief empty: run loomy brief
+aucun projet Loomy ici : lance loomy init	no Loomy project here: run loomy init
+nouvelle phase	new phase
+bootstrap en %s	bootstrap in %s
+%s délégation(s)	%s delegation(s)
+À toi :	Your turn:
+Session de l'orchestrateur ouverte depuis %s	Lead agent session open since %s
+Session de l'orchestrateur fermée à %s (%s) → loomy start pour la reprendre	Lead agent session closed at %s (%s) → loomy start to resume it
+Aucune session de l'orchestrateur enregistrée → loomy start	No lead agent session recorded → loomy start
+Nom	Name
+Risque	Risk
+Mode IA	AI mode
+commit auto : %s · push auto : %s	auto commit: %s · auto push: %s
+ACTIVITÉ	ACTIVITY
+plus long que d'habitude (~%s)	longer than usual (~%s)
+première fois pour ce rôle	first time for this role
+en cours	running
+Orchestrateur	Lead agent
+%s réponse(s) · coût %s	%s reply(ies) · cost %s
+mesuré	measured
+Sous-agents	Sub-agents
+%s · coût %s	%s · cost %s
+aucune délégation terminée pour l'instant	no finished delegation yet
+elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex	they show up here as soon as the lead agent hands a task to Claude or Codex
+Délégations	Delegations
+%s en échec	%s failed
+coût ce mois :	cost this month:
+valeur API ce mois :	API value this month:
+délégations et travail de Claude Code (orchestrateur, sous-agents), au prix public	delegations and Claude Code work (lead agent, sub-agents), at list price
+valeurs issues des délégations journalisées (orchestrateur compté à partir de loomy 0.3, hooks Stop et SubagentStop)	values from logged delegations (lead agent counted from loomy 0.3 on, Stop and SubagentStop hooks)
+Dernières délégations	Latest delegations
+aucune délégation pour l'instant	no delegation yet
+FICHIERS IA	AI FILES
+dépôt privé absent sur cette machine	private repository missing on this machine
+compte/dépôt	account/repo
+%s changement(s) non sauvegardé(s) dans le dépôt privé	%s unsaved change(s) in the private repository
+fichiers IA pas encore exclus sur cette machine	AI files not excluded on this machine yet
+créés par l'orchestrateur pendant la Construction : c'est normal qu'ils manquent avant	created by the lead agent during Build: it's normal for them to be missing before
+vide	empty
+passage de relais actif :	active handoff:
+détachée	detached
+%s propre	%s clean
+%s fichier(s) non commité(s)	%s uncommitted file(s)
+branche %s	branch %s
+propre	clean
+%s fichier(s) modifié(s) non commité(s)	%s modified file(s) not committed
+dernier commit : %s	last commit: %s
+aucun commit	no commit
+synchronisé avec %s	in sync with %s
+%s en avance · %s en retard	%s ahead · %s behind
+remote %s configuré, pas de branche suivie	remote %s set, no tracked branch
+aucun remote configuré	no remote set
+%s worktree(s) parallèle(s)	%s parallel worktree(s)
+pas de dépôt Git	no Git repository
+démarrer ou reprendre : loomy start · suivi en direct : loomy watch	start or resume: loomy start · live tracking: loomy watch
+# Forfaits, rôles, routage, visibilité
+API (paiement à l'usage)	API (pay as you go)
+Claude Pro	Claude Pro
+Claude Max 5x	Claude Max 5x
+Claude Max 20x	Claude Max 20x
+Claude Team	Claude Team
+Claude Enterprise	Claude Enterprise
+ChatGPT Plus	ChatGPT Plus
+ChatGPT Business	ChatGPT Business
+ChatGPT Enterprise	ChatGPT Enterprise
+non renseigné	not set
+Orchestrateur (lead)	Lead agent
+Architecte	Architect
+Débogueur	Debugger
+Sécurité	Security
+Relecteur	Reviewer
+Développeur	Developer
+Exécutant	Executor
+Explorateur	Explorer
+Documentaliste	Documenter
+plan, découpage, délégation, décisions, intégration, vérification finale	plan, breakdown, delegation, decisions, integration, final check
+architecture, specs, ADR, arbitrages	architecture, specs, ADRs, trade-offs
+bugs difficiles, tâches longues en terminal, migrations	hard bugs, long terminal tasks, migrations
+revue sécurité ciblée (auth, paiements, données, secrets)	targeted security review (auth, payments, data, secrets)
+revue de diff : régressions, cas limites, tests manquants	diff review: regressions, edge cases, missing tests
+features et correctifs courants dans un périmètre donné	everyday features and fixes within a given scope
+tickets précis et bornés, tests, modifications en masse	precise, bounded tickets, tests, bulk changes
+recherche dans le code, cartographie, résumés, logs	code search, mapping, summaries, logs
+README, docs, changelogs	README, docs, changelogs
+Full Claude Code	Full Claude Code
+Full Codex	Full Codex
+Hybride, lead Claude Code	Hybrid, Claude Code lead
+Hybride, lead Codex	Hybrid, Codex lead
+locaux uniquement	local only
+dépôt privé séparé	separate private repository
+versionnés avec le projet	versioned with the project

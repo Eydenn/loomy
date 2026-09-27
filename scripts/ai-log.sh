@@ -28,15 +28,15 @@ while [[ $# -gt 0 ]]; do
     --since) SINCE="${2:-}"; shift ;;
     --csv) CSV=1 ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//; s/ai-log.sh/loomy log/'; exit 0 ;;
-    *) echo "Argument inconnu : $1" >&2; exit 2 ;;
+    *) t "Argument inconnu : %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
-[[ "$N" =~ ^[0-9]+$ ]] || { echo "-n : un nombre" >&2; exit 2; }
-[[ -z "$SINCE" || "$SINCE" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]] || { echo "--since : une date AAAA-MM-JJ" >&2; exit 2; }
+[[ "$N" =~ ^[0-9]+$ ]] || { t "-n : un nombre" >&2; echo >&2; exit 2; }
+[[ -z "$SINCE" || "$SINCE" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]] || { t "--since : une date AAAA-MM-JJ" >&2; echo >&2; exit 2; }
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd)"
 FILE="$(ai_journal_file "$ROOT")"
-[[ -f "$FILE" ]] || { echo "Aucun journal dans ce projet (${FILE/#$HOME/~})." >&2; exit 1; }
+[[ -f "$FILE" ]] || { t "Aucun journal dans ce projet (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
 
 # Événements choisis : tout l'historique (archives comprises), à partir de --since ; les N derniers sans --since.
 events() {
@@ -68,7 +68,10 @@ for p in $LOOMY_PHASES "done"; do i=$(( i + 1 )); PHASEMAP="$PHASEMAP$p=$i:$(loo
 
 pretty() {
   awk -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
-      -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" '
+      -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
+      -v T_START="$(t "démarre")" -v T_IN="$(t "en ")" -v T_FAIL="$(t "échec après ")" -v T_DONE="$(t "Bootstrap terminé")" \
+      -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "réponse(s)")" -v T_SUB="$(t "sous-agent")" \
+      -v T_OPEN="$(t "Session ouverte")" -v T_CLOSED="$(t "Session fermée")" '
     BEGIN { n = split(pm, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") { split(a[i], kv, "="); split(kv[2], il, ":"); idx[kv[1]] = il[1]; lab[kv[1]] = il[2] } }
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
@@ -78,17 +81,17 @@ pretty() {
     function tool(t) { return t == "codex" ? "Codex" : "Claude Code" }
     {
       t = D hm(field("ts")) Z; ty = field("type")
-      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %sdémarre%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, Z, D, cut(field("task"), 48), Z
+      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s$%.4f%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? "en " : "échec après ") dur(num("duration_s")), Z, D, num("cost_usd"), Z, D, cut(field("task"), 36), Z
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s$%.4f%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, num("cost_usd"), Z, D, cut(field("task"), 36), Z
       }
-      else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ Bootstrap terminé%s\n", t, G B, Z; else printf "%s  %s▲ Phase %s/10 · %s%s\n", t, P, idx[ph], lab[ph], Z }
+      else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {
-        if (field("scope") == "lead") printf "%s  %s◆%s %-10s %s%-16s%s %s%d réponse(s)%s  %s$%.4f%s\n", t, P, Z, "lead", D, field("model"), Z, D, num("messages"), Z, D, num("cost_usd"), Z
-        else printf "%s  %s◇%s %-10s %s%-16s%s %ssous-agent%s  %s$%.4f%s\n", t, P, Z, cut(field("agent"), 10), D, field("model"), Z, D, Z, D, num("cost_usd"), Z
+        if (field("scope") == "lead") printf "%s  %s◆%s %-10s %s%-16s%s %s%d %s%s  %s$%.4f%s\n", t, P, Z, "lead", D, field("model"), Z, D, num("messages"), T_REPLIES, Z, D, num("cost_usd"), Z
+        else printf "%s  %s◇%s %-10s %s%-16s%s %s%s%s  %s$%.4f%s\n", t, P, Z, cut(field("agent"), 10), D, field("model"), Z, D, T_SUB, Z, D, num("cost_usd"), Z
       }
-      else if (ty == "session") printf "%s  %s %s\n", t, (field("event") == "start" ? G "●" Z " Session ouverte" : D "○ Session fermée" Z), D "(" tool(field("tool")) ")" Z
+      else if (ty == "session") printf "%s  %s %s\n", t, (field("event") == "start" ? G "●" Z " " T_OPEN : D "○ " T_CLOSED Z), D "(" tool(field("tool")) ")" Z
       else printf "%s  %s· %s%s\n", t, D, ty, Z
       fflush()
     }'

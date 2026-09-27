@@ -9,6 +9,12 @@
 #   plan_claude_price  prix mensuel en $ (remplace le prix par défaut du forfait)
 #   plan_codex_price   idem pour le forfait ChatGPT/Codex
 
+# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait.
+if ! declare -F t >/dev/null 2>&1; then
+  # shellcheck source=i18n.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
+fi
+
 loomy_config_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"; }
 
 # loomy_config_get <clé> [défaut]
@@ -51,18 +57,18 @@ ai_plan_price() {
 
 ai_plan_label() {
   case "$1:$2" in
-    claude:api|codex:api) echo "API (paiement à l'usage)" ;;
-    claude:pro) echo "Claude Pro" ;;
-    claude:max5) echo "Claude Max 5x" ;;
-    claude:max20) echo "Claude Max 20x" ;;
-    claude:team) echo "Claude Team" ;;
-    claude:enterprise) echo "Claude Enterprise" ;;
-    codex:plus) echo "ChatGPT Plus" ;;
+    claude:api|codex:api) t "API (paiement à l'usage)"; echo ;;
+    claude:pro) t "Claude Pro"; echo ;;
+    claude:max5) t "Claude Max 5x"; echo ;;
+    claude:max20) t "Claude Max 20x"; echo ;;
+    claude:team) t "Claude Team"; echo ;;
+    claude:enterprise) t "Claude Enterprise"; echo ;;
+    codex:plus) t "ChatGPT Plus"; echo ;;
     codex:pro100) echo "ChatGPT Pro (100 $)" ;;
     codex:pro200) echo "ChatGPT Pro (200 $)" ;;
-    codex:business) echo "ChatGPT Business" ;;
-    codex:enterprise) echo "ChatGPT Enterprise" ;;
-    *) echo "non renseigné" ;;
+    codex:business) t "ChatGPT Business"; echo ;;
+    codex:enterprise) t "ChatGPT Enterprise"; echo ;;
+    *) t "non renseigné"; echo ;;
   esac
 }
 

@@ -7,15 +7,21 @@
 #   private    exclus du dépôt du projet et versionnés dans un dépôt privé séparé (.loomy/ai.git),
 #              qui suit uniquement ces fichiers, directement dans le dossier du projet
 
+# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait.
+if ! declare -F t >/dev/null 2>&1; then
+  # shellcheck source=i18n.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
+fi
+
 LOOMY_AI_PATHS=".loomy START.md AGENTS.md CLAUDE.md .ai .claude .codex"
 PRIVACY_BEGIN="# >>> loomy : fichiers IA hors du dépôt (loomy privacy)"
 PRIVACY_END="# <<< loomy"
 
 privacy_label() {
   case "$1" in
-    local) echo "locaux uniquement" ;;
-    private) echo "dépôt privé séparé" ;;
-    *) echo "versionnés avec le projet" ;;
+    local) t "locaux uniquement"; echo ;;
+    private) t "dépôt privé séparé"; echo ;;
+    *) t "versionnés avec le projet"; echo ;;
   esac
 }
 

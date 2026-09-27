@@ -10,6 +10,12 @@
 
 # Nombres au format C (point décimal) quelle que soit la langue du système : awk et printf lisent et écrivent
 # les coûts avec un point. Le reste de la locale (UTF-8, messages) est conservé.
+# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait.
+if ! declare -F t >/dev/null 2>&1; then
+  # shellcheck source=i18n.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
+fi
+
 if [[ -n "${LC_ALL:-}" ]]; then export LC_CTYPE="$LC_ALL"; unset LC_ALL; fi
 export LC_NUMERIC=C
 # Texte : sans locale UTF-8, bash couperait les caractères accentués en deux. On en choisit une si besoin.
@@ -148,24 +154,24 @@ AI_EFFORTS="low medium high xhigh max ultra"
 
 ai_role_label() {
   case "$1" in
-    lead) echo "Orchestrateur (lead)" ;; architect) echo "Architecte" ;; debugger) echo "Débogueur" ;;
-    security) echo "Sécurité" ;; reviewer) echo "Relecteur" ;; developer) echo "Développeur" ;;
-    executor) echo "Exécutant" ;; explorer) echo "Explorateur" ;; documenter) echo "Documentaliste" ;;
+    lead) t "Orchestrateur (lead)"; echo ;; architect) t "Architecte"; echo ;; debugger) t "Débogueur"; echo ;;
+    security) t "Sécurité"; echo ;; reviewer) t "Relecteur"; echo ;; developer) t "Développeur"; echo ;;
+    executor) t "Exécutant"; echo ;; explorer) t "Explorateur"; echo ;; documenter) t "Documentaliste"; echo ;;
     *) echo "$1" ;;
   esac
 }
 
 ai_role_scope() {
   case "$1" in
-    lead) echo "plan, découpage, délégation, décisions, intégration, vérification finale" ;;
-    architect) echo "architecture, specs, ADR, arbitrages" ;;
-    debugger) echo "bugs difficiles, tâches longues en terminal, migrations" ;;
-    security) echo "revue sécurité ciblée (auth, paiements, données, secrets)" ;;
-    reviewer) echo "revue de diff : régressions, cas limites, tests manquants" ;;
-    developer) echo "features et correctifs courants dans un périmètre donné" ;;
-    executor) echo "tickets précis et bornés, tests, modifications en masse" ;;
-    explorer) echo "recherche dans le code, cartographie, résumés, logs" ;;
-    documenter) echo "README, docs, changelogs" ;;
+    lead) t "plan, découpage, délégation, décisions, intégration, vérification finale"; echo ;;
+    architect) t "architecture, specs, ADR, arbitrages"; echo ;;
+    debugger) t "bugs difficiles, tâches longues en terminal, migrations"; echo ;;
+    security) t "revue sécurité ciblée (auth, paiements, données, secrets)"; echo ;;
+    reviewer) t "revue de diff : régressions, cas limites, tests manquants"; echo ;;
+    developer) t "features et correctifs courants dans un périmètre donné"; echo ;;
+    executor) t "tickets précis et bornés, tests, modifications en masse"; echo ;;
+    explorer) t "recherche dans le code, cartographie, résumés, logs"; echo ;;
+    documenter) t "README, docs, changelogs"; echo ;;
   esac
 }
 
@@ -411,14 +417,14 @@ ai_detect_env() {
 
 ai_env_label() {
   case "$1" in
-    claude) echo "Full Claude Code" ;; codex) echo "Full Codex" ;;
-    hybrid-claude) echo "Hybride, lead Claude Code" ;; hybrid-codex) echo "Hybride, lead Codex" ;;
+    claude) t "Full Claude Code"; echo ;; codex) t "Full Codex"; echo ;;
+    hybrid-claude) t "Hybride, lead Claude Code"; echo ;; hybrid-codex) t "Hybride, lead Codex"; echo ;;
     *) echo "$1" ;;
   esac
 }
 
 ai_profile_label() {
-  case "$1" in econome) echo "Économe" ;; equilibre) echo "Équilibré" ;; qualite) echo "Qualité max" ;; *) echo "$1" ;; esac
+  case "$1" in econome) t "Économe"; echo ;; equilibre) t "Équilibré"; echo ;; qualite) t "Qualité max"; echo ;; *) echo "$1" ;; esac
 }
 
 # ai_start_prompt <mode> <lead> : prompt de démarrage du bootstrap pour l'orchestrateur (questionnaire et loomy start).

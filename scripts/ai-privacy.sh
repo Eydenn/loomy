@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Visibilité des fichiers IA du projet (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Compatible bash 3.2.
-#   loomy privacy                          état : mode, fichiers encore suivis, dépôt privé
-#   loomy privacy versioned                versionnés avec le projet
-#   loomy privacy local                    exclus de Git sur cette machine (invisibles dans le dépôt)
-#   loomy privacy private [--name NOM | --remote URL]   exclus du projet, sauvegardés dans un dépôt privé séparé
-#   loomy privacy sync                     sauvegarde les fichiers IA dans le dépôt privé
-#   loomy privacy restore <URL|compte/dépôt>   récupère les fichiers IA sur une autre machine
+# Visibility of the project's AI files (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Bash 3.2 compatible.
+#   loomy privacy                          status: mode, files still tracked, private repository
+#   loomy privacy versioned                versioned with the project
+#   loomy privacy local                    excluded from Git on this machine (invisible in the repository)
+#   loomy privacy private [--name NAME | --remote URL]   excluded from the project, backed up in a separate private repository
+#   loomy privacy sync                     backs up the AI files to the private repository
+#   loomy privacy restore <URL|account/repo>   gets the AI files back on another machine
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,28 +25,28 @@ while [[ $# -gt 0 ]]; do
     --quiet) QUIET=1 ;;
     versioned|local|private|sync|apply|show) CMD="$1" ;;
     restore) CMD="restore"; ARG="${2:-}"; [[ $# -gt 1 ]] && shift ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s (loomy privacy --help)" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
-# Sur une nouvelle machine, .loomy n'existe pas encore (hors du dépôt) : seul restore peut s'en passer.
+# On a new machine, .loomy doesn't exist yet (outside the repository): only restore can do without it.
 if [[ "$CMD" == "restore" ]]; then mkdir -p "$ROOT/.loomy"
 elif [[ ! -d "$ROOT/.loomy" ]]; then t "No Loomy project in %s: loomy init first (or loomy privacy restore <account/repo> to recover its AI files)." "${ROOT/#$HOME/~}" >&2; echo >&2; exit 1; fi
 GIT_ROOT="$(privacy_git_root "$ROOT")"
 MODE="$(privacy_mode "$ROOT")"
-# Nom du dépôt privé : celui du projet (slug du brief), pour que tout porte le même nom.
+# Private repository name: the project's (brief slug), so that everything has the same name.
 NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^slug:[[:space:]]*//p' | head -1 || true)"
 if [[ -z "$NAME" ]]; then
   NAME="$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^name:[[:space:]]*//p' | head -1 | sed 's/^"//; s/"$//' || true)"
   NAME="$(loomy_slug "${NAME:-$(basename "$ROOT")}")"
 fi
-# Nom du dépôt privé : --name, sinon celui du brief (validé dans le questionnaire), sinon <projet>-ai.
+# Private repository name: --name, otherwise the brief's (validated in the questionnaire), otherwise <project>-ai.
 AI_REPO="${AI_REPO_OPT:-$(sed -n '/^---$/,/^---$/p' "$ROOT/.loomy/brief.md" 2>/dev/null | sed -n 's/^ai_repo_name:[[:space:]]*//p' | head -1 || true)}"
 AI_REPO="${AI_REPO:-$NAME-ai}"
 
-# ---------------------------------------------------------------- dépôt privé séparé
+# ---------------------------------------------------------------- separate private repository
 create_companion() {
   local url="$REMOTE" owner
   if privacy_companion_ready "$ROOT"; then return 0; fi
@@ -57,7 +57,7 @@ create_companion() {
     fi
     owner="$(gh api user --jq .login 2>/dev/null || true)"
     [[ -n "$owner" ]] || { ui_err "$(t "GitHub account not found")" "$(t "gh auth login")"; return 1; }
-    # Nom proposé à validation, modifiable (sauf s'il vient déjà de --name ou du questionnaire).
+    # Name offered for approval, editable (unless it already comes from --name or the questionnaire).
     if [[ -z "$AI_REPO_OPT" && "$CMD" != "apply" ]] && ui_is_interactive; then
       UI_LABEL="$(t "Private repository")"
       UI_HINT="$(t "Private GitHub repository that will only hold the AI files.")"
@@ -89,7 +89,7 @@ do_sync() {
     msg="loomy : fichiers IA du $(date '+%Y-%m-%d %H:%M')"
     ai_git "$ROOT" commit -q -m "$msg"
   fi
-  # Une autre machine a pu sauvegarder entre-temps : on rejoue nos changements par-dessus les siens.
+  # Another machine may have backed up in the meantime: we replay our changes on top of theirs.
   if ai_git "$ROOT" ls-remote --exit-code origin main >/dev/null 2>&1; then
     ai_git "$ROOT" fetch -q origin
     if ! ai_git "$ROOT" rebase -q origin/main >/dev/null 2>&1; then
@@ -170,7 +170,7 @@ case "$CMD" in
     ui_end "$(t "status: loomy privacy")$( [[ "$CMD" == private ]] && echo " · $(t "backup: loomy privacy sync")")"
     ;;
   apply)
-    # Utilisé par le questionnaire : applique le mode du brief, sans en-tête.
+    # Used by the questionnaire: applies the brief's mode, without header.
     apply_mode "$MODE" || exit 1
     ;;
   sync)
@@ -184,7 +184,7 @@ case "$CMD" in
     if [[ "$ARG" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "$ARG" ]]; then url="https://github.com/$ARG.git"; fi
     git clone --bare -q "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
     privacy_companion_config "$ROOT"
-    # Fichiers déjà présents : identiques, on les garde ; différents, ils sont mis de côté avant la restauration.
+    # Files already present: identical ones are kept; different ones are set aside before restoring.
     backup="$ROOT/.loomy/restore-backup-$(date +%Y%m%d-%H%M%S)"; moved=0
     while IFS= read -r f; do
       [[ -e "$ROOT/$f" ]] || continue

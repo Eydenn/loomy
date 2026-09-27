@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Contexte de reprise pour l'orchestrateur, en début de session. Compatible bash 3.2.
-#   ai-context.sh               affiche le contexte (Codex le lit en début de session, voir AGENTS.md)
-#   ai-context.sh --hook start  hook SessionStart de Claude Code : note l'ouverture de la session, puis affiche le contexte
-#   ai-context.sh --hook end    hook SessionEnd de Claude Code : note la fermeture ; en mode dépôt privé, sauvegarde les fichiers IA
-#   ai-context.sh --hook stop     hook Stop de Claude Code : coût réel du tour de l'orchestrateur (journal « usage »)
-#   ai-context.sh --hook subagent  hook SubagentStop : coût réel d'un sous-agent natif
-#   --tool codex                 mêmes hooks pour Codex (.codex/hooks.json)
-# Ne bloque jamais une session : en cas de problème, il se tait.
+# Resume context for the lead agent, at session start. Bash 3.2 compatible.
+#   ai-context.sh               prints the context (Codex reads it at session start, see AGENTS.md)
+#   ai-context.sh --hook start  Claude Code SessionStart hook: records the session opening, then prints the context
+#   ai-context.sh --hook end    Claude Code SessionEnd hook: records the closing; in private repository mode, backs up the AI files
+#   ai-context.sh --hook stop     Claude Code Stop hook: real cost of the lead agent's turn ("usage" log entry)
+#   ai-context.sh --hook subagent  SubagentStop hook: real cost of a native subagent
+#   --tool codex                 same hooks for Codex (.codex/hooks.json)
+# Never blocks a session: if anything goes wrong, it stays silent.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,21 +25,21 @@ while [[ $# -gt 0 ]]; do
     --hook) HOOK="${2:-}"; shift ;;
     --root) ROOT="${2:-}"; shift ;;
     --tool) TOOL="${2:-claude}"; shift ;;
-    -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
   esac
   shift
 done
-# Script copié dans <projet>/.loomy/scripts : le projet est deux dossiers au-dessus.
+# Script copied into <project>/.loomy/scripts: the project is two folders up.
 if [[ -z "$ROOT" && "$(basename "$(dirname "$SCRIPT_DIR")")" == ".loomy" ]]; then ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"; fi
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" 2>/dev/null && pwd -P)" || exit 0
 [[ -f "$ROOT/.loomy/brief.md" ]] || exit 0
 
-# ---------------------------------------------------------------- hooks : ouverture et fermeture de session
+# ---------------------------------------------------------------- hooks: session opening and closing
 if [[ -n "$HOOK" ]]; then
   input=""; [[ -t 0 ]] || input="$(cat 2>/dev/null || true)"
-  # Session lancée par un bridge Loomy (claude -p) : déjà journalisée comme délégation, coût compris.
+  # Session started by a Loomy bridge (claude -p): already logged as a delegation, cost included.
   [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0
-  # Fin de tour de l'orchestrateur, fin d'un sous-agent natif : coût réel lu dans la transcription, rien à afficher.
+  # End of a lead agent turn, end of a native subagent: real cost read from the transcript, nothing to print.
   if [[ "$HOOK" == "stop" || "$HOOK" == "subagent" ]]; then
     jget() { printf '%s' "$input" | sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | head -1; }
     if [[ "$HOOK" == "stop" ]]; then ai_usage_record "$ROOT" "$(jget transcript_path)" lead
@@ -48,7 +48,7 @@ if [[ -n "$HOOK" ]]; then
   fi
   sid="$(printf '%s' "$input" | sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p' | head -1)"
   src="$(printf '%s' "$input" | sed -n 's/.*"source" *: *"\([^"]*\)".*/\1/p' | head -1)"
-  # Processus de l'agent (ancêtre du hook) : sa présence dit si la session est encore ouverte.
+  # Agent process (ancestor of the hook): its presence tells whether the session is still open.
   pid=$PPID; p=$PPID; i=0
   while (( i < 6 )) && [[ -n "$p" && "$p" != "1" ]]; do
     case "$(ps -o comm= -p "$p" 2>/dev/null)" in *"$TOOL"*) pid=$p; break ;; esac
@@ -59,7 +59,7 @@ if [[ -n "$HOOK" ]]; then
       ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"$TOOL\",\"session\":$(ai_json_str "$sid"),\"source\":$(ai_json_str "$src"),\"pid\":$pid" ;;
     end)
       ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"$TOOL\",\"session\":$(ai_json_str "$sid"),\"pid\":$pid"
-      # Budget de fin de session très court : la sauvegarde part en arrière-plan.
+      # Very short end-of-session budget: the backup runs in the background.
       if [[ "$(privacy_mode "$ROOT")" == "private" ]] && privacy_companion_ready "$ROOT"; then
         nohup bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" sync --quiet >/dev/null 2>&1 &
       fi
@@ -75,30 +75,30 @@ UPDATED="$(sed -n 's/^updated=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 ||
 [[ -z "$PHASE" ]] && PHASE="brief"
 idx="$(loomy_phase_index "$PHASE")"
 
-echo "[Loomy] Contexte de reprise du projet « $(brief name) »$( [[ -n "$(brief slug)" ]] && echo " ($(brief slug))")."
+t "[Loomy] Resume context for project \"%s\"%s." "$(brief name)" "$( [[ -n "$(brief slug)" ]] && echo " ($(brief slug))")"; echo
 if [[ "$PHASE" == "done" ]]; then
-  echo "- Bootstrap terminé : START.md n'a plus d'autorité. Suis AGENTS.md et CLAUDE.md ; tu restes l'orchestrateur."
+  t "- Bootstrap finished: START.md no longer has authority. Follow AGENTS.md and CLAUDE.md; you remain the lead agent."; echo
 else
-  echo "- Bootstrap en cours, phase $idx sur 10 : $(loomy_phase_label "$PHASE")${UPDATED:+ (depuis $UPDATED)}. $(loomy_phase_agent "$PHASE")"
-  echo "- Reprends START.md à partir de cette phase. Enregistre chaque changement de phase, avant toute autre action : .loomy/scripts/ai-status.sh set <phase>."
-  echo "- Ce que l'utilisateur doit faire maintenant : $(loomy_phase_you "$PHASE")"
+  t "- Bootstrap in progress, phase %s of 10: %s%s. %s" "$idx" "$(loomy_phase_label "$PHASE")" "${UPDATED:+ ($(t "since %s" "$UPDATED"))}" "$(loomy_phase_agent "$PHASE")"; echo
+  t "- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>."; echo
+  t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
 fi
-echo "- Brief (.loomy/brief.md) : mode $(brief ai_mode), lead $(brief ai_lead), profil $(brief budget), risque $(brief risk). Routage des rôles : .loomy/scripts/ai-route.sh ; délégations : .loomy/scripts/delegate-to-claude.sh et delegate-to-codex.sh."
+t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
 J="$(ai_journal_file "$ROOT")"
 if [[ -s "$J" ]] && grep -q '"type":"delegation",' "$J" 2>/dev/null; then
   last="$(grep '"type":"delegation",' "$J" | tail -3 | sed -n 's/.*"role":"\([^"]*\)".*"model":"\([^"]*\)".*"status":"\([^"]*\)".*/\1 (\2, \3)/p' | paste -sd ',' - | sed 's/,/, /g')"
-  [[ -n "$last" ]] && echo "- Dernières délégations : $last."
+  [[ -n "$last" ]] && { t "- Latest delegations: %s." "$last"; echo; }
 fi
 if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  br="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || echo "détachée")"
+  br="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  echo "- Git : branche $br, $dirty fichier(s) modifié(s) non commité(s)."
+  t "- Git: branch %s, %s modified file(s) not committed." "$br" "$dirty"; echo
 fi
 case "$(privacy_mode "$ROOT")" in
-  local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f)." ;;
-  private) echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne pas dans le dépôt du projet ; sauvegarde-les en fin d'étape avec .loomy/scripts/ai-privacy.sh sync." ;;
+  local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f)."; echo ;;
+  private) t "- AI files in a separate private repository: don't version them in the project repository; back them up at the end of each step with .loomy/scripts/ai-privacy.sh sync."; echo ;;
 esac
-echo "- Délégations : lance toujours les bridges au premier plan et attends leur fin (en arrière-plan, elles s'arrêtent si la session se ferme). Annonce chacune en une ligne avant (rôle, modèle, tâche, durée indicative) et après (résultat, durée)."
-echo "- Changement de phase : annonce-le sur une ligne « Phase n/10 · Nom », puis ce que tu fais et ce que tu attends de l'utilisateur."
-echo "- Pour commencer : dis à l'utilisateur, en une ou deux phrases, où en est le projet et ce que tu proposes de faire maintenant."
+t "- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration)."; echo
+t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
+t "- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now."; echo
 exit 0

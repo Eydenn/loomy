@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Doublure de gh pour tests/run.sh : compte « testeur », dépôts créés en local, aucun appel réseau.
-#   GH_STUB_REMOTES=dossier   où créer les dépôts (les tests y redirigent https://github.com/ avec git insteadOf)
+# gh test double for tests/run.sh: "testeur" account, repositories created locally, no network call.
+#   GH_STUB_REMOTES=folder    where to create the repositories (tests redirect https://github.com/ there with git insteadOf)
 #   STUB_LOG=fichier          note chaque appel
 set -u
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'gh\t%s\n' "$*") >>"$STUB_LOG"; fi

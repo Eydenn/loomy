@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # bibliothèque chargée par d'autres scripts
-# Phases du bootstrap Loomy : libellé, ce que fait l'agent, ce que l'utilisateur doit faire.
-# Source unique pour loomy status, loomy watch et loomy start. À charger (source). Compatible bash 3.2.
+# shellcheck disable=SC2034  # library sourced by other scripts
+# Loomy bootstrap phases: label, what the agent does, what the user must do.
+# Single source for loomy status, loomy watch and loomy start. To be sourced. Bash 3.2 compatible.
 
-# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait (hooks, contexte).
+# Translated strings (t): the language layer is loaded if the script hasn't done it already (hooks, context).
 if ! declare -F t >/dev/null 2>&1; then
   # shellcheck source=i18n.sh
   source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
@@ -38,7 +38,7 @@ loomy_phase_agent() {
   esac
 }
 
-# loomy_phase_you <phase> : ce que l'utilisateur doit faire (à afficher comme « À toi : … »).
+# loomy_phase_you <phase>: what the user must do (shown as "Your turn: …").
 loomy_phase_you() {
   case "$1" in
     ""|brief) t "start the lead agent with loomy start."; echo ;;
@@ -56,7 +56,7 @@ loomy_phase_you() {
   esac
 }
 
-# loomy_phase_index <phase> : rang de la phase (1 à 10), 0 si inconnue, 11 si terminé.
+# loomy_phase_index <phase>: rank of the phase (1 to 10), 0 when unknown, 11 when finished.
 loomy_phase_index() {
   local p i=0
   [[ "$1" == "done" ]] && { echo 11; return 0; }
@@ -64,8 +64,8 @@ loomy_phase_index() {
   echo 0
 }
 
-# loomy_you_now <phase> <état de session> : consigne pour l'utilisateur, adaptée à la session de l'orchestrateur.
-# Tant qu'aucune session n'est ouverte, la seule chose utile est de l'ouvrir (ou de la rouvrir).
+# loomy_you_now <phase> <session state>: instruction for the user, adapted to the lead agent session.
+# As long as no session is open, the only useful thing is to open it (or reopen it).
 loomy_you_now() {
   case "$1" in done) loomy_phase_you "$1"; return 0 ;; esac
   case "$2" in

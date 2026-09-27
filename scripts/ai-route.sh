@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Routage modèle / effort par rôle pour ce projet. Compatible bash 3.2.
+# Model / effort routing per role for this project. Bash 3.2 compatible.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,24 +9,24 @@ source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 
 usage() {
-  cat >&2 <<'EOF'
+  i18n_lines >&2 <<'EOF'
 Usage: ai-route.sh [options] [command]
 
-Commandes :
-  (aucune)              Affiche la matrice rôle → modèle / effort / outil pour ce projet
-  get <rôle>            Une ligne "famille modèle effort" (pour les scripts)
-  markdown              Matrice au format Markdown (pour .ai/AI_MODEL_ROUTING.md)
-  all                   Matrice des 4 environnements côte à côte (Markdown)
-  claude-agents [DIR]   Génère les sous-agents Claude Code (défaut : <projet>/.claude/agents)
-  codex-profiles        Extrait TOML des profils Codex par rôle (à ajouter à ~/.codex/config.toml)
-  lead                  Commande de lancement de la session principale (orchestrateur)
+Commands:
+  (none)                Shows the role → model / effort / tool matrix for this project
+  get <role>            One "family model effort" line (for scripts)
+  markdown              Matrix as Markdown (for .ai/AI_MODEL_ROUTING.md)
+  all                   Matrix of the 4 environments side by side (Markdown)
+  claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)
+  codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)
+  lead                  Launch command of the main session (lead agent)
 
-Options :
-  --root DIR            Projet (défaut : projet courant)
-  --env ENV             claude | codex | hybrid-claude | hybrid-codex (défaut : détecté)
-  --profile P           econome | equilibre | qualite (défaut : brief, sinon equilibre)
+Options:
+  --root DIR            Project (default: current project)
+  --env ENV             claude | codex | hybrid-claude | hybrid-codex (default: detected)
+  --profile P           econome | equilibre | qualite (default: brief, otherwise equilibre)
 
-Rôles : lead architect debugger security reviewer developer executor explorer documenter
+Roles: lead architect debugger security reviewer developer executor explorer documenter
 EOF
 }
 
@@ -73,7 +73,7 @@ case "$CMD" in
     echo "Environnement : **$(ai_env_label "$AI_ENV")** · profil **$(ai_profile_label "$AI_PROFILE")** · catalogue du $AI_CATALOG_DATE"
     [[ -n "$AI_ENV_NOTE" ]] && echo "" && echo "> Repli : $AI_ENV_NOTE"
     echo ""
-    echo "| Rôle | Périmètre | Outil | Modèle | Effort | Comment l'appeler |"
+    t "| Role | Scope | Tool | Model | Effort | How to call it |"; echo
     echo "|---|---|---|---|---|---|"
     for r in $AI_ROLES; do
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
@@ -86,7 +86,7 @@ case "$CMD" in
   all)
     echo "Profil **$(ai_profile_label "$AI_PROFILE")**"
     echo ""
-    echo "| Rôle | Full Claude Code | Full Codex | Hybride, lead Claude | Hybride, lead Codex |"
+    t "| Role | Full Claude Code | Full Codex | Hybrid, Claude lead | Hybrid, Codex lead |"; echo
     echo "|---|---|---|---|---|"
     for r in $AI_ROLES; do
       line="| $(ai_role_label "$r") |"
@@ -101,10 +101,10 @@ case "$CMD" in
   claude-agents)
     dest="${ARG:-$ROOT/.claude/agents}"
     tpl_dir="$SCRIPT_DIR/../templates/claude-agents"
-    [[ -d "$tpl_dir" ]] || { echo "Modèles d'agents introuvables : $tpl_dir" >&2; exit 1; }
+    [[ -d "$tpl_dir" ]] || { t "Agent templates not found: %s" "$tpl_dir" >&2; echo >&2; exit 1; }
     lead="${AI_ENV#hybrid-}"
     if [[ "$lead" != "claude" ]]; then
-      echo "Lead Codex : pas de sous-agent Claude natif. Les rôles Claude passent par delegate-to-claude.sh." >&2
+      t "Codex lead: no native Claude subagent. Claude roles go through delegate-to-claude.sh." >&2; echo >&2
       exit 0
     fi
     mkdir -p "$dest"
@@ -119,7 +119,7 @@ case "$CMD" in
     ;;
 
   codex-profiles)
-    echo "# Loomy — profils Codex par rôle (profil $(ai_profile_label "$AI_PROFILE"), catalogue du $AI_CATALOG_DATE)"
+    printf '# '; t "Loomy — Codex profiles per role (profile %s, catalog from %s)" "$(ai_profile_label "$AI_PROFILE")" "$AI_CATALOG_DATE"; echo
     echo "# Usage : codex --profile ai-lead | ai-developer | …"
     for r in $AI_ROLES; do
       ai_route "$r" codex "$AI_PROFILE"

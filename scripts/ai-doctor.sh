@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # UI_* are read by lib/ui.sh
-# Diagnostic de l'environnement pour Loomy : prérequis minimum et idéaux, disponibilité des modèles,
-# test réel facultatif de chaque modèle routé, et corrections guidées. Compatible bash 3.2.
+# Environment check for Loomy: minimum and ideal requirements, model availability,
+# optional real test of each routed model, and guided fixes. Bash 3.2 compatible.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,15 +15,15 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 
 usage() {
-  cat >&2 <<'EOF'
+  i18n_lines >&2 <<'EOF'
 Usage: ai-doctor.sh [--root DIR] [--fix] [--live] [--compact]
 
-  --fix       Propose et applique les corrections possibles (avec confirmation)
-  --live      Teste chaque modèle de la matrice par un appel minimal réel (quelques centimes)
-  --compact   Affichage court (utilisé par le questionnaire)
-  --root DIR  Projet à analyser (défaut : projet courant)
+  --fix       Offers and applies the possible fixes (with confirmation)
+  --live      Tests each model of the matrix with a real minimal call (a few cents)
+  --compact   Short output (used by the questionnaire)
+  --root DIR  Project to check (default: current project)
 
-Code de sortie : 0 si le minimum est atteint, 1 sinon.
+Exit code: 0 when the minimum is met, 1 otherwise.
 EOF
 }
 
@@ -45,12 +45,12 @@ if [[ -z "$ROOT" ]]; then
 fi
 ROOT="$(cd "$ROOT" && pwd)"
 
-MIN_OK=1          # prérequis minimum atteints
-IDEAL_MISSING=""  # éléments idéaux manquants, séparés par des virgules
+MIN_OK=1          # minimum requirements met
+IDEAL_MISSING=""  # missing ideal items, comma separated
 
 missing_ideal() { IDEAL_MISSING="${IDEAL_MISSING:+$IDEAL_MISSING, }$1"; }
 
-# offer_fix <question> <commande...> : demande, puis lance la commande. Renvoie 0 si elle est appliquée.
+# offer_fix <question> <command...>: asks, then runs the command. Returns 0 when it was applied.
 offer_fix() {
   local q="$1"; shift
   if (( ! FIX )) || ! ui_is_interactive; then ui_info "$(t "fix: %s" "$*")"; return 1; fi
@@ -63,14 +63,14 @@ offer_fix() {
   return 1
 }
 
-# install_hint <commande recommandée> <alternative> <connexion> : commandes officielles d'installation d'une CLI absente.
+# install_hint <recommended command> <alternative> <login>: official install commands of a missing CLI.
 install_hint() {
   ui_rail "    ${C_DIM}$(t "install:")${C_RESET} ${C_BOLD}$1${C_RESET}"
   ui_rail "    ${C_DIM}$(t "or:     ")${C_RESET} $2"
   ui_rail "    ${C_DIM}$(t "then:   ")${C_RESET} $3"
 }
 
-# Diagnostic seul : sortie normale ; avec --fix (questions), écran de Loomy.
+# Check only: normal output; with --fix (questions), Loomy screen.
 (( COMPACT )) || (( ! FIX )) || ui_clear
 (( COMPACT )) || ui_banner "$(t "Diagnostics")" "$(t "Prerequisites, models and fixes") · $(t "catalog from %s" "$AI_CATALOG_DATE")"
 
@@ -81,7 +81,7 @@ if (( ! COMPACT )) && [[ -x "$LOOMY_BIN" ]]; then
   "$LOOMY_BIN" version --all >/dev/null || true
 fi
 
-# ---------------------------------------------------------------- système
+# ---------------------------------------------------------------- system
 ui_section "$(t "SYSTEM")"
 ui_ok "bash ${BASH_VERSION%%(*}" "$(uname -s)"
 if command -v git >/dev/null 2>&1; then
@@ -119,7 +119,7 @@ if [[ -n "$CODEX_BIN" ]]; then
   else
     ui_warn "codex ${v:-?}" "$(t "found in %s but not in the PATH" "$CODEX_BIN")"
     mkdir -p "$HOME/.local/bin"
-    # Un petit script, pas un lien : la CLI livrée cherche ses programmes auxiliaires à côté du chemin par lequel on l'appelle.
+    # A small script, not a link: the shipped CLI looks for its helper programs next to the path it is called by.
     if offer_fix "$(t "Make the Codex CLI reachable (small ~/.local/bin/codex script)?")" \
          sh -c 'printf "#!/bin/sh\nexec \"%s\" \"\$@\"\n" "$1" > "$HOME/.local/bin/codex" && chmod +x "$HOME/.local/bin/codex"' _ "$CODEX_BIN"; then
       case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) ui_warn "$(t "%s not in the PATH" "$HOME/.local/bin")" "$(t "add:") export PATH=\"\$HOME/.local/bin:\$PATH\"" ;; esac
@@ -158,8 +158,8 @@ fi
 
 # ---------------------------------------------------------------- confort
 ui_section "$(t "COMFORT")" "$(t "optional")"
-# GitHub : gh installé, connecté, et git qui s'authentifie avec lui (dépôts privés, dont le tap Loomy).
-# Avec --fix, les trois étapes s'enchaînent.
+# GitHub: gh installed, logged in, and git authenticating with it (private repositories, including the Loomy tap).
+# With --fix, the three steps run one after the other.
 if ! command -v gh >/dev/null 2>&1; then
   ui_warn "$(t "gh missing")" "$(t "useful to create GitHub repositories and install Loomy from the private tap")"
   if command -v brew >/dev/null 2>&1 && offer_fix "$(t "Install gh (brew install gh)?")" ui_external brew install gh; then :; else missing_ideal "gh"; fi
@@ -172,8 +172,8 @@ if command -v gh >/dev/null 2>&1; then
   fi
   if (( gh_ok )); then
     ui_ok "gh" "$(t "logged in to GitHub")"
-    # Accès réel de git au dépôt de Loomy (privé pendant la pré-version) : c'est ce dont le tap Homebrew a besoin.
-    # Pas dans le diagnostic de loomy init (--compact) : sans rapport avec le projet créé.
+    # Real git access to the Loomy repository (private during the pre-release): that's what the Homebrew tap needs.
+    # Not in the loomy init check (--compact): unrelated to the project being created.
   fi
   if (( gh_ok )) && (( ! COMPACT )); then
     loomy_repo="https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}.git"
@@ -196,7 +196,7 @@ else
   ui_info "$(t "clipboard unavailable (wl-copy or xclip on Linux)")"
 fi
 
-# ---------------------------------------------------------------- préférences
+# ---------------------------------------------------------------- preferences
 ui_section "$(t "PREFERENCES")" "$(t "loomy config")"
 for fam in claude codex; do
   name="$(t "Claude plan")"; [[ "$fam" == "codex" ]] && name="$(t "Codex plan")"
@@ -214,7 +214,7 @@ if [[ -n "$age" ]] && (( age > 60 )); then ui_warn "$(t "catalog from %s" "$AI_C
 else ui_ok "$(t "catalog from %s" "$AI_CATALOG_DATE")" "$(t "$AI_CATALOG_SOURCE")"; fi
 newcat="$(bash "$SCRIPT_DIR/ai-catalog-check.sh" 2>/dev/null || true)"
 [[ -n "$newcat" ]] && ui_warn "catalogue du $newcat publié" "$(t "loomy update --catalog")"
-# Modèles d'une chaîne refusés sur cette machine (repli en cours) : à retester après un changement de forfait.
+# Models of a chain refused on this machine (fallback in progress): to test again after a plan change.
 ko="$(grep '=ko$' "$(ai_models_state_file)" 2>/dev/null | cut -d= -f1 | paste -sd ',' - | sed 's/,/, /g' || true)"
 [[ -n "$ko" ]] && ui_info "$(t "unavailable here (fallback used): %s · to retest: loomy doctor --live" "$ko")"
 
@@ -224,14 +224,14 @@ ui_ok "$(ai_env_label "$AI_ENV")" "$(t "%s profile" "$(ai_profile_label "$AI_PRO
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
 ui_info "$(t "lead agent: %s (%s) · details: loomy route" "$R_MODEL" "$R_EFFORT")"
 
-# ---------------------------------------------------------------- test réel
+# ---------------------------------------------------------------- real test
 if (( LIVE )); then
   ui_section "$(t "LIVE MODEL TEST")"
   ui_info "$(t "every catalog model for each installed CLI (one low-effort \"OK\" per model)")"
-  # Modèles utilisés par le routage courant : un échec y est bloquant, ailleurs c'est un avertissement.
+  # Models used by the current routing: a failure there is blocking, elsewhere it's a warning.
   routed=" "
   for r in $AI_ROLES; do ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"; routed="$routed$R_FAMILY:$R_MODEL "; done
-  # Tous les modèles des chaînes du catalogue (repli compris) ; le résultat est retenu pour cette machine.
+  # Every model of the catalog chains (fallbacks included); the result is remembered for this machine.
   keys=""
   for m in $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST; do keys="$keys claude:$m"; done
   for m in $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST; do keys="$keys codex:$m"; done
@@ -240,7 +240,7 @@ if (( LIVE )); then
     if [[ "$fam" == "claude" ]]; then
       (( HAS_C )) || continue
       ui_wait "$(t "Testing %s" "$model")"
-      out="$(cd "${TMPDIR:-/tmp}" && claude -p "Réponds exactement : OK" --output-format json --max-turns 1 --model "$model" --effort low 2>&1 || true)"
+      out="$(cd "${TMPDIR:-/tmp}" && claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$model" --effort low 2>&1 || true)"
       if grep -q '"is_error":false' <<<"$out"; then ok=1; why=""
       else ok=0; why="$(printf '%s' "$out" | grep -oE '"result":"[^"]{0,120}' | head -1 | sed 's/"result":"//' || true)"; fi
     else
@@ -248,13 +248,13 @@ if (( LIVE )); then
       tmpf="$(mktemp)"
       ui_wait "$(t "Testing %s" "$model")"
       if "$CODEX_BIN" exec -m "$model" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
-           -o "$tmpf" "Réponds exactement : OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ok=1; why=""
-      else ok=0; why="pas de réponse (connexion, forfait ou nom de modèle)"; fi
+           -o "$tmpf" "Reply exactly: OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ok=1; why=""
+      else ok=0; why="$(t "no answer (connection, plan or model name)")"; fi
       rm -f "$tmpf"
     fi
     ui_wait_end
     if (( ok )); then ai_model_mark "$model" ok; else ai_model_mark "$model" ko; fi
-    case "$routed" in *" $key "*) used="utilisé par ce projet" ;; *) used="" ;; esac
+    case "$routed" in *" $key "*) used="$(t "used by this project")" ;; *) used="" ;; esac
     if (( ok )); then ui_ok "$model" "$(t "answers")${used:+ · $used}"
     elif [[ -n "$used" ]]; then ui_err "$model" "${why:-$(t "failed")} · $used"; MIN_OK=0
     else ui_warn "$model" "${why:-$(t "failed")} · $(t "not used by the current routing")"; missing_ideal "$model"; fi
@@ -263,7 +263,7 @@ fi
 
 # ---------------------------------------------------------------- bilan
 ui_section "$(t "SUMMARY")"
-# Dans le questionnaire (--compact), c'est lui qui ferme le fil.
+# In the questionnaire (--compact), it closes the thread.
 doctor_end() { (( COMPACT )) || ui_end "$1"; }
 if (( MIN_OK )); then
   if [[ -z "$IDEAL_MISSING" ]]; then ui_ok "$(t "Ideal setup")" "$(t "everything is in place")"

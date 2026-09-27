@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Confie un rôle à la CLI Codex (codex exec). Compatible bash 3.2.
-# Utilisé par un orchestrateur Claude Code en mode hybride, ou par un orchestrateur Codex pour faire tourner un rôle sur son modèle routé.
-#   Rôles qui écrivent (executor, developer, documenter) : sandbox workspace-write, les changements arrivent dans le répertoire de travail.
-#   Rôles en lecture seule (reviewer, explorer, debugger, architect, security) : sandbox read-only, constats uniquement.
+# Hands a role to the Codex CLI (codex exec). Bash 3.2 compatible.
+# Used by a Claude Code lead agent in hybrid mode, or by a Codex lead agent to run a role on its routed model.
+#   Roles that write (executor, developer, documenter): workspace-write sandbox, changes land in the working tree.
+#   Read-only roles (reviewer, explorer, debugger, architect, security): read-only sandbox, findings only.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,25 +27,25 @@ esac
 
 case "$ROLE" in
   executor)
-    GUIDANCE="Tu es l'Exécutant. Réalise exactement la tâche bornée ci-dessous, dans le périmètre indiqué. Suis les conventions du dépôt, ajoute ou mets à jour les tests du comportement modifié, lance les vérifications pertinentes, puis arrête-toi. Ne refactore rien hors du périmètre. Si la tâche s'avère ambiguë, transverse ou risquée, arrête-toi sans modifier de fichier et explique pourquoi elle doit remonter d'un cran." ;;
+    GUIDANCE="$(t "You are the Executor. Do exactly the bounded task below, within the given scope. Follow the repository's conventions, add or update tests for the changed behaviour, run the relevant checks, then stop. Don't refactor anything outside the scope. If the task turns out to be ambiguous, cross-cutting or risky, stop without modifying any file and explain why it must be escalated.")" ;;
   developer)
-    GUIDANCE="Tu es le Développeur. Implémente la feature ou le correctif ci-dessous dans le périmètre indiqué, en suivant les conventions du dépôt, avec des tests. Lance les vérifications pertinentes et indique les commandes exactes et leurs résultats. Arrête-toi et rends compte si le changement devient transverse ou risqué." ;;
+    GUIDANCE="$(t "You are the Developer. Implement the feature or fix below within the given scope, following the repository's conventions, with tests. Run the relevant checks and give the exact commands and their results. Stop and report if the change becomes cross-cutting or risky.")" ;;
   documenter)
-    GUIDANCE="Tu es le Documentaliste. Ne mets à jour que la documentation indiquée par la tâche. Sois exact : vérifie chaque affirmation dans le code. Ne modifie pas le code source." ;;
+    GUIDANCE="$(t "You are the Documenter. Only update the documentation the task points to. Be accurate: check every statement against the code. Don't modify source code.")" ;;
   reviewer)
-    GUIDANCE="Tu es un Relecteur indépendant. Relis le diff ou les fichiers indiqués dans la tâche. Ne signale que des défauts concrets : régressions, cas limites oubliés, problèmes de sécurité, tests manquants, complexité inutile, chacun avec gravité, référence de fichier et preuve. Ne modifie aucun fichier. « Aucun constat » est une réponse valable." ;;
+    GUIDANCE="$(t "You are an independent Reviewer. Review the diff or files given in the task. Only report concrete defects: regressions, missed edge cases, security issues, missing tests, needless complexity, each with severity, file reference and evidence. Don't modify any file. \"No findings\" is a valid answer.")" ;;
   explorer)
-    GUIDANCE="Tu es l'Explorateur. Réponds uniquement à la question posée, avec des faits courts et des références chemin:ligne. Ne propose pas de réécriture. Ne modifie aucun fichier." ;;
+    GUIDANCE="$(t "You are the Explorer. Only answer the question asked, with short facts and path:line references. Don't propose rewrites. Don't modify any file.")" ;;
   debugger)
-    GUIDANCE="Tu es le Débogueur. Examine les preuves, classe les hypothèses de cause, et propose les vérifications ou correctifs les plus petits et les plus discriminants. Ne modifie aucun fichier." ;;
+    GUIDANCE="$(t "You are the Debugger. Examine the evidence, rank the cause hypotheses, and propose the smallest, most discriminating checks or fixes. Don't modify any file.")" ;;
   architect)
-    GUIDANCE="Tu es l'Architecte. Critique la conception au regard de la tâche et des contraintes du dépôt : arbitrages, couplage, alternatives plus simples. Ne modifie aucun fichier." ;;
+    GUIDANCE="$(t "You are the Architect. Critique the design against the task and the repository's constraints: trade-offs, coupling, simpler alternatives. Don't modify any file.")" ;;
   security)
-    GUIDANCE="Tu es le Relecteur sécurité. N'inspecte que le périmètre donné. Signale des faiblesses concrètes avec leur exploitabilité, les preuves et la correction, en séparant les problèmes confirmés des hypothèses. Ne modifie aucun fichier." ;;
-  *) echo "Erreur : rôle non pris en charge '$ROLE'." >&2; exit 2 ;;
+    GUIDANCE="$(t "You are the Security reviewer. Only inspect the given scope. Report concrete weaknesses with their exploitability, evidence and fix, separating confirmed issues from hypotheses. Don't modify any file.")" ;;
+  *) t "Error: unsupported role '%s'." "$ROLE" >&2; echo >&2; exit 2 ;;
 esac
 
-CODEX="$(ai_codex_bin)" || { echo "Erreur : CLI Codex introuvable (PATH, Codex.app ou ChatGPT.app). Lancez loomy doctor." >&2; exit 127; }
+CODEX="$(ai_codex_bin)" || { t "Error: Codex CLI not found (PATH, Codex.app or ChatGPT.app). Run loomy doctor." >&2; echo >&2; exit 127; }
 
 ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
@@ -58,10 +58,10 @@ if ai_role_writes "$ROLE"; then SANDBOX="workspace-write"; fi
 
 PROMPT="$GUIDANCE
 
-Tâche confiée par l'orchestrateur :
+$(t "Task handed over by the lead agent:")
 $TASK
 
-Tu es un spécialiste. Ne prends pas la direction du projet. Rends un résultat concis à l'orchestrateur : ce que tu as fait ou trouvé, les fichiers concernés, les vérifications lancées et leurs résultats, les risques ouverts. Réponds en français."
+$(t "You are a specialist. Don't take over the project. Give the lead agent a concise result: what you did or found, the files involved, the checks run and their results, the open risks. Reply in English.")"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-codex.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
@@ -71,7 +71,7 @@ if [[ "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside
   BEFORE="$(git -C "$ROOT" status --porcelain)"
 fi
 
-echo "delegate-to-codex : rôle=$ROLE modèle=$MODEL effort=$EFFORT sandbox=$SANDBOX profil=$AI_PROFILE" >&2
+t "delegate-to-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE" >&2; echo >&2
 
 DELEG_ID="$(ai_delegation_id)"
 ai_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK"
@@ -84,12 +84,12 @@ set +e
 run_codex "$MODEL"
 STATUS=$?
 set -e
-# Modèle refusé (inexistant ou pas d'accès pour ce compte) : noté pour cette machine, puis repli sur le suivant de sa chaîne.
+# Model refused (doesn't exist or no access for this account): recorded for this machine, then fallback to the next in its chain.
 while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not supported|unavailable|not available)|unknown model|model_not_found" "$TMP/log.txt"; do
   ai_model_mark "$MODEL" ko
   NEXT="$(ai_model_next codex "$MODEL")"
   [[ -n "$NEXT" ]] || break
-  echo "delegate-to-codex : $MODEL indisponible pour ce compte, repli sur $NEXT (noté pour les prochaines fois)." >&2
+  t "delegate-to-codex: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
   MODEL="$NEXT"
   set +e
   run_codex "$MODEL"
@@ -98,7 +98,7 @@ while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not suppo
 done
 DURATION=$(( $(date +%s) - STARTED ))
 
-# Consommation rapportée par les événements "turn.completed" de codex exec --json.
+# Usage reported by the "turn.completed" events of codex exec --json.
 read -r T_IN T_CACHED T_OUT < <(grep '"turn.completed"' "$TMP/log.txt" | awk '
   { if (match($0, /"input_tokens":[0-9]+/)) i += substr($0, RSTART+15, RLENGTH-15)
     if (match($0, /"cached_input_tokens":[0-9]+/)) c += substr($0, RSTART+22, RLENGTH-22)
@@ -116,7 +116,7 @@ RESULT="ok"; [[ $STATUS -ne 0 ]] && RESULT="error"
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 
 if [[ $STATUS -ne 0 ]]; then
-  echo "delegate-to-codex : échec de codex exec (code $STATUS). Dernières lignes du journal :" >&2
+  t "delegate-to-codex: codex exec failed (code %s). Last log lines:" "$STATUS" >&2; echo >&2
   tail -20 "$TMP/log.txt" >&2
   exit "$STATUS"
 fi
@@ -126,10 +126,10 @@ echo
 
 if [[ "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if [[ "$CHANGED" != "0" ]]; then
-    echo "delegate-to-codex : le répertoire de travail a changé — relisez avec 'git diff' avant d'accepter :" >&2
+    t "delegate-to-codex: the working tree changed — review with 'git diff' before accepting:" >&2; echo >&2
     diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | sed -n 's/^> /  /p' >&2 || true
   else
-    echo "delegate-to-codex : aucun fichier modifié." >&2
+    t "delegate-to-codex: no file modified." >&2; echo >&2
   fi
 fi
-echo "delegate-to-codex : ${DURATION}s · tokens entrée $T_IN (dont $T_CACHED en cache), sortie $T_OUT · coût estimé \$${COST:-?}" >&2
+t "delegate-to-codex: %ss · input tokens %s (%s cached), output %s · estimated cost \$%s" "$DURATION" "$T_IN" "$T_CACHED" "$T_OUT" "${COST:-?}" >&2; echo >&2

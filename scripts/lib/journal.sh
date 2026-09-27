@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # bibliothèque chargée par d'autres scripts
-# Journal d'activité de Loomy : <projet>/.loomy/logs/events.jsonl, une ligne JSON par événement.
-# Alimente « loomy status » et « loomy watch ». À charger (source). Compatible bash 3.2.
+# shellcheck disable=SC2034  # library sourced by other scripts
+# Loomy activity log: <project>/.loomy/logs/events.jsonl, one JSON line per event.
+# Feeds "loomy status" and "loomy watch". To be sourced. Bash 3.2 compatible.
 #
-# Le journal n'est écrit que dans un projet Loomy (dossier .loomy présent).
-# LOOMY_JOURNAL=0 le désactive ; LOOMY_JOURNAL_TASKS=0 n'y enregistre pas le texte des tâches.
+# The log is only written inside a Loomy project (.loomy folder present).
+# LOOMY_JOURNAL=0 turns it off; LOOMY_JOURNAL_TASKS=0 doesn't record the task text.
 
 ai_journal_file() { echo "$1/.loomy/logs/events.jsonl"; }
 
@@ -12,7 +12,7 @@ ai_journal_enabled() {
   [[ "${LOOMY_JOURNAL:-1}" != "0" && -d "$1/.loomy" ]]
 }
 
-# Échappe une chaîne pour JSON (guillemets, antislash, retours à la ligne, tabulations, caractères de contrôle).
+# Escapes a string for JSON (quotes, backslash, newlines, tabs, control characters).
 ai_json_str() {
   local s="$1"
   s="${s//\\/\\\\}"; s="${s//\"/\\\"}"
@@ -20,14 +20,14 @@ ai_json_str() {
   printf '"%s"' "$(printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')"
 }
 
-# ai_journal_write <racine> <paires JSON sans accolades, ex. "type":"phase","phase":"build">
-# Archive mensuelle : au premier événement d'un nouveau mois, le journal du mois précédent part dans
-# .loomy/logs/archive/events-AAAA-MM.jsonl. Les derniers événements de session suivent dans le nouveau journal
-# (état ouvert / fermé de la session en cours). Lecture de tout l'historique : ai_journal_all.
+# ai_journal_write <root> <JSON pairs without braces, e.g. "type":"phase","phase":"build">
+# Monthly archive: on the first event of a new month, the previous month's log moves to
+# .loomy/logs/archive/events-YYYY-MM.jsonl. The latest session events follow into the new log
+# (open / closed state of the current session). Reading the whole history: ai_journal_all.
 _ai_journal_rotate() {
   local file="$1" month now dir mfile
   [[ -s "$file" ]] || return 0
-  # Mois du journal courant : noté à part (les événements de session recopiés gardent leur date d'origine).
+  # Month of the current log: recorded separately (copied session events keep their original date).
   mfile="$(dirname "$file")/month"; now="$(date -u +%Y-%m)"
   month="$(cat "$mfile" 2>/dev/null || true)"
   [[ -n "$month" ]] || month="$(head -1 "$file" | sed -n 's/^{"ts":"\([0-9]\{4\}-[0-9]\{2\}\).*/\1/p')"
@@ -37,7 +37,7 @@ _ai_journal_rotate() {
   printf '%s\n' "$now" >"$mfile"
 }
 
-# ai_journal_all <racine> : tout le journal, archives comprises, dans l'ordre.
+# ai_journal_all <root>: the whole log, archives included, in order.
 ai_journal_all() {
   local f d="$1/.loomy/logs"
   for f in "$d"/archive/events-*.jsonl; do [[ -f "$f" ]] && cat "$f"; done
@@ -55,11 +55,11 @@ ai_journal_write() {
 }
 
 # ai_usage_record <racine> <transcription .jsonl> <lead|subagent> [type d'agent]
-# Coût réel des tours de Claude Code (orchestrateur, sous-agents natifs), lu dans la transcription de la session :
-# seules les lignes nouvelles depuis le dernier passage sont lues (index .loomy/logs/usage.idx), chaque message n'est
-# compté qu'une fois (identifiant), un événement « usage » est écrit par modèle.
-# Prix : entrée, écriture en cache (5 min : 1,25 × entrée ; 1 h : 2 ×), lecture en cache, sortie. Vérifié : identique
-# au coût que rapporte Claude Code (claude -p --output-format json) sur une session avec sous-agent.
+# Real cost of Claude Code turns (lead agent, native subagents), read from the session transcript:
+# only lines new since the last pass are read (index .loomy/logs/usage.idx), each message is
+# counted once (id), one "usage" event is written per model.
+# Prices: input, cache write (5 min: 1.25 × input; 1 h: 2 ×), cache read, output. Checked: identical
+# to the cost Claude Code reports (claude -p --output-format json) on a session with a subagent.
 ai_usage_record() {
   local root="$1" tr="$2" scope="$3" agent="${4:-}" idx done_n total line model tin tcw tcr tout n price cost
   [[ -f "$tr" ]] || return 0
@@ -75,7 +75,7 @@ ai_usage_record() {
       if (id != "" && (id in seen)) next; seen[id] = 1
       m = ""; if (match($0, /"model":"[^"]*"/)) { m = substr($0, RSTART + 9, RLENGTH - 10) }
       if (m == "" || m == "<synthetic>") next
-      # Écriture en cache : 5 min (1,25 × entrée) ou 1 h (2 ×) ; sans détail : 1 h (session principale).
+      # Cache write: 5 min (1.25 × input) or 1 h (2 ×); without detail: 1 h (main session).
       cw = num("cache_creation_input_tokens"); w5 = num("ephemeral_5m_input_tokens"); w1 = num("ephemeral_1h_input_tokens")
       if (w5 + w1 == 0) w1 = cw
       i[m] += num("input_tokens"); f[m] += w5; h[m] += w1; r[m] += num("cache_read_input_tokens"); o[m] += num("output_tokens"); c[m]++
@@ -89,7 +89,7 @@ ai_usage_record() {
   return 0
 }
 
-# ai_cost_estimate <modèle> <tokens entrée non cachés> <tokens cachés> <tokens sortie> : coût estimé en $.
+# ai_cost_estimate <model> <uncached input tokens> <cached tokens> <output tokens>: estimated cost in $.
 ai_cost_estimate() {
   local price
   price="$(ai_price "$1")"
@@ -100,22 +100,22 @@ ai_cost_estimate() {
     'BEGIN { printf "%.6f", (tin*pin + tcache*pcache + tout*pout) / 1000000 }'
 }
 
-# ai_json_num <json> <clé> : première valeur numérique de la clé (0 si absente).
+# ai_json_num <json> <key>: first numeric value of the key (0 when missing).
 ai_json_num() {
   local v
   v="$(printf '%s' "$1" | grep -oE "\"$2\":[0-9.]+" | head -1 | sed 's/.*://')"
   echo "${v:-0}"
 }
 
-# ai_task_excerpt <texte> : extrait de la tâche pour le journal (200 caractères), vide si LOOMY_JOURNAL_TASKS=0.
+# ai_task_excerpt <text>: task excerpt for the log (200 characters), empty when LOOMY_JOURNAL_TASKS=0.
 ai_task_excerpt() {
   if [[ "${LOOMY_JOURNAL_TASKS:-1}" == "0" ]]; then echo ""; return 0; fi
   printf '%s' "$1" | tr '\n' ' ' | cut -c1-200
 }
 
-# ai_session_state <racine> : « open|<heure locale>|<outil> », « closed|<heure>|<outil> » ou « none ».
-# Une session est ouverte si elle a commencé, n'a pas fini, et que son processus (Claude Code ou Codex) tourne encore.
-# ai_ts_epoch <horodatage ISO UTC> : secondes depuis 1970 (date de macOS ou GNU), vide si illisible.
+# ai_session_state <root>: "open|<local time>|<tool>", "closed|<time>|<tool>" or "none".
+# A session is open when it started, hasn't ended, and its process (Claude Code or Codex) is still running.
+# ai_ts_epoch <ISO UTC timestamp>: seconds since 1970 (macOS or GNU date), empty when unreadable.
 ai_ts_epoch() {
   date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || date -u -d "$1" +%s 2>/dev/null || true
 }
@@ -134,7 +134,7 @@ ai_session_state() {
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
     /"type":"session"/ {
       key = field("session"); if (key == "") key = "pid" num("pid")
-      # Une session reprise (claude --continue) garde son identifiant : un nouveau début annule la fin précédente.
+      # A resumed session (claude --continue) keeps its id: a new start cancels the previous end.
       if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool"); delete ended[key] }
       else { ended[key] = field("ts") "|" field("tool"); last_end = field("ts") "|" field("tool") }
     }
@@ -149,11 +149,11 @@ ai_session_state() {
   echo "$(printf '%s' "$state" | cut -d'|' -f1)|${hhmm:-?}|$(printf '%s' "$state" | cut -d'|' -f3)"
 }
 
-# ai_delegation_id : identifiant court d'une délégation, relie son événement de début à son événement de fin.
+# ai_delegation_id: short delegation id, links its start event to its end event.
 ai_delegation_id() { printf 'd%s%05d' "$(date +%s)" "$$"; }
 
-# ai_journal_start <racine> <id> <pont> <rôle> <famille> <modèle> <effort> <sandbox> <tâche>
-# Signale une délégation en cours. Le pid permet à « loomy status » d'écarter une délégation interrompue.
+# ai_journal_start <root> <id> <bridge> <role> <family> <model> <effort> <sandbox> <task>
+# Flags a running delegation. The pid lets "loomy status" discard an interrupted delegation.
 ai_journal_start() {
   ai_journal_write "$1" "\"type\":\"delegation_start\",\"id\":\"$2\",\"pid\":$$,\"bridge\":\"$3\",\"role\":\"$4\",\"family\":\"$5\",\"model\":\"$6\",\"effort\":\"$7\",\"sandbox\":\"$8\",\"task\":$(ai_json_str "$(ai_task_excerpt "$9")")"
 }

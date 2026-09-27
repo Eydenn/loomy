@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # bibliothèque chargée par d'autres scripts
-# Configuration utilisateur de Loomy : ${XDG_CONFIG_HOME:-~/.config}/loomy/config (lignes clé=valeur).
-# À charger (source). Compatible bash 3.2.
+# shellcheck disable=SC2034  # library sourced by other scripts
+# Loomy user configuration: ${XDG_CONFIG_HOME:-~/.config}/loomy/config (key=value lines).
+# To be sourced. Bash 3.2 compatible.
 #
-# Clés :
+# Keys:
 #   plan_claude        api | pro | max5 | max20 | team | enterprise
 #   plan_codex         api | plus | pro100 | pro200 | business | enterprise
-#   plan_claude_price  prix mensuel en $ (remplace le prix par défaut du forfait)
-#   plan_codex_price   idem pour le forfait ChatGPT/Codex
+#   plan_claude_price  monthly price in $ (replaces the plan's default price)
+#   plan_codex_price   same for the ChatGPT/Codex plan
 
-# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait.
+# Translated strings (t): the language layer is loaded if the script hasn't done it already.
 if ! declare -F t >/dev/null 2>&1; then
   # shellcheck source=i18n.sh
   source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
@@ -17,7 +17,7 @@ fi
 
 loomy_config_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"; }
 
-# loomy_config_get <clé> [défaut]
+# loomy_config_get <key> [default]
 loomy_config_get() {
   local file v
   file="$(loomy_config_file)"
@@ -25,7 +25,7 @@ loomy_config_get() {
   echo "${v:-${2:-}}"
 }
 
-# loomy_config_set <clé> <valeur>
+# loomy_config_set <key> <value>
 loomy_config_set() {
   local file tmp
   file="$(loomy_config_file)"
@@ -33,7 +33,7 @@ loomy_config_set() {
   touch "$file"
   tmp="$file.tmp.$$"
   grep -v "^$1=" "$file" >"$tmp" || true
-  # « auto » : retire le réglage (valeur par défaut ou choix du catalogue).
+  # "auto": removes the setting (default value or catalog choice).
   [[ "$2" == "auto" ]] || echo "$1=$2" >>"$tmp"
   mv "$tmp" "$file"
 }
@@ -44,7 +44,7 @@ loomy_config_list() {
   [[ -f "$file" ]] && grep -E '^[a-z_.]+=' "$file" || true
 }
 
-# Prix mensuels par défaut des forfaits en $ (vérifiés le 23/09/2026). Vide = facturation à l'usage ou sur devis.
+# Default monthly plan prices in $ (checked on 2026-09-23). Empty = pay as you go or on quote.
 ai_plan_price() {
   case "$1" in
     pro|plus) echo "20" ;;
@@ -72,10 +72,10 @@ ai_plan_label() {
   esac
 }
 
-# loomy_plan <claude|codex> : forfait configuré (api par défaut).
+# loomy_plan <claude|codex>: configured plan (api by default).
 loomy_plan() { loomy_config_get "plan_$1" "api"; }
 
-# loomy_plan_monthly <claude|codex> : prix mensuel retenu (surcharge, sinon prix par défaut du forfait).
+# loomy_plan_monthly <claude|codex>: monthly price used (override, otherwise the plan's default price).
 loomy_plan_monthly() {
   local p
   p="$(loomy_config_get "plan_$1_price" "")"

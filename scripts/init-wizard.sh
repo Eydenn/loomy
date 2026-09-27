@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # les réponses A_* sont lues indirectement par ans() ; les UI_* par lib/ui.sh
-# Questionnaire interactif du brief de projet pour Loomy.
-# Écrit .loomy/brief.md, que START.md utilise comme entretien déjà mené.
-# Compatible bash 3.2, sans dépendance. Rendu : scripts/lib/ui.sh.
+# shellcheck disable=SC2034  # the A_* answers are read indirectly by ans(); the UI_* ones by lib/ui.sh
+# Interactive project brief questionnaire for Loomy.
+# Writes .loomy/brief.md, which START.md uses as an interview already held.
+# Bash 3.2 compatible, no dependencies. Rendering: scripts/lib/ui.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,17 +14,17 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 
 usage() {
-  cat >&2 <<'EOF'
+  i18n_lines >&2 <<'EOF'
 Usage: init-wizard.sh [target-dir] [options]
 
 Options:
-  --yes             Pas de questions : valeurs par défaut (ou celles de --answers)
-  --answers FILE    Reprendre les réponses d'un brief existant (front matter key: value)
-  --no-clipboard    Ne pas copier le prompt de démarrage dans le presse-papiers
-  -h, --help        Afficher cette aide
+  --yes             No questions: default values (or those from --answers)
+  --answers FILE    Reuse the answers of an existing brief (front matter key: value)
+  --no-clipboard    Don't copy the startup prompt to the clipboard
+  -h, --help        Show this help
 
-Touches : ↑↓ choisir, ⏎ valider, ← revenir à la question précédente.
-Variable : NO_COLOR=1 désactive les couleurs.
+Keys: ↑↓ choose, ⏎ confirm, ← back to the previous question.
+Variable: NO_COLOR=1 turns colours off.
 EOF
 }
 
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-# Cible par défaut : le projet qui contient cette copie de .loomy, sinon le dossier courant.
+# Default target: the project containing this copy of .loomy, otherwise the current folder.
 if [[ -z "$TARGET_INPUT" ]]; then
   if [[ "$(basename "$(dirname "$SCRIPT_DIR")")" == ".loomy" ]]; then
     TARGET_INPUT="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -63,7 +63,7 @@ fi
 
 LOOMY_VERSION="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 
-# ---------------------------------------------------------------- fichier de réponses
+# ---------------------------------------------------------------- answers file
 load_answers() {
   local file="$1" line key value in_fm=0
   [[ -f "$file" ]] || { t "Error: answers file not found: %s" "$file" >&2; echo >&2; exit 1; }
@@ -89,12 +89,12 @@ fi
 
 # ---------------------------------------------------------------- utilitaires
 # choose_coded <var> <question> <default-code> "code|Label"...
-# Libellé sans la mention « (recommandé) », quelle que soit la langue.
+# Label without the "(recommended)" mention, whatever the language.
 no_rec() { local v="${1% (recommandé)}"; printf '%s' "${v% (recommended)}"; }
 choose_coded() {
   local var="$1" q="$2" defcode="$3" hint="$4"; shift 4
   local labels=() codes=() descs=() i=0 defi=0 item rest
-  # Question, aide, libellés et descriptions passent par t (langue de l'interface) ; les codes restent fixes.
+  # Question, hint, labels and descriptions go through t (interface language); codes stay fixed.
   for item in "$@"; do
     codes[$i]="${item%%|*}"; rest="${item#*|}"
     labels[$i]="$(t "${rest%%|*}")"
@@ -120,7 +120,7 @@ yaml_q() {
 HAS_GIT=0; IS_REPO=0; PARENT_REPO=""; PARENT_REMOTE=""; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
 
 env_check() {
-  # L'affichage, le contrôle des prérequis et les corrections guidées sont confiés à ai-doctor.sh.
+  # Display, requirement checks and guided fixes are handed to ai-doctor.sh.
   local doctor_args=(--root "$TARGET" --compact)
   ui_is_interactive && doctor_args+=(--fix)
   ui_run "$SCRIPT_DIR/ai-doctor.sh" "${doctor_args[@]}" || ui_warn "$(t "Minimum requirements not met")" "$(t "you can still write the brief; fix this before launching the agent")"
@@ -134,7 +134,7 @@ env_check() {
       top="$(cd "$(git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)"
       if [[ "$top" == "$(cd "$TARGET" && pwd -P)" ]]; then IS_REPO=1
       else
-        # Dossier à l'intérieur d'un dépôt parent : dépôt propre au projet, ou monorepo (question Git).
+        # Folder inside a parent repository: dedicated repository, or monorepo (Git question).
         PARENT_REPO="$top"; PARENT_REMOTE="$GIT_REMOTE"; GIT_REMOTE=""
       fi
     fi
@@ -143,14 +143,14 @@ env_check() {
   ai_has_codex && HAS_CODEX=1
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     GH_USER="$(gh api user --jq .login 2>/dev/null || true)"
-    # Visibilité du dépôt GitHub existant : elle oriente le choix par défaut pour les fichiers IA.
+    # Visibility of the existing GitHub repository: it drives the default choice for AI files.
     if [[ "$GIT_REMOTE" == *github.com* ]]; then
       REMOTE_VIS="$(cd "$TARGET" && gh repo view --json visibility --jq .visibility 2>/dev/null || true)"
     fi
   fi
 
   local count
-  # Ce que Loomy vient d'ajouter (START.md, .loomy, .gitignore) ne fait pas un projet existant.
+  # What Loomy just added (START.md, .loomy, .gitignore) doesn't make an existing project.
   count="$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.loomy' ! -name 'START.md' ! -name '.gitignore' ! -name '.claude' ! -name '.codex' ! -name '.DS_Store' | wc -l | tr -d ' ')"
   if [[ "$count" == "0" ]]; then DETECTED_REPO="new"; ui_end "$(t "detected: empty folder (new project)")"
   elif [[ "$count" == "1" ]]; then DETECTED_REPO="existing"; ui_end "$(t "detected: existing project (1 item at the root)")"
@@ -160,7 +160,7 @@ env_check() {
 # ---------------------------------------------------------------- questionnaire
 TOTAL=12
 
-# Forfaits Claude et Codex : demandés une seule fois, en mode interactif, pour un outil présent et pas encore renseigné.
+# Claude and Codex plans: asked only once, in interactive mode, for a tool that is present and not set yet.
 ASK_PLAN_CLAUDE=0; ASK_PLAN_CODEX=0; PLAN_CLAUDE_NEW=""; PLAN_CODEX_NEW=""
 plan_questions() {
   ui_is_interactive || return 0
@@ -171,7 +171,7 @@ plan_questions() {
 }
 
 ask_all() {
-  local tbd="tbd|À décider|L'agent proposera une option argumentée pendant l'entretien."
+  local tbd="tbd|To be decided|The agent will propose a reasoned option during the interview."
   FORCE_AUTH=0
 
   ui_group "$(t "PROJECT")"
@@ -191,7 +191,7 @@ ask_all() {
   ui_step 3 $TOTAL
   UI_LABEL="$(t "Starting point")"
   choose_coded REPO "New project or existing project?" "$(ans repo "$DETECTED_REPO")" \
-    "Oriente la découverte (détecté automatiquement, à confirmer)." \
+    "Guides discovery (detected automatically, to confirm)." \
     "new|New project|The agent proposes the stack and structure from scratch." \
     "existing|Existing project to standardise|The agent first analyses what exists and only proposes standardisation changes, without breaking the architecture."
 
@@ -306,7 +306,7 @@ ask_all() {
 
   ui_step 7 $TOTAL
   local sens_def="" c
-  # Libellés dans la langue de l'interface ; les codes (auth, payments…) restent fixes.
+  # Labels in the interface language; the codes (auth, payments…) stay fixed.
   local L_AUTH L_PAY L_PERS L_INFRA
   L_AUTH="$(t "Authentication / accounts")"; L_PAY="$(t "Payments")"; L_PERS="$(t "Personal data")"; L_INFRA="$(t "Secrets / production infra")"
   for c in $(printf '%s' "$(ans sensitive "")" | tr ',' ' '); do
@@ -346,14 +346,14 @@ ask_all() {
   elif (( HAS_CODEX )); then lead_def="codex"; fi
   UI_LABEL="$(t "Collaboration")"
   choose_coded MODE "AI collaboration mode?" "$(ans ai_mode "$mode_def")" \
-    "Définit comment Codex et Claude Code se partagent le travail. Pré-sélection selon les outils détectés." \
-    "SOLO|SOLO|Un seul outil à la fois : le plus simple et le moins coûteux." \
-    "HYBRID|HYBRID|Les deux outils travaillent tour à tour, coordonnés par Git et .ai/HANDOFF.md." \
-    "ORCHESTRATED|ORCHESTRATED|L'orchestrateur délègue chaque rôle au meilleur modèle des deux familles (exécution sur GPT-6-Luna, architecture et sécurité sur Opus 5.5, revue croisée) : meilleur rapport qualité/coût." \
-    "PARALLEL|PARALLEL|Les deux en même temps sur des worktrees séparés : plus rapide, intégration à soigner."
+    "Defines how Codex and Claude Code share the work. Preselected from the detected tools." \
+    "SOLO|SOLO|One tool at a time: the simplest and cheapest." \
+    "HYBRID|HYBRID|Both tools take turns, coordinated through Git and .ai/HANDOFF.md." \
+    "ORCHESTRATED|ORCHESTRATED|The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio." \
+    "PARALLEL|PARALLEL|Both at the same time on separate worktrees: faster, integration needs care."
   UI_LABEL="$(t "Main tool")"
   choose_coded LEAD "Main tool (lead)?" "$(ans ai_lead "$lead_def")" \
-    "L'outil principal porte l'orchestrateur : il planifie, délègue, décide et vérifie. C'est lui qui mérite le meilleur raisonnement." \
+    "The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning." \
     "claude|Claude Code|Orchestrator on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended)." \
     "codex|Codex|Orchestrator on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only)."
 
@@ -392,7 +392,7 @@ ask_all() {
     UI_LABEL="$(t "Git repository")"
     git_def="yes"; [[ "$REPO" == "existing" ]] && git_def="no"
     choose_coded GIT_INIT "Create a dedicated Git repository for this project?" "$(ans git_init "$git_def")" \
-      "Ce dossier est à l'intérieur du dépôt Git ${PARENT_REPO/#$HOME/~}." \
+      "$(t "This folder is inside the Git repository %s." "${PARENT_REPO/#$HOME/~}")" \
       "yes|Yes, dedicated repository (recommended for a new project)|The project has its own history, and can have its own GitHub repository." \
       "no|No, stay in the parent repository (monorepo)|Commits go to the parent repository; no GitHub repository of its own."
     if [[ "$GIT_INIT" == "no" ]]; then IS_REPO=1; GIT_REMOTE="$PARENT_REMOTE"; fi
@@ -406,7 +406,7 @@ ask_all() {
   GITHUB_REPO="no"; REMOTE_NAME_NOTE=""; REPO_NAME="$SLUG"; AI_REPO_NAME=""
   if (( IS_REPO )) || [[ "$GIT_INIT" == "yes" ]]; then
     if [[ -n "$GIT_REMOTE" ]]; then
-      # Le dépôt distant doit porter le nom du projet : sinon on le signale (sans rien renommer).
+      # The remote repository should have the project's name: otherwise we flag it (without renaming anything).
       remote_name="$(basename "${GIT_REMOTE#* }" .git)"
       [[ -n "$remote_name" ]] && REPO_NAME="$remote_name"
       if [[ -n "$remote_name" && "$remote_name" != "$SLUG" ]]; then
@@ -415,10 +415,10 @@ ask_all() {
       fi
     elif [[ -n "$GH_USER" && ( -z "$PARENT_REPO" || "$GIT_INIT" == "yes" ) ]]; then
       UI_LABEL="$(t "GitHub repository")"
-      # Jamais de création de dépôt en ligne sans question (mode --yes : non, sauf réponse explicite).
+      # Never create an online repository without asking (--yes mode: no, unless explicitly answered).
       gh_def="private"; [[ "$UI_ASSUME_DEFAULTS" == "1" ]] && gh_def="no"
       choose_coded GITHUB_REPO "Create a GitHub repository for this project?" "$(ans github_repo "$gh_def")" \
-        "Il porte le nom du projet ; créé seulement une fois le brief enregistré." \
+        "It has the project's name; created only once the brief is saved." \
         "private|Yes, private|Visible only to you (and people you invite). Recommended." \
         "public|Yes, public|Visible to everyone: mind the AI files visibility, next question." \
         "no|No, later|No online repository for now; you can create it with gh repo create."
@@ -451,7 +451,7 @@ ask_all() {
     ui_fact "Git" "$(t "no Git repository: no commit, no push")"
   fi
 
-  # Fichiers IA : GitHub règle la visibilité par dépôt, pas par fichier.
+  # AI files: GitHub sets visibility per repository, not per file.
   local files_def="versioned" vis_txt=""
   case "$REMOTE_VIS" in
     PUBLIC) files_def="private"; [[ -z "$GH_USER" ]] && files_def="local"; vis_txt=" $(t "Your GitHub repository is public.")" ;;
@@ -470,7 +470,7 @@ ask_all() {
       ui_input "$(t "Name of the private AI files repository")${GH_USER:+ ($GH_USER/…)}" "$(ans ai_repo_name "${AI_REPO_NAME:-$REPO_NAME-ai}")"
       AI_REPO_NAME="$(loomy_slug "$UI_VALUE")"
       [[ "$GITHUB_REPO" == "no" ]] && break
-      # Deux dépôts à créer : confirmation des deux noms ensemble.
+      # Two repositories to create: both names confirmed together.
       UI_LABEL="$(t "Two repositories")"
       UI_DESCS=("$(t "Creates %s (%s) for the project and %s (private) for the AI files." "$GH_USER/$REPO_NAME" "$( [[ "$GITHUB_REPO" == public ]] && t "public" || t "private")" "$GH_USER/$AI_REPO_NAME")" \
         "$(t "Ask for both names again.")")
@@ -488,9 +488,9 @@ ask_all() {
     choose_coded PLAN_CLAUDE_NEW "What is your Claude plan?" "${PLAN_CLAUDE_NEW:-api}" \
       "Asked only once, saved in your Loomy configuration. Used to compare the value consumed with the plan price." \
       "api|API|Pay as you go: Loomy shows the actual cost." \
-      "pro|Claude Pro (20 \$/mois)|Loomy affiche la valeur API consommée face à 20 \$ par mois." \
-      "max5|Claude Max 5x (100 \$/mois)|Loomy affiche la valeur API consommée face à 100 \$ par mois." \
-      "max20|Claude Max 20x (200 \$/mois)|Loomy affiche la valeur API consommée face à 200 \$ par mois." \
+      "pro|Claude Pro (\$20/month)|Loomy shows the API value consumed against \$20 a month." \
+      "max5|Claude Max 5x (\$100/month)|Loomy shows the API value consumed against \$100 a month." \
+      "max20|Claude Max 20x (\$200/month)|Loomy shows the API value consumed against \$200 a month." \
       "team|Claude Team or Enterprise|Price adjustable later with loomy config set plan_claude_price <price>."
   fi
   if (( ASK_PLAN_CODEX )); then
@@ -498,9 +498,9 @@ ask_all() {
     choose_coded PLAN_CODEX_NEW "What is your ChatGPT / Codex plan?" "${PLAN_CODEX_NEW:-api}" \
       "Asked only once, saved in your Loomy configuration." \
       "api|API|Pay as you go: Loomy shows the cost estimated from tokens." \
-      "plus|ChatGPT Plus (20 \$/mois)|Loomy affiche la valeur API consommée face à 20 \$ par mois." \
-      "pro100|ChatGPT Pro (100 \$/mois)|Loomy affiche la valeur API consommée face à 100 \$ par mois." \
-      "pro200|ChatGPT Pro (200 \$/mois)|Loomy affiche la valeur API consommée face à 200 \$ par mois." \
+      "plus|ChatGPT Plus (\$20/month)|Loomy shows the API value consumed against \$20 a month." \
+      "pro100|ChatGPT Pro (\$100/month)|Loomy shows the API value consumed against \$100 a month." \
+      "pro200|ChatGPT Pro (\$200/month)|Loomy shows the API value consumed against \$200 a month." \
       "business|ChatGPT Business or Enterprise|Price adjustable later with loomy config set plan_codex_price <price>."
   fi
 }
@@ -509,10 +509,10 @@ show_recap() {
   local risk_c="$C_GREEN" goal_txt="$GOAL" parts=""
   [[ "$RISK" == "MEDIUM" ]] && risk_c="$C_YELLOW"
   [[ "$RISK" == "HIGH" ]] && risk_c="$C_RED"
-  [[ -z "$goal_txt" ]] && goal_txt="${C_DIM}à préciser avec l'agent${C_RESET}"
+  [[ -z "$goal_txt" ]] && goal_txt="${C_DIM}$(t "to clarify with the agent")${C_RESET}"
   if [[ "$GIT_INIT" == "yes" ]]; then parts="git init"; fi
-  if [[ "$COMMIT" == "yes" ]]; then parts="${parts:+$parts + }commit après vérification"; fi
-  if [[ "$PUSH" == "yes" ]]; then parts="${parts:+$parts + }push vers ${GIT_REMOTE%% *}"; fi
+  if [[ "$COMMIT" == "yes" ]]; then parts="${parts:+$parts + }$(t "commit after checks")"; fi
+  if [[ "$PUSH" == "yes" ]]; then parts="${parts:+$parts + }$(t "push to %s" "${GIT_REMOTE%% *}")"; fi
   ui_rail_head "v$LOOMY_VERSION · $(t "startup brief") · $(basename "$TARGET")"
   ui_rail_group "$(t "Project brief")" ".loomy/brief.md"
   ui_rail_kv "$(t "Name")" "${C_BOLD}${NAME}${C_RESET}"
@@ -555,9 +555,9 @@ show_recap() {
 write_brief() {
   local today commit_txt push_txt lang_txt
   today="$(date +%Y-%m-%d)"
-  commit_txt="non — l'utilisateur committe"; [[ "$COMMIT" == "yes" ]] && commit_txt="autorisé après vérification"
-  push_txt="non"; [[ "$PUSH" == "yes" ]] && push_txt="autorisé vers ${GIT_REMOTE%% *}"
-  lang_txt="anglais"; [[ "$DOCLANG" == "fr" ]] && lang_txt="français"
+  commit_txt="$(t "no — the user commits")"; [[ "$COMMIT" == "yes" ]] && commit_txt="$(t "allowed after checks")"
+  push_txt="$(t "no")"; [[ "$PUSH" == "yes" ]] && push_txt="$(t "allowed to %s" "${GIT_REMOTE%% *}")"
+  lang_txt="$(t "- Write the project documentation in English.")"; [[ "$DOCLANG" == "fr" ]] && lang_txt="$(t "- Write the project documentation in French.")"
   {
     echo "---"
     echo "loomy_version: $LOOMY_VERSION"
@@ -587,52 +587,52 @@ write_brief() {
     echo "ai_repo_name: $AI_REPO_NAME"
     echo "---"
     echo
-    echo "# Brief de démarrage — $NAME"
+    echo "# $(t "Startup brief") — $NAME"
     echo
-    echo "Rempli par \`init-wizard.sh\` le $today. Réponses de l'utilisateur à traiter comme un entretien déjà mené."
+    t "Filled in by \`init-wizard.sh\` on %s. User answers, to be treated as an interview already held." "$today"; echo
     echo
-    echo "| Sujet | Réponse |"
+    echo "| $(t "Topic") | $(t "Answer") |"
     echo "|---|---|"
-    echo "| Objectif | ${GOAL:-à préciser} |"
-    echo "| Projet | $REPO_LABEL |"
-    echo "| Type | $TYPE_LABEL |"
-    echo "| Précisions | $DETAILS |"
-    echo "| Stade | $STAGE_LABEL |"
-    echo "| Éléments sensibles | $SENSITIVE_LABEL |"
-    echo "| Risque estimé | $RISK |"
-    echo "| Mode IA | $MODE (lead : $LEAD_LABEL) |"
-    echo "| Profil modèles | $BUDGET_LABEL |"
-    echo "| Langue des docs | $DOCLANG_LABEL |"
-    echo "| START.md après init | $HISTORY_LABEL |"
-    echo "| Commit initial | $commit_txt |"
+    echo "| $(t "Goal") | ${GOAL:-$(t "to clarify")} |"
+    echo "| $(t "Project") | $REPO_LABEL |"
+    echo "| $(t "Type") | $TYPE_LABEL |"
+    echo "| $(t "Details") | $DETAILS |"
+    echo "| $(t "Stage") | $STAGE_LABEL |"
+    echo "| $(t "Sensitive areas") | $SENSITIVE_LABEL |"
+    echo "| $(t "Estimated risk") | $RISK |"
+    echo "| $(t "AI mode") | $MODE (lead: $LEAD_LABEL) |"
+    echo "| $(t "Model profile") | $BUDGET_LABEL |"
+    echo "| $(t "Docs language") | $DOCLANG_LABEL |"
+    echo "| $(t "START.md after init") | $HISTORY_LABEL |"
+    echo "| $(t "Initial commit") | $commit_txt |"
     echo "| Push | $push_txt |"
-    echo "| Fichiers IA | $AI_FILES_LABEL |"
+    echo "| $(t "AI files") | $AI_FILES_LABEL |"
     echo
-    echo "## Consignes pour l'agent"
+    echo "## $(t "Instructions for the agent")"
     echo
-    echo "- Considère ces réponses comme acquises : confirme-les en une ligne, ne les redemande pas, et ne pose que les questions encore utiles."
-    echo "- Le risque est une estimation : réévalue-le après la découverte et signale tout écart."
-    echo "- Applique le profil modèles \`$BUDGET\` dans \`.ai/AI_MODEL_ROUTING.md\`."
-    echo "- Rédige la documentation du projet en $lang_txt."
+    t "- Treat these answers as settled: confirm them in one line, don't ask for them again, and only ask the questions that are still useful."; echo
+    t "- The risk is an estimate: reassess it after discovery and flag any gap."; echo
+    t "- Apply the \`%s\` model profile in \`.ai/AI_MODEL_ROUTING.md\`." "$BUDGET"; echo
+    echo "$lang_txt"
     if [[ "$COMMIT" == "yes" ]]; then
-      echo "- Commit initial autorisé en phase 8 si toutes les vérifications passent, sinon arrête-toi et explique."
+      t "- Initial commit allowed in phase 8 if all checks pass; otherwise stop and explain."; echo
     else
-      echo "- Ne committe pas : laisse les changements prêts et résume-les."
+      t "- Don't commit: leave the changes ready and summarise them."; echo
     fi
     if [[ "$PUSH" == "yes" ]]; then
-      echo "- Push autorisé vers \`${GIT_REMOTE%% *}\` après le commit initial (jamais de force-push)."
+      t "- Push allowed to \`%s\` after the initial commit (never force-push)." "${GIT_REMOTE%% *}"; echo
     else
-      echo "- Ne pousse rien vers un remote."
+      t "- Don't push anything to a remote."; echo
     fi
     case "$AI_FILES" in
-      local) echo "- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f) ; ils sont exclus via .git/info/exclude." ;;
+      local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude."; echo ;;
       private)
-        echo "- Fichiers IA dans un dépôt privé séparé : ne les versionne jamais dans le dépôt du projet (jamais de git add -f)."
-        echo "- Après chaque étape importante et en fin de session, sauvegarde-les : \`.loomy/scripts/ai-privacy.sh sync\`." ;;
+        t "- AI files in a separate private repository: never version them in the project repository (never git add -f)."; echo
+        t "- After each important step and at the end of the session, back them up: \`.loomy/scripts/ai-privacy.sh sync\`."; echo ;;
     esac
-    echo "- Nom technique du projet : \`$SLUG\`. Utilise-le pour les noms de paquet, de dépôt et les identifiants techniques, pour que tout porte le même nom."
-    if [[ -n "$REMOTE_NAME_NOTE" ]]; then echo "- Attention : $REMOTE_NAME_NOTE. Signale-le à l'utilisateur ; ne renomme rien sans son accord (gh repo rename $SLUG)."; fi
-    echo "- Mets à jour l'avancement avec \`.loomy/scripts/ai-status.sh set <phase>\`."
+    t "- Project technical name: \`%s\`. Use it for package names, repository names and technical identifiers, so that everything has the same name." "$SLUG"; echo
+    if [[ -n "$REMOTE_NAME_NOTE" ]]; then t "- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s)." "$REMOTE_NAME_NOTE" "$SLUG"; echo; fi
+    t "- Update progress with \`.loomy/scripts/ai-status.sh set <phase>\`."; echo
   } >"$BRIEF"
 }
 
@@ -656,7 +656,7 @@ plan_questions
 FORM_GROUPS="$(t "PROJECT")|$(t "REQUIREMENTS")|$(t "AI TEAM")|$(t "DELIVERABLES")"
 if (( TOTAL == 13 )); then FORM_GROUPS="$FORM_GROUPS|$(t "PLANS")"; fi
 while true; do
-  # Plein écran pendant les questions ; ← rejoue la passe jusqu'à la question précédente.
+  # Full screen during the questions; ← replays the pass up to the previous question.
   ui_form_begin "v$LOOMY_VERSION · $(t "startup brief") · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
   while true; do
     ui_form_pass
@@ -665,10 +665,10 @@ while true; do
   done
   ui_form_end
   show_recap
-  save_desc="Écrit .loomy/brief.md."
-  [[ "$GIT_INIT" == "yes" ]] && save_desc="Écrit .loomy/brief.md et initialise le dépôt Git (branche main)."
-  [[ "$GITHUB_REPO" != "no" ]] && save_desc="$save_desc Crée le dépôt GitHub $GH_USER/$REPO_NAME ($GITHUB_REPO)."
-  [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc Crée le dépôt privé ${GH_USER:+$GH_USER/}$AI_REPO_NAME pour les fichiers IA."
+  save_desc="$(t "Writes .loomy/brief.md.")"
+  [[ "$GIT_INIT" == "yes" ]] && save_desc="$(t "Writes .loomy/brief.md and initialises the Git repository (main branch).")"
+  [[ "$GITHUB_REPO" != "no" ]] && save_desc="$save_desc $(t "Creates the GitHub repository %s (%s)." "$GH_USER/$REPO_NAME" "$GITHUB_REPO")"
+  [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc $(t "Creates the private repository %s for the AI files." "${GH_USER:+$GH_USER/}$AI_REPO_NAME")"
   UI_LABEL="$(t "Brief")"
   choose_coded CONFIRM "Save this brief?" "save" "Nothing is written before you confirm." \
     "save|Yes, save|\$save_desc" \
@@ -676,7 +676,7 @@ while true; do
     "cancel|Cancel|No file written, no Git action."
   case "$CONFIRM" in
     save) break ;;
-    cancel) ui_rail_end "Annulé : aucun fichier écrit."; exit 1 ;;
+    cancel) ui_rail_end "$(t "Cancelled: no file written.")"; exit 1 ;;
     again)
       A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"
       A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
@@ -737,7 +737,7 @@ fi
 ui_step_run $st
 PROMPT="$(ai_start_prompt "$MODE" "$LEAD")"
 if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
-  # Premier brief : la phase passe à Découverte. Brief refait en cours de route : la phase en cours est conservée.
+  # First brief: the phase moves to Discovery. Brief redone midway: the current phase is kept.
   current_phase="$(sed -n 's/^phase=//p' "$TARGET/.loomy/state" 2>/dev/null | head -1 || true)"
   if [[ -z "$current_phase" || "$current_phase" == "brief" ]]; then
     "$SCRIPT_DIR/ai-status.sh" --root "$TARGET" set discover >/dev/null 2>&1 || true
@@ -751,7 +751,7 @@ LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""
 ui_rail_group "$(t "Next step")"
 step=1
-# Projet créé ailleurs que dans le dossier d'où loomy init a été lancé : il faut s'y rendre.
+# Project created somewhere other than the folder loomy init was run from: the user must go there.
 from="${LOOMY_INVOKED_FROM:-$TARGET}"
 if [[ "$(cd "$from" 2>/dev/null && pwd -P)" != "$(cd "$TARGET" && pwd -P)" ]]; then
   rel="${TARGET#"$from"/}"; [[ "$rel" == "$TARGET" ]] && rel="${TARGET/#$HOME/~}"
@@ -785,7 +785,7 @@ else
   ui_rail "   ${C_BOLD}.loomy/scripts/ai-status.sh --watch${C_RESET}"
 fi
 
-# Proposer d'ouvrir tout de suite la session, dans le dossier du projet (sans cd).
+# Offer to open the session right away, in the project folder (without cd).
 if ui_is_interactive && [[ -x "$SCRIPT_DIR/ai-start.sh" ]]; then
   ui_rail ""
   UI_LABEL="$(t "Session")"

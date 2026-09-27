@@ -40,8 +40,11 @@ t() {
   local s="$1"; shift
   if [[ "$LOOMY_UI_LANG" == "fr" ]]; then _t_fr "$s"; [[ -n "$_T" ]] && s="$_T"; fi
   # shellcheck disable=SC2059
-  if (( $# )); then printf "$s" "$@"; else printf '%s' "$s"; fi
+  if (( $# )); then printf -- "$s" "$@"; else printf '%s' "$s"; fi
 }
 
 # ui_lang: interface language (en or fr).
 ui_lang() { echo "$LOOMY_UI_LANG"; }
+
+# i18n_lines: translates stdin line by line (help texts).
+i18n_lines() { local l; while IFS= read -r l || [[ -n "$l" ]]; do t "$l"; echo; done; }

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # bibliothèque chargée par d'autres scripts
-# Visibilité des fichiers IA d'un projet Loomy. À charger (source). Compatible bash 3.2.
+# shellcheck disable=SC2034  # library sourced by other scripts
+# Visibility of a Loomy project's AI files. To be sourced. Bash 3.2 compatible.
 #
-#   versioned  versionnés avec le projet (par défaut)
-#   local      exclus de Git via .git/info/exclude : invisibles dans le dépôt, propres à cette copie
-#   private    exclus du dépôt du projet et versionnés dans un dépôt privé séparé (.loomy/ai.git),
-#              qui suit uniquement ces fichiers, directement dans le dossier du projet
+#   versioned  versioned with the project (default)
+#   local      excluded from Git via .git/info/exclude: invisible in the repository, specific to this copy
+#   private    excluded from the project repository and versioned in a separate private repository (.loomy/ai.git),
+#              which only tracks these files, directly in the project folder
 
-# Textes traduits (t) : la couche de langue est chargée si le script ne l'a pas déjà fait.
+# Translated strings (t): the language layer is loaded if the script hasn't done it already.
 if ! declare -F t >/dev/null 2>&1; then
   # shellcheck source=i18n.sh
   source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
 fi
 
 LOOMY_AI_PATHS=".loomy START.md AGENTS.md CLAUDE.md .ai .claude .codex"
-PRIVACY_BEGIN="# >>> loomy : fichiers IA hors du dépôt (loomy privacy)"
+PRIVACY_BEGIN="# >>> loomy : fichiers IA hors du dépôt (loomy privacy)"   # marker kept as is: existing exclude files use it
 PRIVACY_END="# <<< loomy"
 
 privacy_label() {
@@ -25,14 +25,14 @@ privacy_label() {
   esac
 }
 
-# privacy_mode <racine> : mode enregistré dans le brief (versioned par défaut).
+# privacy_mode <root>: mode recorded in the brief (versioned by default).
 privacy_mode() {
   local m
   m="$(sed -n '/^---$/,/^---$/p' "$1/.loomy/brief.md" 2>/dev/null | sed -n 's/^ai_files:[[:space:]]*//p' | head -1 || true)"
   case "$m" in local|private) echo "$m" ;; *) echo "versioned" ;; esac
 }
 
-# privacy_set_mode <racine> <mode> : écrit ai_files dans le front matter du brief.
+# privacy_set_mode <root> <mode>: writes ai_files in the brief's front matter.
 privacy_set_mode() {
   local brief="$1/.loomy/brief.md" tmp
   [[ -f "$brief" ]] || return 0
@@ -45,7 +45,7 @@ privacy_set_mode() {
   mv "$tmp" "$brief"
 }
 
-# privacy_set_key <racine> <clé> <valeur> : écrit une clé dans le front matter du brief.
+# privacy_set_key <root> <key> <value>: writes a key in the brief's front matter.
 privacy_set_key() {
   local brief="$1/.loomy/brief.md" tmp
   [[ -f "$brief" ]] || return 0
@@ -58,17 +58,17 @@ privacy_set_key() {
   mv "$tmp" "$brief"
 }
 
-# privacy_git_root <racine> : racine du dépôt Git du projet (vide s'il n'y en a pas).
+# privacy_git_root <root>: root of the project's Git repository (empty when there is none).
 privacy_git_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
 
-# privacy_exclude_file <racine> : fichier d'exclusion local du dépôt (propre à cette copie, jamais versionné).
+# privacy_exclude_file <root>: the repository's local exclude file (specific to this copy, never versioned).
 privacy_exclude_file() {
   local f
   f="$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 1
   case "$f" in /*) echo "$f" ;; *) echo "$1/$f" ;; esac
 }
 
-# privacy_patterns <racine> : motifs d'exclusion ancrés, préfixés si le projet vit dans un sous-dossier du dépôt.
+# privacy_patterns <root>: anchored exclude patterns, prefixed when the project lives in a subfolder of the repository.
 privacy_patterns() {
   local prefix p
   prefix="$(git -C "$1" rev-parse --show-prefix 2>/dev/null || true)"
@@ -98,7 +98,7 @@ privacy_excluded() {
   grep -qxF "$PRIVACY_BEGIN" "$f" 2>/dev/null
 }
 
-# privacy_tracked <racine> : fichiers IA encore suivis par le dépôt du projet (un chemin par ligne).
+# privacy_tracked <root>: AI files still tracked by the project repository (one path per line).
 privacy_tracked() {
   local p
   [[ -n "$(privacy_git_root "$1")" ]] || return 0
@@ -108,13 +108,13 @@ privacy_tracked() {
   return 0
 }
 
-# Dépôt privé séparé : un dépôt Git dont le dossier de travail est le projet, qui ne suit que les fichiers IA.
+# Separate private repository: a Git repository whose working tree is the project, tracking only the AI files.
 privacy_ai_git_dir() { echo "$1/.loomy/ai.git"; }
 ai_git() { local root="$1"; shift; git --git-dir="$(privacy_ai_git_dir "$root")" --work-tree="$root" "$@"; }
 
 privacy_companion_ready() { [[ -d "$(privacy_ai_git_dir "$1")" ]]; }
 
-# privacy_companion_config <racine> : réglages du dépôt privé (n'affiche que ses fichiers, ignore son propre dossier et le journal).
+# privacy_companion_config <root>: private repository settings (only shows its files, ignores its own folder and the log).
 privacy_companion_config() {
   local d
   d="$(privacy_ai_git_dir "$1")"
@@ -124,7 +124,7 @@ privacy_companion_config() {
   grep -qxF '/.loomy/ai.git/' "$d/info/exclude" 2>/dev/null || printf '/.loomy/ai.git/\n/.loomy/logs/\n' >>"$d/info/exclude"
 }
 
-# privacy_pending <racine> : nombre de changements pas encore sauvegardés dans le dépôt privé.
+# privacy_pending <root>: number of changes not yet backed up to the private repository.
 privacy_pending() {
   local p paths=()
   for p in $LOOMY_AI_PATHS; do [[ -e "$1/$p" ]] && paths+=("$p"); done

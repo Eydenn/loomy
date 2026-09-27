@@ -1,9 +1,9 @@
 #!/bin/sh
-# Installe la commande « loomy » sans npm, bun ni Homebrew.
-# Crée un petit script dans ~/.local/bin (ou $LOOMY_PREFIX/bin) qui appelle ce dossier.
+# Installs the "loomy" command without npm, bun or Homebrew.
+# Creates a small script in ~/.local/bin (or $LOOMY_PREFIX/bin) that calls this folder.
 #
 #   ./install.sh              installer
-#   ./install.sh --uninstall  désinstaller
+#   ./install.sh --uninstall  uninstall
 set -eu
 
 DIR=$(cd "$(dirname "$0")" && pwd)
@@ -12,7 +12,7 @@ TARGET="$PREFIX/bin/loomy"
 
 if [ "${1:-}" = "--uninstall" ]; then
   rm -f "$TARGET"
-  echo "loomy désinstallé ($TARGET supprimé)."
+  echo "loomy uninstalled ($TARGET removed)."
   exit 0
 fi
 
@@ -21,9 +21,9 @@ printf '#!/bin/sh\n# Installé par install.sh de Loomy.\nexec "%s/bin/loomy" "$@
 chmod +x "$TARGET" "$DIR/bin/loomy"
 chmod +x "$DIR"/scripts/*.sh
 
-echo "loomy installé : $TARGET → $DIR"
+echo "loomy installed: $TARGET → $DIR"
 case ":$PATH:" in
   *":$PREFIX/bin:"*) ;;
-  *) echo "Ajoutez $PREFIX/bin à votre PATH, par exemple : echo 'export PATH=\"$PREFIX/bin:\$PATH\"' >> ~/.zshrc" ;;
+  *) echo "Add $PREFIX/bin to your PATH, for example: echo 'export PATH=\"$PREFIX/bin:\$PATH\"' >> ~/.zshrc" ;;
 esac
-echo "Vérifiez la machine avec : loomy doctor --fix"
+echo "Check the machine with: loomy doctor --fix"

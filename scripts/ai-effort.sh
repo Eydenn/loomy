@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Effort de raisonnement des rôles d'un projet Loomy (orchestrateur par défaut). Compatible bash 3.2.
-#   ai-effort.sh                      menu : choisir l'effort de l'orchestrateur
-#   ai-effort.sh <niveau>             règle l'orchestrateur : low, medium, high, xhigh ou max
-#   ai-effort.sh <rôle> <niveau>      règle un autre rôle (executor, reviewer, architect…)
-#   ai-effort.sh [<rôle>] --reset     revient à l'effort du profil (tous les rôles avec --reset seul)
-#   ai-effort.sh --list               efforts de tous les rôles
-# Réglage enregistré dans .loomy/efforts ; pris en compte au prochain loomy start et par les délégations suivantes.
+# Reasoning effort of a Loomy project's roles (lead agent by default). Bash 3.2 compatible.
+#   ai-effort.sh                      menu: pick the lead agent's effort
+#   ai-effort.sh <level>              sets the lead agent: low, medium, high, xhigh or max
+#   ai-effort.sh <role> <level>       sets another role (executor, reviewer, architect…)
+#   ai-effort.sh [<role>] --reset     goes back to the profile's effort (every role with --reset alone)
+#   ai-effort.sh --list               effort of every role
+# Saved in .loomy/efforts; used from the next loomy start and by the following delegations.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +18,7 @@ ROOT=""; ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//; s/ai-effort.sh/loomy effort/'; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//; s/ai-effort.sh/loomy effort/' | i18n_lines; exit 0 ;;
     *) ARGS+=("$1") ;;
   esac
   shift
@@ -38,7 +38,7 @@ label() {
   esac
 }
 
-# set_effort <rôle> <niveau|""> : écrit (ou retire) le réglage du rôle.
+# set_effort <role> <level|"">: writes (or removes) the role's setting.
 set_effort() {
   local role="$1" level="$2" tmp
   mkdir -p "$ROOT/.loomy"
@@ -99,7 +99,7 @@ case "$level" in
     done
     opts+=("$(t "Back to the profile")"); UI_DESCS+=("$(t "Removes the setting: the effort follows the brief's profile (%s)." "$(ai_profile_label "$AI_PROFILE")")"); UI_LABEL="Effort"
     ui_choose "$(t "Lead agent effort (%s)?" "$R_MODEL")" "$def" "${opts[@]}"
-    # Les niveaux d'abord (mêmes noms dans les deux langues), puis « Revenir au profil ».
+    # Levels first (same names in both languages), then "Back to the profile".
     if (( UI_INDEX >= $(set -- $LEVELS; echo $#) )); then set_effort lead ""; else set_effort lead "$UI_VALUE"; fi
     show_role lead; done_msg ;;
   *)

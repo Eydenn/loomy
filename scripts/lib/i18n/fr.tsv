@@ -1025,3 +1025,209 @@ Yes, save	Oui, enregistrer
 Review the questions	Revoir les questions
 Your current answers become the defaults.	Tes réponses actuelles deviennent les valeurs par défaut.
 No file written, no Git action.	Aucun fichier écrit, aucune action Git.
+Reasoning effort of a Loomy project's roles (lead agent by default). Bash 3.2 compatible.	Effort de raisonnement des rôles d'un projet Loomy (orchestrateur par défaut). Compatible bash 3.2.
+  loomy effort                      menu: pick the lead agent's effort	  loomy effort                      menu : choisir l'effort de l'orchestrateur
+  loomy effort <level>              sets the lead agent: low, medium, high, xhigh or max	  loomy effort <niveau>             règle l'orchestrateur : low, medium, high, xhigh ou max
+  loomy effort <role> <level>       sets another role (executor, reviewer, architect…)	  loomy effort <rôle> <niveau>      règle un autre rôle (executor, reviewer, architect…)
+  loomy effort [<role>] --reset     goes back to the profile's effort (every role with --reset alone)	  loomy effort [<rôle>] --reset     revient à l'effort du profil (tous les rôles avec --reset seul)
+  loomy effort --list               effort of every role	  loomy effort --list               efforts de tous les rôles
+Saved in .loomy/efforts; used from the next loomy start and by the following delegations.	Réglage enregistré dans .loomy/efforts ; pris en compte au prochain loomy start et par les délégations suivantes.
+Resume context for the lead agent, at session start. Bash 3.2 compatible.	Contexte de reprise pour l'orchestrateur, en début de session. Compatible bash 3.2.
+  ai-context.sh               prints the context (Codex reads it at session start, see AGENTS.md)	  ai-context.sh               affiche le contexte (Codex le lit en début de session, voir AGENTS.md)
+  ai-context.sh --hook start  Claude Code SessionStart hook: records the session opening, then prints the context	  ai-context.sh --hook start  hook SessionStart de Claude Code : note l'ouverture de la session, puis affiche le contexte
+  ai-context.sh --hook end    Claude Code SessionEnd hook: records the closing; in private repository mode, backs up the AI files	  ai-context.sh --hook end    hook SessionEnd de Claude Code : note la fermeture ; en mode dépôt privé, sauvegarde les fichiers IA
+  ai-context.sh --hook stop     Claude Code Stop hook: real cost of the lead agent's turn ("usage" log entry)	  ai-context.sh --hook stop     hook Stop de Claude Code : coût réel du tour de l'orchestrateur (journal « usage »)
+  ai-context.sh --hook subagent  SubagentStop hook: real cost of a native subagent	  ai-context.sh --hook subagent  hook SubagentStop : coût réel d'un sous-agent natif
+  --tool codex                 same hooks for Codex (.codex/hooks.json)	  --tool codex                 mêmes hooks pour Codex (.codex/hooks.json)
+Never blocks a session: if anything goes wrong, it stays silent.	Ne bloque jamais une session : en cas de problème, il se tait.
+Feedback on Loomy: prepares a GitHub issue with the useful, anonymised context. Bash 3.2 compatible.	Retour sur Loomy : prépare une issue GitHub avec le contexte utile, anonymisé. Compatible bash 3.2.
+  loomy feedback ["message"]   describe the problem or idea; preview, then sent only after confirmation	  loomy feedback ["message"]   décris le problème ou l'idée ; aperçu, puis envoi seulement après confirmation
+  loomy feedback --print       only prints the issue text (nothing is sent)	  loomy feedback --print       affiche seulement le texte de l'issue (rien n'est envoyé)
+  loomy feedback --root <dir>  project whose state to attach (default: current folder, if it is a Loomy project)	  loomy feedback --root <dir>  projet dont joindre l'état (par défaut : le dossier courant, s'il est un projet Loomy)
+Attached: versions (Loomy, system, bash, git, Claude Code, Codex, gh), and for a project: type, stage, AI mode,	Joint : versions (Loomy, système, bash, git, Claude Code, Codex, gh), et pour un projet : type, stade, mode IA,
+profile, phase and latest log events WITHOUT the task text. Never: name, goal, paths, code.	profil, phase et derniers événements du journal SANS le texte des tâches. Jamais : nom, objectif, chemins, code.
+Visibility of the project's AI files (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Bash 3.2 compatible.	Visibilité des fichiers IA du projet (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Compatible bash 3.2.
+  loomy privacy                          status: mode, files still tracked, private repository	  loomy privacy                          état : mode, fichiers encore suivis, dépôt privé
+  loomy privacy versioned                versioned with the project	  loomy privacy versioned                versionnés avec le projet
+  loomy privacy local                    excluded from Git on this machine (invisible in the repository)	  loomy privacy local                    exclus de Git sur cette machine (invisibles dans le dépôt)
+  loomy privacy private [--name NAME | --remote URL]   excluded from the project, backed up in a separate private repository	  loomy privacy private [--name NOM | --remote URL]   exclus du projet, sauvegardés dans un dépôt privé séparé
+  loomy privacy sync                     backs up the AI files to the private repository	  loomy privacy sync                     sauvegarde les fichiers IA dans le dépôt privé
+  loomy privacy restore <URL|account/repo>   gets the AI files back on another machine	  loomy privacy restore <URL|compte/dépôt>   récupère les fichiers IA sur une autre machine
+Loomy project log, readable. Bash 3.2 compatible.	Journal du projet Loomy, lisible. Compatible bash 3.2.
+  loomy log [-n N]        the last N events (20 by default), in local time	  loomy log [-n N]        les N derniers événements (20 par défaut), à l'heure locale
+  loomy log -f            then follows the log continuously	  loomy log -f            puis suit le journal en continu
+  loomy log --raw         raw JSON lines (.loomy/logs/events.jsonl)	  loomy log --raw         lignes JSON brutes (.loomy/logs/events.jsonl)
+  loomy log --since YYYY-MM-DD   from that date (monthly archives included)	  loomy log --since AAAA-MM-JJ   à partir de cette date (archives mensuelles comprises)
+  loomy log --csv         costs as CSV (delegations and Claude Code work, without the task text)	  loomy log --csv         coûts en CSV (délégations et travail de Claude Code, sans le texte des tâches)
+  loomy log --root <dir>  works on another project folder	  loomy log --root <dir>  agit sur un autre dossier de projet
+Starts or resumes the lead agent session of a Loomy project. Bash 3.2 compatible.	Démarre ou reprend la session de l'orchestrateur d'un projet Loomy. Compatible bash 3.2.
+  loomy start              menu: resume the last session, new session, or show the commands	  loomy start              menu : reprendre la dernière session, nouvelle session, ou afficher les commandes
+  loomy start --resume     resumes the last session of this folder directly (on this machine)	  loomy start --resume     reprend directement la dernière session de ce dossier (sur cette machine)
+  loomy start --new        opens a new session with the prompt suited to the project phase	  loomy start --new        ouvre une nouvelle session avec le prompt adapté à la phase du projet
+  loomy start --print      only shows the commands	  loomy start --print      affiche seulement les commandes
+  loomy start --watch      also opens live tracking next to the session (tmux, iTerm2 or a new window)	  loomy start --watch      ouvre aussi le suivi en direct à côté de la session (tmux, iTerm2 ou nouvelle fenêtre)
+                           (default when loomy config start_watch yes; --no-watch to skip it)	                           (par défaut si loomy config start_watch yes ; --no-watch pour l'éviter)
+  loomy start --root <dir> works on another project folder	  loomy start --root <dir> agit sur un autre dossier de projet
+Project and bootstrap status for Loomy. Bash 3.2 compatible.	Statut du projet et du bootstrap pour Loomy. Compatible bash 3.2.
+  ai-status.sh                 prints the status	  ai-status.sh                 affiche le statut
+  ai-status.sh set <phase>     records the current bootstrap phase (used by the agents)	  ai-status.sh set <phase>     enregistre la phase en cours du bootstrap (utilisé par les agents)
+  ai-status.sh --watch [N]     refreshes every N seconds (1 by default); q c l s (see the footer)	  ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (1 par défaut) ; q c l s (voir le pied d'écran)
+  --compact / --full           tight view (for a narrow pane) or full view; watch picks one from the terminal size	  --compact / --full           vue resserrée (pour un panneau étroit) ou complète ; watch choisit selon la taille du terminal
+  ai-status.sh --root <dir>    works on another project folder	  ai-status.sh --root <dir>    agit sur un autre dossier de projet
+  --fix       Offers and applies the possible fixes (with confirmation)	  --fix       Propose et applique les corrections possibles (avec confirmation)
+  --live      Tests each model of the matrix with a real minimal call (a few cents)	  --live      Teste chaque modèle de la matrice par un appel minimal réel (quelques centimes)
+  --compact   Short output (used by the questionnaire)	  --compact   Affichage court (utilisé par le questionnaire)
+  --root DIR  Project to check (default: current project)	  --root DIR  Projet à analyser (défaut : projet courant)
+Exit code: 0 when the minimum is met, 1 otherwise.	Code de sortie : 0 si le minimum est atteint, 1 sinon.
+Commands:	Commandes :
+  (none)                Shows the role → model / effort / tool matrix for this project	  (aucune)              Affiche la matrice rôle → modèle / effort / outil pour ce projet
+  get <role>            One "family model effort" line (for scripts)	  get <rôle>            Une ligne "famille modèle effort" (pour les scripts)
+  markdown              Matrix as Markdown (for .ai/AI_MODEL_ROUTING.md)	  markdown              Matrice au format Markdown (pour .ai/AI_MODEL_ROUTING.md)
+  all                   Matrix of the 4 environments side by side (Markdown)	  all                   Matrice des 4 environnements côte à côte (Markdown)
+  claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)	  claude-agents [DIR]   Génère les sous-agents Claude Code (défaut : <projet>/.claude/agents)
+  codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)	  codex-profiles        Extrait TOML des profils Codex par rôle (à ajouter à ~/.codex/config.toml)
+  lead                  Launch command of the main session (lead agent)	  lead                  Commande de lancement de la session principale (orchestrateur)
+Options:	Options :
+  --root DIR            Project (default: current project)	  --root DIR            Projet (défaut : projet courant)
+  --env ENV             claude | codex | hybrid-claude | hybrid-codex (default: detected)	  --env ENV             claude | codex | hybrid-claude | hybrid-codex (défaut : détecté)
+  --profile P           econome | equilibre | qualite (default: brief, otherwise equilibre)	  --profile P           econome | equilibre | qualite (défaut : brief, sinon equilibre)
+Roles: lead architect debugger security reviewer developer executor explorer documenter	Rôles : lead architect debugger security reviewer developer executor explorer documenter
+  --yes             No questions: default values (or those from --answers)	  --yes             Pas de questions : valeurs par défaut (ou celles de --answers)
+  --answers FILE    Reuse the answers of an existing brief (front matter key: value)	  --answers FILE    Reprendre les réponses d'un brief existant (front matter key: value)
+  --no-clipboard    Don't copy the startup prompt to the clipboard	  --no-clipboard    Ne pas copier le prompt de démarrage dans le presse-papiers
+  -h, --help        Show this help	  -h, --help        Afficher cette aide
+Keys: ↑↓ choose, ⏎ confirm, ← back to the previous question.	Touches : ↑↓ choisir, ⏎ valider, ← revenir à la question précédente.
+Variable: NO_COLOR=1 turns colours off.	Variable : NO_COLOR=1 désactive les couleurs.
+Usage: loomy init [folder] [options]	Usage : loomy init [dossier] [options]
+Without a folder: offers the current folder, or to create a new one from the project name.	Sans dossier : propose le dossier courant, ou d'en créer un nouveau à partir du nom du projet.
+With a folder: creates it if it doesn't exist.	Avec un dossier : le crée s'il n'existe pas.
+New project: copies START.md and .loomy/ into the folder, then runs the questionnaire.	Nouveau projet : copie START.md et .loomy/ dans le dossier, puis lance le questionnaire.
+Project already set up: offers to resume, update, redo the questionnaire or reset.	Projet déjà initialisé : propose de reprendre, mettre à jour, refaire le questionnaire ou réinitialiser.
+  --update          Updates the project's Loomy files (scripts, templates); keeps brief, phase and log	  --update          Met à jour les fichiers Loomy du projet (scripts, modèles) ; garde brief, phase et journal
+  --reset           Resets the bootstrap: START.md copied again, phase reset, questionnaire run again	  --reset           Réinitialise le bootstrap : START.md recopié, phase remise à zéro, questionnaire relancé
+  --no-wizard       Install only, without the questionnaire	  --no-wizard       Installer seulement, sans le questionnaire
+  --yes             Fill in the brief without questions, with default values	  --yes             Remplir le brief sans questions, avec les valeurs par défaut
+  --answers FILE    Reuse the answers of an existing brief.md	  --answers FICHIER Reprendre les réponses d'un brief.md existant
+Usage: loomy worktrees <task> [base-branch]	Usage : loomy worktrees <tâche> [branche-de-base]
+Creates two separate worktrees (codex/<task> and claude/<task>) next to the repository, for parallel mode.	Crée deux worktrees séparés (codex/<tâche> et claude/<tâche>) à côté du dépôt, pour le mode parallèle.
+Example: loomy worktrees auth-refactor main	Exemple : loomy worktrees auth-refactor main
+[Loomy] Resume context for project "%s"%s.	[Loomy] Contexte de reprise du projet « %s »%s.
+- Bootstrap finished: START.md no longer has authority. Follow AGENTS.md and CLAUDE.md; you remain the lead agent.	- Bootstrap terminé : START.md n'a plus d'autorité. Suis AGENTS.md et CLAUDE.md ; tu restes l'orchestrateur.
+- Bootstrap in progress, phase %s of 10: %s%s. %s	- Bootstrap en cours, phase %s sur 10 : %s%s. %s
+- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>.	- Reprends START.md à partir de cette phase. Enregistre chaque changement de phase, avant toute autre action : .loomy/scripts/ai-status.sh set <phase>.
+- What the user needs to do now: %s	- Ce que l'utilisateur doit faire maintenant : %s
+- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh.	- Brief (.loomy/brief.md) : mode %s, lead %s, profil %s, risque %s. Routage des rôles : .loomy/scripts/ai-route.sh ; délégations : .loomy/scripts/delegate-to-claude.sh et delegate-to-codex.sh.
+- Latest delegations: %s.	- Dernières délégations : %s.
+- Git: branch %s, %s modified file(s) not committed.	- Git : branche %s, %s fichier(s) modifié(s) non commité(s).
+- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f).	- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f).
+- AI files in a separate private repository: don't version them in the project repository; back them up at the end of each step with .loomy/scripts/ai-privacy.sh sync.	- Fichiers IA dans un dépôt privé séparé : ne les versionne pas dans le dépôt du projet ; sauvegarde-les en fin d'étape avec .loomy/scripts/ai-privacy.sh sync.
+- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration).	- Délégations : lance toujours les bridges au premier plan et attends leur fin (en arrière-plan, elles s'arrêtent si la session se ferme). Annonce chacune en une ligne avant (rôle, modèle, tâche, durée indicative) et après (résultat, durée).
+- Phase change: announce it on one line "Phase n/10 · Name", then what you are doing and what you expect from the user.	- Changement de phase : annonce-le sur une ligne « Phase n/10 · Nom », puis ce que tu fais et ce que tu attends de l'utilisateur.
+- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now.	- Pour commencer : dis à l'utilisateur, en une ou deux phrases, où en est le projet et ce que tu proposes de faire maintenant.
+no answer (connection, plan or model name)	pas de réponse (connexion, forfait ou nom de modèle)
+used by this project	utilisé par ce projet
+| Role | Scope | Tool | Model | Effort | How to call it |	| Rôle | Périmètre | Outil | Modèle | Effort | Comment l'appeler |
+| Role | Full Claude Code | Full Codex | Hybrid, Claude lead | Hybrid, Codex lead |	| Rôle | Full Claude Code | Full Codex | Hybride, lead Claude | Hybride, lead Codex |
+Agent templates not found: %s	Modèles d'agents introuvables : %s
+Codex lead: no native Claude subagent. Claude roles go through delegate-to-claude.sh.	Lead Codex : pas de sous-agent Claude natif. Les rôles Claude passent par delegate-to-claude.sh.
+Loomy — Codex profiles per role (profile %s, catalog from %s)	Loomy — profils Codex par rôle (profil %s, catalogue du %s)
+Error: the task name starts with a letter or digit, then letters, digits, dots, underscores and hyphens.	Erreur : le nom de tâche commence par une lettre ou un chiffre, puis lettres, chiffres, points, tirets bas et tirets.
+Error: run this script inside a Git repository.	Erreur : lancez ce script dans un dépôt Git.
+Error: the working tree must be clean before creating parallel worktrees.	Erreur : le répertoire de travail doit être propre avant de créer des worktrees parallèles.
+Commit or stash the current changes first.	Committez ou mettez de côté (stash) les changements en cours d'abord.
+Error: the branch already exists: %s	Erreur : la branche existe déjà : %s
+Error: the path already exists: %s	Erreur : le chemin existe déjà : %s
+Parallel worktrees	Worktrees parallèles
+task %s · from %s	tâche %s · à partir de %s
+Branch	Branche
+NEXT STEPS	ÉTAPES SUIVANTES
+Open the Codex path in Codex, and the Claude path in Claude Code.	Ouvre le chemin Codex dans Codex, et le chemin Claude dans Claude Code.
+Give each tool a distinct scope and the same acceptance criteria.	Donne à chaque outil un périmètre distinct et les mêmes critères d'acceptation.
+Each tool checks and commits before integration.	Chaque outil vérifie et committe avant l'intégration.
+removal after integration: git worktree remove <path>	suppression après intégration : git worktree remove <chemin>
+Usage: %s <architect|debugger|security|reviewer|explorer> "task"	Usage : %s <architect|debugger|security|reviewer|explorer> "tâche"
+Old names accepted: architecture, debug, review, research.	Anciens noms acceptés : architecture, debug, review, research.
+Possible overrides: DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE	Surcharges possibles : DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE
+Error: the Claude Code CLI ('claude') is not in the PATH. Run loomy doctor.	Erreur : la CLI Claude Code ('claude') est introuvable dans le PATH. Lancez loomy doctor.
+Act as a senior, independent code reviewer. Inspect the repository or the diff the task is about. Only report concrete defects: regressions, missing tests, dangerous assumptions or needless complexity. Don't modify any file. Give concise findings, ranked by severity, with file references and evidence.	Agis comme relecteur de code senior et indépendant. Inspecte le dépôt ou le diff concerné par la tâche. Ne signale que des défauts concrets : régressions, tests manquants, hypothèses dangereuses ou complexité inutile. Ne modifie aucun fichier. Rends des constats concis, classés par gravité, avec références de fichiers et preuves.
+Act as an independent software architect. Critique the proposed or current architecture against the task and the repository's constraints: key trade-offs, coupling, maintainability, scaling and simpler alternatives. Don't modify any file. Give concise, justified recommendations.	Agis comme architecte logiciel indépendant. Critique l'architecture proposée ou actuelle au regard de la tâche et des contraintes du dépôt : arbitrages importants, couplage, maintenabilité, montée en charge et alternatives plus simples. Ne modifie aucun fichier. Rends des recommandations concises et justifiées.
+Act as an independent debugging specialist. Examine the evidence available in the repository and the logs. Identify the likely causes, rank the hypotheses and propose the smallest, most discriminating checks or fixes. Don't modify any file. Avoid lists of speculative fixes.	Agis comme spécialiste indépendant du débogage. Examine les preuves disponibles dans le dépôt et les logs. Identifie les causes probables, classe les hypothèses et propose les vérifications ou correctifs les plus petits et les plus discriminants. Ne modifie aucun fichier. Évite les listes de correctifs spéculatifs.
+Act as an independent security reviewer. Only inspect the scope the task is about. Identify concrete security weaknesses with their exploitation context, evidence, affected files and recommended fix. Don't modify any file. Separate confirmed issues from hypotheses.	Agis comme relecteur sécurité indépendant. N'inspecte que le périmètre concerné par la tâche. Identifie des faiblesses de sécurité concrètes avec leur contexte d'exploitation, les preuves, les fichiers touchés et la correction recommandée. Ne modifie aucun fichier. Distingue les problèmes confirmés des hypothèses.
+Act as a focused technical researcher. Only study the question asked, favour reference evidence available in the environment, and give concise findings, uncertainties and the recommended action. Don't modify any file.	Agis comme chercheur technique ciblé. N'étudie que la question posée, privilégie les preuves de référence disponibles dans l'environnement, et rends des constats concis, les incertitudes et l'action recommandée. Ne modifie aucun fichier.
+Error: unsupported role '%s'. Roles that write go through Codex (delegate-to-codex.sh) or a native subagent.	Erreur : rôle non pris en charge '%s'. Les rôles qui écrivent passent par Codex (delegate-to-codex.sh) ou par un sous-agent natif.
+Task handed over by the lead agent:	Tâche confiée par l'orchestrateur :
+You are a specialist. Don't take over the project. Don't modify any file in the repository. Give your result only to the lead agent. Reply in English.	Tu es un spécialiste. Ne prends pas la direction du projet. Ne modifie aucun fichier du dépôt. Rends ton résultat uniquement à l'orchestrateur. Réponds en français.
+delegate-to-claude: role=%s model=%s effort=%s max_turns=%s profile=%s	delegate-to-claude : rôle=%s modèle=%s effort=%s tours_max=%s profil=%s
+delegate-to-claude: this Claude Code version doesn't know %s, trying again with '%s' (run 'claude update').	delegate-to-claude : cette version de Claude Code ne connaît pas %s, nouvel essai avec '%s' (lancez 'claude update').
+delegate-to-claude: %s unavailable for this account, falling back to %s (remembered for next time).	delegate-to-claude : %s indisponible pour ce compte, repli sur %s (noté pour les prochaines fois).
+delegate-to-claude: %ss · input tokens %s (%s cached), output %s · cost $%s	delegate-to-claude : %ss · tokens entrée %s (dont %s en cache), sortie %s · coût $%s
+You are the Executor. Do exactly the bounded task below, within the given scope. Follow the repository's conventions, add or update tests for the changed behaviour, run the relevant checks, then stop. Don't refactor anything outside the scope. If the task turns out to be ambiguous, cross-cutting or risky, stop without modifying any file and explain why it must be escalated.	Tu es l'Exécutant. Réalise exactement la tâche bornée ci-dessous, dans le périmètre indiqué. Suis les conventions du dépôt, ajoute ou mets à jour les tests du comportement modifié, lance les vérifications pertinentes, puis arrête-toi. Ne refactore rien hors du périmètre. Si la tâche s'avère ambiguë, transverse ou risquée, arrête-toi sans modifier de fichier et explique pourquoi elle doit remonter d'un cran.
+You are the Developer. Implement the feature or fix below within the given scope, following the repository's conventions, with tests. Run the relevant checks and give the exact commands and their results. Stop and report if the change becomes cross-cutting or risky.	Tu es le Développeur. Implémente la feature ou le correctif ci-dessous dans le périmètre indiqué, en suivant les conventions du dépôt, avec des tests. Lance les vérifications pertinentes et indique les commandes exactes et leurs résultats. Arrête-toi et rends compte si le changement devient transverse ou risqué.
+You are the Documenter. Only update the documentation the task points to. Be accurate: check every statement against the code. Don't modify source code.	Tu es le Documentaliste. Ne mets à jour que la documentation indiquée par la tâche. Sois exact : vérifie chaque affirmation dans le code. Ne modifie pas le code source.
+You are an independent Reviewer. Review the diff or files given in the task. Only report concrete defects: regressions, missed edge cases, security issues, missing tests, needless complexity, each with severity, file reference and evidence. Don't modify any file. "No findings" is a valid answer.	Tu es un Relecteur indépendant. Relis le diff ou les fichiers indiqués dans la tâche. Ne signale que des défauts concrets : régressions, cas limites oubliés, problèmes de sécurité, tests manquants, complexité inutile, chacun avec gravité, référence de fichier et preuve. Ne modifie aucun fichier. « Aucun constat » est une réponse valable.
+You are the Explorer. Only answer the question asked, with short facts and path:line references. Don't propose rewrites. Don't modify any file.	Tu es l'Explorateur. Réponds uniquement à la question posée, avec des faits courts et des références chemin:ligne. Ne propose pas de réécriture. Ne modifie aucun fichier.
+You are the Debugger. Examine the evidence, rank the cause hypotheses, and propose the smallest, most discriminating checks or fixes. Don't modify any file.	Tu es le Débogueur. Examine les preuves, classe les hypothèses de cause, et propose les vérifications ou correctifs les plus petits et les plus discriminants. Ne modifie aucun fichier.
+You are the Architect. Critique the design against the task and the repository's constraints: trade-offs, coupling, simpler alternatives. Don't modify any file.	Tu es l'Architecte. Critique la conception au regard de la tâche et des contraintes du dépôt : arbitrages, couplage, alternatives plus simples. Ne modifie aucun fichier.
+You are the Security reviewer. Only inspect the given scope. Report concrete weaknesses with their exploitability, evidence and fix, separating confirmed issues from hypotheses. Don't modify any file.	Tu es le Relecteur sécurité. N'inspecte que le périmètre donné. Signale des faiblesses concrètes avec leur exploitabilité, les preuves et la correction, en séparant les problèmes confirmés des hypothèses. Ne modifie aucun fichier.
+Error: unsupported role '%s'.	Erreur : rôle non pris en charge '%s'.
+Error: Codex CLI not found (PATH, Codex.app or ChatGPT.app). Run loomy doctor.	Erreur : CLI Codex introuvable (PATH, Codex.app ou ChatGPT.app). Lancez loomy doctor.
+You are a specialist. Don't take over the project. Give the lead agent a concise result: what you did or found, the files involved, the checks run and their results, the open risks. Reply in English.	Tu es un spécialiste. Ne prends pas la direction du projet. Rends un résultat concis à l'orchestrateur : ce que tu as fait ou trouvé, les fichiers concernés, les vérifications lancées et leurs résultats, les risques ouverts. Réponds en français.
+delegate-to-codex: role=%s model=%s effort=%s sandbox=%s profile=%s	delegate-to-codex : rôle=%s modèle=%s effort=%s sandbox=%s profil=%s
+delegate-to-codex: %s unavailable for this account, falling back to %s (remembered for next time).	delegate-to-codex : %s indisponible pour ce compte, repli sur %s (noté pour les prochaines fois).
+delegate-to-codex: codex exec failed (code %s). Last log lines:	delegate-to-codex : échec de codex exec (code %s). Dernières lignes du journal :
+delegate-to-codex: the working tree changed — review with 'git diff' before accepting:	delegate-to-codex : le répertoire de travail a changé — relisez avec 'git diff' avant d'accepter :
+delegate-to-codex: no file modified.	delegate-to-codex : aucun fichier modifié.
+delegate-to-codex: %ss · input tokens %s (%s cached), output %s · estimated cost $%s	delegate-to-codex : %ss · tokens entrée %s (dont %s en cache), sortie %s · coût estimé $%s
+To be decided	À décider
+The agent will propose a reasoned option during the interview.	L'agent proposera une option argumentée pendant l'entretien.
+Guides discovery (detected automatically, to confirm).	Oriente la découverte (détecté automatiquement, à confirmer).
+Defines how Codex and Claude Code share the work. Preselected from the detected tools.	Définit comment Codex et Claude Code se partagent le travail. Pré-sélection selon les outils détectés.
+One tool at a time: the simplest and cheapest.	Un seul outil à la fois : le plus simple et le moins coûteux.
+Both tools take turns, coordinated through Git and .ai/HANDOFF.md.	Les deux outils travaillent tour à tour, coordonnés par Git et .ai/HANDOFF.md.
+The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio.	L'orchestrateur délègue chaque rôle au meilleur modèle des deux familles (exécution sur GPT-6-Luna, architecture et sécurité sur Opus 5.5, revue croisée) : meilleur rapport qualité/coût.
+Both at the same time on separate worktrees: faster, integration needs care.	Les deux en même temps sur des worktrees séparés : plus rapide, intégration à soigner.
+The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning.	L'outil principal porte l'orchestrateur : il planifie, délègue, décide et vérifie. C'est lui qui mérite le meilleur raisonnement.
+This folder is inside the Git repository %s.	Ce dossier est à l'intérieur du dépôt Git %s.
+It has the project's name; created only once the brief is saved.	Il porte le nom du projet ; créé seulement une fois le brief enregistré.
+Claude Pro ($20/month)	Claude Pro (20 $/mois)
+Claude Max 5x ($100/month)	Claude Max 5x (100 $/mois)
+Claude Max 20x ($200/month)	Claude Max 20x (200 $/mois)
+ChatGPT Plus ($20/month)	ChatGPT Plus (20 $/mois)
+ChatGPT Pro ($100/month)	ChatGPT Pro (100 $/mois)
+ChatGPT Pro ($200/month)	ChatGPT Pro (200 $/mois)
+Loomy shows the API value consumed against $20 a month.	Loomy affiche la valeur API consommée face à 20 $ par mois.
+Loomy shows the API value consumed against $100 a month.	Loomy affiche la valeur API consommée face à 100 $ par mois.
+Loomy shows the API value consumed against $200 a month.	Loomy affiche la valeur API consommée face à 200 $ par mois.
+to clarify with the agent	à préciser avec l'agent
+commit after checks	commit après vérification
+push to %s	push vers %s
+no — the user commits	non — l'utilisateur committe
+allowed after checks	autorisé après vérification
+allowed to %s	autorisé vers %s
+Filled in by `init-wizard.sh` on %s. User answers, to be treated as an interview already held.	Rempli par `init-wizard.sh` le %s. Réponses de l'utilisateur à traiter comme un entretien déjà mené.
+Topic	Sujet
+Answer	Réponse
+to clarify	à préciser
+Model profile	Profil modèles
+START.md after init	START.md après init
+Instructions for the agent	Consignes pour l'agent
+- Treat these answers as settled: confirm them in one line, don't ask for them again, and only ask the questions that are still useful.	- Considère ces réponses comme acquises : confirme-les en une ligne, ne les redemande pas, et ne pose que les questions encore utiles.
+- The risk is an estimate: reassess it after discovery and flag any gap.	- Le risque est une estimation : réévalue-le après la découverte et signale tout écart.
+- Apply the `%s` model profile in `.ai/AI_MODEL_ROUTING.md`.	- Applique le profil modèles `%s` dans `.ai/AI_MODEL_ROUTING.md`.
+- Initial commit allowed in phase 8 if all checks pass; otherwise stop and explain.	- Commit initial autorisé en phase 8 si toutes les vérifications passent, sinon arrête-toi et explique.
+- Don't commit: leave the changes ready and summarise them.	- Ne committe pas : laisse les changements prêts et résume-les.
+- Push allowed to `%s` after the initial commit (never force-push).	- Push autorisé vers `%s` après le commit initial (jamais de force-push).
+- Don't push anything to a remote.	- Ne pousse rien vers un remote.
+- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude.	- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f) ; ils sont exclus via .git/info/exclude.
+- AI files in a separate private repository: never version them in the project repository (never git add -f).	- Fichiers IA dans un dépôt privé séparé : ne les versionne jamais dans le dépôt du projet (jamais de git add -f).
+- After each important step and at the end of the session, back them up: `.loomy/scripts/ai-privacy.sh sync`.	- Après chaque étape importante et en fin de session, sauvegarde-les : `.loomy/scripts/ai-privacy.sh sync`.
+- Project technical name: `%s`. Use it for package names, repository names and technical identifiers, so that everything has the same name.	- Nom technique du projet : `%s`. Utilise-le pour les noms de paquet, de dépôt et les identifiants techniques, pour que tout porte le même nom.
+- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s).	- Attention : %s. Signale-le à l'utilisateur ; ne renomme rien sans son accord (gh repo rename %s).
+- Update progress with `.loomy/scripts/ai-status.sh set <phase>`.	- Mets à jour l'avancement avec `.loomy/scripts/ai-status.sh set <phase>`.
+Writes .loomy/brief.md.	Écrit .loomy/brief.md.
+Writes .loomy/brief.md and initialises the Git repository (main branch).	Écrit .loomy/brief.md et initialise le dépôt Git (branche main).
+Creates the GitHub repository %s (%s).	Crée le dépôt GitHub %s (%s).
+Creates the private repository %s for the AI files.	Crée le dépôt privé %s pour les fichiers IA.
+Cancelled: no file written.	Annulé : aucun fichier écrit.
+- Write the project documentation in English.	- Rédige la documentation du projet en anglais.
+- Write the project documentation in French.	- Rédige la documentation du projet en français.

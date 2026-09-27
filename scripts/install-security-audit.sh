@@ -10,7 +10,7 @@ elif [[ -n "${1:-}" ]]; then
 fi
 
 if ! command -v npx >/dev/null 2>&1; then
-  echo "Erreur : npx est nécessaire pour installer le skill officiel Cloudflare security-audit." >&2
+  echo "Error: npx is required to install the official Cloudflare security-audit skill." >&2
   exit 1
 fi
 

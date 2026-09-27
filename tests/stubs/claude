@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Doublure de la CLI Claude Code pour tests/run.sh : aucune requête réseau.
-#   STUB_SLEEP=N              attend N secondes avant de répondre
-#   STUB_BROKEN_VERSION=1     « claude --version » échoue
-#   STUB_LOG=fichier          note chaque appel (arguments séparés par des tabulations)
+# Claude Code CLI test double for tests/run.sh: no network request.
+#   STUB_SLEEP=N              waits N seconds before answering
+#   STUB_BROKEN_VERSION=1     "claude --version" fails
+#   STUB_LOG=file             records each call (tab-separated arguments)
 set -u
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
 case "${1:-}" in
   --version)
     [[ -n "${STUB_BROKEN_VERSION:-}" ]] && exit 1
     echo "2.1.300 (Claude Code)"; exit 0 ;;
-  update) echo "Claude Code est à jour."; exit 0 ;;
+  update) echo "Claude Code is up to date."; exit 0 ;;
 esac
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
-text="réponse de la doublure claude"
-case "$*" in *"Réponds exactement : OK"*) text="OK" ;; esac
+text="answer from the claude double"
+case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
 printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","total_cost_usd":0.0123,"usage":{"input_tokens":120,"cache_creation_input_tokens":0,"cache_read_input_tokens":80,"output_tokens":40}}\n' "$text"

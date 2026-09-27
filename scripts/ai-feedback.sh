@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Retour sur Loomy : prépare une issue GitHub avec le contexte utile, anonymisé. Compatible bash 3.2.
-#   ai-feedback.sh ["message"]   décris le problème ou l'idée ; aperçu, puis envoi seulement après confirmation
-#   ai-feedback.sh --print       affiche seulement le texte de l'issue (rien n'est envoyé)
-#   ai-feedback.sh --root <dir>  projet dont joindre l'état (par défaut : le dossier courant, s'il est un projet Loomy)
-# Joint : versions (Loomy, système, bash, git, Claude Code, Codex, gh), et pour un projet : type, stade, mode IA,
-# profil, phase et derniers événements du journal SANS le texte des tâches. Jamais : nom, objectif, chemins, code.
+# Feedback on Loomy: prepares a GitHub issue with the useful, anonymised context. Bash 3.2 compatible.
+#   ai-feedback.sh ["message"]   describe the problem or idea; preview, then sent only after confirmation
+#   ai-feedback.sh --print       only prints the issue text (nothing is sent)
+#   ai-feedback.sh --root <dir>  project whose state to attach (default: current folder, if it is a Loomy project)
+# Attached: versions (Loomy, system, bash, git, Claude Code, Codex, gh), and for a project: type, stage, AI mode,
+# profile, phase and latest log events WITHOUT the task text. Never: name, goal, paths, code.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
     --print) PRINT=1 ;;
-    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//; s/ai-feedback.sh/loomy feedback/'; exit 0 ;;
+    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//; s/ai-feedback.sh/loomy feedback/' | i18n_lines; exit 0 ;;
     *) MSG="${MSG:+$MSG }$1" ;;
   esac
   shift
@@ -60,7 +60,7 @@ body() {
       echo "<details><summary>$(t "Latest journal events (without task text)")</summary>"
       echo
       echo '```'
-      # ROOT pointe ici sur une copie du journal dont le texte des tâches a été vidé (voir plus bas).
+      # ROOT points here to a copy of the log whose task text was emptied (see below).
       NO_COLOR=1 bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n 15 2>/dev/null || true
       echo '```'
       echo
@@ -69,7 +69,7 @@ body() {
   fi
 }
 
-# Journal : ai-log lit le fichier lui-même ; on lui passe une copie sans le texte des tâches.
+# Log: ai-log reads the file itself; we give it a copy without the task text.
 if (( IN_PROJECT )) && [[ -s "$(ai_journal_file "$ROOT")" ]]; then
   SAFE="$(mktemp -d)"; mkdir -p "$SAFE/.loomy/logs"
   cp "$ROOT/.loomy/brief.md" "$SAFE/.loomy/brief.md"

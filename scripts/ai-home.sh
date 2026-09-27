@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Accueil de « loomy » sans argument : où en est le projet, ce qui est attendu, et la suite en un choix. Compatible bash 3.2.
+# Home screen of "loomy" without arguments: where the project stands, what's expected, and the next step in one choice. Bash 3.2 compatible.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,13 +15,13 @@ source "$SCRIPT_DIR/lib/phases.sh"
 LOOMY_BIN="$SCRIPT_DIR/../bin/loomy"
 ROOT="$(ai_project_root)"
 
-# L'accueil est une application plein écran : ce qu'on y consulte (statut, visibilité, aide, diagnostic) s'affiche
-# dans le même écran, puis on y revient ; ouvrir la session ou le suivi passe la main. En quittant, rien ne reste
-# dans l'historique du terminal.
+# The home screen is a full-screen app: what you open there (status, visibility, help, check) is shown
+# in the same screen, then you come back; opening the session or live tracking hands over. On exit, nothing is left
+# in the terminal history.
 TMPV="$(mktemp "${TMPDIR:-/tmp}/loomy-vue.XXXXXX")"
 trap 'rm -f "$TMPV"' EXIT
 leave() { rm -f "$TMPV"; UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM; exit 0; }
-view() {   # view <titre> <commande>... : sortie de la commande dans la visionneuse ; q quitte Loomy
+view() {   # view <title> <command>...: command output in the viewer; q quits Loomy
   local title="$1"; shift
   LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 COLUMNS="$(_ui_term_size; echo "$UI_COLS")" "$@" >"$TMPV" 2>&1 </dev/null || true
   ui_pager "$title" "$TMPV"
@@ -49,7 +49,7 @@ if [[ ! -f "$ROOT/.loomy/brief.md" ]]; then
   done
 fi
 
-# ---------------------------------------------------------------- dans un projet
+# ---------------------------------------------------------------- inside a project
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }
 while true; do
   PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"

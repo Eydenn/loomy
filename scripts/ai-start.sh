@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Démarre ou reprend la session de l'orchestrateur d'un projet Loomy. Compatible bash 3.2.
-#   ai-start.sh              menu : reprendre la dernière session, nouvelle session, ou afficher les commandes
-#   ai-start.sh --resume     reprend directement la dernière session de ce dossier (sur cette machine)
-#   ai-start.sh --new        ouvre une nouvelle session avec le prompt adapté à la phase du projet
-#   ai-start.sh --print      affiche seulement les commandes
-#   ai-start.sh --watch      ouvre aussi le suivi en direct à côté de la session (tmux, iTerm2 ou nouvelle fenêtre)
-#                            (par défaut si loomy config start_watch yes ; --no-watch pour l'éviter)
-#   ai-start.sh --root <dir> agit sur un autre dossier de projet
+# Starts or resumes the lead agent session of a Loomy project. Bash 3.2 compatible.
+#   ai-start.sh              menu: resume the last session, new session, or show the commands
+#   ai-start.sh --resume     resumes the last session of this folder directly (on this machine)
+#   ai-start.sh --new        opens a new session with the prompt suited to the project phase
+#   ai-start.sh --print      only shows the commands
+#   ai-start.sh --watch      also opens live tracking next to the session (tmux, iTerm2 or a new window)
+#                            (default when loomy config start_watch yes; --no-watch to skip it)
+#   ai-start.sh --root <dir> works on another project folder
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,12 +30,12 @@ while [[ $# -gt 0 ]]; do
     --print|-p) MODE="print" ;;
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//; s/ai-start.sh/loomy start/'; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//; s/ai-start.sh/loomy start/' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
-# Chemin réel (liens résolus) : c'est celui que Claude et Codex enregistrent pour leurs sessions.
+# Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
 if [[ ! -f "$BRIEF" ]]; then
@@ -43,7 +43,7 @@ if [[ ! -f "$BRIEF" ]]; then
   exit 1
 fi
 
-# ---------------------------------------------------------------- projet et orchestrateur
+# ---------------------------------------------------------------- project and lead agent
 ai_detect_env "$ROOT"
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
 TOOL="$R_FAMILY"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
@@ -51,7 +51,7 @@ PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || tru
 NAME="$(_ai_brief_get "$BRIEF" name)"
 
 
-# Prompt de la nouvelle session selon l'avancement.
+# Prompt of the new session, depending on progress.
 if [[ -f "$ROOT/START.md" && ( -z "$PHASE" || "$PHASE" == "brief" || "$PHASE" == "discover" ) ]]; then
   PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="$(t "bootstrap start")"
 elif [[ -f "$ROOT/START.md" ]]; then
@@ -62,7 +62,7 @@ else
   KIND="$(t "everyday work (bootstrap done)")"
 fi
 
-# Session précédente sur cette machine : Claude range ses conversations par dossier, Codex note le dossier de chaque session.
+# Previous session on this machine: Claude stores its conversations per folder, Codex records each session's folder.
 HAS_SESSION=0
 if [[ "$TOOL" == "claude" ]]; then
   enc="$(printf '%s' "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')"
@@ -90,7 +90,7 @@ ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
 ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
 if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "a previous session exists on this machine")${C_RESET}"
 else ui_kv "Session" "${C_DIM}$(t "no previous session on this machine")${C_RESET}"; fi
-# Modèle de l'orchestrateur absent du catalogue local de Codex (renommé ou retiré) : on prévient avant de lancer.
+# Lead agent model missing from Codex's local catalog (renamed or removed): warn before launching.
 if [[ "$TOOL" == "codex" && -f "$HOME/.codex/models_cache.json" ]] && ! grep -qF "\"$MODEL\"" "$HOME/.codex/models_cache.json"; then
   ui_warn "$(t "%s missing from Codex's local catalog" "$MODEL")" "$(t "update the Loomy catalog (loomy update --catalog) or Codex, then loomy doctor --live")"
 fi
@@ -100,10 +100,10 @@ if (( ! CLI_OK )); then
   exit 1
 fi
 
-# ---------------------------------------------------------------- session + suivi en direct, côte à côte
-# Côte à côte si le terminal est large (≥ 160 colonnes), sinon l'un au-dessus de l'autre (session en haut, 2/3).
-# Le suivi se ferme de lui-même à la fin de la session de l'agent (--until-exit).
-# Petit script de lancement du suivi : il s'efface dès qu'il démarre (rien ne s'accumule dans le dossier temporaire).
+# ---------------------------------------------------------------- session + live tracking, side by side
+# Side by side when the terminal is wide (≥ 160 columns), otherwise one above the other (session on top, 2/3).
+# Tracking closes by itself when the agent session ends (--until-exit).
+# Small tracking launch script: it deletes itself as soon as it starts (nothing piles up in the temp folder).
 # watch_script <fichier> [pid de l'agent]
 watch_script() {
   local f="$1" until=""
@@ -115,10 +115,10 @@ watch_script() {
 start_with_watch() {
   local side=0 w agent name n
   _ui_term_size; (( UI_COLS >= 160 )) && side=1
-  # Scripts de suivi laissés par les versions précédentes (avant l'effacement automatique).
+  # Tracking scripts left by previous versions (before automatic deletion).
   find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-watch-*.sh' -mmin +5 -delete 2>/dev/null || true
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
-    # Déjà dans tmux : un panneau de suivi à côté, puis l'agent dans le panneau courant (même processus : exec).
+    # Already in tmux: a tracking pane alongside, then the agent in the current pane (same process: exec).
     w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
@@ -133,9 +133,9 @@ start_with_watch() {
     fi
   fi
   if command -v tmux >/dev/null 2>&1; then
-    # Session tmux dédiée : l'agent à gauche (ou en haut), le suivi à côté ; tout se ferme avec l'agent.
+    # Dedicated tmux session: the agent on the left (or on top), tracking alongside; everything closes with the agent.
     name="loomy-$(printf '%s' "$(basename "$ROOT")" | tr -c 'A-Za-z0-9_-' '-')"
-    # Session déjà ouverte (autre terminal) : on la rejoint plutôt que de la fermer, sauf demande contraire.
+    # Session already open (another terminal): join it rather than close it, unless asked otherwise.
     if tmux has-session -t "=$name" 2>/dev/null; then
       UI_LABEL="$(t "Session opened")"
       UI_DESCS=("$(t "This project's agent and tracking already run in a tmux session: you get it back as is, in this terminal.")" \
@@ -213,8 +213,8 @@ case "$MODE" in
 esac
 [[ "$MODE" == "print" ]] && exit 0
 
-# Codex n'exécute les hooks d'un projet (contexte automatique, suivi de session) qu'une fois le dossier jugé de confiance
-# et les hooks approuvés : il le demande lui-même au premier lancement.
+# Codex only runs a project's hooks (automatic context, session tracking) once the folder is trusted
+# and the hooks approved: it asks for this itself on first launch.
 if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
   ui_info "$(t "first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)")"
 fi
@@ -224,7 +224,7 @@ WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start 
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
 ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
-# Codex n'a pas de hooks par projet : la session est notée ici. Après exec, Codex garde ce pid.
+# Codex has no per-project hooks: the session is recorded here. After exec, Codex keeps this pid.
 if [[ "$TOOL" == "codex" ]]; then
   ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
 fi

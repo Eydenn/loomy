@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Journal du projet Loomy, lisible. Compatible bash 3.2.
-#   ai-log.sh [-n N]        les N derniers événements (20 par défaut), à l'heure locale
-#   ai-log.sh -f            puis suit le journal en continu
-#   ai-log.sh --raw         lignes JSON brutes (.loomy/logs/events.jsonl)
-#   ai-log.sh --since AAAA-MM-JJ   à partir de cette date (archives mensuelles comprises)
-#   ai-log.sh --csv         coûts en CSV (délégations et travail de Claude Code, sans le texte des tâches)
-#   ai-log.sh --root <dir>  agit sur un autre dossier de projet
+# Loomy project log, readable. Bash 3.2 compatible.
+#   ai-log.sh [-n N]        the last N events (20 by default), in local time
+#   ai-log.sh -f            then follows the log continuously
+#   ai-log.sh --raw         raw JSON lines (.loomy/logs/events.jsonl)
+#   ai-log.sh --since YYYY-MM-DD   from that date (monthly archives included)
+#   ai-log.sh --csv         costs as CSV (delegations and Claude Code work, without the task text)
+#   ai-log.sh --root <dir>  works on another project folder
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     --raw) RAW=1 ;;
     --since) SINCE="${2:-}"; shift ;;
     --csv) CSV=1 ;;
-    -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//; s/ai-log.sh/loomy log/'; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//; s/ai-log.sh/loomy log/' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
@@ -38,7 +38,7 @@ ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd)"
 FILE="$(ai_journal_file "$ROOT")"
 [[ -f "$FILE" ]] || { t "No journal in this project (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
 
-# Événements choisis : tout l'historique (archives comprises), à partir de --since ; les N derniers sans --since.
+# Selected events: the whole history (archives included) from --since; the last N without --since.
 events() {
   if [[ -n "$SINCE" ]]; then ai_journal_all "$ROOT" | awk -v s="\"ts\":\"$SINCE" 'substr($0, 2, length(s)) >= s'
   else ai_journal_all "$ROOT" | tail -n "$N"; fi
@@ -60,7 +60,7 @@ if (( RAW )); then
   events; exit 0
 fi
 
-# Décalage horaire local en minutes (le journal est en UTC ; awk de macOS n'a ni mktime ni strftime).
+# Local UTC offset in minutes (the log is in UTC; macOS awk has neither mktime nor strftime).
 z="$(date +%z)"; sign=1; [[ "${z:0:1}" == "-" ]] && sign=-1
 OFFSET=$(( sign * (10#${z:1:2} * 60 + 10#${z:3:2}) ))
 PHASEMAP=""; i=0

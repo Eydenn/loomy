@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Catalogue des modèles publié plus récent que celui utilisé ? Compatible bash 3.2.
-#   ai-catalog-check.sh     affiche la date du catalogue publié s'il est plus récent (rien sinon)
-# Ne ralentit jamais : la date publiée est lue dans un cache (~/.config/loomy/catalog.remote), rafraîchi en arrière-plan
-# au plus une fois par jour (gh pour le dépôt privé, sinon l'URL publique). LOOMY_CATALOG_CHECK=0 désactive.
+# Is the published model catalog newer than the one in use? Bash 3.2 compatible.
+#   ai-catalog-check.sh     prints the published catalog date when it is newer (nothing otherwise)
+# Never slows anything down: the published date is read from a cache (~/.config/loomy/catalog.remote), refreshed in the background
+# at most once a day (gh for the private repository, otherwise the public URL). LOOMY_CATALOG_CHECK=0 turns it off.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

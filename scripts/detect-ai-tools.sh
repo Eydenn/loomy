@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Indique quelles CLI IA sont disponibles. Code de sortie 1 si aucune n'est trouvée.
-# Pour les versions, la disponibilité des modèles et les corrections, utilisez ai-doctor.sh.
+# Tells which AI CLIs are available. Exit code 1 when none is found.
+# For versions, model availability and fixes, use ai-doctor.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

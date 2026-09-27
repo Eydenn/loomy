@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# loomy — point d'entrée unique de Loomy. Compatible bash 3.2.
-# Installé via npm, bun, Homebrew ou install.sh ; tous pointent vers ce fichier.
+# loomy — Loomy's single entry point. Bash 3.2 compatible.
+# Installed via npm, bun, Homebrew or install.sh; they all point to this file.
 set -euo pipefail
 
-# Dossier d'installation réel (les liens symboliques créés par npm, bun ou Homebrew sont résolus).
+# Real install folder (symlinks created by npm, bun or Homebrew are resolved).
 _realpath() {
   local p="$1" link
   while [[ -L "$p" ]]; do
@@ -29,9 +29,9 @@ project_root() { ai_project_root; }
 INVOKED="${BASH_SOURCE[0]}"
 
 # ---------------------------------------------------------------- installations
-# method_of <chemin appelé> <dossier réel> : brew, npm, bun, git (clone + install.sh) ou manuel.
-# L'ordre compte : npm installé avec le Node de Homebrew range ses paquets dans /opt/homebrew/lib/node_modules,
-# et bun peut ranger les siens dans ~/node_modules (on reconnaît alors bun au chemin appelé, ~/.bun/bin).
+# method_of <invoked path> <real folder>: brew, npm, bun, git (clone + install.sh) or manual.
+# Order matters: npm installed with Homebrew's Node stores its packages in /opt/homebrew/lib/node_modules,
+# and bun may store its own in ~/node_modules (bun is then recognised by the invoked path, ~/.bun/bin).
 method_of() {
   case "$1" in */.bun/*) echo "bun"; return 0 ;; esac
   case "$2" in
@@ -43,7 +43,7 @@ method_of() {
 }
 install_method() { method_of "$INVOKED" "$LOOMY_HOME"; }
 
-# home_of <exécutable loomy> : dossier d'installation réel (lien résolu, ou cible du petit script d'install.sh).
+# home_of <loomy executable>: real install folder (resolved link, or target of the small install.sh script).
 home_of() {
   local p="$1" t
   if [[ ! -L "$p" ]] && grep -q "Installé par install.sh de Loomy" "$p" 2>/dev/null; then
@@ -53,7 +53,7 @@ home_of() {
   (cd "$(dirname "$(_realpath "$p")")/.." 2>/dev/null && pwd)
 }
 
-# loomy_installs : « méthode<TAB>dossier<TAB>commande » pour chaque loomy du PATH, dans l'ordre du PATH.
+# loomy_installs: "method<TAB>folder<TAB>command" for each loomy in the PATH, in PATH order.
 loomy_installs() {
   local p h seen=" "
   while IFS= read -r p; do
@@ -72,7 +72,7 @@ uninstall_cmd() {
   esac
 }
 
-# show_installs : l'installation utilisée, puis les autres copies trouvées dans le PATH et comment les retirer.
+# show_installs: the install in use, then the other copies found in the PATH and how to remove them.
 show_installs() {
   local m h p v n=0 first=1
   while IFS=$'\t' read -r m h p; do
@@ -93,7 +93,7 @@ show_installs() {
 }
 
 # ---------------------------------------------------------------- aide
-# L'aide s'écrit sur la sortie standard (loomy help | less), en couleurs seulement vers un terminal.
+# Help goes to standard output (loomy help | less), in colour only to a terminal.
 _h_color() {
   if [[ ( -t 1 || -n "${LOOMY_FORCE_COLOR:-}" ) && -z "${NO_COLOR:-}" ]]; then
     HB="$C_BOLD"; HD="$C_DIM"; HR="$C_RESET"; HL="$C_RAIL"; HA="$C_BOX"
@@ -102,12 +102,12 @@ _h_color() {
   fi
 }
 _h_group() { printf '%s\n%s◇%s  %s%s%s\n' "${HL}│${HR}" "$HL" "$HR" "$HB" "$1" "$HR"; }
-# _h_cmd <commande> <arguments> <description> : colonne de commandes alignée, description repliée à la largeur du terminal.
+# _h_cmd <command> <arguments> <description>: aligned command column, description wrapped to the terminal width.
 _h_cmd() {
   local left="loomy $1${2:+ $2}" col=34 len i indent
   _ui_term_size
   _ui_strlen "$left"; len=$UI_LEN
-  # Deux colonnes à partir de 80 colonnes ; sinon la description passe sous la commande.
+  # Two columns from 80 columns; otherwise the description goes under the command.
   if (( UI_COLS >= 80 && len + 2 <= col )); then
     _ui_wrap "$3" $(( UI_COLS - col - 5 ))
     _ui_pad "$left" "$col"
@@ -136,7 +136,7 @@ usage() {
   printf '\n  %s%s%s  %s%s%s\n' "$HB" "$tag" "$HR" "$HB" "$(t "Starts and structures your projects with Codex and Claude Code")" "$HR"
   _ui_pad "" $(( ${#tag} + 4 )); pad="$UI_PADDED"
   _ui_term_size
-  # Repli entre les éléments (jamais au milieu de l'un d'eux).
+  # Wrap between items (never in the middle of one).
   l=""
   for item in "$(t "questionnaire")" "$(t "agent-ready structure")" "$(t "lead agent and dedicated roles")" "$(t "live tracking")"; do
     if [[ -n "$l" ]] && (( ${#l} + ${#item} + 3 > UI_COLS - ${#pad} - 2 )); then printf '%s%s%s%s\n' "$pad" "$HD" "$l" "$HR"; l=""; fi
@@ -168,7 +168,7 @@ usage() {
   printf '%s│%s\n%s└%s  %s%s%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$(t "Help for a command: loomy help <command>")" "$HR"
 }
 
-# Aide courte des commandes gérées directement ici.
+# Short help for the commands handled directly here.
 sub_help() {
   case "$1" in
     log) t "Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]"; echo; t "Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl)."; echo ;;
@@ -188,7 +188,7 @@ sub_help() {
   esac
 }
 
-# Sans argument : l'accueil (état du projet et suite en un choix) dans un terminal, l'aide sinon.
+# No argument: the home screen (project status and next step in one choice) in a terminal, help otherwise.
 cmd="${1:-home}"; [[ $# -gt 0 ]] && shift
 
 case "$cmd" in
@@ -249,7 +249,7 @@ case "$cmd" in
   update|upgrade)
     case "${1:-}" in -h|--help) t "Usage: loomy update [--catalog]"; echo; t "Updates Loomy according to its install method (Homebrew, npm, bun or shell script)."; echo; t "--catalog: only updates the model and price catalog (no new Loomy version)."; echo; exit 0 ;; esac
     if [[ "${1:-}" == "--catalog" ]]; then
-      # Catalogue des modèles et des prix, publié dans le dépôt : lu par gh (dépôt privé), sinon par une URL publique.
+      # Model and price catalog, published in the repository: read with gh (private repository), otherwise via a public URL.
       tmp="$(mktemp)"
       if ! { command -v gh >/dev/null 2>&1 && gh api -H "Accept: application/vnd.github.raw" "repos/$LOOMY_REPO/contents/catalog/models.conf" >"$tmp" 2>/dev/null; } \
          && ! curl -fsSL "https://raw.githubusercontent.com/$LOOMY_REPO/main/catalog/models.conf" -o "$tmp" 2>/dev/null; then
@@ -274,17 +274,17 @@ case "$cmd" in
     rc=0
     case "$method" in
       brew)
-        # Homebrew télécharge dans un bac à sable sans accès au trousseau macOS : la formule reçoit le jeton de gh.
+        # Homebrew downloads in a sandbox without access to the macOS keychain: the formula gets gh's token.
         if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
           HOMEBREW_GITHUB_API_TOKEN="$(gh auth token 2>/dev/null || true)"; export HOMEBREW_GITHUB_API_TOKEN
         fi
         { brew update >/dev/null && brew upgrade eydenn/tap/loomy; } || rc=$? ;;
       bun)
-        # bun ne sait pas installer depuis un dépôt GitHub privé : on passe par l'archive de la dernière release.
+        # bun can't install from a private GitHub repository: we go through the latest release archive.
         tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
         { gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && bun add -g "$tmp"/loomy-*.tgz; } || rc=$?
         rm -rf "$tmp" ;;
-      # Même préfixe que l'installation existante, quel que soit le Node actif (nvm).
+      # Same prefix as the existing install, whatever Node is active (nvm).
       npm) npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO" || rc=$? ;;
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) t "Unknown install method: reinstall Loomy (see README)." >&2; echo >&2; exit 1 ;;
@@ -304,7 +304,7 @@ case "$cmd" in
     if (( $(loomy_installs | wc -l) > 1 )); then ui_section "$(t "INSTALLS")"; show_installs; fi
     ;;
 
-  __home) echo "$LOOMY_HOME" ;;   # utilisé par les relais des projets (.loomy/scripts/_loomy.sh)
+  __home) echo "$LOOMY_HOME" ;;   # used by the project relays (.loomy/scripts/_loomy.sh)
 
   version|--version|-v)
     echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"

@@ -11,16 +11,16 @@
 #   UI_DESCS  conséquence de chaque option, dans l'ordre des options
 #   UI_LABEL  libellé court de la réponse dans le récapitulatif (défaut : la question)
 #
-# Formulaire : ui_form_begin / ui_form_pass / ui_form_end encadrent une suite de questions groupées par
-# ui_group. L'écran est redessiné à chaque question : groupes terminés repliés sur une ligne, réponses du
-# groupe courant alignées, question courante en carte. La touche ← revient à la question précédente :
-# la passe en cours se termine sans rien demander, puis ui_form_again la fait rejouer jusqu'à cette question.
+# Form: ui_form_begin / ui_form_pass / ui_form_end wrap a series of questions grouped by
+# ui_group. The screen is redrawn at each question: finished groups folded on one line, answers of the
+# current group aligned, current question as a card. The ← key goes back to the previous question:
+# the current pass ends without asking anything, then ui_form_again replays it up to that question.
 #
-#   ui_form_begin "brief de démarrage · projet" "PROJET|EXIGENCES|ÉQUIPE IA"
+#   ui_form_begin "startup brief · project" "PROJECT|REQUIREMENTS|AI TEAM"
 #   while :; do ui_form_pass; poser_les_questions; ui_form_again || break; done
 #   ui_form_end
 
-# Langue de l'interface (anglais ou français) et fonction t.
+# Interface language (English or French) and the t function.
 # shellcheck source=i18n.sh
 source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
 
@@ -31,14 +31,14 @@ UI_KEY=""; UI_CH=""; UI_LEN=0; UI_LINES=()
 
 if [[ -z "${NO_COLOR:-}" ]] && { [[ -n "${LOOMY_FORCE_COLOR:-}" ]] || [[ -t 2 && "${TERM:-dumb}" != "dumb" ]]; }; then
   C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
-  C_TITLE=$'\033[1;97m'   # titres et nom du projet : gras (couleur de la charte ci-dessous, visible même sans gras, dans tmux par exemple)
+  C_TITLE=$'\033[1;97m'   # titles and project name: bold (brand colour below, visible even without bold, in tmux for example)
   C_RED=$'\033[31m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
   C_BLUE=$'\033[34m'; C_MAGENTA=$'\033[35m'; C_CYAN=$'\033[36m'
   if [[ "${TERM:-}" == *256color* || "${COLORTERM:-}" == truecolor || "${COLORTERM:-}" == 24bit ]]; then
-    C_BRAND=$'\033[1;38;5;141m'   # « Loomy » : violet clair
-    C_RAIL=$'\033[38;5;98m'       # fil conducteur et repères
-    C_BOX=$'\033[38;5;74m'        # encadré des conséquences
-    C_TITLE=$'\033[1;38;5;141m'  # titres et nom du projet : violet clair en gras
+    C_BRAND=$'\033[1;38;5;141m'   # "Loomy": light purple
+    C_RAIL=$'\033[38;5;98m'       # guide line and markers
+    C_BOX=$'\033[38;5;74m'        # consequence box
+    C_TITLE=$'\033[1;38;5;141m'  # titles and project name: bold light purple
   else
     C_BRAND=$'\033[1;35m'; C_RAIL=$'\033[35m'; C_BOX=$'\033[36m'; C_TITLE=$'\033[1;35m'
   fi
@@ -54,18 +54,18 @@ ui_print() {
   printf '%s\n' "$*" >&2
 }
 
-# ---------------------------------------------------------------- écran
-# Dans un terminal interactif, Loomy s'affiche dans l'écran alternatif, comme une application plein écran : chaque mise
-# à jour redessine le même écran depuis le haut, rien ne s'empile dans l'historique, et les lignes trop longues sont
-# coupées au lieu de passer à la ligne. La « page » (UI_PAGE_L) est ce que le script a affiché ; seule sa fin visible
-# est dessinée. En sortant, l'écran normal revient et la dernière page y est recopiée, une seule fois.
-# Le processus qui ouvre l'écran le possède (LOOMY_SCREEN_OWNER = son PID). Un sous-processus Loomy lancé pendant ce
-# temps dessine sur le même écran ; sa page est rendue au parent par le fichier LOOMY_PAGE_OUT (voir ui_run).
-# LOOMY_NO_CLEAR=1 : pas d'écran alternatif, sortie ligne à ligne.
+# ---------------------------------------------------------------- screen
+# In an interactive terminal, Loomy shows in the alternate screen, like a full-screen app: each update
+# redraws the same screen from the top, nothing piles up in the history, and lines that are too long are
+# cut instead of wrapping. The "page" (UI_PAGE_L) is what the script printed; only its visible end
+# is drawn. On exit, the normal screen comes back and the last page is copied there, once.
+# The process that opens the screen owns it (LOOMY_SCREEN_OWNER = its PID). A Loomy subprocess started meanwhile
+# draws on the same screen; its page is handed back to the parent through the LOOMY_PAGE_OUT file (see ui_run).
+# LOOMY_NO_CLEAR=1: no alternate screen, line by line output.
 UI_SCREEN=0; UI_PAGE_L=(); UI_PAGE_BODY=0
 
-# Terminaux sans écran séparé (celui de l'app Claude, par exemple) : l'écran ET l'historique sont vidés à l'entrée et
-# à la sortie, pour que Loomy soit seul à l'écran. Réglage : LOOMY_SCREEN=alt|clear, ou loomy config set screen.
+# Terminals without a separate screen (the Claude app's, for example): the screen AND the history are cleared on entry and
+# on exit, so that Loomy is alone on screen. Setting: LOOMY_SCREEN=alt|clear, or loomy config set screen.
 _ui_screen_mode() {
   local m="${LOOMY_SCREEN:-}"
   if [[ -z "$m" ]]; then
@@ -90,10 +90,10 @@ ui_screen_begin() {
   return 0
 }
 
-# ui_clear : ouvre l'écran de Loomy, ou le vide s'il est déjà ouvert.
+# ui_clear: opens the Loomy screen, or clears it when already open.
 ui_clear() { ui_screen_begin; }
 
-# ui_screen_end : referme l'écran (propriétaire) et recopie la page dans l'écran normal ; sous-processus : rend la page au parent.
+# ui_screen_end: closes the screen (owner) and copies the page to the normal screen; subprocess: hands the page to the parent.
 ui_screen_end() {
   [[ "$UI_SCREEN" == "1" ]] || return 0
   UI_SCREEN=0
@@ -102,8 +102,8 @@ ui_screen_end() {
     if [[ "$(_ui_screen_mode)" == "clear" ]]; then printf '\033[?7h\033[?25h\033[H\033[2J\033[3J' >&2
     else printf '\033[?7h\033[?25h\033[?1049l' >&2; fi
     unset LOOMY_SCREEN_OWNER
-    # Ce qui reste dans l'historique : le contenu de la dernière page, sans le logo ; rien quand on passe à un autre
-    # écran (ui_exec), pour que les écrans ne s'empilent pas.
+    # What stays in the history: the content of the last page, without the logo; nothing when moving to another
+    # screen (ui_exec), so that screens don't pile up.
     if [[ -z "${UI_NO_DUMP:-}" ]] && (( ${#UI_PAGE_L[@]} > 0 )); then
       local i n=${#UI_PAGE_L[@]}
       [[ -n "$UI_HDR_TITLE" ]] && printf '%s\n%s\n' "${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}" "${C_RAIL}│${C_RESET}" >&2
@@ -124,7 +124,7 @@ _ui_restore() {
   stty echo </dev/tty 2>/dev/null || true
 }
 
-# ui_external <commande>... : lance une commande interactive (gh auth login…) hors de l'écran de Loomy, puis y revient.
+# ui_external <command>...: runs an interactive command (gh auth login…) outside the Loomy screen, then comes back.
 ui_external() {
   local rc=0
   local mode; mode="$(_ui_screen_mode)"
@@ -140,11 +140,11 @@ ui_external() {
   return $rc
 }
 
-# ui_pager <titre> <fichier> : affiche un texte (sortie d'une commande Loomy) dans l'écran de l'application, avec
-# défilement ; ↑↓ ligne, espace / b page, ⏎ ou ← retour, q quitter. UI_KEY vaut « back » ou « quit » en sortie.
-# Hors écran plein (LOOMY_NO_CLEAR, sortie non interactive) : le texte est simplement affiché.
-# ui_clip <largeur> : coupe chaque ligne de l'entrée à <largeur> colonnes visibles (« … »), séquences de couleur
-# comprises ; rien ne passe à la ligne, même dans un terminal qui ignore la désactivation du retour automatique.
+# ui_pager <title> <file>: shows a text (output of a Loomy command) in the app screen, with
+# scrolling; ↑↓ line, space / b page, ⏎ or ← back, q quit. UI_KEY is "back" or "quit" on exit.
+# Outside full screen (LOOMY_NO_CLEAR, non-interactive output): the text is simply printed.
+# ui_clip <width>: cuts each input line to <width> visible columns ("…"), colour sequences
+# included; nothing wraps, even in a terminal that ignores turning off automatic wrap.
 ui_clip() {
   perl -CS -Mutf8 -ne '
     chomp; my ($w, $out, $vis) = ('"$1"', "", 0);
@@ -187,10 +187,10 @@ ui_pager() {
   return 0
 }
 
-# ui_exec <commande>... : quitte l'écran de Loomy (la page reste dans l'historique), puis lance la commande à sa place.
+# ui_exec <command>...: leaves the Loomy screen (the page stays in the history), then runs the command in its place.
 ui_exec() { UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM; exec "$@"; }
 
-# ui_run <commande>... : lance un sous-processus Loomy qui dessine sur le même écran, puis ajoute sa page à la page courante.
+# ui_run <command>...: runs a Loomy subprocess drawing on the same screen, then adds its page to the current page.
 ui_run() {
   local out rc=0 l
   if [[ "$UI_SCREEN" != "1" ]]; then "$@"; return $?; fi
@@ -202,23 +202,23 @@ ui_run() {
   return $rc
 }
 
-# _ui_page_draw [lignes-réservées] [suite] : dessine la fin de la page qui tient à l'écran, puis <suite> (question en cours).
+# _ui_page_draw [reserved-lines] [tail]: draws the end of the page that fits on screen, then <tail> (current question).
 # ---------------------------------------------------------------- cadre de l'application
-# Dans l'écran de Loomy, tout s'affiche dans un cadre fixe :
-#   en-tête : logo, puis « ┌ titre  contexte » (ui_banner le règle : projet, écran en cours, état)
-#   corps   : la page (UI_PAGE_L) et, en bas, la question en cours ; seule zone qui change
-#   pied    : les touches utiles (ui_choose, ui_input, visionneuse, suivi) et la version de Loomy
-# Les sous-processus Loomy reprennent le même en-tête (LOOMY_HDR_TITLE / LOOMY_HDR_SUB).
+# In the Loomy screen, everything shows in a fixed frame:
+#   header: logo, then "┌ title  context" (set by ui_banner: project, current screen, state)
+#   body  : the page (UI_PAGE_L) and, at the bottom, the current question; the only area that changes
+#   footer: the useful keys (ui_choose, ui_input, viewer, tracking) and the Loomy version
+# Loomy subprocesses reuse the same header (LOOMY_HDR_TITLE / LOOMY_HDR_SUB).
 UI_HDR_TITLE="${LOOMY_HDR_TITLE:-}"; UI_HDR_SUB="${LOOMY_HDR_SUB:-}"; UI_FTR_KEYS=""; UI_BODY_TOP=""; UI_CHROME_H=0
 UI_LOOMY_V="$(cat "$(dirname "${BASH_SOURCE[0]}")/../../VERSION" 2>/dev/null || true)"
 
-# ui_header <titre> <contexte> : en-tête du cadre (et des sous-processus).
+# ui_header <title> <context>: frame header (and subprocesses').
 ui_header() {
   UI_HDR_TITLE="$1"; UI_HDR_SUB="${2:-}"
   export LOOMY_HDR_TITLE="$UI_HDR_TITLE" LOOMY_HDR_SUB="$UI_HDR_SUB"
 }
 
-# _ui_chrome : lignes d'en-tête (UI_HDR_LINES, UI_CHROME_H) et pied (UI_FOOTER) pour la taille du terminal.
+# _ui_chrome: header lines (UI_HDR_LINES, UI_CHROME_H) and footer (UI_FOOTER) for the terminal size.
 _ui_chrome() {
   local l left right pad
   UI_HDR_LINES=()
@@ -235,8 +235,8 @@ _ui_chrome() {
   UI_FOOTER="${C_RAIL}└${C_RESET}  ${C_DIM}${left}$(printf '%*s' "$pad" '')${right}${C_RESET}"
 }
 
-# _ui_page_draw [lignes-réservées] [suite] : dessine le cadre, puis dans le corps la page et <suite> (question en cours).
-# Le corps montre la fin de la page (ce qui vient d'arriver), ou à partir de la ligne UI_BODY_TOP (suivi, visionneuse).
+# _ui_page_draw [reserved-lines] [tail]: draws the frame, then in the body the page and <tail> (current question).
+# The body shows the end of the page (what just arrived), or from line UI_BODY_TOP (tracking, viewer).
 _ui_page_draw() {
   local reserved="${1:-0}" tail="${2:-}" n=${#UI_PAGE_L[@]} avail start end i l out=$'\033[H'
   _ui_term_size; _ui_chrome
@@ -249,24 +249,24 @@ _ui_page_draw() {
   printf '%s%s\033[J\033[%d;1H%s\033[K' "$out" "$tail" "$UI_ROWS" "$UI_FOOTER" >&2
 }
 
-# ---------------------------------------------------------------- activité en direct
-# Deux composants, animés seulement dans l'écran de Loomy (ailleurs, seules les lignes finales s'affichent) :
-#   ui_wait <libellé> … ui_wait_end        une ligne « ◐ libellé…  1,2 s » le temps d'une vérification, puis effacée
-#   ui_steps_begin <titre> <étape>…        une liste d'étapes annoncées d'avance, avec barre de progression :
-#     ui_step_run <n>                      étape n (à partir de 0) en cours : toupie et chrono
-#     ui_step_done <n> <ok|warn|fail|skip> <libellé final> [détail]
-#     ui_steps_end                         barre finale et durée totale
-# L'animation tourne dans un processus à part, qui ne redessine que sa ligne (et la barre) : le travail reste au premier plan.
+# ---------------------------------------------------------------- live activity
+# Two components, animated only in the Loomy screen (elsewhere, only the final lines are printed):
+#   ui_wait <label> … ui_wait_end        a "◐ label…  1.2 s" line during a check, then erased
+#   ui_steps_begin <title> <step>…       a list of steps announced in advance, with a progress bar:
+#     ui_step_run <n>                    step n (from 0) running: spinner and timer
+#     ui_step_done <n> <ok|warn|fail|skip> <final label> [detail]
+#     ui_steps_end                       final bar and total duration
+# The animation runs in a separate process that only redraws its line (and the bar): the work stays in the foreground.
 UI_SPIN=("◐" "◓" "◑" "◒"); UI_TICK_PID=""; UI_WAIT_IDX=""
 UI_ST_L=(); UI_ST_S=(); UI_ST_D=(); UI_ST_T=(); UI_ST_BASE=-1; UI_ST_T0=0; UI_ST_CUR_T0=0
 
-# _ui_now_ms : horodatage en millisecondes dans UI_NOW.
+# _ui_now_ms: timestamp in milliseconds in UI_NOW.
 _ui_now_ms() {
   UI_NOW="$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null)" || UI_NOW=""
   [[ -n "$UI_NOW" ]] || UI_NOW=$(( $(date +%s) * 1000 ))
 }
 
-# _ui_dur <ms> : durée lisible dans UI_DUR (« 0,4 s », « 12 s », « 1 min 05 s »).
+# _ui_dur <ms>: readable duration in UI_DUR ("0,4 s", "12 s", "1 min 05 s").
 _ui_dur() {
   local ms=$1 s
   if (( ms < 10000 )); then UI_DUR="$(( ms / 1000 )),$(( ms % 1000 / 100 )) s"
@@ -274,7 +274,7 @@ _ui_dur() {
   else s=$(( ms / 1000 )); UI_DUR="$(( s / 60 )) min $(printf '%02d' $(( s % 60 ))) s"; fi
 }
 
-# _ui_row <icône> <libellé> <détail> <durée> : ligne d'étape alignée (libellé, détail estompé, durée à droite) dans UI_LINE.
+# _ui_row <icon> <label> <detail> <duration>: aligned step line (label, dimmed detail, duration on the right) in UI_LINE.
 _ui_row() {
   local icon="$1" label="$2" detail="$3" dur="$4" lw="${UI_ROW_LW:-30}" dw
   _ui_term_size
@@ -286,7 +286,7 @@ _ui_row() {
   UI_LINE="${C_RAIL}│${C_RESET}  ${icon} ${label}${C_DIM}${detail} ${dur}${C_RESET}"
 }
 
-# _ui_bar <fait> <total> [fini] : barre de progression dans UI_LINE.
+# _ui_bar <done> <total> [finished]: progress bar in UI_LINE.
 _ui_bar() {
   local done_n=$1 total=$2 fin="${3:-}" bw fill i on="" off="" pct tail
   _ui_term_size
@@ -299,7 +299,7 @@ _ui_bar() {
   UI_LINE="${C_RAIL}│${C_RESET}  ${on}${C_DIM}${off}${C_RESET}  ${tail}"
 }
 
-# _ui_screen_row <index> : ligne d'écran (à partir de 1) où s'affiche UI_PAGE_L[index], ou 0 si elle est hors de l'écran.
+# _ui_screen_row <index>: screen line (from 1) showing UI_PAGE_L[index], or 0 when off screen.
 _ui_screen_row() {
   local n=${#UI_PAGE_L[@]} start
   _ui_term_size; _ui_chrome
@@ -309,7 +309,7 @@ _ui_screen_row() {
   return 0
 }
 
-# _ui_tick_start <wait|step> : anime la ligne en cours (toupie et chrono) jusqu'à _ui_tick_stop.
+# _ui_tick_start <wait|step>: animates the current line (spinner and timer) until _ui_tick_stop.
 _ui_tick_start() {
   [[ "$UI_SCREEN" == "1" ]] || return 0
   local kind="$1"
@@ -356,7 +356,7 @@ ui_wait_end() {
   return 0
 }
 
-# _ui_steps_line <n> : redessine la ligne de l'étape n et la barre dans la page.
+# _ui_steps_line <n>: redraws step n's line and the bar in the page.
 _ui_steps_paint() {
   local i n=${#UI_ST_L[@]} icon done_n=0 label
   for (( i = 0; i < n; i++ )); do
@@ -382,7 +382,7 @@ ui_steps_begin() {
   UI_ST_L=("$@"); UI_ST_S=(); UI_ST_D=(); UI_ST_T=()
   for (( i = 0; i < $#; i++ )); do UI_ST_S[$i]="todo"; UI_ST_D[$i]=""; UI_ST_T[$i]=""; done
   _ui_now_ms; UI_ST_T0=$UI_NOW
-  # Colonne des libellés : juste assez large pour le plus long (libellés en cours, avec « … », ou finaux).
+  # Label column: just wide enough for the longest (running labels, with "…", or final ones).
   UI_ROW_LW=20
   for (( i = 0; i < $#; i++ )); do _ui_strlen "${UI_ST_L[$i]}…"; (( UI_LEN + 2 > UI_ROW_LW )) && UI_ROW_LW=$(( UI_LEN + 2 )); done
   (( UI_ROW_LW > 32 )) && UI_ROW_LW=32
@@ -420,15 +420,15 @@ ui_steps_end() {
   return 0
 }
 
-# Sous-processus lancé pendant qu'un écran Loomy est ouvert : il dessine sur ce même écran.
+# Subprocess started while a Loomy screen is open: it draws on that same screen.
 if [[ -n "${LOOMY_SCREEN_OWNER:-}" && "$LOOMY_SCREEN_OWNER" != "$$" && -z "${LOOMY_NO_CLEAR:-}" ]] && ui_is_interactive; then
   UI_SCREEN=1
   trap '_ui_restore' EXIT
   trap '_ui_restore; exit 130' INT TERM
 fi
 
-# ---------------------------------------------------------------- mesure et découpage du texte
-# _ui_strlen <texte> : largeur visible (UTF-8) dans UI_LEN, sans sous-processus si la locale est UTF-8.
+# ---------------------------------------------------------------- text measuring and splitting
+# _ui_strlen <text>: visible width (UTF-8) in UI_LEN, without subprocess when the locale is UTF-8.
 _ui_strlen() {
   local probe="é"
   if [[ ${#probe} == 1 ]]; then UI_LEN=${#1}; return 0; fi
@@ -439,7 +439,7 @@ _ui_strlen() {
 }
 _ui_len() { _ui_strlen "$1"; echo "$UI_LEN"; }
 
-# _ui_pad <texte> <largeur> : texte complété d'espaces dans UI_PADDED.
+# _ui_pad <text> <width>: text padded with spaces in UI_PADDED.
 _ui_pad() {
   local s="$1"
   _ui_strlen "$s"
@@ -447,21 +447,21 @@ _ui_pad() {
   UI_PADDED="$s"
 }
 
-# _ui_fit <texte> <largeur> : texte tronqué avec « … » s'il dépasse, dans UI_FIT.
+# _ui_fit <text> <width>: text truncated with "…" when too long, in UI_FIT.
 _ui_fit() {
   _ui_strlen "$1"
   if (( UI_LEN <= $2 )); then UI_FIT="$1"; return 0; fi
-  # Coupe par caractères, quelle que soit la locale (sinon un caractère accentué peut être coupé en deux).
+  # Cuts by characters, whatever the locale (otherwise an accented character may be split in two).
   UI_FIT="$(perl -CSA -Mutf8 -e 'print substr($ARGV[0], 0, $ARGV[1]), "…"' "$1" $(( $2 - 1 )) 2>/dev/null)" || UI_FIT="${1:0:$(( $2 - 1 ))}…"
 }
 
-# _ui_wrap <texte> <largeur> : découpe en lignes (mots entiers) dans le tableau UI_LINES.
+# _ui_wrap <text> <width>: splits into lines (whole words) in the UI_LINES array.
 _ui_wrap() {
   local w="$2" line="" word words=()
   UI_LINES=()
   read -r -a words <<<"$1"
   for word in ${words[@]+"${words[@]}"}; do
-    # Mot plus long que la largeur (un chemin, une URL) : coupé en morceaux.
+    # Word longer than the width (a path, a URL): cut into pieces.
     _ui_strlen "$word"
     while (( UI_LEN > w )); do
       [[ -n "$line" ]] && { UI_LINES+=("$line"); line=""; }
@@ -476,13 +476,13 @@ _ui_wrap() {
   return 0
 }
 
-# _ui_term_size : UI_ROWS, UI_COLS, et largeur utile UI_W (bornée pour rester lisible).
+# _ui_term_size: UI_ROWS, UI_COLS, and usable width UI_W (capped to stay readable).
 _ui_term_size() {
   local size
   size="$( { stty size </dev/tty; } 2>/dev/null || true)"
   [[ -z "$size" && -n "${COLUMNS:-}" ]] && size="${LINES:-24} $COLUMNS"
   UI_ROWS="${size%% *}"; UI_COLS="${size##* }"
-  # Taille inconnue ou nulle (certains pseudo-terminaux) : 80 × 24.
+  # Unknown or zero size (some pseudo-terminals): 80 × 24.
   [[ "$UI_ROWS" =~ ^[0-9]+$ ]] && (( UI_ROWS > 0 )) || UI_ROWS=24
   [[ "$UI_COLS" =~ ^[0-9]+$ ]] && (( UI_COLS > 0 )) || UI_COLS=80
   UI_W=$(( UI_COLS - 2 )); (( UI_W > 78 )) && UI_W=78; (( UI_W < 40 )) && UI_W=40
@@ -490,22 +490,22 @@ _ui_term_size() {
 }
 
 # ---------------------------------------------------------------- messages simples
-# Logo : le dessin de docs/assets/loomy-*.svg aux deux tiers (proportions et style conservés), en demi-blocs
-# (deux pixels par caractère), sur trois lignes.
-# {A} = accent violet (invite), {C} = curseur (clignote dans loomy watch : LOOMY_LOGO_BLINK=off l'éteint), {F} = texte.
+# Logo: the drawing of docs/assets/loomy-*.svg at two thirds (proportions and style kept), in half blocks
+# (two pixels per character), on three lines.
+# {A} = purple accent (prompt), {C} = cursor (blinks in loomy watch: LOOMY_LOGO_BLINK=off turns it off), {F} = text.
 UI_LOGO=(
   '{A}▀▄ {F}    ▀█   ▄▄   ▄▄  ▄▄ ▄  ▄  ▄ {C}▄▄'
   '{A} ▄▀{F}     █  █  █ █  █ █ █ █ ▀▄▄█ {C}██'
   '{A}▀  {F}    ▀▀▀  ▀▀   ▀▀  ▀ ▀ ▀  ▄▄▀ {C}▀▀'
 )
 
-# ui_logo_ok : vrai si le terminal est assez large pour le logo.
+# ui_logo_ok: true when the terminal is wide enough for the logo.
 ui_logo_ok() { _ui_term_size; (( UI_COLS >= 40 )); }
 
-# _ui_logo_lines <préfixe> : lignes colorées du logo dans UI_LINES.
+# _ui_logo_lines <prefix>: coloured logo lines in UI_LINES.
 _ui_logo_lines() {
   local l accent="${C_RAIL}" text="${C_BOLD}" cursor="${C_RAIL}"
-  # Curseur éteint : même place, teinte à peine visible (le logo ne bouge pas).
+  # Cursor off: same place, barely visible tint (the logo doesn't move).
   [[ "${LOOMY_LOGO_BLINK:-on}" == "off" && -n "$C_RESET" ]] && cursor=$'\033[38;5;237m'
   UI_LINES=()
   for l in "${UI_LOGO[@]}"; do
@@ -515,11 +515,11 @@ _ui_logo_lines() {
   return 0
 }
 
-# ui_banner <titre> <sous-titre> : en-tête des commandes Loomy (logo, puis ouverture du fil).
+# ui_banner <title> <subtitle>: header of Loomy commands (logo, then opening of the guide line).
 ui_banner() {
   local title="$1" subtitle="$2" l
-  # Dans l'écran de Loomy : l'en-tête du cadre, rien dans la page. Affiché dans une vue de l'application
-  # (LOOMY_NO_HEADER) : pas d'en-tête du tout, le cadre en a déjà un.
+  # In the Loomy screen: the frame header, nothing in the page. Shown in an app view
+  # (LOOMY_NO_HEADER): no header at all, the frame already has one.
   if [[ "$UI_SCREEN" == "1" ]]; then ui_header "$title" "$subtitle"; _ui_page_draw; return 0; fi
   [[ -n "${LOOMY_NO_HEADER:-}" ]] && return 0
   ui_print ""
@@ -527,7 +527,7 @@ ui_banner() {
     _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
     ui_print ""
-    UI_PAGE_BODY=${#UI_PAGE_L[@]}   # le logo reste à l'écran, pas dans l'historique
+    UI_PAGE_BODY=${#UI_PAGE_L[@]}   # the logo stays on screen, not in the history
     ui_print "${C_RAIL}┌${C_RESET}  ${C_TITLE}${title}${C_RESET}  ${C_DIM}${subtitle}${C_RESET}"
   else
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_TITLE}· ${title}${C_RESET}"
@@ -535,7 +535,7 @@ ui_banner() {
   fi
 }
 
-# Sortie des commandes : un fil conducteur violet, des sections ◇, une ligne de fin └.
+# Command output: a purple guide line, ◇ sections, a closing └ line.
 ui_section() { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}$1${C_RESET}${2:+  ${C_DIM}$2${C_RESET}}"; }
 ui_ok()   { if _ui_form_note ok "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_GREEN}✓${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
 ui_warn() { if _ui_form_note warn "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_YELLOW}!${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
@@ -550,8 +550,8 @@ ui_kv() {
   ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"
 }
 
-# ---------------------------------------------------------------- fil conducteur (récapitulatifs)
-# ui_rail_head <texte> : ouvre un nouvel écran (récapitulatif…). Dans le cadre : nouvel en-tête et corps vide.
+# ---------------------------------------------------------------- guide line (recaps)
+# ui_rail_head <text>: opens a new screen (recap…). In the frame: new header and empty body.
 ui_rail_head() {
   if [[ "$UI_SCREEN" == "1" ]]; then UI_PAGE_L=(); ui_header "$*" ""; _ui_page_draw; return 0; fi
   ui_print ""; ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_DIM}$*${C_RESET}"; ui_print "${C_RAIL}│${C_RESET}"
@@ -567,7 +567,7 @@ ui_rail() { ui_print "${C_RAIL}│${C_RESET}  $*"; }
 ui_rail_end() { ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; }
 
 # ---------------------------------------------------------------- lecture du clavier
-# _ui_read_key : UI_KEY = up|down|left|right|enter|space|backspace|clear|char|other ; UI_CH = caractère saisi.
+# _ui_read_key: UI_KEY = up|down|left|right|enter|space|backspace|clear|char|other; UI_CH = typed character.
 _ui_read_key() {
   local c="" c2="" c3=""
   UI_CH=""
@@ -575,7 +575,7 @@ _ui_read_key() {
   if [[ "$c" == $'\033' ]]; then
     IFS= read -rsn1 c2 </dev/tty || c2=""
     if [[ "$c2" == "[" || "$c2" == "O" ]]; then IFS= read -rsn1 c3 </dev/tty || c3=""; fi
-    # Séquences longues (Suppr = ESC [ 3 ~) : on consomme la fin.
+    # Long sequences (Del = ESC [ 3 ~): consume the rest.
     if [[ "$c3" =~ ^[0-9]$ ]]; then IFS= read -rsn1 _ </dev/tty || true; fi
     case "$c3" in A) UI_KEY="up" ;; B) UI_KEY="down" ;; C) UI_KEY="right" ;; D) UI_KEY="left" ;; *) UI_KEY="other" ;; esac
     return 0
@@ -591,12 +591,12 @@ _ui_read_key() {
   return 0
 }
 
-# ---------------------------------------------------------------- état du formulaire
+# ---------------------------------------------------------------- form state
 UI_FORM_ACTIVE=0; UI_FORM_TITLE=""; UI_GROUPS=(); UI_GROUP=""
 UI_STEP_CUR=0; UI_STEP_TOTAL=0
 UI_QN=0; UI_QI=0; UI_TARGET=0; UI_BACK=0; UI_MODE="ask"; UI_PREV=""; UI_HAS_PREV=0
-UI_RQ=(); UI_RV=()                               # question et réponse déjà données, par position
-UI_LOG_G=(); UI_LOG_T=(); UI_LOG_K=(); UI_LOG_V=() # récapitulatif de la passe : groupe, type, libellé, valeur
+UI_RQ=(); UI_RV=()                               # question and answer already given, by position
+UI_LOG_G=(); UI_LOG_T=(); UI_LOG_K=(); UI_LOG_V=() # recap of the pass: group, type, label, value
 
 ui_form_begin() {
   UI_FORM_TITLE="$1"; UI_GROUPS=()
@@ -631,7 +631,7 @@ ui_form_end() {
 
 ui_group() { UI_GROUP="$1"; }
 
-# ui_fact <libellé> <valeur> : résultat déduit des réponses (risque, routage…), affiché avec son groupe.
+# ui_fact <label> <value>: result derived from the answers (risk, routing…), shown with its group.
 ui_fact() {
   if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
     [[ "$UI_BACK" == "1" ]] || _ui_log fact "$1" "$2"
@@ -642,12 +642,12 @@ ui_fact() {
 }
 ui_step() { UI_STEP_CUR="$1"; UI_STEP_TOTAL="$2"; }
 
-# _ui_log <type> <libellé> <valeur>
+# _ui_log <type> <label> <value>
 _ui_log() {
   UI_LOG_G+=("$UI_GROUP"); UI_LOG_T+=("$1"); UI_LOG_K+=("$2"); UI_LOG_V+=("$3")
 }
 
-# Pendant le formulaire, les messages deviennent des notes du groupe courant au lieu d'être imprimés.
+# During the form, messages become notes of the current group instead of being printed.
 _ui_form_note() {
   [[ "$UI_FORM_ACTIVE" == "1" ]] || return 1
   [[ "$UI_BACK" == "1" ]] || _ui_log "$1" "" "$2"
@@ -656,7 +656,7 @@ _ui_form_note() {
 
 _ui_reset_ctx() { UI_HINT=""; UI_DESCS=(); UI_LABEL=""; }
 
-# _ui_q_begin <question> : décide si la question est posée, rejouée ou sautée (après ←).
+# _ui_q_begin <question>: decides whether the question is asked, replayed or skipped (after ←).
 _ui_q_begin() {
   UI_QI=$UI_QN; UI_QN=$(( UI_QN + 1 )); UI_INLINE_N=0
   UI_HAS_PREV=0; UI_PREV=""
@@ -668,7 +668,7 @@ _ui_q_begin() {
   return 0
 }
 
-# _ui_q_end <question> : mémorise et consigne la réponse (ou programme le retour en arrière).
+# _ui_q_end <question>: stores and records the answer (or schedules going back).
 _ui_q_end() {
   local label="${UI_LABEL:-$1}"
   label="${label% ?}"; label="${label%\?}"
@@ -690,18 +690,18 @@ UI_FRAME=""; UI_FRAME_N=0; UI_INLINE_N=0
 _ui_add() { UI_FRAME="${UI_FRAME}$1"$'\033[K\n'; UI_FRAME_N=$(( UI_FRAME_N + 1 )); }
 _ui_r() { _ui_add "${C_RAIL}│${C_RESET}  $1"; }
 
-# _ui_static <question> : partie fixe de l'écran (en-tête, groupes, carte), adaptée à la hauteur du terminal.
-# Renseigne UI_STATIC / UI_STATIC_N. <réservé> = lignes de la partie variable (options, encadré, pied).
+# _ui_static <question>: fixed part of the screen (header, groups, card), adapted to the terminal height.
+# Sets UI_STATIC / UI_STATIC_N. <reserved> = lines of the variable part (options, box, footer).
 _ui_static() {
   local q="$1" reserved="$2" level g i vals line text bar_on bar_off done_n
   local cw=$(( UI_W - 3 ))
   local pass logo
   for pass in 0 1 2 3 4; do
-    # Passe 0 : avec le logo ; ensuite, sans logo et de plus en plus compact si le terminal est bas.
+    # Pass 0: with the logo; then without logo and more and more compact if the terminal is short.
     logo=0; level=$(( pass - 1 )); if (( pass == 0 )); then logo=1; level=0; fi
     UI_FRAME=""; UI_FRAME_N=0
     if [[ "$UI_FORM_ACTIVE" == "1" ]]; then
-      # Écran de Loomy : logo et titre sont dans l'en-tête du cadre ; sinon, en tête du questionnaire.
+      # Loomy screen: logo and title are in the frame header; otherwise, at the top of the questionnaire.
       if [[ "$UI_SCREEN" == "1" ]]; then _ui_add "${C_RAIL}│${C_RESET}"
       elif (( logo )) && (( UI_COLS >= 40 )); then
         _ui_logo_lines " "
@@ -713,7 +713,7 @@ _ui_static() {
         _ui_add "${C_RAIL}┌${C_RESET}  ${C_BRAND}Loomy${C_RESET} ${C_DIM}${UI_FORM_TITLE}${C_RESET}"
         _ui_add "${C_RAIL}│${C_RESET}"
       fi
-      # Groupes terminés : une ligne chacun.
+      # Finished groups: one line each.
       if (( level < 3 )); then
         for g in ${UI_GROUPS[@]+"${UI_GROUPS[@]}"}; do
           [[ "$g" == "$UI_GROUP" ]] && break
@@ -727,7 +727,7 @@ _ui_static() {
           _ui_add "${C_RAIL}◇${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}  ${C_DIM}${UI_FIT}${C_RESET}"
         done
       fi
-      # Groupe courant : titre et progression.
+      # Current group: title and progress.
       if [[ -n "$UI_GROUP" ]]; then
         text=""; bar_on=""; bar_off=""
         if (( UI_STEP_TOTAL > 0 )); then
@@ -760,7 +760,7 @@ _ui_static() {
       fi
       _ui_add "${C_RAIL}│${C_RESET}"
     fi
-    # Carte de la question.
+    # Question card.
     _ui_wrap "$q" $(( cw ))
     line="${UI_LINES[0]:-$q}"
     _ui_add "${C_RAIL}◆${C_RESET}  ${C_BOLD}${line}${C_RESET}"
@@ -780,7 +780,7 @@ _ui_static() {
   UI_STATIC="$UI_FRAME"; UI_STATIC_N=$UI_FRAME_N
 }
 
-# _ui_boxes <largeur> : encadrés de conséquence pré-calculés, un par option (UI_BOX_0…), hauteur commune UI_BOX_H.
+# _ui_boxes <width>: precomputed consequence boxes, one per option (UI_BOX_0…), common height UI_BOX_H.
 _ui_boxes() {
   local cw="$1" n=${#UI_DESCS[@]} i j inner title rule body
   UI_BOX_H=0; UI_BOXES=()
@@ -809,10 +809,10 @@ _ui_boxes() {
   return 0
 }
 
-# _ui_render : affiche UI_STATIC + UI_FRAME (partie variable), plein écran ou sur place.
+# _ui_render: prints UI_STATIC + UI_FRAME (variable part), full screen or in place.
 _ui_render() {
   if [[ "$UI_FORM_ACTIVE" == "1" && "$UI_SCREEN" == "1" ]]; then
-    # Questionnaire dans le cadre : le corps ne montre que la question (la page est cachée le temps du formulaire).
+    # Questionnaire in the frame: the body only shows the question (the page is hidden during the form).
     local saved=(${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}); UI_PAGE_L=()
     _ui_page_draw 0 "$UI_STATIC$UI_FRAME"
     UI_PAGE_L=(${saved[@]+"${saved[@]}"})
@@ -826,7 +826,7 @@ _ui_render() {
   fi
 }
 
-# _ui_inline_done <question> : hors formulaire, remplace la carte par une ligne de réponse.
+# _ui_inline_done <question>: outside a form, replaces the card with an answer line.
 _ui_inline_done() {
   [[ "$UI_FORM_ACTIVE" == "1" ]] && return 0
   if (( UI_INLINE_N > 0 )); then printf '\033[%dA\033[J' "$UI_INLINE_N" >&2; fi
@@ -835,8 +835,8 @@ _ui_inline_done() {
   ui_print "${C_RAIL}◇${C_RESET}  ${C_DIM}${label}${C_RESET}  ${C_BOLD}${UI_VALUE:-—}${C_RESET}"
 }
 
-# Hors formulaire, le curseur est masqué pendant la question : il est rétabli même en cas d'interruption.
-# L'écho du terminal est coupé pendant une question : une frappe rapide, arrivée entre deux lectures, ne s'imprime pas en vrac.
+# Outside a form, the cursor is hidden during the question: it is restored even on interruption.
+# Terminal echo is off during a question: fast typing, arriving between two reads, doesn't print in a mess.
 _ui_hide_cursor() {
   printf '\033[?25l' >&2
   stty -echo </dev/tty 2>/dev/null || true
@@ -848,7 +848,7 @@ _ui_show_cursor() { printf '\033[?25h' >&2; [[ "$UI_FORM_ACTIVE" == "1" ]] || st
 _ui_footer() {
   local keys="$1"
   if ui_can_go_back; then keys="$keys   ← $(t "previous question")"; fi
-  # Écran de Loomy : les touches vont dans le pied du cadre.
+  # Loomy screen: the keys go in the frame footer.
   if [[ "$UI_SCREEN" == "1" ]]; then UI_FTR_KEYS="$keys"; return 0; fi
   _ui_add "${C_RAIL}└${C_RESET}  ${C_DIM}${keys}${C_RESET}"
 }
@@ -865,7 +865,7 @@ _ui_upcoming() {
 }
 
 # ---------------------------------------------------------------- questions
-# ui_input <question> <défaut> [texte-indicatif]
+# ui_input <question> <default> [placeholder]
 ui_input() {
   local q="$1" def="$2" ph="${3:-}" buf="" shown
   _ui_q_begin "$q"
@@ -895,14 +895,14 @@ ui_input() {
     esac
   done
   _ui_show_cursor
-  # Espaces en trop au début et à la fin retirés.
+  # Extra spaces at the start and end removed.
   buf="${buf#"${buf%%[![:space:]]*}"}"; buf="${buf%"${buf##*[![:space:]]}"}"
   UI_VALUE="${buf:-$def}"
   _ui_inline_done "$q"
   _ui_q_end "$q"
 }
 
-# ui_choose <question> <index-par-défaut (à partir de 0)> <option>...
+# ui_choose <question> <default-index (from 0)> <option>...
 ui_choose() {
   local q="$1" def="$2"; shift 2
   local opts=("$@") n=$# i sel mark cw line
@@ -918,7 +918,7 @@ ui_choose() {
   if (( UI_HAS_PREV )); then for (( i = 0; i < n; i++ )); do [[ "${opts[$i]}" == "$UI_PREV" ]] && sel=$i; done; fi
   _ui_term_size; cw=$(( UI_W - 3 ))
   _ui_boxes "$cw"
-  # Option « Quitter » ou « Annuler » : la touche q la choisit directement.
+  # "Quit" or "Cancel" option: the q key picks it directly.
   local quit_i=""
   for (( i = 0; i < n; i++ )); do case "${opts[$i]}" in Quitter|Annuler|Quit|Cancel) quit_i=$i ;; esac; done
   _ui_static "$q" $(( n + (UI_BOX_H > 0 ? UI_BOX_H + 3 : 0) + 3 ))
@@ -952,13 +952,13 @@ ui_choose() {
     esac
   done
   _ui_show_cursor
-  UI_VALUE="${opts[$sel]}"; UI_INDEX=$sel   # UI_INDEX : rang de l'option choisie, indépendant de la langue
+  UI_VALUE="${opts[$sel]}"; UI_INDEX=$sel   # UI_INDEX: rank of the chosen option, language-independent
   _ui_inline_done "$q"
   _ui_q_end "$q"
 }
 
-# ui_multi <question> <options cochées par défaut, séparées par des virgules> <option>...
-# UI_VALUE : options cochées séparées par « , » (vide si aucune).
+# ui_multi <question> <options checked by default, comma separated> <option>...
+# UI_VALUE: checked options separated by ", " (empty when none).
 ui_multi() {
   local q="$1" defs="$2"; shift 2
   local opts=("$@") n=$# i cur=0 out="" on=() box cw line
@@ -1012,7 +1012,7 @@ ui_multi() {
   _ui_q_end "$q"
 }
 
-# ui_copy <texte> : copie dans le presse-papiers si un outil de presse-papiers existe. Renvoie 0 en cas de succès.
+# ui_copy <text>: copies to the clipboard when a clipboard tool exists. Returns 0 on success.
 ui_copy() {
   if command -v pbcopy >/dev/null 2>&1; then printf '%s' "$1" | pbcopy
   elif command -v wl-copy >/dev/null 2>&1; then printf '%s' "$1" | wl-copy

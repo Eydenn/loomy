@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Statut du projet et du bootstrap pour Loomy. Compatible bash 3.2.
-#   ai-status.sh                 affiche le statut
-#   ai-status.sh set <phase>     enregistre la phase en cours du bootstrap (utilisé par les agents)
-#   ai-status.sh --watch [N]     rafraîchit l'affichage toutes les N secondes (1 par défaut) ; q c l s (voir le pied d'écran)
-#   --compact / --full           vue resserrée (pour un panneau étroit) ou complète ; watch choisit selon la taille du terminal
-#   ai-status.sh --root <dir>    agit sur un autre dossier de projet
+# Project and bootstrap status for Loomy. Bash 3.2 compatible.
+#   ai-status.sh                 prints the status
+#   ai-status.sh set <phase>     records the current bootstrap phase (used by the agents)
+#   ai-status.sh --watch [N]     refreshes every N seconds (1 by default); q c l s (see the footer)
+#   --compact / --full           tight view (for a narrow pane) or full view; watch picks one from the terminal size
+#   ai-status.sh --root <dir>    works on another project folder
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
     --pane) IN_PANE=1 ;;
     --full) COMPACT=0 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
-    -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
@@ -97,10 +97,10 @@ label_of() {
 }
 
 # ---------------------------------------------------------------- mode surveillance
-# Écran plein, redessiné sur place chaque seconde (rien ne s'empile dans l'historique). Entre deux images, le suivi
-# repère ce qui change (phase, délégation terminée ou en échec, session fermée) : il le met en évidence quelques
-# secondes et prévient par une notification (macOS) et un bip. Touches : q quitter, c vue resserrée/complète,
-# l journal, s ouvrir la session.
+# Full screen, redrawn in place every second (nothing piles up in the history). Between two frames, tracking
+# spots what changes (phase, delegation finished or failed, session closed): it highlights it for a few
+# seconds and notifies (macOS) with a beep. Keys: q quit, c compact/full view,
+# l log, s open the session.
 watch_notify() {
   [[ "$(loomy_config_get notify 2>/dev/null || true)" == "no" ]] && return 0
   printf '\a' >&2
@@ -122,7 +122,7 @@ if (( WATCH )); then
   p_phase=""; p_done=0; p_err=0; p_sess=""
   while true; do
     now="$(date +%s)"
-    # ---- ce qui a changé depuis l'image précédente
+    # ---- what changed since the previous frame
     phase="$(sed -n 's/^phase=//p' "$STATE" 2>/dev/null | head -1 || true)"
     n_done=0; n_err=0
     if [[ -s "$J" ]]; then
@@ -152,13 +152,13 @@ if (( WATCH )); then
     extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
     frame="$(LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
-    # Chaque ligne est coupée à la largeur du terminal (« … »), séquences de couleur comprises : pas de retour à la
-    # ligne, même dans un terminal qui ignore la désactivation du retour automatique.
+    # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
+    # even in a terminal that ignores turning off automatic wrap.
     frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"
     UI_PAGE_L=()
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
-      # Cadre de l'application : en-tête (projet, heure), corps affiché depuis le haut (↑↓ pour défiler), pied (touches).
+      # App frame: header (project, time), body shown from the top (↑↓ to scroll), footer (keys).
       ui_header "$NAME_W" "$(t "live tracking") · $(date '+%H:%M:%S')"
       LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on)
       _ui_term_size; _ui_chrome
@@ -171,7 +171,7 @@ if (( WATCH )); then
     tick=$(( tick + 1 ))
     key=""
     if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
-    # Flèches (séquence ESC [ A / B) : défilement du corps.
+    # Arrows (ESC [ A / B sequence): body scrolling.
     if [[ "$key" == $'\033' ]]; then
       k3=""; read -rsn1 -t 1 _ </dev/tty || true; read -rsn1 -t 1 k3 </dev/tty || true
       case "$k3" in A) wtop=$(( wtop - 1 )) ;; B) wtop=$(( wtop + 1 )) ;; esac
@@ -183,19 +183,19 @@ if (( WATCH )); then
       l|L) if [[ "$view" == "journal" ]]; then view="status"; else view="journal"; fi ;;
       s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
     esac
-    # Suivi ouvert par loomy start --watch : il se ferme avec la session de l'agent.
+    # Tracking opened by loomy start --watch: it closes with the agent session.
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
   done
   UI_PAGE_L=()
   exit 0
 fi
 
-# ---------------------------------------------------------------- en-tête
-# Commande directe : le statut s'imprime normalement (comme git status), sans écran plein.
-# Dans loomy watch, l'en-tête et le pied sont ceux du cadre de l'application (LOOMY_NO_HEADER).
+# ---------------------------------------------------------------- header
+# Direct command: the status prints normally (like git status), without full screen.
+# In loomy watch, the header and footer are the app frame's (LOOMY_NO_HEADER).
 if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then :
 elif [[ "$COMPACT" == "1" ]]; then
-  # Vue resserrée : le logo aussi (sans lignes vides autour), si le terminal est assez large.
+  # Compact view: the logo too (without blank lines around it), if the terminal is wide enough.
   if ui_logo_ok; then
     _ui_logo_lines "  "
     for l in "${UI_LINES[@]}"; do ui_print "$l"; done
@@ -207,9 +207,9 @@ elif [[ "$COMPACT" == "1" ]]; then
 else
   ui_banner "$(t "Project status")" "${C_RESET}${C_TITLE}$(brief_get name 2>/dev/null || basename "$ROOT")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 fi
-# Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
+# Loomy version copied into the project, compared with the installed one (unless this script is itself the project copy).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
-# Depuis la 0.3, le projet n'a plus que des relais vers le Loomy installé : rien à faire à chaque version.
+# Since 0.3, the project only has relays to the installed Loomy: nothing to do on each version.
 if [[ -d "$ROOT/.loomy/scripts/lib" ]]; then
   ui_warn "$(t "Loomy scripts copied into this project (before 0.3)")" "$(t "once and for all: loomy init --update")"
 elif [[ -n "$proj_v" && -n "$inst_v" ]] && ! ai_version_ge "$inst_v" "$proj_v"; then
@@ -247,7 +247,7 @@ if [[ -z "$CURRENT" ]]; then
   if [[ -f "$ROOT/START.md" ]]; then ui_info "$(t "START.md present but brief empty: run loomy brief")"
   else ui_info "$(t "no Loomy project here: run loomy init")"; fi
 else
-  # Frise large : une case par phase (█ fait, ▓ en cours, ░ à venir), puis ▲ et le nom sous la case en cours.
+  # Wide timeline: one box per phase (█ done, ▓ in progress, ░ upcoming), then ▲ and the name under the current box.
   _ui_term_size
   cw=$(( (UI_W - 3 - 9) / 10 )); (( cw > 7 )) && cw=7; (( cw < 2 )) && cw=2
   cell_done=""; cell_cur=""; cell_todo=""; i=0
@@ -269,8 +269,8 @@ else
   hl=""; [[ "${LOOMY_HL_PHASE:-0}" == "1" ]] && hl="  ${C_BOLD}${C_BRAND}✦ $(t "new phase")${C_RESET}"
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}${hl}"
   ui_print "${C_RAIL}│${C_RESET}"
-  # Bootstrap terminé : le bilan (durée, délégations, coût), tiré du journal.
-  # Bilan du bootstrap (archives comprises) : durée, délégations, coût des délégations et de Claude Code jusqu'à la fin.
+  # Bootstrap finished: the summary (duration, delegations, cost), taken from the log.
+  # Bootstrap summary (archives included): duration, delegations, cost of delegations and Claude Code until the end.
   J_DONE="$(ai_journal_file "$ROOT")"
   if [[ "$CURRENT" == "done" && -s "$J_DONE" ]]; then
     read -r b_start b_end b_n b_cost <<<"$(awk '
@@ -287,7 +287,7 @@ else
     ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n") ${C_DIM}·${C_RESET} \$${b_cost}"
   fi
   [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
-  # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
+  # Lead agent session: recorded by the Claude Code hooks and by loomy start (Codex).
   sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"
   you="$(loomy_you_now "$CURRENT" "$sess")"
   ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}$(t "Your turn:")${C_RESET} $you"
@@ -316,11 +316,11 @@ if [[ -f "$BRIEF" && "$COMPACT" != "1" ]]; then
   ui_kv "Git" "$(t "auto commit: %s · auto push: %s" "$(label_of "$(brief_get commit_after_setup)")" "$(label_of "$(brief_get push_after_commit)")")"
 fi
 
-# ---------------------------------------------------------------- activité
+# ---------------------------------------------------------------- activity
 JOURNAL="$(ai_journal_file "$ROOT")"
 if [[ -s "$JOURNAL" ]]; then
   ui_section "$(t "ACTIVITY")"
-  # Délégations en cours : un début sans fin (une seule lecture du journal), dont le processus tourne encore.
+  # Running delegations: a start without an end (a single read of the log), whose process is still running.
   now_s="$(date +%s)"
   awk '
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
@@ -333,8 +333,8 @@ if [[ -s "$JOURNAL" ]]; then
   while IFS='|' read -r pid ts role m task est; do
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || continue
     since="$(ai_ts_epoch "$ts")"
-    # Toupie (une image par rafraîchissement de loomy watch), chrono, et avancement estimé d'après les délégations
-    # passées du même rôle sur le même modèle.
+    # Spinner (one frame per loomy watch refresh), timer, and progress estimated from past delegations
+    # of the same role on the same model.
     spin="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"
     el_s=0; [[ -n "$since" ]] && el_s=$(( now_s - since )); (( el_s < 0 )) && el_s=0
     _ui_dur $(( el_s * 1000 )); el="${UI_DUR/,? s/ s}"
@@ -351,7 +351,7 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail "${C_YELLOW}${spin} $(t "running")${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
     ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
-  # Travail direct de Claude Code (orchestrateur, sous-agents natifs) : coût mesuré par les hooks Stop et SubagentStop.
+  # Claude Code direct work (lead agent, native subagents): cost measured by the Stop and SubagentStop hooks.
   HAS_USAGE=0
   if grep -q '"type":"usage"' "$JOURNAL"; then
     HAS_USAGE=1
@@ -388,7 +388,7 @@ if [[ -s "$JOURNAL" ]]; then
       line="$(printf '%-17s %3s appel(s)  %9s tokens  $%.4f' "$m" "$c" "$tok" "$cost")"
       ui_rail "${color}${bar}${C_RESET}${C_DIM}${rest}${C_RESET} ${line}"
     done
-    # Forfaits : coût réel à l'usage (API) ou valeur API consommée ce mois, rapportée au prix de l'abonnement.
+    # Plans: real pay-as-you-go cost (API) or API value consumed this month, compared with the subscription price.
     month="$(date -u +%Y-%m)"
     for fam in claude codex; do
       value="$(awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$month" '
@@ -419,11 +419,11 @@ if [[ -s "$JOURNAL" ]]; then
       { printf "%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40) }' |
     while IFS='|' read -r t st role m d cost task; do
       row=$(( row + 1 ))
-      # Journal en UTC, affichage à l'heure locale.
+      # Log in UTC, shown in local time.
       ep="$(ai_ts_epoch "$t")"
       if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
-      # Délégation tout juste terminée (loomy watch) : mise en évidence quelques secondes.
+      # Delegation just finished (loomy watch): highlighted for a few seconds.
       if (( row > n_shown - ${LOOMY_HL_DELEG:-0} )); then mark="${mark}${C_BRAND}${C_BOLD}✦${C_RESET}"; t="${C_BOLD}${t}"; else mark="${mark} "; fi
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  $%.4f' "$role" "$m" "$d" "$cost")  ${C_DIM}${task}${C_RESET}"
     done

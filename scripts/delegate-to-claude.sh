@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Confie un rôle en lecture seule à la CLI Claude Code (claude -p). Compatible bash 3.2.
-# Utilisé par un orchestrateur Codex en mode hybride. Claude inspecte et rend compte ; ses outils de modification sont désactivés.
+# Hands a read-only role to the Claude Code CLI (claude -p). Bash 3.2 compatible.
+# Used by a Codex lead agent in hybrid mode. Claude inspects and reports; its editing tools are disabled.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,9 +13,9 @@ ROLE="${1:-}"
 TASK="${2:-}"
 
 if [[ -z "$ROLE" || -z "$TASK" ]]; then
-  echo "Usage : $0 <architect|debugger|security|reviewer|explorer> \"tâche\"" >&2
-  echo "Anciens noms acceptés : architecture, debug, review, research." >&2
-  echo "Surcharges possibles : DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE" >&2
+  t "Usage: %s <architect|debugger|security|reviewer|explorer> \"task\"" "$0" >&2; echo >&2
+  t "Old names accepted: architecture, debug, review, research." >&2; echo >&2
+  t "Possible overrides: DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE" >&2; echo >&2
   exit 2
 fi
 
@@ -24,40 +24,40 @@ case "$ROLE" in
 esac
 
 if ! command -v claude >/dev/null 2>&1; then
-  echo "Erreur : la CLI Claude Code ('claude') est introuvable dans le PATH. Lancez loomy doctor." >&2
+  t "Error: the Claude Code CLI ('claude') is not in the PATH. Run loomy doctor." >&2; echo >&2
   exit 127
 fi
 
 case "$ROLE" in
   reviewer)
-    ROLE_GUIDANCE="Agis comme relecteur de code senior et indépendant. Inspecte le dépôt ou le diff concerné par la tâche. Ne signale que des défauts concrets : régressions, tests manquants, hypothèses dangereuses ou complexité inutile. Ne modifie aucun fichier. Rends des constats concis, classés par gravité, avec références de fichiers et preuves." ;;
+    ROLE_GUIDANCE="$(t "Act as a senior, independent code reviewer. Inspect the repository or the diff the task is about. Only report concrete defects: regressions, missing tests, dangerous assumptions or needless complexity. Don't modify any file. Give concise findings, ranked by severity, with file references and evidence.")" ;;
   architect)
-    ROLE_GUIDANCE="Agis comme architecte logiciel indépendant. Critique l'architecture proposée ou actuelle au regard de la tâche et des contraintes du dépôt : arbitrages importants, couplage, maintenabilité, montée en charge et alternatives plus simples. Ne modifie aucun fichier. Rends des recommandations concises et justifiées." ;;
+    ROLE_GUIDANCE="$(t "Act as an independent software architect. Critique the proposed or current architecture against the task and the repository's constraints: key trade-offs, coupling, maintainability, scaling and simpler alternatives. Don't modify any file. Give concise, justified recommendations.")" ;;
   debugger)
-    ROLE_GUIDANCE="Agis comme spécialiste indépendant du débogage. Examine les preuves disponibles dans le dépôt et les logs. Identifie les causes probables, classe les hypothèses et propose les vérifications ou correctifs les plus petits et les plus discriminants. Ne modifie aucun fichier. Évite les listes de correctifs spéculatifs." ;;
+    ROLE_GUIDANCE="$(t "Act as an independent debugging specialist. Examine the evidence available in the repository and the logs. Identify the likely causes, rank the hypotheses and propose the smallest, most discriminating checks or fixes. Don't modify any file. Avoid lists of speculative fixes.")" ;;
   security)
-    ROLE_GUIDANCE="Agis comme relecteur sécurité indépendant. N'inspecte que le périmètre concerné par la tâche. Identifie des faiblesses de sécurité concrètes avec leur contexte d'exploitation, les preuves, les fichiers touchés et la correction recommandée. Ne modifie aucun fichier. Distingue les problèmes confirmés des hypothèses." ;;
+    ROLE_GUIDANCE="$(t "Act as an independent security reviewer. Only inspect the scope the task is about. Identify concrete security weaknesses with their exploitation context, evidence, affected files and recommended fix. Don't modify any file. Separate confirmed issues from hypotheses.")" ;;
   explorer)
-    ROLE_GUIDANCE="Agis comme chercheur technique ciblé. N'étudie que la question posée, privilégie les preuves de référence disponibles dans l'environnement, et rends des constats concis, les incertitudes et l'action recommandée. Ne modifie aucun fichier." ;;
+    ROLE_GUIDANCE="$(t "Act as a focused technical researcher. Only study the question asked, favour reference evidence available in the environment, and give concise findings, uncertainties and the recommended action. Don't modify any file.")" ;;
   *)
-    echo "Erreur : rôle non pris en charge '$ROLE'. Les rôles qui écrivent passent par Codex (delegate-to-codex.sh) ou par un sous-agent natif." >&2
+    t "Error: unsupported role '%s'. Roles that write go through Codex (delegate-to-codex.sh) or a native subagent." "$ROLE" >&2; echo >&2
     exit 2 ;;
 esac
 
 ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" claude "$AI_PROFILE"
-# Volontairement pas CLAUDE_MODEL/CLAUDE_EFFORT : Claude Code exporte CLAUDE_EFFORT dans ses propres sessions.
+# Deliberately not CLAUDE_MODEL/CLAUDE_EFFORT: Claude Code exports CLAUDE_EFFORT in its own sessions.
 MODEL="${DELEGATE_CLAUDE_MODEL:-$R_MODEL}"
 EFFORT="${DELEGATE_CLAUDE_EFFORT:-$R_EFFORT}"
 MAX_TURNS="${DELEGATE_CLAUDE_MAX_TURNS:-${CLAUDE_MAX_TURNS:-8}}"
 
 PROMPT="$ROLE_GUIDANCE
 
-Tâche confiée par l'orchestrateur :
+$(t "Task handed over by the lead agent:")
 $TASK
 
-Tu es un spécialiste. Ne prends pas la direction du projet. Ne modifie aucun fichier du dépôt. Rends ton résultat uniquement à l'orchestrateur. Réponds en français."
+$(t "You are a specialist. Don't take over the project. Don't modify any file in the repository. Give your result only to the lead agent. Reply in English.")"
 
 run_claude() {
   LOOMY_DELEGATION=1 claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
@@ -65,7 +65,7 @@ run_claude() {
     --disallowedTools "Edit,Write,NotebookEdit"
 }
 
-echo "delegate-to-claude : rôle=$ROLE modèle=$MODEL effort=$EFFORT tours_max=$MAX_TURNS profil=$AI_PROFILE" >&2
+t "delegate-to-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE" >&2; echo >&2
 
 DELEG_ID="$(ai_delegation_id)"
 ai_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" read-only "$TASK"
@@ -75,23 +75,23 @@ OUT="$(run_claude "$MODEL")"
 STATUS=$?
 set -e
 
-# Les anciennes versions de Claude Code refusent les identifiants de modèles récents : nouvel essai avec l'alias de la famille.
+# Old Claude Code versions refuse recent model ids: try again with the family alias.
 if grep -q 'does not support this model' <<<"$OUT"; then
   ALIAS="$(ai_claude_alias "$MODEL")"
-  echo "delegate-to-claude : cette version de Claude Code ne connaît pas $MODEL, nouvel essai avec '$ALIAS' (lancez 'claude update')." >&2
+  t "delegate-to-claude: this Claude Code version doesn't know %s, trying again with '%s' (run 'claude update')." "$MODEL" "$ALIAS" >&2; echo >&2
   set +e
   OUT="$(run_claude "$ALIAS")"
   STATUS=$?
   set -e
 fi
 
-# Modèle refusé (inexistant ou pas d'accès pour ce compte) : noté pour cette machine, puis repli sur le modèle suivant
-# de sa chaîne dans le catalogue (tout le monde n'a pas accès aux derniers modèles).
+# Model refused (doesn't exist or no access for this account): recorded for this machine, then fallback to the next
+# model of its chain in the catalog (not everyone has access to the latest models).
 while grep -qiE "may not exist|not have access|model.*not (found|available)|invalid model|not_found_error" <<<"$OUT"; do
   ai_model_mark "$MODEL" ko
   NEXT="$(ai_model_next claude "$MODEL")"
   [[ -n "$NEXT" ]] || break
-  echo "delegate-to-claude : $MODEL indisponible pour ce compte, repli sur $NEXT (noté pour les prochaines fois)." >&2
+  t "delegate-to-claude: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
   MODEL="$NEXT"
   set +e
   OUT="$(run_claude "$MODEL")"
@@ -100,7 +100,7 @@ while grep -qiE "may not exist|not have access|model.*not (found|available)|inva
 done
 
 DURATION=$(( $(date +%s) - STARTED ))
-# Coût et tokens rapportés par la sortie JSON de claude -p.
+# Cost and tokens reported by the JSON output of claude -p.
 T_IN="$(ai_json_num "$OUT" input_tokens)"
 T_CACHED="$(ai_json_num "$OUT" cache_read_input_tokens)"
 T_CWRITE="$(ai_json_num "$OUT" cache_creation_input_tokens)"
@@ -109,7 +109,7 @@ COST="$(ai_json_num "$OUT" total_cost_usd)"
 RESULT="ok"
 if [[ $STATUS -ne 0 ]] || grep -q '"is_error":true' <<<"$OUT"; then RESULT="error"; fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"read-only\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":0,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
-echo "delegate-to-claude : ${DURATION}s · tokens entrée $(( T_IN + T_CACHED + T_CWRITE )) (dont $T_CACHED en cache), sortie $T_OUT · coût \$$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2
+t "delegate-to-claude: %ss · input tokens %s (%s cached), output %s · cost \$%s" "$DURATION" "$(( T_IN + T_CACHED + T_CWRITE ))" "$T_CACHED" "$T_OUT" "$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2; echo >&2
 
 printf '%s\n' "$OUT"
 exit "$STATUS"

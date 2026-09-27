@@ -594,3 +594,99 @@ questionnaire ignoré	questionnaire skipped
 Remplis le brief du projet :	Fill in the project brief:
 Lance l'orchestrateur :	Start the lead agent:
 START.md, .loomy/ et une ligne de .gitignore ajoutés ; rien d'autre n'est modifié	START.md, .loomy/ and one .gitignore line added; nothing else is changed
+# Aide et commandes de la machine
+utilisée par la commande loomy	used by the loomy command
+masquée par une autre dans le PATH	hidden by another one in the PATH
+autre installation	other install
+pour la retirer :	to remove it:
+loomy absent du PATH	loomy not in the PATH
+installation : voir le README	install: see the README
+plusieurs installations : garde-en une seule pour éviter les versions mélangées	several installs: keep only one to avoid mixed versions
+Démarre et structure tes projets avec Codex et Claude Code	Starts and structures your projects with Codex and Claude Code
+questionnaire	questionnaire
+structure prête pour les agents	agent-ready structure
+orchestrateur et rôles dédiés	lead agent and dedicated roles
+Usage : loomy <commande> [arguments] · loomy seul : accueil du projet	Usage: loomy <command> [arguments] · loomy alone: project home
+[dossier] [options]	[folder] [options]
+Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset	Creates or sets up a project, new or existing (offers to create the folder from the project name): questionnaire, then structure set up by the lead agent. Project already set up: resume, --update, --reset
+Relance le questionnaire du projet courant	Runs the current project's questionnaire again
+Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici) ; --watch ouvre le suivi en direct à côté	Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside
+[<rôle>] [niveau|--reset]	[<role>] [level|--reset]
+Effort de raisonnement de l'orchestrateur (ou d'un rôle) pour ce projet : low, medium, high, xhigh, max	Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max
+[commande]	[command]
+Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)	Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)
+<claude|codex> <rôle> "tâche"	<claude|codex> <role> "task"
+Confie un rôle à Claude ou à Codex via les bridges	Hands a role to Claude or Codex through the bridges
+Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé	AI files visibility: versioned, local, or in a separate private repository
+<tâche> [base]	<task> [base]
+Crée deux worktrees séparés pour le mode parallèle	Creates two separate worktrees for parallel mode
+SUIVI	TRACKING
+Statut du projet : phases, délégations en cours, activité, coûts, Git	Project status: phases, running delegations, activity, costs, Git
+Suivi en direct (touches : q, c vue, l journal, s session)	Live tracking (keys: q, c view, l journal, s session)
+Journal lisible des phases, délégations et sessions (--raw : JSON)	Readable journal of phases, delegations and sessions (--raw: JSON)
+Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord	Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval
+MACHINE	MACHINE
+Vérifie les prérequis ; --fix corrige, --live teste chaque modèle	Checks the prerequisites; --fix fixes, --live tests every model
+Préférences : forfaits Claude et Codex	Preferences: Claude and Codex plans
+Met à jour Loomy selon sa méthode d'installation ; --catalog : seulement le catalogue des modèles et des prix	Updates Loomy according to its install method; --catalog: only the model and price catalog
+Version et méthode d'installation ; --all liste toutes les installations trouvées	Version and install method; --all lists every install found
+Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet	Shows how to uninstall Loomy (depending on the install) and remove it from a project
+Aide d'une commande : loomy help <commande>	Help for a command: loomy help <command>
+Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]	Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]
+Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).	Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).
+Usage : loomy config [list | get <clé> | set <clé> <valeur>]	Usage: loomy config [list | get <key> | set <key> <value>]
+Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),	Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),
+       plan_claude_price, plan_codex_price (prix mensuel en $ si différent du prix public),	      plan_claude_price, plan_codex_price (monthly price in $ if different from the list price),
+       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),	      start_watch (yes: loomy start also opens live tracking next to the session),
+       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap),	      notify (no: loomy watch no longer notifies phase changes, failures and end of bootstrap),
+       screen (alt : écran séparé ; clear : écran et historique vidés, pour les terminaux sans écran séparé ; auto),	      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),
+       model.<claude|codex>.<top|mid|fast> (épingle un modèle sur cette machine ; auto : choix du catalogue),	      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),
+       lang (fr ou en : langue de l'interface ; auto : langue du système, anglais par défaut).	      lang (fr or en: interface language; auto: system language, English by default).
+Fichier : %s	File: %s
+Usage : loomy delegate <claude|codex> <rôle> "tâche"	Usage: loomy delegate <claude|codex> <role> "task"
+codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule).	codex : executor, developer, documenter (write in the project); reviewer, explorer, debugger, architect, security (read-only).
+claude : architect, debugger, security, reviewer, explorer (lecture seule).	claude: architect, debugger, security, reviewer, explorer (read-only).
+Chaque délégation est journalisée ; suivi avec loomy watch.	Every delegation is logged; track it with loomy watch.
+Pas de projet Loomy dans %s : crée-le d'abord avec loomy init.	No Loomy project in %s: create it first with loomy init.
+plan_claude : api, pro, max5, max20, team ou enterprise	plan_claude: api, pro, max5, max20, team or enterprise
+plan_codex : api, plus, pro100, pro200, business ou enterprise	plan_codex: api, plus, pro100, pro200, business or enterprise
+%s : un prix mensuel en $	%s: a monthly price in $
+%s : yes ou no	%s: yes or no
+lang : auto, fr ou en	lang: auto, fr or en
+screen : auto, alt ou clear	screen: auto, alt or clear
+%s : un identifiant de modèle, ou auto (choix du catalogue)	%s: a model id, or auto (catalog's choice)
+Clé inconnue : %s (%s)	Unknown key: %s (%s)
+Usage : loomy update [--catalog]	Usage: loomy update [--catalog]
+Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell).	Updates Loomy according to its install method (Homebrew, npm, bun or shell script).
+--catalog : met à jour seulement le catalogue des modèles et des prix (sans nouvelle version de Loomy).	--catalog: only updates the model and price catalog (no new Loomy version).
+Catalogue introuvable	Catalog not found
+vérifie ta connexion et gh auth status	check your connection and gh auth status
+Catalogue illisible	Unreadable catalog
+aucune date	no date
+catalogue des modèles	model catalog
+Catalogue à jour	Catalog up to date
+du %s	from %s
+Catalogue mis à jour	Catalog updated
+du %s au %s	from %s to %s
+modèles routés : %s	routed models: %s
+vérifie qu'ils répondent : loomy doctor --live	check that they answer: loomy doctor --live
+pris en compte par les prochaines sessions et délégations	applied to the next sessions and delegations
+Mise à jour de Loomy (installation : %s)…	Updating Loomy (install: %s)…
+Méthode d'installation inconnue : réinstallez Loomy (voir README).	Unknown install method: reinstall Loomy (see README).
+La mise à jour a échoué (code %s)	The update failed (code %s)
+installation détectée : %s	detected install: %s
+à la main :	by hand:
+Loomy à jour	Loomy up to date
+tes projets utilisent aussitôt cette version ; loomy init --update ne sert qu'aux nouveaux modèles de documents	your projects use this version right away; loomy init --update is only for new document templates
+INSTALLATIONS	INSTALLS
+Plusieurs installations de loomy dans le PATH : loomy version --all	Several loomy installs in the PATH: loomy version --all
+Désinstaller Loomy	Uninstall Loomy
+rien n'est supprimé automatiquement	nothing is deleted automatically
+une commande par installation trouvée	one command per install found
+DANS TES PROJETS	IN YOUR PROJECTS
+Chaque projet garde son dossier %s : l'orchestrateur s'en sert pour déléguer et suivre les phases.	Each project keeps its %s folder: the lead agent uses it to delegate and track phases.
+Pour retirer Loomy d'un projet :	To remove Loomy from a project:
+et la ligne .loomy/logs/ du .gitignore	and the .loomy/logs/ line in .gitignore
+Configuration personnelle : %s	Personal settings: %s
+lance la commande qui correspond à ton installation	run the command that matches your install
+Commande inconnue : %s	Unknown command: %s

@@ -15,7 +15,7 @@ missing = []
 for f in sorted(files):
     text = "\n".join(l for l in open(f, encoding="utf-8").read().split("\n") if not l.lstrip().startswith("#"))
     for m in pat.finditer(text):
-        s = m.group(1).replace('\\"', '"')
+        s = m.group(1).replace("\\\"", "\"").replace("\\$", "$").replace("\\\\", "\\")
         if s and s not in known and s not in missing: missing.append(s)
 for s in missing: print(s)
 sys.exit(1 if missing else 0)

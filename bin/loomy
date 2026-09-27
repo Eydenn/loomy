@@ -80,15 +80,15 @@ show_installs() {
     n=$(( n + 1 ))
     v="$(cat "$h/VERSION" 2>/dev/null || echo "?")"
     if [[ "$h" == "$LOOMY_HOME" ]]; then
-      ui_ok "$m v$v" "${h/#$HOME/~} · $( (( first )) && echo "utilisée par la commande loomy" || echo "masquée par une autre dans le PATH")"
+      ui_ok "$m v$v" "${h/#$HOME/~} · $( (( first )) && t "utilisée par la commande loomy" || t "masquée par une autre dans le PATH")"
     else
-      ui_warn "$m v$v" "${h/#$HOME/~} · autre installation$( (( first )) && echo ", utilisée par la commande loomy")"
-      ui_rail "    ${C_DIM}pour la retirer :${C_RESET} $(uninstall_cmd "$m" "$h" "$p")"
+      ui_warn "$m v$v" "${h/#$HOME/~} · $(t "autre installation")$( (( first )) && echo ", $(t "utilisée par la commande loomy")")"
+      ui_rail "    ${C_DIM}$(t "pour la retirer :")${C_RESET} $(uninstall_cmd "$m" "$h" "$p")"
     fi
     first=0
   done < <(loomy_installs)
-  if (( n == 0 )); then ui_warn "loomy absent du PATH" "installation : voir le README"; fi
-  if (( n > 1 )); then ui_info "plusieurs installations : garde-en une seule pour éviter les versions mélangées"; fi
+  if (( n == 0 )); then ui_warn "$(t "loomy absent du PATH")" "$(t "installation : voir le README")"; fi
+  if (( n > 1 )); then ui_info "$(t "plusieurs installations : garde-en une seule pour éviter les versions mélangées")"; fi
   return 0
 }
 
@@ -133,57 +133,58 @@ usage() {
     printf '\n  %sLoomy%s\n' "$C_BRAND" "$HR"
   fi
   local tag="v$VERSION" l pad item
-  printf '\n  %s%s%s  %sDémarre et structure tes projets avec Codex et Claude Code%s\n' "$HB" "$tag" "$HR" "$HB" "$HR"
+  printf '\n  %s%s%s  %s%s%s\n' "$HB" "$tag" "$HR" "$HB" "$(t "Démarre et structure tes projets avec Codex et Claude Code")" "$HR"
   _ui_pad "" $(( ${#tag} + 4 )); pad="$UI_PADDED"
   _ui_term_size
   # Repli entre les éléments (jamais au milieu de l'un d'eux).
   l=""
-  for item in "questionnaire" "structure prête pour les agents" "orchestrateur et rôles dédiés" "suivi en direct"; do
+  for item in "$(t "questionnaire")" "$(t "structure prête pour les agents")" "$(t "orchestrateur et rôles dédiés")" "$(t "suivi en direct")"; do
     if [[ -n "$l" ]] && (( ${#l} + ${#item} + 3 > UI_COLS - ${#pad} - 2 )); then printf '%s%s%s%s\n' "$pad" "$HD" "$l" "$HR"; l=""; fi
     l="${l:+$l · }$item"
   done
   printf '%s%s%s%s\n' "$pad" "$HD" "$l" "$HR"
   printf '\n'
-  printf '%s┌%s  %sUsage : loomy <commande> [arguments] · loomy seul : accueil du projet%s\n' "$HL" "$HR" "$HD" "$HR"
-  _h_group "PROJET"
-  _h_cmd init "[dossier] [options]" "Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset"
-  _h_cmd brief "" "Relance le questionnaire du projet courant"
-  _h_cmd start "[--resume|--new|--print] [--watch]" "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici) ; --watch ouvre le suivi en direct à côté"
-  _h_cmd effort "[<rôle>] [niveau|--reset]" "Effort de raisonnement de l'orchestrateur (ou d'un rôle) pour ce projet : low, medium, high, xhigh, max"
-  _h_cmd route "[commande]" "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)"
-  _h_cmd delegate "<claude|codex> <rôle> \"tâche\"" "Confie un rôle à Claude ou à Codex via les bridges"
-  _h_cmd privacy "[mode|sync|restore]" "Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé"
-  _h_cmd worktrees "<tâche> [base]" "Crée deux worktrees séparés pour le mode parallèle"
-  _h_group "SUIVI"
-  _h_cmd status "" "Statut du projet : phases, délégations en cours, activité, coûts, Git"
-  _h_cmd watch "[N]" "Suivi en direct (touches : q, c vue, l journal, s session)"
-  _h_cmd log "[-n N] [-f] [--raw]" "Journal lisible des phases, délégations et sessions (--raw : JSON)"
-  _h_cmd feedback "[\"message\"]" "Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord"
-  _h_group "MACHINE"
-  _h_cmd doctor "[--fix] [--live]" "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle"
-  _h_cmd config "[list|get|set]" "Préférences : forfaits Claude et Codex"
-  _h_cmd update "[--catalog]" "Met à jour Loomy selon sa méthode d'installation ; --catalog : seulement le catalogue des modèles et des prix"
-  _h_cmd version "[--all]" "Version et méthode d'installation ; --all liste toutes les installations trouvées"
-  _h_cmd uninstall "" "Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet"
-  printf '%s│%s\n%s└%s  %sAide d'"'"'une commande : loomy help <commande>%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$HR"
+  printf '%s┌%s  %s%s%s\n' "$HL" "$HR" "$HD" "$(t "Usage : loomy <commande> [arguments] · loomy seul : accueil du projet")" "$HR"
+  _h_group "$(t "PROJET")"
+  _h_cmd init "$(t "[dossier] [options]")" "$(t "Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset")"
+  _h_cmd brief "" "$(t "Relance le questionnaire du projet courant")"
+  _h_cmd start "[--resume|--new|--print] [--watch]" "$(t "Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici) ; --watch ouvre le suivi en direct à côté")"
+  _h_cmd effort "$(t "[<rôle>] [niveau|--reset]")" "$(t "Effort de raisonnement de l'orchestrateur (ou d'un rôle) pour ce projet : low, medium, high, xhigh, max")"
+  _h_cmd route "$(t "[commande]")" "$(t "Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)")"
+  _h_cmd delegate "$(t "<claude|codex> <rôle> \"tâche\"")" "$(t "Confie un rôle à Claude ou à Codex via les bridges")"
+  _h_cmd privacy "[mode|sync|restore]" "$(t "Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé")"
+  _h_cmd worktrees "$(t "<tâche> [base]")" "$(t "Crée deux worktrees séparés pour le mode parallèle")"
+  _h_group "$(t "SUIVI")"
+  _h_cmd status "" "$(t "Statut du projet : phases, délégations en cours, activité, coûts, Git")"
+  _h_cmd watch "[N]" "$(t "Suivi en direct (touches : q, c vue, l journal, s session)")"
+  _h_cmd log "[-n N] [-f] [--raw]" "$(t "Journal lisible des phases, délégations et sessions (--raw : JSON)")"
+  _h_cmd feedback "[\"message\"]" "$(t "Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord")"
+  _h_group "$(t "MACHINE")"
+  _h_cmd doctor "[--fix] [--live]" "$(t "Vérifie les prérequis ; --fix corrige, --live teste chaque modèle")"
+  _h_cmd config "[list|get|set]" "$(t "Préférences : forfaits Claude et Codex")"
+  _h_cmd update "[--catalog]" "$(t "Met à jour Loomy selon sa méthode d'installation ; --catalog : seulement le catalogue des modèles et des prix")"
+  _h_cmd version "[--all]" "$(t "Version et méthode d'installation ; --all liste toutes les installations trouvées")"
+  _h_cmd uninstall "" "$(t "Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet")"
+  printf '%s│%s\n%s└%s  %s%s%s\n\n' "$HL" "$HR" "$HL" "$HR" "$HD" "$(t "Aide d'une commande : loomy help <commande>")" "$HR"
 }
 
 # Aide courte des commandes gérées directement ici.
 sub_help() {
   case "$1" in
-    log) echo "Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]"; echo "Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl)." ;;
-    config) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"
-            echo "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"
-            echo "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"
-            echo "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),"
-            echo "       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap),"
-            echo "       screen (alt : écran séparé ; clear : écran et historique vidés, pour les terminaux sans écran séparé ; auto),"
-            echo "       model.<claude|codex>.<top|mid|fast> (épingle un modèle sur cette machine ; auto : choix du catalogue)."
-            echo "Fichier : $(loomy_config_file)" ;;
-    delegate) echo "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""
-              echo "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."
-              echo "claude : architect, debugger, security, reviewer, explorer (lecture seule)."
-              echo "Chaque délégation est journalisée ; suivi avec loomy watch." ;;
+    log) t "Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]"; echo; t "Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl)."; echo ;;
+    config) t "Usage : loomy config [list | get <clé> | set <clé> <valeur>]"; echo
+            t "Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"; echo
+            t "       plan_claude_price, plan_codex_price (prix mensuel en \$ si différent du prix public),"; echo
+            t "       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),"; echo
+            t "       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap),"; echo
+            t "       screen (alt : écran séparé ; clear : écran et historique vidés, pour les terminaux sans écran séparé ; auto),"; echo
+            t "       model.<claude|codex>.<top|mid|fast> (épingle un modèle sur cette machine ; auto : choix du catalogue),"; echo
+            t "       lang (fr ou en : langue de l'interface ; auto : langue du système, anglais par défaut)."; echo
+            t "Fichier : %s" "$(loomy_config_file)"; echo ;;
+    delegate) t "Usage : loomy delegate <claude|codex> <rôle> \"tâche\""; echo
+              t "codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule)."; echo
+              t "claude : architect, debugger, security, reviewer, explorer (lecture seule)."; echo
+              t "Chaque délégation est journalisée ; suivi avec loomy watch."; echo ;;
   esac
 }
 
@@ -196,7 +197,7 @@ case "$cmd" in
     root="$(project_root)"
     case "${1:-}" in -h|--help) exec bash "$S/init-wizard.sh" --help ;; esac
     if [[ ! -f "$root/.loomy/VERSION" && ! -f "$root/.loomy/brief.md" ]]; then
-      echo "Pas de projet Loomy dans ${root/#$HOME/~} : crée-le d'abord avec loomy init." >&2; exit 1
+      t "Pas de projet Loomy dans %s : crée-le d'abord avec loomy init." "${root/#$HOME/~}" >&2; echo >&2; exit 1
     fi
     exec bash "$S/init-wizard.sh" "$root" "$@" ;;
   start|resume) exec bash "$S/ai-start.sh" --root "$(project_root)" "$@" ;;
@@ -231,44 +232,45 @@ case "$cmd" in
       set)
         key="${1:?clé manquante}"; val="${2:?valeur manquante}"
         case "$key" in
-          plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { echo "plan_claude : api, pro, max5, max20, team ou enterprise" >&2; exit 2; } ;;
-          plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { echo "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; exit 2; } ;;
-          plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "$key : un prix mensuel en \$" >&2; exit 2; } ;;
-          start_watch|notify) [[ "$val" =~ ^(yes|no)$ ]] || { echo "$key : yes ou no" >&2; exit 2; } ;;
-          screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { echo "screen : auto, alt ou clear" >&2; exit 2; } ;;
+          plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { t "plan_claude : api, pro, max5, max20, team ou enterprise" >&2; echo >&2; exit 2; } ;;
+          plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { t "plan_codex : api, plus, pro100, pro200, business ou enterprise" >&2; echo >&2; exit 2; } ;;
+          plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { t "%s : un prix mensuel en \$" "$key" >&2; echo >&2; exit 2; } ;;
+          start_watch|notify) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s : yes ou no" "$key" >&2; echo >&2; exit 2; } ;;
+          lang) [[ "$val" =~ ^(auto|fr|en)$ ]] || { t "lang : auto, fr ou en" >&2; echo >&2; exit 2; } ;;
+          screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { t "screen : auto, alt ou clear" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
-            [[ "$val" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "$key : un identifiant de modèle, ou auto (choix du catalogue)" >&2; exit 2; } ;;
-          *) echo "Clé inconnue : $key (plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify, screen, model.<claude|codex>.<top|mid|fast>)" >&2; exit 2 ;;
+            [[ "$val" =~ ^[A-Za-z0-9._-]+$ ]] || { t "%s : un identifiant de modèle, ou auto (choix du catalogue)" "$key" >&2; echo >&2; exit 2; } ;;
+          *) t "Clé inconnue : %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
-      *) echo "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; exit 2 ;;
+      *) t "Usage : loomy config [list | get <clé> | set <clé> <valeur>]" >&2; echo >&2; exit 2 ;;
     esac ;;
 
   update|upgrade)
-    case "${1:-}" in -h|--help) echo "Usage : loomy update [--catalog]"; echo "Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell)."; echo "--catalog : met à jour seulement le catalogue des modèles et des prix (sans nouvelle version de Loomy)."; exit 0 ;; esac
+    case "${1:-}" in -h|--help) t "Usage : loomy update [--catalog]"; echo; t "Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell)."; echo; t "--catalog : met à jour seulement le catalogue des modèles et des prix (sans nouvelle version de Loomy)."; echo; exit 0 ;; esac
     if [[ "${1:-}" == "--catalog" ]]; then
       # Catalogue des modèles et des prix, publié dans le dépôt : lu par gh (dépôt privé), sinon par une URL publique.
       tmp="$(mktemp)"
       if ! { command -v gh >/dev/null 2>&1 && gh api -H "Accept: application/vnd.github.raw" "repos/$LOOMY_REPO/contents/catalog/models.conf" >"$tmp" 2>/dev/null; } \
          && ! curl -fsSL "https://raw.githubusercontent.com/$LOOMY_REPO/main/catalog/models.conf" -o "$tmp" 2>/dev/null; then
-        rm -f "$tmp"; ui_err "Catalogue introuvable" "vérifie ta connexion et gh auth status"; exit 1
+        rm -f "$tmp"; ui_err "$(t "Catalogue introuvable")" "$(t "vérifie ta connexion et gh auth status")"; exit 1
       fi
       newd="$(sed -n 's/^date=\([0-9-]*\)$/\1/p' "$tmp" | head -1)"
-      [[ -n "$newd" ]] || { rm -f "$tmp"; ui_err "Catalogue illisible" "aucune date"; exit 1; }
-      ui_rail_head "catalogue des modèles"
+      [[ -n "$newd" ]] || { rm -f "$tmp"; ui_err "$(t "Catalogue illisible")" "$(t "aucune date")"; exit 1; }
+      ui_rail_head "$(t "catalogue des modèles")"
       if [[ ! "$newd" > "$AI_CATALOG_DATE" ]]; then
-        rm -f "$tmp"; ui_ok "Catalogue à jour" "du $AI_CATALOG_DATE ($AI_CATALOG_SOURCE)"; ui_end ""; exit 0
+        rm -f "$tmp"; ui_ok "$(t "Catalogue à jour")" "$(t "du %s" "$AI_CATALOG_DATE") ($(t "$AI_CATALOG_SOURCE"))"; ui_end ""; exit 0
       fi
       old_models="$AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"
       mkdir -p "$(dirname "$(ai_catalog_file)")"; mv "$tmp" "$(ai_catalog_file)"
       new_models="$(bash -c 'source "$1/lib/models.sh"; echo "$AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"' _ "$S")"
-      ui_ok "Catalogue mis à jour" "du $AI_CATALOG_DATE au $newd"
-      if [[ "$old_models" != "$new_models" ]]; then ui_info "modèles routés : $new_models"; ui_info "vérifie qu'ils répondent : loomy doctor --live"; fi
-      ui_end "pris en compte par les prochaines sessions et délégations"
+      ui_ok "$(t "Catalogue mis à jour")" "$(t "du %s au %s" "$AI_CATALOG_DATE" "$newd")"
+      if [[ "$old_models" != "$new_models" ]]; then ui_info "$(t "modèles routés : %s" "$new_models")"; ui_info "$(t "vérifie qu'ils répondent : loomy doctor --live")"; fi
+      ui_end "$(t "pris en compte par les prochaines sessions et délégations")"
       exit 0
     fi
     method="$(install_method)"
-    echo "Mise à jour de Loomy (installation : $method)…" >&2
+    t "Mise à jour de Loomy (installation : %s)…" "$method" >&2; echo >&2
     rc=0
     case "$method" in
       brew)
@@ -285,21 +287,21 @@ case "$cmd" in
       # Même préfixe que l'installation existante, quel que soit le Node actif (nvm).
       npm) npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO" || rc=$? ;;
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
-      *) echo "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; exit 1 ;;
+      *) t "Méthode d'installation inconnue : réinstallez Loomy (voir README)." >&2; echo >&2; exit 1 ;;
     esac
     if (( rc != 0 )); then
-      ui_err "La mise à jour a échoué (code $rc)" "installation détectée : $method · $LOOMY_HOME"
+      ui_err "$(t "La mise à jour a échoué (code %s)" "$rc")" "$(t "installation détectée : %s" "$method · $LOOMY_HOME")"
       case "$method" in
-        brew) ui_info "à la main : HOMEBREW_GITHUB_API_TOKEN=\"\$(gh auth token)\" brew upgrade eydenn/tap/loomy" ;;
-        npm)  ui_info "à la main : npm install -g --prefix ${LOOMY_HOME%/lib/node_modules/*} github:$LOOMY_REPO" ;;
-        bun)  ui_info "à la main : gh release download -R $LOOMY_REPO -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz" ;;
-        git)  ui_info "à la main : git -C $LOOMY_HOME pull --ff-only" ;;
+        brew) ui_info "$(t "à la main :") HOMEBREW_GITHUB_API_TOKEN=\"\$(gh auth token)\" brew upgrade eydenn/tap/loomy" ;;
+        npm)  ui_info "$(t "à la main :") npm install -g --prefix ${LOOMY_HOME%/lib/node_modules/*} github:$LOOMY_REPO" ;;
+        bun)  ui_info "$(t "à la main :") gh release download -R $LOOMY_REPO -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz" ;;
+        git)  ui_info "$(t "à la main :") git -C $LOOMY_HOME pull --ff-only" ;;
       esac
       exit "$rc"
     fi
-    ui_ok "Loomy à jour" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
-    ui_info "tes projets gardent leur version de Loomy : dans chacun, loomy init --update les met à niveau"
-    if (( $(loomy_installs | wc -l) > 1 )); then ui_section "INSTALLATIONS"; show_installs; fi
+    ui_ok "$(t "Loomy à jour")" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
+    ui_info "$(t "tes projets utilisent aussitôt cette version ; loomy init --update ne sert qu'aux nouveaux modèles de documents")"
+    if (( $(loomy_installs | wc -l) > 1 )); then ui_section "$(t "INSTALLATIONS")"; show_installs; fi
     ;;
 
   __home) echo "$LOOMY_HOME" ;;   # utilisé par les relais des projets (.loomy/scripts/_loomy.sh)
@@ -307,7 +309,7 @@ case "$cmd" in
   version|--version|-v)
     echo "loomy $VERSION ($(install_method) · $LOOMY_HOME)"
     if [[ "${1:-}" == "--all" ]]; then show_installs
-    elif (( $(loomy_installs | wc -l) > 1 )); then echo "Plusieurs installations de loomy dans le PATH : loomy version --all" >&2; fi ;;
+    elif (( $(loomy_installs | wc -l) > 1 )); then t "Plusieurs installations de loomy dans le PATH : loomy version --all" >&2; echo >&2; fi ;;
   home)
     if [[ -t 0 && -t 2 ]]; then exec bash "$S/ai-home.sh"; fi
     usage ;;
@@ -316,8 +318,8 @@ case "$cmd" in
     if [[ -n "${1:-}" && "$1" != "help" ]]; then exec "$LOOMY_HOME/bin/loomy" "$1" --help; fi
     usage ;;
   uninstall)
-    ui_banner "Désinstaller Loomy" "rien n'est supprimé automatiquement"
-    ui_section "INSTALLATIONS" "une commande par installation trouvée"
+    ui_banner "$(t "Désinstaller Loomy")" "$(t "rien n'est supprimé automatiquement")"
+    ui_section "$(t "INSTALLATIONS")" "$(t "une commande par installation trouvée")"
     n=0
     while IFS=$'\t' read -r m h p; do
       [[ -n "$m" ]] || continue; n=$(( n + 1 ))
@@ -325,11 +327,11 @@ case "$cmd" in
       ui_rail "    $(uninstall_cmd "$m" "$h" "$p")"
     done < <(loomy_installs)
     if (( n == 0 )); then ui_rail "$(install_method) ${C_DIM}${LOOMY_HOME/#$HOME/~}${C_RESET}"; ui_rail "    $(uninstall_cmd "$(install_method)" "$LOOMY_HOME" "$INVOKED")"; fi
-    ui_section "DANS TES PROJETS"
-    ui_rail "Chaque projet garde son dossier ${C_BOLD}.loomy/${C_RESET} : l'orchestrateur s'en sert pour déléguer et suivre les phases."
-    ui_rail "Pour retirer Loomy d'un projet : ${C_BOLD}rm -rf .loomy START.md${C_RESET} ${C_DIM}(et la ligne .loomy/logs/ du .gitignore)${C_RESET}"
-    ui_rail "${C_DIM}Configuration personnelle : $(loomy_config_file | sed "s|^$HOME|~|")${C_RESET}"
-    ui_end "lance la commande qui correspond à ton installation"
+    ui_section "$(t "DANS TES PROJETS")"
+    ui_rail "$(t "Chaque projet garde son dossier %s : l'orchestrateur s'en sert pour déléguer et suivre les phases." "${C_BOLD}.loomy/${C_RESET}")"
+    ui_rail "$(t "Pour retirer Loomy d'un projet :") ${C_BOLD}rm -rf .loomy START.md${C_RESET} ${C_DIM}($(t "et la ligne .loomy/logs/ du .gitignore"))${C_RESET}"
+    ui_rail "${C_DIM}$(t "Configuration personnelle : %s" "$(loomy_config_file | sed "s|^$HOME|~|")")${C_RESET}"
+    ui_end "$(t "lance la commande qui correspond à ton installation")"
     ;;
-  *) echo "Commande inconnue : $cmd" >&2; usage >&2; exit 2 ;;
+  *) t "Commande inconnue : %s" "$cmd" >&2; echo >&2; usage >&2; exit 2 ;;
 esac

@@ -89,6 +89,8 @@ fi
 
 # ---------------------------------------------------------------- utilitaires
 # choose_coded <var> <question> <default-code> "code|Label"...
+# Libellé sans la mention « (recommandé) », quelle que soit la langue.
+no_rec() { local v="${1% (recommandé)}"; printf '%s' "${v% (recommended)}"; }
 choose_coded() {
   local var="$1" q="$2" defcode="$3" hint="$4"; shift 4
   local labels=() codes=() descs=() i=0 defi=0 item rest
@@ -372,7 +374,7 @@ ask_all() {
   ui_group "$(t "LIVRABLES")"
   ui_step 10 $TOTAL
   UI_LABEL="$(t "Langue des docs")"
-  choose_coded DOCLANG "Langue de la documentation du projet ?" "$(ans doc_language fr)" \
+  choose_coded DOCLANG "Langue de la documentation du projet ?" "$(ans doc_language "$(ui_lang)")" \
     "Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais." \
     "fr|Français|Documentation rédigée en français." \
     "en|English|Documentation en anglais : préférable si le projet est partagé à l'international."
@@ -522,7 +524,7 @@ show_recap() {
   ui_rail ""
   ui_rail_group "$(t "Équipe IA")"
   ui_rail_kv "$(t "Mode")" "${C_BOLD}${MODE}${C_RESET} · $(t "lead %s" "${LEAD_LABEL}")"
-  ui_rail_kv "$(t "Profil")" "${BUDGET_LABEL% (recommandé)}"
+  ui_rail_kv "$(t "Profil")" "$(no_rec "$BUDGET_LABEL")"
   if [[ "$BUDGET" == "econome" && "$RISK" == "HIGH" ]]; then
     ui_rail_kv "" "${C_YELLOW}! $(t "risque HIGH en profil Économe : passe la sécurité en effort high sur les changements sensibles")${C_RESET}"
   fi
@@ -533,7 +535,7 @@ show_recap() {
   ui_rail_kv "$(t "Architecture")" "$DEEP_LINE"
   ui_rail ""
   ui_rail_group "$(t "Livrables")"
-  ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · START.md : ${HISTORY_LABEL% (recommandé)}"
+  ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · START.md : $(no_rec "$HISTORY_LABEL")"
   ui_rail_kv "$(t "Nom technique")" "$SLUG ${C_DIM}($(t "dossier, noms techniques"))${C_RESET}"
   if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }$(t "dépôt GitHub %s %s" "$GITHUB_REPO" "$GH_USER/$REPO_NAME")"; fi
   ui_rail_kv "$(t "Git")" "${parts:-$(t "aucune action")}"

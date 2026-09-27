@@ -690,3 +690,353 @@ et la ligne .loomy/logs/ du .gitignore	and the .loomy/logs/ line in .gitignore
 Configuration personnelle : %s	Personal settings: %s
 lance la commande qui correspond à ton installation	run the command that matches your install
 Commande inconnue : %s	Unknown command: %s
+Option inconnue : %s	Unknown option: %s
+Erreur : dossier introuvable : %s	Error: folder not found: %s
+Terminal non interactif : relancez avec --yes (et éventuellement --answers FILE).	Non-interactive terminal: run again with --yes (and optionally --answers FILE).
+Erreur : fichier de réponses introuvable : %s	Error: answers file not found: %s
+Prérequis minimum non atteints	Minimum requirements not met
+le brief reste possible, corrigez avant de lancer l'agent	you can still write the brief; fix this before launching the agent
+détecté : dossier vide (nouveau projet)	detected: empty folder (new project)
+détecté : projet existant (1 élément à la racine)	detected: existing project (1 item at the root)
+détecté : projet existant (%s éléments à la racine)	detected: existing project (%s items at the root)
+Sert de nom au projet dans la documentation générée.	Used as the project name in the generated documentation.
+Objectif	Goal
+Une phrase suffit : l'agent la reprend dans PROJECT.md et pose moins de questions. Entrée pour laisser vide.	One sentence is enough: the agent reuses it in PROJECT.md and asks fewer questions. Enter to leave empty.
+Objectif en une phrase	Goal in one sentence
+Ex. : Permettre aux freelances de suivre leurs factures	E.g.: Help freelancers keep track of their invoices
+Point de départ	Starting point
+Type	Type
+Hébergement	Hosting
+Comptes	Accounts
+Hébergement : %s	Hosting: %s
+Comptes utilisateurs : %s	User accounts: %s
+Style d'API	API style
+Base de données	Database
+Style d'API : %s	API style: %s
+Base de données : %s	Database: %s
+Approche	Approach
+Plateformes	Platforms
+Approche : %s	Approach: %s
+Plateformes : %s	Platforms: %s
+Systèmes	Systems
+Technologie	Technology
+Systèmes : %s	Systems: %s
+Technologie : %s	Technology: %s
+Langage	Language
+Distribution	Distribution
+Runtime : %s	Runtime: %s
+Distribution : %s	Distribution: %s
+Fournisseur	Provider
+Données exposées	Data exposed
+Fournisseur : %s	Provider: %s
+Données exposées : %s	Data exposed: %s
+Type précisé	Custom type
+Quelques mots suffisent ; l'agent complétera pendant l'entretien.	A few words are enough; the agent will fill in the rest during the interview.
+Décrivez le type de projet	Describe the project type
+Type précisé : %s	Custom type: %s
+EXIGENCES	REQUIREMENTS
+Stade	Stage
+Authentification / comptes	Authentication / accounts
+Paiements	Payments
+Données personnelles	Personal data
+Secrets / infra de production	Secrets / production infra
+Éléments sensibles	Sensitive areas
+Chaque élément coché élève le risque et impose des revues plus poussées (modèles DEEP). Rien de coché = aucun.	Each checked item raises the risk and requires deeper reviews (DEEP models). Nothing checked = none.
+Risque MEDIUM : sessions, permissions, stockage des mots de passe.	MEDIUM risk: sessions, permissions, password storage.
+Risque HIGH : conformité, idempotence, revue de sécurité systématique.	HIGH risk: compliance, idempotency, systematic security review.
+Risque HIGH : RGPD, minimisation et protection des données.	HIGH risk: GDPR, data minimisation and protection.
+Risque HIGH : gestion des secrets, opérations irréversibles.	HIGH risk: secrets management, irreversible operations.
+Éléments sensibles ?	Sensitive areas?
+Risque estimé	Estimated risk
+risque %s	%s risk
+ÉQUIPE IA	AI TEAM
+Collaboration	Collaboration
+Outil principal	Main tool
+Profil	Profile
+orchestrateur %s	orchestrator %s
+LIVRABLES	DELIVERABLES
+Langue des docs	Docs language
+START.md ensuite	START.md afterwards
+dépôt distant « %s », nom du projet « %s »	remote repository “%s”, project name “%s”
+Nom du dépôt différent du projet	Repository name differs from the project
+Dépôt GitHub	GitHub repository
+Nom du dépôt	Repository name
+Proposé d'après le nom du projet ; modifie-le si besoin (lettres, chiffres, tirets).	Suggested from the project name; change it if needed (letters, digits, hyphens).
+Nom du dépôt GitHub (%s/…)	GitHub repository name (%s/…)
+Commit initial	Initial commit
+Push	Push
+Pousser vers %s après le commit ?	Push to %s after the commit?
+Remote détecté : %s	Remote detected: %s
+pas de remote, pas de push	no remote, no push
+pas de dépôt Git : ni commit ni push	no Git repository: no commit, no push
+Ton dépôt GitHub est public.	Your GitHub repository is public.
+Ton dépôt GitHub est privé.	Your GitHub repository is private.
+Fichiers IA	AI files
+Ce sont tes règles de travail avec les agents. GitHub règle la visibilité par dépôt, pas par fichier.	These are your working rules with the agents. GitHub sets visibility per repository, not per file.
+Dans un dépôt privé séparé	In a separate private repository
+Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé (%s), avec loomy privacy sync.	Recommended for a public repository: excluded from the project and backed up in a private GitHub repository (%s), with loomy privacy sync.
+Dépôt privé IA	Private AI repository
+Dépôt privé qui ne contiendra que les fichiers IA ; modifie le nom si besoin.	Private repository that will only hold the AI files; change the name if needed.
+Nom du dépôt privé des fichiers IA	Name of the private AI files repository
+Deux dépôts	Two repositories
+Crée %s (%s) pour le projet et %s (privé) pour les fichiers IA.	Creates %s (%s) for the project and %s (private) for the AI files.
+public	public
+privé	private
+Repose les deux noms.	Ask for both names again.
+Créer ces deux dépôts : %s et %s ?	Create these two repositories: %s and %s?
+Oui, créer les deux	Yes, create both
+Modifier les noms	Change the names
+FORFAITS	PLANS
+brief de démarrage	startup brief
+Brief du projet	Project brief
+Précisions	Details
+Sensible	Sensitive
+Équipe IA	AI team
+lead %s	lead %s
+risque HIGH en profil Économe : passe la sécurité en effort high sur les changements sensibles	HIGH risk with the Frugal profile: use high effort for security on sensitive changes
+Routage	Routing
+Exécution	Execution
+Architecture	Architecture
+Livrables	Deliverables
+Docs	Docs
+Nom technique	Technical name
+dossier, noms techniques	folder, technical names
+dépôt GitHub %s %s	GitHub repository %s %s
+Git	Git
+aucune action	no action
+dépôt privé	private repository
+pas de remote : push à faire plus tard	no remote: push later
+Forfaits	Plans
+Brief de démarrage	Startup brief
+Brief existant	Existing brief
+Brief conservé	Brief kept
+Initialisation du dépôt Git	Initialising the Git repository
+Création du dépôt GitHub	Creating the GitHub repository
+Enregistrement du brief	Saving the brief
+Réglage des fichiers IA	Setting up AI files
+Mémorisation des forfaits	Saving the plans
+Préparation de la session	Preparing the session
+MISE EN PLACE	SETUP
+Dépôt Git initialisé	Git repository initialised
+branche main	main branch
+Dépôt Git non initialisé	Git repository not initialised
+git init a échoué	git init failed
+Dépôt GitHub créé	GitHub repository created
+Dépôt GitHub non créé	GitHub repository not created
+Brief enregistré	Brief saved
+Fichiers IA réglés	AI files set up
+locaux, hors Git	local, outside Git
+Fichiers IA : réglage incomplet	AI files: setup incomplete
+Forfaits mémorisés	Plans saved
+Session prête	Session ready
+phase Découverte	Discovery phase
+dépôt GitHub à la main :	GitHub repository by hand:
+Étape suivante	Next step
+Va dans le dossier du projet :	Go to the project folder:
+Ouvre la session de l'orchestrateur :	Open the orchestrator session:
+ou à la main : %s, puis colle le prompt de démarrage	or by hand: %s, then paste the startup prompt
+Lance l'orchestrateur à la racine du projet :	Launch the orchestrator at the project root:
+puis colle le prompt de démarrage :	then paste the startup prompt:
+ou dans l'app Codex : modèle %s, effort %s	or in the Codex app: model %s, effort %s
+prompt de démarrage copié dans le presse-papiers	startup prompt copied to the clipboard
+Suis l'avancement en direct dans un autre terminal :	Follow progress live in another terminal:
+Session	Session
+Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage.	Opens the orchestrator now, in the project folder, with the startup prompt.
+Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.	You can start it later with loomy start, from the project folder.
+Ouvrir la session de l'orchestrateur maintenant ?	Open the orchestrator session now?
+Oui, maintenant	Yes, now
+Plus tard	Later
+routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log	routing: loomy route · diagnostics: loomy doctor --live · log: loomy log
+Nouveau projet ou projet existant ?	New project or existing project?
+L'agent propose la stack et la structure à partir de zéro.	The agent proposes the stack and structure from scratch.
+Projet existant à standardiser	Existing project to standardise
+L'agent analyse d'abord l'existant et ne propose que des changements de standardisation, sans casser l'architecture.	The agent first analyses what exists and only proposes standardisation changes, without breaking the architecture.
+Quel type de projet ?	What kind of project?
+Détermine les questions suivantes et les vérifications proposées (build, tests, déploiement).	Determines the next questions and the suggested checks (build, tests, deployment).
+Front et éventuel back, déploiement web ; accessibilité et SEO à considérer.	Front end and optional back end, web deployment; accessibility and SEO to consider.
+API / service backend	API / backend service
+Service sans interface : contrats d'API, validation et tests d'intégration au centre.	Service without a UI: API contracts, validation and integration tests at the core.
+Contraintes des stores, permissions, hors-ligne ; builds iOS et/ou Android.	Store constraints, permissions, offline; iOS and/or Android builds.
+Packaging, signature et mises à jour par système d'exploitation.	Packaging, signing and updates per operating system.
+API publique stable, packaging et compatibilité des runtimes.	Stable public API, packaging and runtime compatibility.
+Choix du fournisseur, exposition des données, garde-fous et évaluation des réponses.	Provider choice, data exposure, guardrails and answer evaluation.
+Vous décrirez le type ; l'agent posera davantage de questions.	You will describe the type; the agent will ask more questions.
+Hébergement cible ?	Target hosting?
+Influence le framework, le runtime et la chaîne de déploiement.	Influences the framework, runtime and deployment pipeline.
+Vercel / Netlify	Vercel / Netlify
+Déploiement simple et serverless, idéal pour un front moderne.	Simple, serverless deployment, ideal for a modern front end.
+Cloudflare	Cloudflare
+Exécution en edge, très économique, avec des contraintes de runtime.	Runs at the edge, very cheap, with runtime constraints.
+Serveur / VPS / Docker	Server / VPS / Docker
+Contrôle total, mais davantage d'exploitation à gérer.	Full control, but more operations to handle.
+Comptes utilisateurs ?	User accounts?
+L'authentification augmente le risque et le périmètre.	Authentication increases risk and scope.
+Authentification et sessions à prévoir : risque au moins MEDIUM.	Authentication and sessions required: at least MEDIUM risk.
+Pas d'authentification à prévoir.	No authentication required.
+Style d'API ?	API style?
+Structure les contrats, la documentation et les tests.	Shapes the contracts, documentation and tests.
+REST	REST
+Standard, simple à consommer et à documenter (OpenAPI).	Standard, easy to consume and document (OpenAPI).
+GraphQL	GraphQL
+Requêtes flexibles côté client, schéma typé, plus de complexité serveur.	Flexible client queries, typed schema, more server complexity.
+RPC / gRPC	RPC / gRPC
+Performant entre services, moins adapté aux clients web publics.	Fast between services, less suited to public web clients.
+Base de données ?	Database?
+Oriente la persistance et les migrations.	Guides persistence and migrations.
+SQL	SQL
+Relations et intégrité fortes (PostgreSQL, SQLite…).	Strong relations and integrity (PostgreSQL, SQLite…).
+NoSQL	NoSQL
+Schéma souple, montée en charge horizontale.	Flexible schema, horizontal scaling.
+Aucune	None
+Pas de persistance à prévoir.	No persistence required.
+Approche ?	Approach?
+Détermine le langage, l'outillage et le nombre de bases de code.	Determines the language, tooling and number of codebases.
+Expo / React Native	Expo / React Native
+Un seul code JS/TS pour iOS et Android, itérations rapides.	A single JS/TS codebase for iOS and Android, fast iterations.
+Natif (Swift / Kotlin)	Native (Swift / Kotlin)
+Meilleure intégration et performance, mais deux bases de code.	Best integration and performance, but two codebases.
+Flutter	Flutter
+Un seul code Dart multi-plateforme, rendu propre au framework.	A single cross-platform Dart codebase, with its own rendering.
+Plateformes ?	Platforms?
+Chaque plateforme ajoute builds, tests et publication.	Each platform adds builds, tests and publishing.
+iOS et Android	iOS and Android
+Builds, tests et publication sur les deux stores.	Builds, tests and publishing on both stores.
+iOS	iOS
+Une seule plateforme : plus simple à livrer.	A single platform: simpler to ship.
+Android	Android
+Systèmes cibles ?	Target systems?
+Chaque OS ajoute packaging, signature et tests.	Each OS adds packaging, signing and tests.
+macOS	macOS
+Une seule cible : signature et packaging simplifiés.	A single target: simpler signing and packaging.
+Windows	Windows
+Linux	Linux
+Une seule cible : packaging simplifié.	A single target: simpler packaging.
+Multi-plateforme	Cross-platform
+Builds et tests à prévoir pour chaque OS.	Builds and tests needed for each OS.
+Technologie ?	Technology?
+Arbitrage entre poids des binaires, écosystème et intégration native.	Trade-off between binary size, ecosystem and native integration.
+Tauri	Tauri
+Léger (Rust + webview), binaires petits.	Lightweight (Rust + webview), small binaries.
+Electron	Electron
+Écosystème mature, binaires lourds.	Mature ecosystem, heavy binaries.
+Natif	Native
+Meilleure intégration, un code par OS.	Best integration, one codebase per OS.
+Langage / runtime ?	Language / runtime?
+Détermine l'écosystème, le packaging et la distribution.	Determines the ecosystem, packaging and distribution.
+Node.js	Node.js
+Distribution via npm, démarrage rapide.	Distributed via npm, quick start.
+Python	Python
+Écosystème riche, packaging pip/uv.	Rich ecosystem, pip/uv packaging.
+Go	Go
+Binaire unique, sans runtime à installer.	Single binary, no runtime to install.
+Rust	Rust
+Binaire unique et rapide, compilation plus exigeante.	Single fast binary, more demanding compilation.
+Bash	Bash
+Zéro dépendance, limité aux scripts simples.	Zero dependencies, limited to simple scripts.
+Distribution ?	Distribution?
+Fixe le niveau d'exigence sur la stabilité de l'interface.	Sets how strict interface stability must be.
+Registre public (npm, PyPI, crates…)	Public registry (npm, PyPI, crates…)
+Versioning sémantique et API publique à stabiliser.	Semantic versioning and a public API to stabilise.
+Binaire	Binary
+Builds multi-OS et releases à automatiser.	Multi-OS builds and releases to automate.
+Usage interne	Internal use
+Contraintes de compatibilité plus légères.	Lighter compatibility constraints.
+Fournisseur de modèles ?	Model provider?
+Détermine SDK, coûts et conditions d'usage des données.	Determines the SDK, costs and data usage terms.
+Anthropic (Claude)	Anthropic (Claude)
+SDK et modèles d'un seul fournisseur.	SDK and models from a single provider.
+OpenAI	OpenAI
+Plusieurs	Several
+Couche d'abstraction à prévoir entre fournisseurs.	An abstraction layer between providers is needed.
+Modèles locaux	Local models
+Pas de coût d'API, performances liées au matériel.	No API cost, performance depends on hardware.
+Données envoyées aux modèles ?	Data sent to the models?
+Conditionne les garde-fous et le niveau de risque.	Determines the guardrails and risk level.
+Publiques	Public
+Peu de contraintes.	Few constraints.
+Internes	Internal
+Vérifier la rétention et l'usage des données chez le fournisseur.	Check the provider's data retention and usage.
+Sensibles	Sensitive
+Risque HIGH : anonymisation, garde-fous et revues de sécurité en DEEP.	HIGH risk: anonymisation, guardrails and DEEP security reviews.
+Stade visé ?	Target stage?
+Fixe dès le départ le niveau d'exigence : tests, CI, sécurité.	Sets the bar from the start: tests, CI, security.
+Prototype / exploration	Prototype / exploration
+Vitesse avant tout : tests minimaux, pas de CI obligatoire.	Speed first: minimal tests, no mandatory CI.
+Tests ciblés, CI simple, dette technique maîtrisée.	Targeted tests, simple CI, controlled technical debt.
+Tests complets, CI/CD et observabilité ; risque au moins MEDIUM.	Full tests, CI/CD and observability; at least MEDIUM risk.
+Mode de collaboration IA ?	AI collaboration mode?
+Outil principal (lead) ?	Main tool (lead)?
+Orchestrateur sur Opus 5.5, en tête des benchmarks de raisonnement et de travail agentique ; délègue à Codex via delegate-to-codex.sh (recommandé).	Orchestrator on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended).
+Orchestrateur sur GPT-6-Astra ; délègue à Claude via delegate-to-claude.sh (lecture seule).	Orchestrator on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only).
+Profil de coût / qualité des modèles ?	Model cost / quality profile?
+L'orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route).	The orchestrator always stays on the best model; the profile sets each role's effort and model (details: loomy route).
+Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles.	Orchestrator and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks.
+Équilibré (recommandé)	Balanced (recommended)
+Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.	Orchestrator at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.
+Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises.	Orchestrator and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries.
+Langue de la documentation du projet ?	Project documentation language?
+Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais.	Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English.
+Français	Français
+Documentation rédigée en français.	Documentation written in French.
+English	English
+Documentation en anglais : préférable si le projet est partagé à l'international.	Documentation in English: better if the project is shared internationally.
+Après l'initialisation, que faire de START.md ?	After initialisation, what to do with START.md?
+START.md n'a plus d'autorité une fois le projet initialisé.	START.md no longer has authority once the project is initialised.
+L'archiver dans .ai/bootstrap/ (recommandé)	Archive it in .ai/bootstrap/ (recommended)
+Garde une trace de l'initialisation, consultable plus tard.	Keeps a record of the initialisation for later.
+Le supprimer	Delete it
+Repo plus léger ; l'historique ne reste que dans Git.	Lighter repo; the history stays only in Git.
+Créer un dépôt Git propre à ce projet ?	Create a dedicated Git repository for this project?
+Oui, dépôt dédié (recommandé pour un nouveau projet)	Yes, dedicated repository (recommended for a new project)
+Le projet a son propre historique, et peut avoir son dépôt GitHub.	The project has its own history, and can have its own GitHub repository.
+Non, rester dans le dépôt parent (monorepo)	No, stay in the parent repository (monorepo)
+Commits dans le dépôt parent ; pas de dépôt GitHub propre au projet.	Commits go to the parent repository; no GitHub repository of its own.
+Initialiser un dépôt Git (branche main) maintenant ?	Initialise a Git repository (main branch) now?
+Le versionnement est nécessaire pour les commits, les worktrees et les handoffs.	Version control is required for commits, worktrees and handoffs.
+Crée le dépôt local maintenant, rien n'est envoyé en ligne.	Creates the local repository now; nothing is sent online.
+Pas de versionnement : ni commit ni push possibles.	No version control: no commit or push possible.
+Créer un dépôt GitHub pour ce projet ?	Create a GitHub repository for this project?
+Oui, privé	Yes, private
+Visible par toi seul (et les personnes que tu invites). Recommandé.	Visible only to you (and people you invite). Recommended.
+Oui, public	Yes, public
+Visible par tous : pense à la visibilité des fichiers IA, question suivante.	Visible to everyone: mind the AI files visibility, next question.
+Non, plus tard	No, later
+Aucun dépôt en ligne pour l'instant ; tu pourras le créer avec gh repo create.	No online repository for now; you can create it with gh repo create.
+Commit initial une fois le setup vérifié ?	Initial commit once the setup is verified?
+Autorise l'agent à clôturer l'initialisation par un commit.	Lets the agent finish the initialisation with a commit.
+Oui, l'agent committe	Yes, the agent commits
+Commit « chore: initialize project » seulement si toutes les vérifications passent.	Commit “chore: initialize project” only if all checks pass.
+Non, je committerai moi-même	No, I will commit myself
+Les changements restent non commités ; vous gardez la main.	Changes stay uncommitted; you stay in control.
+Non, je pousserai moi-même	No, I will push myself
+Rien ne quitte votre machine sans vous.	Nothing leaves your machine without you.
+Oui, push de la branche courante	Yes, push the current branch
+La branche est poussée après le commit initial, jamais de force-push.	The branch is pushed after the initial commit, never force-pushed.
+Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .ai/, .loomy/…) ?	Where to keep the AI files (AGENTS.md, CLAUDE.md, .ai/, .loomy/…)?
+Versionnés avec le projet	Versioned with the project
+Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent.	Recommended for a private repository: you get them on all your machines, and agents working online on the repository can read them.
+Locaux uniquement	Local only
+Jamais envoyés sur GitHub : exclus via .git/info/exclude, invisible dans le dépôt. Perdus si tu changes de machine.	Never sent to GitHub: excluded via .git/info/exclude, invisible in the repository. Lost if you change machines.
+Quel est ton forfait Claude ?	What is your Claude plan?
+Demandé une seule fois, mémorisé dans ta configuration Loomy. Sert à afficher la valeur consommée face au prix du forfait.	Asked only once, saved in your Loomy configuration. Used to compare the value consumed with the plan price.
+API	API
+Paiement à l'usage : Loomy affiche le coût réel.	Pay as you go: Loomy shows the actual cost.
+Claude Team ou Enterprise	Claude Team or Enterprise
+Prix ajustable ensuite avec loomy config set plan_claude_price <prix>.	Price adjustable later with loomy config set plan_claude_price <price>.
+Quel est ton forfait ChatGPT / Codex ?	What is your ChatGPT / Codex plan?
+Demandé une seule fois, mémorisé dans ta configuration Loomy.	Asked only once, saved in your Loomy configuration.
+Paiement à l'usage : Loomy affiche le coût estimé à partir des tokens.	Pay as you go: Loomy shows the cost estimated from tokens.
+ChatGPT Business ou Enterprise	ChatGPT Business or Enterprise
+Prix ajustable ensuite avec loomy config set plan_codex_price <prix>.	Price adjustable later with loomy config set plan_codex_price <price>.
+Un brief existe déjà. Que faire ?	A brief already exists. What now?
+Ses réponses servent de valeurs par défaut si tu le refais.	Its answers become the defaults if you redo it.
+Le refaire	Redo it
+Le fichier n'est remplacé qu'à la fin, après ta confirmation.	The file is only replaced at the end, after you confirm.
+Le garder et quitter	Keep it and quit
+Rien n'est modifié.	Nothing is changed.
+Enregistrer ce brief ?	Save this brief?
+Rien n'est écrit avant ta confirmation.	Nothing is written before you confirm.
+Oui, enregistrer	Yes, save
+Revoir les questions	Review the questions
+Tes réponses actuelles deviennent les valeurs par défaut.	Your current answers become the defaults.
+Aucun fichier écrit, aucune action Git.	No file written, no Git action.

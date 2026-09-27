@@ -436,7 +436,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy, valable pour tous les projets ; `update --catalog` : seulement le catalogue des modèles et des prix ; `version --all` liste toutes les installations |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | montre comment désinstaller Loomy selon l'installation, et comment le retirer d'un projet |
@@ -566,7 +566,7 @@ loomy/
 | ✅&nbsp;0.3.5 | **Interface à cadre fixe** : en-tête (logo, projet, contexte), corps qui seul change, pied (touches, version) ; l'accueil ouvre statut, journal, visibilité et aide dans le cadre ; rien ne s'empile dans le terminal |
 | ✅&nbsp;0.3.7 | **Autonomie et points d'arrêt** dans les instructions générées (`AGENTS.md`, `CLAUDE.md`) : l'agent avance seul sur une tâche bornée et s'arrête avant toute opération destructive, selon les recommandations Anthropic pour Opus 5.5 |
 | ✅&nbsp;0.3.8 | **Modèles qui changent souvent** : chaînes de repli par niveau dans le catalogue (le plus récent d'abord, repli automatique pour qui n'y a pas accès), disponibilité apprise sur chaque machine (`doctor --live`, refus d'une délégation), modèle épinglable (`loomy config set model.claude.mid …`), répartition des rôles modifiable par le catalogue, nouveau catalogue signalé ; protocole dans `docs/MODEL_CATALOG.md` |
-| 🔜&nbsp;0.4 | **Interface en anglais et en français** |
+| ✅&nbsp;0.4 | **Interface en anglais et en français** |
 | | Langue détectée automatiquement (`LC_ALL`, `LC_MESSAGES`, `LANG`, puis langue du système sous macOS) : français si elle commence par `fr`, **anglais par défaut** sinon ou si rien n'est détectable (macOS comme Linux) ; réglage `loomy config set lang fr\|en\|auto` |
 | | Tous les textes de l'interface dans un dictionnaire par langue (repli sur le français tant qu'une traduction manque), migrés écran par écran : cadre et accueil, `watch` et `status`, `start` et `effort`, questionnaire et mise en place, diagnostic, aide et messages |
 | | Langue des documents du projet proposée d'après la langue détectée ; test de couverture des deux langues |

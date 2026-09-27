@@ -745,6 +745,30 @@ run "worktrees --help n'a rien créé" "$LOOMY" worktrees --help
 fails "nom de tâche commençant par un tiret refusé" 2 "$LOOMY" worktrees -x
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "toujours deux worktrees seulement"; else ko "worktrees créés par erreur"; fi
 
+# ------------------------------------------------------------------ langue de l'interface
+section "Langue de l'interface (0.4)"
+lang_of() {   # lang_of <variables d'environnement…> : langue détectée, sans LOOMY_LANG ni configuration
+  env -u LOOMY_LANG -u LOOMY_UI_LANG -u LC_ALL -u LC_MESSAGES -u LANG XDG_CONFIG_HOME="$WORK/cfg-lang" "$@" \
+    bash -c 'source "$1/scripts/lib/i18n.sh"; echo "$LOOMY_UI_LANG"' _ "$REPO"
+}
+[[ "$(lang_of LANG=fr_FR.UTF-8)" == fr ]] && ok "LANG=fr_FR → français" || ko "LANG=fr_FR non détecté"
+[[ "$(lang_of LANG=en_US.UTF-8)" == en ]] && ok "LANG=en_US → anglais" || ko "LANG=en_US non détecté"
+[[ "$(lang_of LANG=de_DE.UTF-8)" == en ]] && ok "autre langue → anglais" || ko "de_DE devrait donner l'anglais"
+[[ "$(lang_of LC_ALL=fr_CA.UTF-8 LANG=en_US.UTF-8)" == fr ]] && ok "LC_ALL prime sur LANG" || ko "LC_ALL ignoré"
+mkdir -p "$WORK/nouname"; printf '#!/bin/sh\necho Linux\n' >"$WORK/nouname/uname"; chmod +x "$WORK/nouname/uname"
+[[ "$(lang_of LANG=C PATH="$WORK/nouname:$PATH")" == en ]] && ok "Linux sans langue détectable → anglais" || ko "défaut Linux incorrect"
+mkdir -p "$WORK/cfg-lang/loomy"; echo "lang=fr" >"$WORK/cfg-lang/loomy/config"
+[[ "$(lang_of LANG=en_US.UTF-8)" == fr ]] && ok "config lang=fr prime sur le système" || ko "config lang ignorée"
+[[ "$(env -u LOOMY_UI_LANG LOOMY_LANG=en XDG_CONFIG_HOME="$WORK/cfg-lang" bash -c 'source "$1/scripts/lib/i18n.sh"; echo "$LOOMY_UI_LANG"' _ "$REPO")" == en ]] \
+  && ok "LOOMY_LANG prime sur la configuration" || ko "LOOMY_LANG ignoré"
+run "aide en anglais" env -u LOOMY_UI_LANG LOOMY_LANG=en "$LOOMY" help
+has "aide : textes traduits" "Usage|Commands|commands"
+hasnt "aide : pas de français résiduel dans les titres" "<commande>|◇  PROJET"
+run "statut en anglais" env -u LOOMY_UI_LANG LOOMY_LANG=en bash "$REPO/scripts/ai-status.sh" --root "$PROJ"
+hasnt "statut : pas de libellé français" "Statut du projet|ACTIVITÉ|étape [0-9]"
+run "dictionnaire compilé à jour" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/en.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/en.sh; r=$?; cp "$tmp" scripts/lib/i18n/en.sh; rm -f "$tmp"; exit $r' _ "$REPO"
+run "toutes les phrases de l'interface sont traduites" bash -c '[[ -z "$(bash "$1/tools/i18n-missing.sh")" ]]' _ "$REPO"
+
 # ------------------------------------------------------------------ install.sh
 section "install.sh"
 PREFIX="$WORK/prefix"

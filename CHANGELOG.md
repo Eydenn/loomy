@@ -2,6 +2,21 @@
 
 Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La 1.0.0 viendra après cette validation.
 
+## 0.4.0 — 2026-09-27
+
+### Ajouté
+- **Interface en anglais et en français.** Langue détectée automatiquement (`LC_ALL`, `LC_MESSAGES`, `LANG`, puis langue du système sous macOS) : français si elle commence par `fr`, anglais sinon, et anglais quand rien n'est détectable. Réglage : `loomy config set lang fr|en|auto` (ou `LOOMY_LANG`).
+- Tous les écrans sont traduits : cadre et accueil, `status`, `watch`, `log`, `start`, `effort`, `feedback`, `privacy`, `route`, `doctor`, `init` et son questionnaire, mise en place, aide, `config`, `update`, `version` et désinstallation.
+- Dictionnaire `scripts/lib/i18n/en.tsv` (la phrase française sert de clé, repli sur le français si une traduction manque), compilé par `tools/i18n-build.sh` ; `tools/i18n-missing.sh` liste les phrases non traduites.
+- La langue des documents du projet est proposée d'après la langue de l'interface.
+- Tests : détection de la langue, écrans en anglais, dictionnaire compilé à jour, couverture complète des traductions.
+
+### Modifié
+- Les menus se basent sur la position du choix et non plus sur son libellé, pour fonctionner dans les deux langues.
+
+### Non concerné
+- Les textes destinés aux agents (brief, prompts, messages des scripts de délégation) restent en français.
+
 ## 0.3.8 — 2026-09-25
 
 ### Ajouté

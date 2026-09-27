@@ -375,7 +375,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
@@ -403,7 +403,7 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 | ✅&nbsp;0.3.5 | **Fixed-frame interface**: header (logo, project, context), a body that alone changes, footer (keys, version); the home screen opens status, journal, visibility and help inside the frame; nothing piles up in the terminal |
 | ✅&nbsp;0.3.7 | **Autonomy and stop points** in generated instructions (`AGENTS.md`, `CLAUDE.md`): the agent moves on alone within a bounded task and stops before anything destructive, following Anthropic's Opus 5.5 guidance |
 | ✅&nbsp;0.3.8 | **Fast-changing models**: per-tier fallback chains in the catalog (newest first, automatic fallback for those without access), availability learned on each machine (`doctor --live`, a refused delegation), pinnable model (`loomy config set model.claude.mid …`), role balance editable from the catalog, new catalog announced; protocol in `docs/MODEL_CATALOG.md` |
-| 🔜&nbsp;0.4 | **English and French interface** |
+| ✅&nbsp;0.4 | **English and French interface** |
 | | Language detected automatically (`LC_ALL`, `LC_MESSAGES`, `LANG`, then the system language on macOS): French when it starts with `fr`, **English by default** otherwise or when nothing is detectable (macOS and Linux); setting `loomy config set lang fr\|en\|auto` |
 | | Every interface text in a per-language dictionary (falling back to French while a translation is missing), migrated screen by screen: frame and home, `watch` and `status`, `start` and `effort`, questionnaire and setup, doctor, help and messages |
 | | Project document language suggested from the detected language; test covering both languages |

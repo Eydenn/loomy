@@ -118,6 +118,11 @@ yaml_q() {
 
 # ---------------------------------------------------------------- environnement
 HAS_GIT=0; IS_REPO=0; PARENT_REPO=""; PARENT_REMOTE=""; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
+# Existing project adopted on a dedicated branch (set by loomy init; found again when the brief is redone).
+ADOPT_BRANCH="${LOOMY_ADOPT_BRANCH:-}"; BASE_BRANCH="${LOOMY_BASE_BRANCH:-}"
+if [[ -z "$ADOPT_BRANCH" && "$(git -C "$TARGET" symbolic-ref --short -q HEAD 2>/dev/null)" == loomy/adopt ]]; then
+  ADOPT_BRANCH="loomy/adopt"; BASE_BRANCH="$(git -C "$TARGET" config --get branch.loomy/adopt.loomy-base 2>/dev/null || echo main)"
+fi
 
 env_check() {
   # Display, requirement checks and guided fixes are handed to ai-doctor.sh.
@@ -539,6 +544,7 @@ show_recap() {
   ui_rail_kv "$(t "Technical name")" "$SLUG ${C_DIM}($(t "folder, technical names"))${C_RESET}"
   if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }$(t "GitHub repository %s %s" "$GITHUB_REPO" "$GH_USER/$REPO_NAME")"; fi
   ui_rail_kv "$(t "Git")" "${parts:-$(t "no action")}"
+  if [[ -n "$ADOPT_BRANCH" ]]; then ui_rail_kv "$(t "Branch")" "$(t "%s, created from %s (untouched)" "$ADOPT_BRANCH" "$BASE_BRANCH")"; fi
   if [[ -n "$REMOTE_NAME_NOTE" ]]; then
     ui_rail_kv "" "${C_YELLOW}! $REMOTE_NAME_NOTE${C_RESET} ${C_DIM}→ gh repo rename $SLUG${C_RESET}"
   fi
@@ -585,6 +591,8 @@ write_brief() {
     echo "github_repo: $GITHUB_REPO"
     echo "repo_name: $REPO_NAME"
     echo "ai_repo_name: $AI_REPO_NAME"
+    echo "adopt_branch: $ADOPT_BRANCH"
+    echo "base_branch: $BASE_BRANCH"
     echo "---"
     echo
     echo "# $(t "Startup brief") — $NAME"
@@ -632,6 +640,12 @@ write_brief() {
     esac
     t "- Project technical name: \`%s\`. Use it for package names, repository names and technical identifiers, so that everything has the same name." "$SLUG"; echo
     if [[ -n "$REMOTE_NAME_NOTE" ]]; then t "- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s)." "$REMOTE_NAME_NOTE" "$SLUG"; echo; fi
+    if [[ "$REPO" == "existing" ]]; then
+      t "- Existing project: read \`.loomy/assessment.md\` first, then follow the \"Existing project\" section of START.md. Don't change application code during the adoption without explicit approval."; echo
+    fi
+    if [[ -n "$ADOPT_BRANCH" ]]; then
+      t "- Work only on the \`%s\` branch, created from \`%s\`, which stays untouched. Never merge into or push \`%s\` yourself: at the end, offer a pull request or a merge, as the user prefers." "$ADOPT_BRANCH" "$BASE_BRANCH" "$BASE_BRANCH"; echo
+    fi
     t "- Update progress with \`.loomy/scripts/ai-status.sh set <phase>\`."; echo
   } >"$BRIEF"
 }
@@ -689,6 +703,7 @@ done
 steps=()
 [[ "$GIT_INIT" == "yes" ]] && steps+=("$(t "Initialising the Git repository")")
 [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]] && steps+=("$(t "Creating the GitHub repository")")
+[[ "$REPO" == "existing" ]] && steps+=("$(t "Assessing the existing project")")
 steps+=("$(t "Saving the brief")")
 [[ "$AI_FILES" != "versioned" ]] && steps+=("$(t "Setting up AI files")")
 [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("$(t "Saving the plans")")
@@ -711,6 +726,12 @@ if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
     ui_step_done $st warn "$(t "GitHub repository not created")" "$GH_FAIL"
     GITHUB_REPO="no"
   fi
+  st=$(( st + 1 ))
+fi
+if [[ "$REPO" == "existing" ]]; then
+  ui_step_run $st
+  if assess="$(bash "$SCRIPT_DIR/ai-assess.sh" --root "$TARGET" --quiet 2>/dev/null)"; then ui_step_done $st ok "$(t "Existing project assessed")" "$assess"
+  else ui_step_done $st warn "$(t "Assessment incomplete")" "loomy assess"; fi
   st=$(( st + 1 ))
 fi
 ui_step_run $st

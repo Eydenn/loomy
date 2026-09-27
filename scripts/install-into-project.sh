@@ -26,14 +26,16 @@ Options:
   --no-wizard       Install only, without the questionnaire
   --yes             Fill in the brief without questions, with default values
   --answers FILE    Reuse the answers of an existing brief.md
+  --no-branch       Existing Git project: stay on the current branch instead of loomy/adopt
   -h, --help        Show this help
 EOF
 }
 
-TARGET_INPUT=""; RUN_WIZARD=1; WIZARD_ARGS=(); ACTION=""
+TARGET_INPUT=""; RUN_WIZARD=1; WIZARD_ARGS=(); ACTION=""; ADOPT_BRANCH=1
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-wizard) RUN_WIZARD=0 ;;
+    --no-branch) ADOPT_BRANCH=0 ;;
     --update) ACTION="update" ;;
     --reset) ACTION="reset" ;;
     --yes|-y|--no-clipboard) WIZARD_ARGS+=("$1") ;;
@@ -344,10 +346,32 @@ if [[ "$ACTION" == "update" ]]; then
   t "Error: no Loomy project in %s to update. Run loomy init to create it." "$TARGET" >&2; echo >&2
   exit 1
 fi
+# Existing project with a Git history: everything Loomy and the agents do goes to a dedicated branch, created from the
+# current one. Switching to a new branch at HEAD changes no file (uncommitted changes stay as they are); the original
+# branch is never touched, and merging back is the user's call.
+adopt_branch() {
+  (( ADOPT_BRANCH )) || return 0
+  git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  [[ "$(cd "$(git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)" == "$(cd "$TARGET" && pwd -P)" ]] || return 0
+  git -C "$TARGET" rev-parse --verify -q HEAD >/dev/null || return 0
+  local base; base="$(git -C "$TARGET" symbolic-ref --short -q HEAD)" || return 0
+  local br="loomy/adopt"
+  if [[ "$base" == "$br" ]]; then base="$(git -C "$TARGET" config --get "branch.$br.loomy-base" || echo main)"
+  elif git -C "$TARGET" show-ref --verify -q "refs/heads/$br"; then git -C "$TARGET" checkout -q "$br" || return 0
+  else git -C "$TARGET" checkout -q -b "$br" || return 0; git -C "$TARGET" config "branch.$br.loomy-base" "$base"; fi
+  export LOOMY_ADOPT_BRANCH="$br" LOOMY_BASE_BRANCH="$base"
+  ui_ok "$(t "Dedicated branch %s" "$br")" "$(t "created from %s, which stays untouched" "$base")"
+}
+if [[ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.DS_Store' 2>/dev/null | head -1)" ]]; then
+  ADOPTING=1
+  ui_banner "$(t "Existing project")" "${TARGET/#$HOME/~}"
+  adopt_branch
+else ADOPTING=0; fi
 copy_loomy_files
 cp "$DOCS_ROOT/START.md" "$TARGET/START.md"
 
 if (( RUN_WIZARD )); then run_wizard; fi
+if (( ADOPTING )) && [[ ! -f "$L/assessment.md" ]]; then bash "$LOOMY_ROOT/scripts/ai-assess.sh" --root "$TARGET" --quiet >/dev/null 2>&1 || true; fi
 
 brief_cmd=".loomy/scripts/init-wizard.sh"; command -v loomy >/dev/null 2>&1 && brief_cmd="loomy brief"
 ui_banner "$(t "Loomy installed")" "v$NEW_V · ${TARGET/#$HOME/~}"

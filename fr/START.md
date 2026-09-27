@@ -56,6 +56,33 @@ Chaque délégation passée par les bridges (`delegate-to-claude.sh`, `delegate-
 
 ---
 
+## Projet existant (adoption)
+
+Quand `.loomy/brief.md` indique `repo: existing`, tu adoptes un projet qui vit déjà : son code, son historique et ses habitudes passent en premier. Les phases restent les mêmes, avec ces règles.
+
+**Règles de base**
+- Lis d'abord `.loomy/assessment.md` : des faits recueillis sans IA (stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette). S'il manque ou date, lance `.loomy/scripts/ai-assess.sh`.
+- Si `adopt_branch` est renseigné dans le brief, travaille **uniquement sur cette branche**. La `base_branch` reste intacte : ne fusionne jamais dedans, ne la pousse pas, ne réécris pas son historique, jamais de push forcé. Ne renomme ni ne supprime les branches, tags ou remotes existants.
+- Rien d'existant n'est écrasé. Un `README`, `AGENTS.md`, `CLAUDE.md`, une documentation ou une configuration existants sont complétés ou fusionnés, jamais remplacés ; montre le diff de toute modification.
+- Les changements non commités présents à l'arrivée de Loomy appartiennent à l'utilisateur : ne les indexe et ne les committe jamais.
+- Aucune modification du code applicatif pendant l'adoption, sauf accord explicite de l'utilisateur.
+
+**Découverte.** Confirme l'état des lieux en lisant le code : points d'entrée, modules principaux, modèle de données, façon dont les tests et le build tournent vraiment. Lis de façon ciblée, pas tout.
+
+**Entretien.** Ne demande que ce que le code et l'historique ne disent pas : intention et utilisateurs, travaux en cours, ce qui ne doit pas changer, points douloureux connus.
+
+**Proposition : un plan d'adoption**, validé avant toute écriture :
+- `PROJECT.md` reconstruit à partir du README, du code et de l'historique ; `ARCHITECTURE.md` à partir du code réel ; des ADR seulement pour les décisions visibles dans le code ou l'historique qu'on pourrait remettre en cause ;
+- `AGENTS.md` et `CLAUDE.md` alignés sur les vraies commandes du dépôt (test, lint, build) et ses conventions, pas des génériques ;
+- rôles, routage et effort dimensionnés selon la taille et le risque du projet (voir l'état des lieux), avec le rôle sécurité sur les zones sensibles ;
+- les changements de standardisation (outillage, CI, tests), listés à part, chacun facultatif et justifié.
+
+**Construction et vérification.** N'écris que les documents et la configuration IA validés. Lance les commandes de test, lint et build existantes pour établir la situation de départ : un échec déjà présent est signalé comme tel, pas corrigé sans accord.
+
+**Commit.** Si c'est autorisé, committe sur la branche d'adoption (`chore: adopt Loomy`), ne pousse que cette branche et seulement si c'est autorisé, puis propose à l'utilisateur une pull request vers `base_branch` (`gh pr create --base <base_branch> --head <adopt_branch>`) ou une fusion qu'il fera lui-même.
+
+---
+
 ## Phase 1 — Découverte
 
 Si `.loomy/brief.md` existe, lis-le en premier. Il contient les réponses de l'utilisateur au questionnaire du terminal (`init-wizard.sh`) :

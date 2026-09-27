@@ -81,7 +81,7 @@ has "help: structured sections" "◇  TRACKING"
 hasnt "help: no colour outside a terminal" $'\033\\['
 hasnt "help: no more route json" "json"
 bad=""
-for c in init brief route status watch log doctor config delegate worktrees; do
+for c in init brief assess route status watch log doctor config delegate worktrees; do
   "$LOOMY" "$c" --help >"$OUT" 2>&1 </dev/null || bad="$bad $c"
 done
 if [[ -z "$bad" ]]; then ok "--help answers for every command"; else ko "--help failing:$bad"; fi
@@ -744,6 +744,74 @@ if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "
 run "worktrees --help created nothing" "$LOOMY" worktrees --help
 fails "task name starting with a hyphen refused" 2 "$LOOMY" worktrees -x
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "still only two worktrees"; else ko "worktrees created by mistake"; fi
+
+# ------------------------------------------------------------------ existing project
+section "Adopting an existing project (0.5)"
+EX="$WORK/existing-app"; mkdir -p "$EX/src/auth" "$EX/tests" "$EX/.github/workflows"
+cat >"$EX/package.json" <<'JSON'
+{
+  "name": "existing-app",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint .",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "typescript": "^5.6.0"
+  }
+}
+JSON
+printf 'export function login() {\n  // TODO: rate limiting\n}\n' >"$EX/src/auth/login.ts"
+printf 'export const app = 1;\n' >"$EX/src/app.tsx"
+printf 'test("app", () => {});\n' >"$EX/tests/app.test.ts"
+printf 'name: ci\non: push\njobs: {}\n' >"$EX/.github/workflows/ci.yml"
+printf '# Existing app\n' >"$EX/README.md"
+printf 'API_KEY=not-a-real-key\n' >"$EX/.env"
+git -C "$EX" init -q -b main
+git -C "$EX" add -A && GIT_AUTHOR_NAME=Alice GIT_AUTHOR_EMAIL=alice@example.com git -C "$EX" commit -qm "feat: first version"
+printf 'export const more = 2;\n' >>"$EX/src/app.tsx"
+git -C "$EX" add -A && GIT_AUTHOR_NAME=Bob GIT_AUTHOR_EMAIL=bob@example.com git -C "$EX" commit -qm "fix: more"
+MAIN_BEFORE="$(git -C "$EX" rev-parse main)"
+printf 'local work in progress\n' >>"$EX/README.md"
+run "init on an existing project" "$LOOMY" init "$EX" --yes --no-clipboard
+[[ "$(git -C "$EX" symbolic-ref --short HEAD)" == "loomy/adopt" ]] && ok "adoption: dedicated branch loomy/adopt" || ko "adoption: branch $(git -C "$EX" symbolic-ref --short HEAD)"
+[[ "$(git -C "$EX" rev-parse main)" == "$MAIN_BEFORE" ]] && ok "adoption: main untouched" || ko "adoption: main moved"
+git -C "$EX" diff --quiet -- README.md && ko "adoption: uncommitted work lost" || ok "adoption: uncommitted work kept"
+file_has "brief: existing project" "$EX/.loomy/brief.md" "^repo: existing$"
+file_has "brief: adoption branch" "$EX/.loomy/brief.md" "^adopt_branch: loomy/adopt$"
+file_has "brief: base branch" "$EX/.loomy/brief.md" "^base_branch: main$"
+file_has "brief: stay on the adoption branch" "$EX/.loomy/brief.md" "Work only on the \`loomy/adopt\` branch"
+file_has "START.md: adoption section" "$EX/START.md" "Existing project \(adoption\)"
+A="$EX/.loomy/assessment.md"
+file_has "assessment: languages" "$A" "Languages: TypeScript"
+file_has "assessment: frameworks" "$A" "Detected: .*react.*vitest"
+file_has "assessment: test command" "$A" '`npm run test`'
+file_has "assessment: lint and build commands" "$A" '`npm run build`'
+file_has "assessment: CI" "$A" '\.github/workflows'
+file_has "assessment: authors" "$A" "Authors: 2"
+file_has "assessment: sensitive area" "$A" "src/auth/login.ts"
+file_has "assessment: committed secret flagged" "$A" '`\.env`'
+file_has "assessment: TODO markers" "$A" "TODO / FIXME / HACK markers: 1"
+file_has "assessment: uncommitted work flagged" "$A" "uncommitted change"
+file_has "assessment: high risk with a secret" "$A" "estimated risk: HIGH"
+hasnt "assessment: Loomy's own files ignored" "START\.md \("
+run "loomy assess --print" "$LOOMY" assess --root "$EX" --print
+has "assess: report printed" "Assessment of the existing project"
+run "loomy assess in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr "$LOOMY" assess --root "$EX" --print
+has "assess: French headings" "État des lieux du projet existant"
+EX2="$WORK/existing-nobranch"; mkdir -p "$EX2" && printf 'print(1)\n' >"$EX2/main.py" && git -C "$EX2" init -q -b main && git -C "$EX2" add -A && git -C "$EX2" commit -qm init
+run "init --no-branch" "$LOOMY" init "$EX2" --yes --no-clipboard --no-branch
+[[ "$(git -C "$EX2" symbolic-ref --short HEAD)" == "main" ]] && ok "--no-branch: stays on main" || ko "--no-branch: switched"
+EX3="$WORK/existing-nogit"; mkdir -p "$EX3" && printf 'fn main() {}\n' >"$EX3/main.rs" && printf '[package]\nname = "x"\n[dependencies]\nserde = "1"\n' >"$EX3/Cargo.toml"
+run "init on an existing project without Git" "$LOOMY" init "$EX3" --yes --no-clipboard
+file_has "assessment without Git: Rust" "$EX3/.loomy/assessment.md" "Languages: Rust"
+file_has "assessment without Git: cargo test" "$EX3/.loomy/assessment.md" '`cargo test`'
+file_has "assessment without Git: no history" "$EX3/.loomy/assessment.md" "No Git history"
+[[ ! -f "$PROJ/.loomy/assessment.md" ]] && ok "new project: no assessment" || ko "new project assessed"
 
 # ------------------------------------------------------------------ interface language
 section "Interface language"

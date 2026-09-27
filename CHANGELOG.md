@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.0 — 2026-09-27
+
+### Added
+- **Adopting an existing project.** `loomy init` on a project that already has files:
+  - **dedicated branch**: on a Git repository with a history, Loomy switches to `loomy/adopt`, created from the current branch, which stays untouched; uncommitted work stays as it is and is flagged so that it is never committed by the agents. `--no-branch` stays on the current branch;
+  - **assessment without AI** (`.loomy/assessment.md`, also shown as a setup step): languages, frameworks and dependencies, lock files, structure, real test / lint / build commands (package.json scripts, Makefile, Cargo, Go, Maven, Gradle, Swift, Flutter), test files, CI, conventions and existing agent instructions, documentation, Git history (commits, activity, authors, remotes, branches, conventional commits, most changed files), sensitive paths, files that look like committed secrets, TODO / FIXME markers, large files, size and estimated risk;
+  - **adoption plan** in START.md ("Existing project" section, English and French): nothing existing is overwritten, no application code change without approval, `PROJECT.md`, `ARCHITECTURE.md` and ADRs rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's real commands and conventions, roles, routing and effort sized to the project's size and risk, existing checks run as a baseline, commit on the adoption branch and a pull request offered towards the original branch;
+  - the brief records `adopt_branch` and `base_branch`, and tells the agent to stay on the adoption branch.
+- **`loomy assess`**: runs the assessment again at any time (`--print` to only show it).
+- Tests: adoption of a React/TypeScript project with two authors, CI, a committed `.env` and uncommitted work; `--no-branch`; project without Git; French assessment.
+
 ## 0.4.1 — 2026-09-27
 
 ### Changed

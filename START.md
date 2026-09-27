@@ -56,6 +56,33 @@ Every delegation going through the bridges (`delegate-to-claude.sh`, `delegate-t
 
 ---
 
+## Existing project (adoption)
+
+When `.loomy/brief.md` says `repo: existing`, you are adopting a project that already lives: its code, history and habits come first. The phases stay the same, with these rules.
+
+**Ground rules**
+- Read `.loomy/assessment.md` first: facts gathered without AI (stack, commands, tests, CI, conventions, Git history, sensitive areas, debt). If it is missing or stale, run `.loomy/scripts/ai-assess.sh`.
+- If `adopt_branch` is set in the brief, work **only on that branch**. The `base_branch` stays untouched: never merge into it, push it, rewrite its history or force-push. Don't rename or delete existing branches, tags or remotes.
+- Nothing existing is overwritten. An existing `README`, `AGENTS.md`, `CLAUDE.md`, documentation or configuration is extended or merged, never replaced; show the diff of any change to it.
+- Uncommitted changes present when Loomy arrived belong to the user: never stage or commit them.
+- No change to application code during the adoption, except what the user explicitly approves.
+
+**Discovery.** Confirm the assessment by reading the code: entry points, main modules, data model, the way tests and builds really run. Read targeted, not everything.
+
+**Interview.** Only ask what the code and the history can't tell: intent and users, work in progress, what must not change, known pain points.
+
+**Proposal: an adoption plan**, approved before anything is written:
+- `PROJECT.md` rebuilt from the README, the code and the history; `ARCHITECTURE.md` from the actual code; ADRs only for decisions visible in the code or history that someone could challenge;
+- `AGENTS.md` and `CLAUDE.md` aligned with the repository's real commands (test, lint, build) and conventions, not generic ones;
+- roles, routing and effort sized to the project's size and risk (see the assessment), with the security role on the sensitive areas;
+- standardisation changes (tooling, CI, tests), listed separately, each one optional and justified.
+
+**Build and verification.** Write only the approved documents and AI configuration. Run the existing test, lint and build commands to record the baseline: a failure that was already there is reported as such, not fixed without approval.
+
+**Commit.** If allowed, commit on the adoption branch (`chore: adopt Loomy`), push that branch only if allowed, then offer the user a pull request towards `base_branch` (`gh pr create --base <base_branch> --head <adopt_branch>`) or a merge they run themselves.
+
+---
+
 ## Phase 1 — Discovery
 
 If `.loomy/brief.md` exists, read it first. It holds the user's answers to the terminal questionnaire (`init-wizard.sh`):

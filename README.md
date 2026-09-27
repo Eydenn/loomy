@@ -364,7 +364,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | Command | Purpose |
 |---|---|
 | 🏠&nbsp;<code>loomy</code> | home: where the project stands, what is expected, and the next step in one choice (outside a project: create one) |
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`; existing Git project: `--no-branch` to stay on the current branch) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`) |
@@ -373,6 +373,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
+| 🔬&nbsp;<code>loomy&nbsp;assess</code> | assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
@@ -438,8 +439,7 @@ For contributors: interface strings are written in English in the code (`t "Engl
 
 <br>
 
-- **Existing project.** Run `loomy init` in the repository, then ask:
-  > Analyse this existing project and apply START.md without breaking the current architecture. Propose the standardisation changes first, before any modification.
+- **Existing project.** Run `loomy init` in the repository. Loomy switches to a dedicated `loomy/adopt` branch (the current one stays untouched, uncommitted work stays as it is), writes an assessment without AI (`.loomy/assessment.md`: stack, real commands, tests, CI, conventions, Git history, sensitive areas, debt), and the lead agent proposes an adoption plan: `PROJECT.md` and `ARCHITECTURE.md` rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's commands, roles sized to its risk. Nothing existing is overwritten, no application code changes without your approval, and merging back goes through a pull request you accept.
 - **Security audit.** It runs on demand, with the official Cloudflare skill. Install it with `.loomy/scripts/install-security-audit.sh --global`, then ask for a full audit without code changes.
 - **End of the bootstrap.** `START.md` is archived in `.ai/bootstrap/` or deleted, as you chose. It has no authority afterwards.
 
@@ -506,7 +506,7 @@ loomy/
 | | Every interface text goes through a dictionary, migrated screen by screen: frame and home, `watch` and `status`, `start` and `effort`, questionnaire and setup, doctor, help and messages |
 | ✅&nbsp;0.4.1 | **English first**: code, help, agent documents (`START.md`, templates, roles, skills), startup brief, delegation prompts, README and changelog in English; French is a translation (`scripts/lib/i18n/fr.tsv`, `fr/`) used when French is detected |
 | | Project document language suggested from the detected language; test covering both languages |
-| 🔜&nbsp;0.5 | **Adopting an existing project** |
+| ✅&nbsp;0.5 | **Adopting an existing project** |
 | | `loomy init` on an already developed, versioned project (Git, remote, branches): nothing is overwritten, everything goes through a dedicated branch and an approval |
 | | Initial assessment: languages, frameworks, structure, dependencies, tests, CI, code conventions, existing docs, Git history (activity, sensitive areas, authors), debt and risks spotted |
 | | Initial adaptation from that assessment: `PROJECT.md`, `ARCHITECTURE.md` and decisions rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's conventions (test, lint, build commands), roles, routing and effort tuned to the project's size and risk |

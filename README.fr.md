@@ -425,7 +425,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | Commande | Rôle |
 |---|---|
 | 🏠&nbsp;<code>loomy</code> | accueil : où en est le projet, ce qui est attendu, et la suite en un choix (hors projet : créer un projet) |
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée le dossier si besoin (ou propose de le créer d'après le nom du projet), puis initialise le projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`) |
+| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dossier]</code> | crée le dossier si besoin (ou propose de le créer d'après le nom du projet), puis initialise le projet, nouveau ou existant : questionnaire, puis structure mise en place par l'orchestrateur ; sur un projet déjà initialisé : reprendre, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers` ; projet Git existant : `--no-branch` pour rester sur la branche courante) |
 | 📝&nbsp;<code>loomy&nbsp;brief</code> | relance le questionnaire du projet courant |
 | 🔒&nbsp;<code>loomy&nbsp;privacy</code> | visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé |
 | ▶️&nbsp;<code>loomy&nbsp;start</code> | démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`, `--watch`) |
@@ -434,6 +434,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
+| 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
@@ -486,8 +487,7 @@ mon-projet/
 
 <br>
 
-- **Projet existant.** Lance `loomy init` dans le dépôt, puis demande :
-  > Analyse ce projet existant et applique START.md sans casser l'architecture actuelle. Propose d'abord les changements de standardisation avant toute modification.
+- **Projet existant.** Lance `loomy init` dans le dépôt. Loomy passe sur une branche dédiée `loomy/adopt` (la branche courante reste intacte, le travail non commité reste tel quel), écrit un état des lieux sans IA (`.loomy/assessment.md` : stack, vraies commandes, tests, CI, conventions, historique Git, zones sensibles, dette), et l'orchestrateur propose un plan d'adoption : `PROJECT.md` et `ARCHITECTURE.md` reconstruits à partir du code, `AGENTS.md` et `CLAUDE.md` alignés sur les commandes du dépôt, rôles dimensionnés selon son risque. Rien d'existant n'est écrasé, aucun code applicatif ne change sans ton accord, et le retour sur la branche d'origine passe par une pull request que tu acceptes.
 - **Audit de sécurité.** Il se lance à la demande, avec le skill officiel Cloudflare. Installe-le avec `.loomy/scripts/install-security-audit.sh --global`, puis demande un audit complet sans modification du code.
 - **Fin du bootstrap.** `START.md` est archivé dans `.ai/bootstrap/` ou supprimé, selon ton choix. Il n'a plus aucune autorité ensuite.
 
@@ -571,7 +571,7 @@ loomy/
 | | Tous les textes de l'interface passent par un dictionnaire, migrés écran par écran : cadre et accueil, `watch` et `status`, `start` et `effort`, questionnaire et mise en place, diagnostic, aide et messages |
 | ✅&nbsp;0.4.1 | **L'anglais d'abord** : code, aide, documents des agents (`START.md`, templates, rôles, skills), brief de démarrage, prompts de délégation, README et journal des modifications en anglais ; le français est une traduction (`scripts/lib/i18n/fr.tsv`, `fr/`), utilisée quand le français est détecté |
 | | Langue des documents du projet proposée d'après la langue détectée ; test de couverture des deux langues |
-| 🔜&nbsp;0.5 | **Adopter un projet existant** |
+| ✅&nbsp;0.5 | **Adopter un projet existant** |
 | | `loomy init` sur un projet déjà développé et versionné (Git, dépôt distant, branches) : rien n'est écrasé, tout passe par une branche dédiée et une validation |
 | | État des lieux : langages, frameworks, structure, dépendances, tests, CI, conventions de code, documentation existante, historique Git (activité, zones sensibles, auteurs), dette et risques repérés |
 | | Adaptation initiale d'après cet état des lieux : `PROJECT.md`, `ARCHITECTURE.md` et décisions reconstitués à partir du code, `AGENTS.md` et `CLAUDE.md` alignés sur les conventions du dépôt (commandes de test, de lint, de build), rôles, routage et effort ajustés à la taille et au risque du projet |

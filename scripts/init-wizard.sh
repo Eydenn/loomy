@@ -359,22 +359,22 @@ ask_all() {
   UI_LABEL="$(t "Main tool")"
   choose_coded LEAD "Main tool (lead)?" "$(ans ai_lead "$lead_def")" \
     "The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning." \
-    "claude|Claude Code|Orchestrator on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended)." \
-    "codex|Codex|Orchestrator on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only)."
+    "claude|Claude Code|Lead agent on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended)." \
+    "codex|Codex|Lead agent on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only)."
 
   ui_step 9 $TOTAL
   UI_LABEL="$(t "Profile")"
   choose_coded BUDGET "Model cost / quality profile?" "$(ans budget equilibre)" \
-    "The orchestrator always stays on the best model; the profile sets each role's effort and model (details: loomy route)." \
-    "econome|Thrifty|Orchestrator and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
-    "equilibre|Balanced (recommended)|Orchestrator at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio." \
-    "qualite|Max quality|Orchestrator and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries."
+    "The lead agent always stays on the best model; the profile sets each role's effort and model (details: loomy route)." \
+    "econome|Thrifty|Lead agent and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
+    "equilibre|Balanced (recommended)|Lead agent at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio." \
+    "qualite|Max quality|Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries."
   ai_env_for "$MODE" "$LEAD"
   ROUTE_ENV="$AI_ENV"; ROUTE_NOTE="$AI_ENV_NOTE"
   ai_resolve lead "$ROUTE_ENV" "$BUDGET"; LEAD_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve executor "$ROUTE_ENV" "$BUDGET"; EXEC_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve architect "$ROUTE_ENV" "$BUDGET"; DEEP_LINE="$R_MODEL ($R_EFFORT)"
-  ui_fact "$(t "Lead agent")" "$(t "orchestrator %s" "${LEAD_LINE}")"
+  ui_fact "$(t "Lead agent")" "$(t "lead agent %s" "${LEAD_LINE}")"
 
   ui_group "$(t "DELIVERABLES")"
   ui_step 10 $TOTAL
@@ -467,7 +467,7 @@ ask_all() {
     "$(t "These are your working rules with the agents. GitHub sets visibility per repository, not per file.")$vis_txt" \
     "versioned|Versioned with the project|Recommended for a private repository: you get them on all your machines, and agents working online on the repository can read them." \
     "local|Local only|Never sent to GitHub: excluded via .git/info/exclude, invisible in the repository. Lost if you change machines." \
-    "private|\$(t "In a separate private repository")|$(t "Recommended for a public repository: excluded from the project and backed up in a private GitHub repository (%s), with loomy privacy sync." "$(basename "$TARGET")-ai")"
+    "private|$(t "In a separate private repository")|$(t "Recommended for a public repository: excluded from the project and backed up in a private GitHub repository (%s), with loomy privacy sync." "$(basename "$TARGET")-ai")"
   if [[ "$AI_FILES" == "private" ]]; then
     while true; do
       UI_LABEL="$(t "Private AI repository")"
@@ -540,7 +540,7 @@ show_recap() {
   ui_rail_kv "$(t "Architecture")" "$DEEP_LINE"
   ui_rail ""
   ui_rail_group "$(t "Deliverables")"
-  ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · START.md : $(no_rec "$HISTORY_LABEL")"
+  ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · $(t "START.md: %s" "$(no_rec "$HISTORY_LABEL")")"
   ui_rail_kv "$(t "Technical name")" "$SLUG ${C_DIM}($(t "folder, technical names"))${C_RESET}"
   if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }$(t "GitHub repository %s %s" "$GITHUB_REPO" "$GH_USER/$REPO_NAME")"; fi
   ui_rail_kv "$(t "Git")" "${parts:-$(t "no action")}"
@@ -608,7 +608,7 @@ write_brief() {
     echo "| $(t "Stage") | $STAGE_LABEL |"
     echo "| $(t "Sensitive areas") | $SENSITIVE_LABEL |"
     echo "| $(t "Estimated risk") | $RISK |"
-    echo "| $(t "AI mode") | $MODE (lead: $LEAD_LABEL) |"
+    echo "| $(t "AI mode") | $(t "%s (lead: %s)" "$MODE" "$LEAD_LABEL") |"
     echo "| $(t "Model profile") | $BUDGET_LABEL |"
     echo "| $(t "Docs language") | $DOCLANG_LABEL |"
     echo "| $(t "START.md after init") | $HISTORY_LABEL |"
@@ -685,7 +685,7 @@ while true; do
   [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc $(t "Creates the private repository %s for the AI files." "${GH_USER:+$GH_USER/}$AI_REPO_NAME")"
   UI_LABEL="$(t "Brief")"
   choose_coded CONFIRM "Save this brief?" "save" "Nothing is written before you confirm." \
-    "save|Yes, save|\$save_desc" \
+    "save|Yes, save|$save_desc" \
     "again|Review the questions|Your current answers become the defaults." \
     "cancel|Cancel|No file written, no Git action."
   case "$CONFIRM" in
@@ -781,10 +781,10 @@ if [[ "$(cd "$from" 2>/dev/null && pwd -P)" != "$(cd "$TARGET" && pwd -P)" ]]; t
   step=$(( step + 1 ))
 fi
 if command -v loomy >/dev/null 2>&1; then
-  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Open the orchestrator session:") ${C_BOLD}loomy start${C_RESET}"
+  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Open the lead agent session:") ${C_BOLD}loomy start${C_RESET}"
   ui_rail "   ${C_DIM}$(t "or by hand: %s, then paste the startup prompt" "${LEAD_CMD}")${C_RESET}"
 else
-  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Launch the orchestrator at the project root:")"
+  ui_rail "${C_BRAND}${step}${C_RESET}  $(t "Launch the lead agent at the project root:")"
   ui_rail "   ${C_BOLD}${LEAD_CMD}${C_RESET}"
   ui_rail "   $(t "then paste the startup prompt:")"
   _ui_term_size
@@ -810,8 +810,8 @@ fi
 if ui_is_interactive && [[ -x "$SCRIPT_DIR/ai-start.sh" ]]; then
   ui_rail ""
   UI_LABEL="$(t "Session")"
-  UI_DESCS=("$(t "Opens the orchestrator now, in the project folder, with the startup prompt.")" "$(t "You can start it later with loomy start, from the project folder.")")
-  ui_choose "$(t "Open the orchestrator session now?")" 0 "$(t "Yes, now")" "$(t "Later")"
+  UI_DESCS=("$(t "Opens the lead agent now, in the project folder, with the startup prompt.")" "$(t "You can start it later with loomy start, from the project folder.")")
+  ui_choose "$(t "Open the lead agent session now?")" 0 "$(t "Yes, now")" "$(t "Later")"
   if [[ "$UI_INDEX" == "0" ]]; then
     ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" --new
   fi

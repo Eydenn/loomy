@@ -107,7 +107,9 @@ ui_screen_end() {
     if [[ -z "${UI_NO_DUMP:-}" ]] && (( ${#UI_PAGE_L[@]} > 0 )); then
       local i n=${#UI_PAGE_L[@]}
       [[ -n "$UI_HDR_TITLE" ]] && printf '%s\n%s\n' "${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}" "${C_RAIL}│${C_RESET}" >&2
-      for (( i = 0; i < n; i++ )); do printf '%s\n' "${UI_PAGE_L[$i]:-}" >&2; done
+      # The page usually starts with its own guide line: don't print it twice under the title.
+      i=0; [[ -n "$UI_HDR_TITLE" && "${UI_PAGE_L[0]:-}" == "${C_RAIL}│${C_RESET}" ]] && i=1
+      for (( ; i < n; i++ )); do printf '%s\n' "${UI_PAGE_L[$i]:-}" >&2; done
     fi
   elif [[ -n "${LOOMY_PAGE_OUT:-}" ]]; then
     for l in ${UI_PAGE_L[@]+"${UI_PAGE_L[@]}"}; do printf '%s\n' "$l"; done >>"$LOOMY_PAGE_OUT"
@@ -269,7 +271,8 @@ _ui_now_ms() {
 # _ui_dur <ms>: readable duration in UI_DUR ("0,4 s", "12 s", "1 min 05 s").
 _ui_dur() {
   local ms=$1 s
-  if (( ms < 10000 )); then UI_DUR="$(( ms / 1000 )),$(( ms % 1000 / 100 )) s"
+  local sep="."; [[ "${LOOMY_UI_LANG:-en}" == "fr" ]] && sep=","
+  if (( ms < 10000 )); then UI_DUR="$(( ms / 1000 ))${sep}$(( ms % 1000 / 100 )) s"
   elif (( ms < 60000 )); then UI_DUR="$(( ms / 1000 )) s"
   else s=$(( ms / 1000 )); UI_DUR="$(( s / 60 )) min $(printf '%02d' $(( s % 60 ))) s"; fi
 }
@@ -437,8 +440,6 @@ _ui_strlen() {
   cont="$(printf '%s' "$1" | LC_ALL=C tr -cd '\200-\277' | LC_ALL=C wc -c | tr -d ' ')"
   UI_LEN=$(( bytes - cont ))
 }
-_ui_len() { _ui_strlen "$1"; echo "$UI_LEN"; }
-
 # _ui_pad <text> <width>: text padded with spaces in UI_PADDED.
 _ui_pad() {
   local s="$1"
@@ -541,7 +542,12 @@ ui_ok()   { if _ui_form_note ok "$1${2:+ · $2}"; then return 0; fi; ui_print "$
 ui_warn() { if _ui_form_note warn "$1${2:+ · $2}"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_YELLOW}!${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
 ui_err()  { ui_print "${C_RAIL}│${C_RESET}  ${C_RED}✗${C_RESET} $1 ${C_DIM}${2:-}${C_RESET}"; }
 ui_info() { if _ui_form_note info "$*"; then return 0; fi; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}→ $*${C_RESET}"; }
-ui_end()  { ui_print "${C_RAIL}│${C_RESET}"; ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; ui_print ""; }
+ui_end()  {
+  ui_print "${C_RAIL}│${C_RESET}"
+  # Inside an app view (LOOMY_NO_HEADER), the frame's footer closes the screen: the text stays on the guide line.
+  if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}$*${C_RESET}"; else ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; fi
+  ui_print ""
+}
 
 ui_kv() {
   local w=16

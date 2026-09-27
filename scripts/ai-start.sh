@@ -196,6 +196,7 @@ if [[ "$MODE" == "menu" ]]; then
     fi
     opts+=("$(t "New session")"); codes+=(new); descs+=("$(t "Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state." "$tool_label" "$KIND")")
     opts+=("$(t "Show the commands")"); codes+=(print); descs+=("$(t "Opens nothing: shows the commands and copies the prompt, so you run them yourself.")")
+    opts+=("$(t "Cancel")"); codes+=(cancel); descs+=("$(t "Opens nothing.")")
     UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choice")"
     ui_choose "$(t "What do you want to do?")" 0 "${opts[@]}"
     MODE="${codes[$UI_INDEX]:-print}"
@@ -203,6 +204,7 @@ if [[ "$MODE" == "menu" ]]; then
 fi
 
 case "$MODE" in
+  cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
   print)
     print_cmds
     ui_end "$(t "live tracking: loomy watch")"

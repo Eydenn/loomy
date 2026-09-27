@@ -78,7 +78,8 @@ install_hint() {
 LOOMY_BIN="$SCRIPT_DIR/../bin/loomy"
 if (( ! COMPACT )) && [[ -x "$LOOMY_BIN" ]]; then
   ui_section "$(t "LOOMY")" "$(t "installs found in the PATH")"
-  "$LOOMY_BIN" version --all >/dev/null || true
+  # The installs listing (without its first "loomy x.y.z" line), drawn on this screen.
+  while IFS= read -r l; do ui_print "$l"; done < <(LOOMY_NO_CLEAR=1 LOOMY_FORCE_COLOR="$( [[ -n "$C_RESET" ]] && echo 1)" "$LOOMY_BIN" version --all 2>&1 </dev/null | grep -v "^loomy [0-9]")
 fi
 
 # ---------------------------------------------------------------- system

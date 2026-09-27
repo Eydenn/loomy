@@ -71,7 +71,7 @@ case "$CMD" in
 
   markdown)
     t "Environment: **%s** · profile **%s** · catalog from %s" "$(ai_env_label "$AI_ENV")" "$(ai_profile_label "$AI_PROFILE")" "$AI_CATALOG_DATE"; echo
-    [[ -n "$AI_ENV_NOTE" ]] && echo "" && t "> Fallback: %s" "$AI_ENV_NOTE"; echo
+    if [[ -n "$AI_ENV_NOTE" ]]; then echo ""; t "> Fallback: %s" "$AI_ENV_NOTE"; echo; fi
     echo ""
     t "| Role | Scope | Tool | Model | Effort | How to call it |"; echo
     echo "|---|---|---|---|---|---|"

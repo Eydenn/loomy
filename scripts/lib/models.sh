@@ -154,7 +154,7 @@ AI_EFFORTS="low medium high xhigh max ultra"
 
 ai_role_label() {
   case "$1" in
-    lead) t "Lead agent (orchestrator)"; echo ;; architect) t "Architect"; echo ;; debugger) t "Debugger"; echo ;;
+    lead) t "Lead agent"; echo ;; architect) t "Architect"; echo ;; debugger) t "Debugger"; echo ;;
     security) t "Security"; echo ;; reviewer) t "Reviewer"; echo ;; developer) t "Developer"; echo ;;
     executor) t "Executor"; echo ;; explorer) t "Explorer"; echo ;; documenter) t "Documenter"; echo ;;
     *) echo "$1" ;;
@@ -345,9 +345,9 @@ ai_resolve() {
   ai_route "$role" "$family" "$profile"
   lead="${env#hybrid-}"
   if [[ "$role" == "lead" ]]; then
-    R_VIA="session principale"
+    R_VIA="$(t "main session")"
   elif [[ "$family" == "claude" && "$lead" == "claude" ]]; then
-    R_VIA="sous-agent .claude/agents/$role.md"
+    R_VIA="$(t "subagent %s" ".claude/agents/$role.md")"
   elif [[ "$family" == "claude" ]]; then
     R_VIA="delegate-to-claude.sh $role"
   else

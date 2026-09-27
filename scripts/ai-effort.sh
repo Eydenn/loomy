@@ -98,9 +98,12 @@ case "$level" in
       opts+=("$l"); UI_DESCS+=("$(label "$l")"); i=$(( i + 1 ))
     done
     opts+=("$(t "Back to the profile")"); UI_DESCS+=("$(t "Removes the setting: the effort follows the brief's profile (%s)." "$(ai_profile_label "$AI_PROFILE")")"); UI_LABEL="Effort"
+    opts+=("$(t "Cancel")"); UI_DESCS+=("$(t "Changes nothing.")")
     ui_choose "$(t "Lead agent effort (%s)?" "$R_MODEL")" "$def" "${opts[@]}"
     # Levels first (same names in both languages), then "Back to the profile".
-    if (( UI_INDEX >= $(set -- $LEVELS; echo $#) )); then set_effort lead ""; else set_effort lead "$UI_VALUE"; fi
+    n_levels=$(set -- $LEVELS; echo $#)
+    if (( UI_INDEX == n_levels + 1 )); then UI_NO_DUMP=1; _ui_restore; exit 0; fi
+    if (( UI_INDEX == n_levels )); then set_effort lead ""; else set_effort lead "$UI_VALUE"; fi
     show_role lead; done_msg ;;
   *)
     valid_level "$level" || { t "Unknown level: %s (%s)" "$level" "$LEVELS" >&2; echo >&2; exit 2; }

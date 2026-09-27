@@ -2,6 +2,21 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.1 — 2026-09-27
+
+### Fixed
+Found by a screen-by-screen check of every command, in English and French:
+- `loomy init` questionnaire: the "save" description and the "separate private repository" label showed raw code (`$save_desc`, `$(t …)`), a regression of 0.4.1.
+- `loomy doctor`: the "LOOMY" section (installs found in the PATH) was always empty.
+- `loomy route`: the "how to call it" column stayed in French in English ("session principale", "sous-agent"), and the lead agent label overflowed its column; `route markdown` printed a double blank line.
+- `loomy start` and `loomy effort` menus: a "Cancel" option (q picks it).
+- Views opened from the home screen (AI files visibility…) no longer show two closing lines; screens left in the history no longer repeat the guide line under the title.
+- English interface: "lead agent" everywhere (no more "orchestrator"), "Log" instead of "Journal", durations with a decimal point (French keeps the comma), "START.md:" / "START.md :" and "(lead: …)" / "(lead : …)" per language.
+- Tests: no raw code or French left on screens, installs listed by `doctor`, route without French, single blank lines.
+
+### Removed
+- Unused `_ui_len` helper.
+
 ## 0.5.0 — 2026-09-27
 
 ### Added

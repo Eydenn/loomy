@@ -45,7 +45,7 @@ _t_fr() {
     'Open or resume the lead agent session') _T='Ouvrir ou reprendre la session de l'\''orchestrateur' ;;
     'Live tracking') _T='Suivre en direct' ;;
     'Detailed status') _T='Statut détaillé' ;;
-    'Journal') _T='Journal' ;;
+    'Log') _T='Journal' ;;
     'AI files visibility') _T='Visibilité des fichiers IA' ;;
     'loomy start: resumes this project'\''s last session, or opens a new one at the right place.') _T='loomy start : reprend la dernière session de ce projet, ou en ouvre une nouvelle au bon endroit.' ;;
     'loomy watch: phases, running delegations and activity, live.') _T='loomy watch : phases, délégations en cours et activité, en direct.' ;;
@@ -77,7 +77,7 @@ _t_fr() {
     'The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md.') _T='Le projet est initialisé ; l'\''orchestrateur suit maintenant AGENTS.md et CLAUDE.md.' ;;
     'No phase recorded yet.') _T='Aucune phase enregistrée pour l'\''instant.' ;;
     'start the lead agent with loomy start.') _T='lance l'\''orchestrateur avec loomy start.' ;;
-    'nothing for now; keep its session open.') _T='rien pour l'\''instant ; garde sa session ouverte.' ;;
+    'nothing for now; keep the session open.') _T='rien pour l'\''instant ; garde sa session ouverte.' ;;
     'answer its questions in its session.') _T='réponds à ses questions dans sa session.' ;;
     'read the proposal, ask your questions.') _T='lis la proposition, pose tes questions.' ;;
     'approve the proposal or ask for changes in its session.') _T='valide la proposition ou demande des changements dans sa session.' ;;
@@ -209,7 +209,6 @@ _t_fr() {
     'ChatGPT Business') _T='ChatGPT Business' ;;
     'ChatGPT Enterprise') _T='ChatGPT Enterprise' ;;
     'not set') _T='non renseigné' ;;
-    'Lead agent (orchestrator)') _T='Orchestrateur (lead)' ;;
     'Architect') _T='Architecte' ;;
     'Debugger') _T='Débogueur' ;;
     'Security') _T='Sécurité' ;;
@@ -743,7 +742,7 @@ _t_fr() {
     'Collaboration') _T='Collaboration' ;;
     'Main tool') _T='Outil principal' ;;
     'Profile') _T='Profil' ;;
-    'orchestrator %s') _T='orchestrateur %s' ;;
+    'lead agent %s') _T='orchestrateur %s' ;;
     'DELIVERABLES') _T='LIVRABLES' ;;
     'Docs language') _T='Langue des docs' ;;
     'START.md afterwards') _T='START.md ensuite' ;;
@@ -823,17 +822,17 @@ _t_fr() {
     'GitHub repository by hand:') _T='dépôt GitHub à la main :' ;;
     'Next step') _T='Étape suivante' ;;
     'Go to the project folder:') _T='Va dans le dossier du projet :' ;;
-    'Open the orchestrator session:') _T='Ouvre la session de l'\''orchestrateur :' ;;
+    'Open the lead agent session:') _T='Ouvre la session de l'\''orchestrateur :' ;;
     'or by hand: %s, then paste the startup prompt') _T='ou à la main : %s, puis colle le prompt de démarrage' ;;
-    'Launch the orchestrator at the project root:') _T='Lance l'\''orchestrateur à la racine du projet :' ;;
+    'Launch the lead agent at the project root:') _T='Lance l'\''orchestrateur à la racine du projet :' ;;
     'then paste the startup prompt:') _T='puis colle le prompt de démarrage :' ;;
     'or in the Codex app: model %s, effort %s') _T='ou dans l'\''app Codex : modèle %s, effort %s' ;;
     'startup prompt copied to the clipboard') _T='prompt de démarrage copié dans le presse-papiers' ;;
     'Follow progress live in another terminal:') _T='Suis l'\''avancement en direct dans un autre terminal :' ;;
     'Session') _T='Session' ;;
-    'Opens the orchestrator now, in the project folder, with the startup prompt.') _T='Ouvre l'\''orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage.' ;;
+    'Opens the lead agent now, in the project folder, with the startup prompt.') _T='Ouvre l'\''orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage.' ;;
     'You can start it later with loomy start, from the project folder.') _T='Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.' ;;
-    'Open the orchestrator session now?') _T='Ouvrir la session de l'\''orchestrateur maintenant ?' ;;
+    'Open the lead agent session now?') _T='Ouvrir la session de l'\''orchestrateur maintenant ?' ;;
     'Yes, now') _T='Oui, maintenant' ;;
     'Later') _T='Plus tard' ;;
     'routing: loomy route · diagnostics: loomy doctor --live · log: loomy log') _T='routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log' ;;
@@ -956,14 +955,14 @@ _t_fr() {
     'Full tests, CI/CD and observability; at least MEDIUM risk.') _T='Tests complets, CI/CD et observabilité ; risque au moins MEDIUM.' ;;
     'AI collaboration mode?') _T='Mode de collaboration IA ?' ;;
     'Main tool (lead)?') _T='Outil principal (lead) ?' ;;
-    'Orchestrator on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended).') _T='Orchestrateur sur Opus 5.5, en tête des benchmarks de raisonnement et de travail agentique ; délègue à Codex via delegate-to-codex.sh (recommandé).' ;;
-    'Orchestrator on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only).') _T='Orchestrateur sur GPT-6-Astra ; délègue à Claude via delegate-to-claude.sh (lecture seule).' ;;
+    'Lead agent on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended).') _T='Orchestrateur sur Opus 5.5, en tête des benchmarks de raisonnement et de travail agentique ; délègue à Codex via delegate-to-codex.sh (recommandé).' ;;
+    'Lead agent on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only).') _T='Orchestrateur sur GPT-6-Astra ; délègue à Claude via delegate-to-claude.sh (lecture seule).' ;;
     'Model cost / quality profile?') _T='Profil de coût / qualité des modèles ?' ;;
-    'The orchestrator always stays on the best model; the profile sets each role'\''s effort and model (details: loomy route).') _T='L'\''orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route).' ;;
-    'Orchestrator and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks.') _T='Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles.' ;;
+    'The lead agent always stays on the best model; the profile sets each role'\''s effort and model (details: loomy route).') _T='L'\''orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route).' ;;
+    'Lead agent and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks.') _T='Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles.' ;;
     'Balanced (recommended)') _T='Équilibré (recommandé)' ;;
-    'Orchestrator at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.') _T='Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.' ;;
-    'Orchestrator and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries.') _T='Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises.' ;;
+    'Lead agent at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.') _T='Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.' ;;
+    'Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries.') _T='Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises.' ;;
     'Project documentation language?') _T='Langue de la documentation du projet ?' ;;
     'Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English.') _T='Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais.' ;;
     'Français') _T='Français' ;;
@@ -1308,5 +1307,10 @@ _t_fr() {
     '  loomy assess --root <dir>    works on another project folder') _T='  loomy assess --root <dir>    agit sur un autre dossier de projet' ;;
     'The lead agent reads it before the interview: facts to confirm by reading the code, not conclusions.') _T='L'\''orchestrateur le lit avant l'\''entretien : des faits à confirmer en lisant le code, pas des conclusions.' ;;
     '  --no-branch       Existing Git project: stay on the current branch instead of loomy/adopt') _T='  --no-branch       Projet Git existant : rester sur la branche courante au lieu de loomy/adopt' ;;
+    'START.md: %s') _T='START.md : %s' ;;
+    'Opens nothing.') _T='N'\''ouvre rien.' ;;
+    'main session') _T='session principale' ;;
+    'subagent %s') _T='sous-agent %s' ;;
+    '%s (lead: %s)') _T='%s (lead : %s)' ;;
   esac
 }

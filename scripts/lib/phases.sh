@@ -42,7 +42,7 @@ loomy_phase_agent() {
 loomy_phase_you() {
   case "$1" in
     ""|brief) t "start the lead agent with loomy start."; echo ;;
-    discover) t "nothing for now; keep its session open."; echo ;;
+    discover) t "nothing for now; keep the session open."; echo ;;
     interview) t "answer its questions in its session."; echo ;;
     propose) t "read the proposal, ask your questions."; echo ;;
     approve) t "approve the proposal or ask for changes in its session."; echo ;;

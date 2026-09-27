@@ -265,7 +265,7 @@ expect "Project name" ; expect "⏎ confirm" ; send "Projet Été 2026\r"
 expect "Where to create the project" ; expect "⏎ confirm" ; send "\r"
 for {set i 0} {\$i < 60} {incr i} {
   expect {
-    -re {Open the orchestrator session} { expect "⏎ confirm" ; send "\033\[B" ; after 300 ; send "\r" }
+    -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 300 ; send "\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -290,7 +290,7 @@ cd "$PARD"
 spawn "$LOOMY" init sous-projet --no-clipboard
 for {set i 0} {\$i < 80} {incr i} {
   expect {
-    -re {Open the orchestrator session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -611,6 +611,7 @@ EXP
   W2="$WORK/interactif2"; mkdir -p "$W2"
   run "full questionnaire, plans already known" wizard_expect "$W2"
   has "12 steps" "question 12/12"
+  hasnt "questionnaire: no raw variable on screen" '\$save_desc|\$\(t '
   hasnt "plans not asked again" "your Claude plan|/13"
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
@@ -631,7 +632,7 @@ for {set i 0} {\$i < 80} {incr i} {
     -re {Create a GitHub repository for this project} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
     -re {Where to keep the AI files} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\033\[B" ; after 200 ; send "\r" }
     -re {Create these two repositories} { expect "⏎ confirm" ; send "\r" }
-    -re {Open the orchestrator session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -642,6 +643,7 @@ EXP
   W4="$WORK/deux-depots"; mkdir -p "$W4"
   run "questionnaire: two repositories confirmed" env WIZ_DIR="$W4" expect "$WORK/deux-depots.exp"
   has "confirmation of both names asked" "Create these two repositories"
+  hasnt "questionnaire: no raw code on screen" '\$\(t |\$save_desc|\$[A-Z_]+\b'
   [[ -d "$GH_STUB_REMOTES/testeur/deux-depots.git" && -d "$GH_STUB_REMOTES/testeur/deux-depots-ai.git" ]] && ok "two repositories created: deux-depots (public) and deux-depots-ai (private)" || ko "repositories missing ($(ls "$GH_STUB_REMOTES/testeur" | tr '\n' ' '))"
   file_has "brief: public repository" "$W4/.loomy/brief.md" "^github_repo: public$"
   file_has "brief: AI files in the private repository" "$W4/.loomy/brief.md" "^ai_files: private$"
@@ -812,6 +814,16 @@ file_has "assessment without Git: Rust" "$EX3/.loomy/assessment.md" "Languages: 
 file_has "assessment without Git: cargo test" "$EX3/.loomy/assessment.md" '`cargo test`'
 file_has "assessment without Git: no history" "$EX3/.loomy/assessment.md" "No Git history"
 [[ ! -f "$PROJ/.loomy/assessment.md" ]] && ok "new project: no assessment" || ko "new project assessed"
+
+section "Screens without leftovers"
+run "doctor for the installs listing" "$LOOMY" doctor
+has "doctor: installs listed under LOOMY" "not in the PATH|used by the loomy command|other install"
+run "route in English" "$LOOMY" route --root "$PROJ"
+hasnt "route: no French left" "sous-agent|session principale|orchestrat"
+run "route markdown" "$LOOMY" route --root "$PROJ" markdown
+if awk 'prev == "" && $0 == "" { bad = 1 } { prev = $0 } END { exit !bad }' "$OUT"; then ko "route markdown: double blank line"; else ok "route markdown: no double blank line"; fi
+run "every command help in English" bash -c 'for c in init brief assess start effort route privacy worktrees status log feedback doctor; do "$1" "$c" --help; done' _ "$LOOMY"
+hasnt "help: no French left" "[éèàù]| : "
 
 # ------------------------------------------------------------------ interface language
 section "Interface language"

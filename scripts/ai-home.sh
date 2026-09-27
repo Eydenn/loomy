@@ -73,7 +73,7 @@ while true; do
   [[ -n "$newcat" ]] && ui_kv "$(t "Models")" "${C_YELLOW}$(t "new catalog from %s" "$newcat")${C_RESET} ${C_DIM}→ loomy update --catalog${C_RESET}"
   ui_print "${C_RAIL}│${C_RESET}"
 
-  opts=("$(t "Open or resume the lead agent session")" "$(t "Live tracking")" "$(t "Detailed status")" "$(t "Journal")" "$(t "AI files visibility")" "$(t "Help")" "$(t "Quit")")
+  opts=("$(t "Open or resume the lead agent session")" "$(t "Live tracking")" "$(t "Detailed status")" "$(t "Log")" "$(t "AI files visibility")" "$(t "Help")" "$(t "Quit")")
   UI_DESCS=("$(t "loomy start: resumes this project's last session, or opens a new one at the right place.")" \
     "$(t "loomy watch: phases, running delegations and activity, live.")" \
     "$(t "loomy status: phases, brief, activity, costs, AI files and Git (here, without leaving home).")" \
@@ -87,7 +87,7 @@ while true; do
     0) ui_exec "$LOOMY_BIN" start ;;
     1) ui_exec "$LOOMY_BIN" watch ;;
     2) view "$(t "Detailed status")" bash "$SCRIPT_DIR/ai-status.sh" --root "$ROOT" --full ;;
-    3) view "$(t "Journal")" bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n 200 ;;
+    3) view "$(t "Log")" bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n 200 ;;
     4) view "$(t "AI files visibility")" bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" ;;
     5) view "$(t "Help")" bash "$LOOMY_BIN" help ;;
     *) leave ;;

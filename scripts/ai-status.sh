@@ -337,12 +337,12 @@ if [[ -s "$JOURNAL" ]]; then
     # of the same role on the same model.
     spin="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"
     el_s=0; [[ -n "$since" ]] && el_s=$(( now_s - since )); (( el_s < 0 )) && el_s=0
-    _ui_dur $(( el_s * 1000 )); el="${UI_DUR/,? s/ s}"
+    _ui_dur $(( el_s * 1000 )); el="${UI_DUR/[.,]? s/ s}"
     prog=""
     if [[ -n "$est" ]] && (( est > 0 )); then
       fill=$(( el_s * 10 / est )); (( fill > 10 )) && fill=10
       bar=""; for (( k = 0; k < 10; k++ )); do if (( k < fill )); then bar="${bar}▰"; else bar="${bar}▱"; fi; done
-      _ui_dur $(( est * 1000 )); est_txt="${UI_DUR/,? s/ s}"
+      _ui_dur $(( est * 1000 )); est_txt="${UI_DUR/[.,]? s/ s}"
       if (( el_s > est * 3 / 2 )); then prog="${C_YELLOW}${bar}${C_RESET} ${el} ${C_DIM}· $(t "longer than usual (~%s)" "$est_txt")${C_RESET}"
       else prog="${C_BRAND}${bar}${C_RESET} ${el} ${C_DIM}/ ~${est_txt}${C_RESET}"; fi
     else

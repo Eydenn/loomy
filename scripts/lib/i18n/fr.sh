@@ -1241,5 +1241,6 @@ _t_fr() {
     '> Fallback: %s') _T='> Repli : %s' ;;
     'Launch the lead agent: `%s`') _T='Lancer l'\''orchestrateur : `%s`' ;;
     'Profile **%s**') _T='Profil **%s**' ;;
+    'catalog from %s published') _T='catalogue du %s publié' ;;
   esac
 }

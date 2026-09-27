@@ -213,7 +213,7 @@ cat_ep="$(ai_ts_epoch "${AI_CATALOG_DATE}T00:00:00Z")"; age=""
 if [[ -n "$age" ]] && (( age > 60 )); then ui_warn "$(t "catalog from %s" "$AI_CATALOG_DATE") ($(t "$AI_CATALOG_SOURCE"))" "$(t "it's %s days old: loomy update --catalog" "$age")"
 else ui_ok "$(t "catalog from %s" "$AI_CATALOG_DATE")" "$(t "$AI_CATALOG_SOURCE")"; fi
 newcat="$(bash "$SCRIPT_DIR/ai-catalog-check.sh" 2>/dev/null || true)"
-[[ -n "$newcat" ]] && ui_warn "catalogue du $newcat publié" "$(t "loomy update --catalog")"
+[[ -n "$newcat" ]] && ui_warn "$(t "catalog from %s published" "$newcat")" "$(t "loomy update --catalog")"
 # Models of a chain refused on this machine (fallback in progress): to test again after a plan change.
 ko="$(grep '=ko$' "$(ai_models_state_file)" 2>/dev/null | cut -d= -f1 | paste -sd ',' - | sed 's/,/, /g' || true)"
 [[ -n "$ko" ]] && ui_info "$(t "unavailable here (fallback used): %s · to retest: loomy doctor --live" "$ko")"

@@ -1,27 +1,29 @@
-# Notes de conception
+# Design notes
 
-Loomy sépare le comportement temporaire du bootstrap des instructions permanentes du dépôt.
+Loomy separates the temporary bootstrap behaviour from the repository's permanent instructions.
 
-- `START.md` : contrat temporaire d'installation et d'orchestration.
-- `templates/AGENTS.md` : règles compactes du projet pour Codex.
-- `templates/CLAUDE.md` : couche de compatibilité compacte pour Claude Code.
-- `skills/project-bootstrap/` : workflow réutilisable, avec des références chargées progressivement.
-- `external-skills/` : intégrations qui doivent rester à jour avec leur source d'origine.
-- `scripts/` : outils d'installation déterministes.
-- `scripts/init-wizard.sh` : questionnaire terminal qui recueille les réponses faciles et à fort impact avant de dépenser le moindre token. Il écrit `.loomy/brief.md`, que l'agent traite comme un entretien déjà mené. `ai-status.sh` rend visibles les phases du bootstrap et l'activité des délégations.
-- `scripts/lib/models.sh` et `ai-route.sh` : le moteur de routage de l'orchestrateur et des rôles. C'est la source de vérité unique sur le modèle et l'effort de chaque rôle dans chaque environnement. Sa justification est dans `docs/MODEL_CATALOG.md`.
-- `ai-doctor.sh` : vérifie que la machine peut réellement faire tourner les modèles routés avant de dépenser des tokens sur le bootstrap.
+- `START.md`: temporary setup and orchestration contract.
+- `templates/AGENTS.md`: compact project rules for Codex.
+- `templates/CLAUDE.md`: compact compatibility layer for Claude Code.
+- `skills/project-bootstrap/`: reusable workflow, with progressively loaded references.
+- `external-skills/`: integrations that must stay current with their original source.
+- `fr/`: French copies of the agent-facing documents above, installed when French is detected.
+- `scripts/`: deterministic setup tools.
+- `scripts/init-wizard.sh`: terminal questionnaire that collects the easy, high-impact answers before spending a single token. It writes `.loomy/brief.md`, which the agent treats as an interview already held. `ai-status.sh` makes the bootstrap phases and the delegation activity visible.
+- `scripts/lib/models.sh` and `ai-route.sh`: the lead agent and roles routing engine. It is the single source of truth for each role's model and effort in each environment. Its rationale is in `docs/MODEL_CATALOG.md`.
+- `ai-doctor.sh`: checks that the machine can really run the routed models before spending tokens on the bootstrap.
 
-- `bin/loomy` : point d'entrée unique, installé par npm, bun, Homebrew ou `install.sh`. Il appelle les scripts ci-dessus sur le projet courant.
-- `scripts/lib/journal.sh` : journal d'activité local (`.loomy/logs/events.jsonl`). Les bridges y écrivent un événement au début de chaque délégation (avec le pid du bridge) et un à la fin (même identifiant) ; `ai-status.sh` en déduit les délégations en cours et écarte celles dont le processus a disparu. Le suivi reste dans le terminal (`loomy watch`), sans dépendance, et ne démarre jamais tout seul.
-- `scripts/lib/config.sh` : préférences de l'utilisateur (`~/.config/loomy/config`) : forfaits Claude et Codex, pour rapporter la valeur API consommée au prix de l'abonnement.
-- `scripts/lib/phases.sh` : les dix phases du bootstrap, avec pour chacune ce que fait l'orchestrateur et ce que l'utilisateur doit faire. Source unique pour `loomy status`, `loomy watch` et `loomy start`.
-- `scripts/ai-start.sh` (`loomy start`) : ouvre ou reprend la session de l'orchestrateur. Il retrouve la session précédente du dossier sur la machine (Claude range ses conversations par dossier, Codex note le dossier de chaque session) et choisit le prompt selon la phase.
-- `scripts/install-into-project.sh` (`loomy init`) : sur un projet déjà initialisé, propose de reprendre, mettre à jour (`--update`, brief, phase et journal conservés) ou réinitialiser (`--reset`).
-- `scripts/ai-privacy.sh` et `scripts/lib/privacy.sh` (`loomy privacy`) : visibilité des fichiers IA. Mode local : exclusion dans `.git/info/exclude`, propre à la copie et invisible dans le dépôt. Mode privé : un second dépôt Git (`.loomy/ai.git`) dont le dossier de travail est le projet lui-même et qui ne suit que les fichiers IA ; pas de copie, `sync` rejoue les changements par-dessus ceux d'une autre machine avant d'envoyer.
-- `scripts/ai-context.sh` : contexte de reprise (phase, attentes, délégations, Git, fichiers IA). Installé par `loomy init` comme hooks `SessionStart` et `SessionEnd` de Claude Code (`.claude/settings.json`) et de Codex (`.codex/hooks.json`, même format), fusionnés avec un fichier existant. Codex n'exécute les hooks d'un projet qu'une fois le dossier jugé de confiance et les hooks approuvés (il le demande au premier lancement) ; la commande du hook Codex remonte depuis le dossier de la session jusqu'au projet Loomy. Les ouvertures et fermetures de session vont dans le journal ; `loomy start` note aussi les sessions Codex, dont le processus reprend son pid après `exec`.
-- `scripts/ai-home.sh` : `loomy` sans argument, l'accueil qui mène à l'action suivante.
-- Nom technique du projet (`slug` dans le brief, `loomy_slug`) : une seule source pour le dossier créé, le dépôt GitHub (`repo_name`) et le dépôt privé des fichiers IA (`ai_repo_name`).
-- `tests/run.sh` : suite de tests de bout en bout, sans réseau ni token (doublures de `claude` et `codex` dans `tests/stubs/`).
+- `bin/loomy`: single entry point, installed by npm, bun, Homebrew or `install.sh`. It calls the scripts above on the current project.
+- `scripts/lib/i18n.sh` and `scripts/lib/i18n/fr.tsv`: interface language. Strings are English in the code (`t "English sentence"`); the French dictionary is compiled into a `case` function by `tools/i18n-build.sh`, fast even in bash 3.2. `tools/i18n-missing.sh` lists what isn't translated yet.
+- `scripts/lib/journal.sh`: local activity log (`.loomy/logs/events.jsonl`). The bridges write an event at the start of each delegation (with the bridge's pid) and one at the end (same id); `ai-status.sh` derives the running delegations from it and discards those whose process is gone. Tracking stays in the terminal (`loomy watch`), without dependencies, and never starts on its own.
+- `scripts/lib/config.sh`: user preferences (`~/.config/loomy/config`): Claude and Codex plans, to compare the API value consumed with the subscription price, language, screen mode, pinned models.
+- `scripts/lib/phases.sh`: the ten bootstrap phases, each with what the lead agent does and what the user must do. Single source for `loomy status`, `loomy watch` and `loomy start`.
+- `scripts/ai-start.sh` (`loomy start`): opens or resumes the lead agent session. It finds the folder's previous session on the machine (Claude stores its conversations per folder, Codex records each session's folder) and picks the prompt from the phase.
+- `scripts/install-into-project.sh` (`loomy init`): on a project already set up, offers to resume, update (`--update`, brief, phase and log kept) or reset (`--reset`).
+- `scripts/ai-privacy.sh` and `scripts/lib/privacy.sh` (`loomy privacy`): AI files visibility. Local mode: exclusion in `.git/info/exclude`, specific to the copy and invisible in the repository. Private mode: a second Git repository (`.loomy/ai.git`) whose working tree is the project itself and which only tracks the AI files; no copy, `sync` replays the changes on top of another machine's before pushing.
+- `scripts/ai-context.sh`: resume context (phase, expectations, delegations, Git, AI files). Installed by `loomy init` as Claude Code `SessionStart` and `SessionEnd` hooks (`.claude/settings.json`) and Codex hooks (`.codex/hooks.json`, same format), merged with an existing file. Codex only runs a project's hooks once the folder is trusted and the hooks approved (it asks on first launch); the Codex hook command walks up from the session folder to the Loomy project. Session openings and closings go to the log; `loomy start` also records Codex sessions, whose process keeps its pid after `exec`.
+- `scripts/ai-home.sh`: `loomy` without argument, the home screen leading to the next action.
+- Project technical name (`slug` in the brief, `loomy_slug`): a single source for the created folder, the GitHub repository (`repo_name`) and the private AI files repository (`ai_repo_name`).
+- `tests/run.sh`: end-to-end test suite, without network or token (`claude` and `codex` doubles in `tests/stubs/`).
 
-La conception évite volontairement de précharger tous les rôles spécialisés ou un gros workflow de sécurité dans chaque session.
+The design deliberately avoids preloading every specialised role or a large security workflow into every session.

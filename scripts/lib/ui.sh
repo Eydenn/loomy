@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # bibliothèque : couleurs et UI_* sont lus par les scripts qui la chargent
-# Outils d'interface terminal pour les scripts de Loomy.
-# À charger (source), pas à exécuter. Compatible bash 3.2 (celui de macOS), sans dépendance.
-# Les réponses sont renvoyées dans la variable globale UI_VALUE.
+# shellcheck disable=SC2034  # library: colours and UI_* are read by the scripts that source it
+# Terminal interface tools for Loomy's scripts.
+# To be sourced, not executed. Bash 3.2 compatible (macOS's), no dependencies.
+# Answers are returned in the global UI_VALUE variable.
 #
-# Questions : ui_input (texte), ui_choose (un choix), ui_multi (plusieurs choix).
-# Chaque question s'affiche en carte : la question, pourquoi elle compte, les options, et dans un encadré
-# la conséquence de l'option survolée. Contexte facultatif, réinitialisé après chaque question :
-#   UI_HINT   pourquoi la question compte
-#   UI_DESCS  conséquence de chaque option, dans l'ordre des options
-#   UI_LABEL  libellé court de la réponse dans le récapitulatif (défaut : la question)
+# Questions: ui_input (text), ui_choose (one choice), ui_multi (several choices).
+# Each question shows as a card: the question, why it matters, the options, and in a box
+# the consequence of the hovered option. Optional context, reset after each question:
+#   UI_HINT   why the question matters
+#   UI_DESCS  consequence of each option, in option order
+#   UI_LABEL  short label of the answer in the recap (default: the question)
 #
 # Form: ui_form_begin / ui_form_pass / ui_form_end wrap a series of questions grouped by
 # ui_group. The screen is redrawn at each question: finished groups folded on one line, answers of the

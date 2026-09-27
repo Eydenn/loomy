@@ -16,9 +16,9 @@ Thumbs.db
 *.log
 tmp/
 
-# Loomy installé dans son propre dépôt pour essai (généré, non canonique)
+# Loomy installed into its own repository for a try (generated, not canonical)
 /.loomy/
 
-# Paquets npm/bun générés localement
+# npm/bun packages generated locally
 node_modules/
 *.tgz

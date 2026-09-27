@@ -46,7 +46,7 @@ install_method() { method_of "$INVOKED" "$LOOMY_HOME"; }
 # home_of <loomy executable>: real install folder (resolved link, or target of the small install.sh script).
 home_of() {
   local p="$1" t
-  if [[ ! -L "$p" ]] && grep -q "Installé par install.sh de Loomy" "$p" 2>/dev/null; then
+  if [[ ! -L "$p" ]] && grep -qE "Install(é par|ed by) install.sh (de|of) Loomy" "$p" 2>/dev/null; then
     t="$(sed -n 's/^exec "\(.*\)\/bin\/loomy" .*/\1/p' "$p" | head -1)"
     if [[ -n "$t" ]]; then echo "$t"; return 0; fi
   fi
@@ -228,9 +228,9 @@ case "$cmd" in
     case "$sub" in
       -h|--help) sub_help config; exit 0 ;;
       list) echo "# $(loomy_config_file)"; loomy_config_list ;;
-      get) loomy_config_get "${1:?clé manquante}" ;;
+      get) loomy_config_get "${1:?missing key}" ;;
       set)
-        key="${1:?clé manquante}"; val="${2:?valeur manquante}"
+        key="${1:?missing key}"; val="${2:?missing value}"
         case "$key" in
           plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { t "plan_claude: api, pro, max5, max20, team or enterprise" >&2; echo >&2; exit 2; } ;;
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { t "plan_codex: api, plus, pro100, pro200, business or enterprise" >&2; echo >&2; exit 2; } ;;

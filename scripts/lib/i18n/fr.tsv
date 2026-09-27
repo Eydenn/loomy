@@ -1236,3 +1236,4 @@ Environment: **%s** · profile **%s** · catalog from %s	Environnement : **%s** 
 > Fallback: %s	> Repli : %s
 Launch the lead agent: `%s`	Lancer l'orchestrateur : `%s`
 Profile **%s**	Profil **%s**
+catalog from %s published	catalogue du %s publié

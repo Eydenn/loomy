@@ -17,7 +17,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 mkdir -p "$PREFIX/bin"
-printf '#!/bin/sh\n# Installé par install.sh de Loomy.\nexec "%s/bin/loomy" "$@"\n' "$DIR" >"$TARGET"
+printf '#!/bin/sh\n# Installed by install.sh of Loomy.\nexec "%s/bin/loomy" "$@"\n' "$DIR" >"$TARGET"
 chmod +x "$TARGET" "$DIR/bin/loomy"
 chmod +x "$DIR"/scripts/*.sh
 

@@ -1,123 +1,123 @@
-# Catalogue des modèles et justification du routage
+# Model catalog and routing rationale
 
-Vérifié le **23/09/2026**. Le moteur de routage (`scripts/lib/models.sh`) applique les conclusions ci-dessous.
-Les modèles changent toutes les quelques semaines : voir [Mettre à jour le catalogue](#mettre-à-jour-le-catalogue).
+Checked on **2026-09-23**. The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
+Models change every few weeks: see [Updating the catalog](#updating-the-catalog).
 
-Les sources sont listées à la fin. « AA » désigne Artificial Analysis (mesures indépendantes). « Éditeur » désigne les chiffres publiés par OpenAI ou Anthropic.
+Sources are listed at the end. "AA" means Artificial Analysis (independent measurements). "Vendor" means figures published by OpenAI or Anthropic.
 
-## Prix et performances mesurées
+## Prices and measured performance
 
-| Modèle | Prix entrée / sortie ($ par million de tokens) | Lecture cache | Coût par tâche de l'indice d'intelligence AA (selon l'effort) | Indice de codage agentique AA | Terminal-Bench 4.0 | Positionnement |
+| Model | Input / output price ($ per million tokens) | Cache read | Cost per task of the AA intelligence index (by effort) | AA agentic coding index | Terminal-Bench 4.0 | Positioning |
 |---|---|---|---|---|---|---|
-| GPT-6-Luna | 0,10 / 0,50 | 0,01 | **0,07 $** (max) | 41 | 13 % | exécutant capable le moins cher |
-| GPT-6-Sol | 2 / 10 | 0,20 | 0,13 $ (low) → 1,06 $ (max) | 57 (2,99 $/tâche) | 43 % | cheval de trait |
-| GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1,00 | 0,82 $ (low) → 3,26 $ (max) | **62** (7,09 $/tâche) | 59 % | modèle de pointe d'OpenAI, pilotage d'interfaces |
-| Claude Haiku 4.5 | 1 / 5 | 0,10 | non mesuré | non mesuré | non mesuré | sous-agents Claude rapides |
-| Claude Sonnet 5 | 2 / 10 | 0,20 | pas encore comparé aux GPT-6 | non mesuré | non mesuré | travail courant côté Claude |
-| Claude Opus 5.5 | 4 / 20 (fast 8 / 40) | 0,20 | 0,55 $ (low) → 5,98 $ (max) ; intelligence de 42 à **58, 1ᵉʳ** | pas encore publié | **59,6 %** (éditeur : 66,4 %) | meilleur raisonnement et meilleur travail agentique |
-| Claude Fable 5.1 | 10 / 50 | 0,25 | 7,63 $ (max) | 62 | 55,8 % (éditeur) | remplacé par Opus 5.5 |
+| GPT-6-Luna | 0.10 / 0.50 | 0.01 | **$0.07** (max) | 41 | 13% | cheapest capable executor |
+| GPT-6-Sol | 2 / 10 | 0.20 | $0.13 (low) → $1.06 (max) | 57 ($2.99/task) | 43% | workhorse |
+| GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1.00 | $0.82 (low) → $3.26 (max) | **62** ($7.09/task) | 59% | OpenAI's frontier model, computer use |
+| Claude Haiku 4.5 | 1 / 5 | 0.10 | not measured | not measured | not measured | fast Claude subagents |
+| Claude Sonnet 5 | 2 / 10 | 0.20 | not yet compared with GPT-6 | not measured | not measured | everyday work on the Claude side |
+| Claude Opus 5.5 | 4 / 20 (fast 8 / 40) | 0.20 | $0.55 (low) → $5.98 (max); intelligence from 42 to **58, 1st** | not published yet | **59.6%** (vendor: 66.4%) | best reasoning and best agentic work |
+| Claude Fable 5.1 | 10 / 50 | 0.25 | $7.63 (max) | 62 | 55.8% (vendor) | replaced by Opus 5.5 |
 
-## Constats qui guident le routage
+## Findings driving the routing
 
-1. **GPT-6-Luna (max) est le meilleur exécutant en rapport qualité/prix, mais pas un agent autonome.**
-   - Force : sur DeepSWE v1.1 (éditeur), des corrections bornées dans de vrais dépôts, Luna max obtient 66,6 % pour 0,22 $ par tâche, contre 68,8 % pour 2,74 $ avec Sol max. Soit 12 fois moins cher pour 2 points de moins.
-   - Faiblesse : sur le travail long et autonome en terminal (Terminal-Bench 4.0, AA), il tombe à 13 %. Son indice de codage agentique est de 41, et quand il ne sait pas, il répond faux au lieu de s'abstenir dans 77 % des cas.
-   - Conséquence : Luna obtient le rôle d'**exécutant** (tickets bornés sous un orchestrateur), jamais celui d'orchestrateur.
-2. **Claude Opus 5.5 est le meilleur orchestrateur.**
-   - Il est 1ᵉʳ de l'indice d'intelligence AA (58 en max).
-   - Il domine le travail de bureau agentique : GDPval-AA 1846 Elo, AA-Briefcase 1822 Elo.
-   - Il égale Astra sur Terminal-Bench (59,6 %). En effort medium, il bat déjà Sol en max (52,5 % contre 43,9 %).
-   - En effort high, il obtient 53,6 pour 1,82 $ par tâche. Astra en max obtient 53 pour 3,26 $.
-3. **Opus 5.5 rend Fable 5.1 inutile.** Il fait mieux sur la plupart des benchmarks, pour environ 40 % du prix.
-4. **GPT-6-Sol est le cheval de trait de Codex.**
-   - Sur l'automatisation de workflows métier (AutomationBench-AA), il égale Opus 5.5 en medium, 61,6 % contre 61,2 %, pour environ 40 % du coût.
-   - Réserves : il recule par rapport à GPT-5.6-Sol sur DeepSWE (72,7 % → 68,8 %) et sur GDPval (environ −100 Elo).
-5. **GPT-6-Astra est le meilleur repli pour le travail approfondi en full Codex**, et il domine le pilotage d'interfaces graphiques : OSWorld 2.0 73,5 %, contre 64,4 % pour Sol.
-6. **Sonnet 5 et Sol coûtent le même prix (2 $ / 10 $).** Aucune comparaison indépendante directe n'existe encore, donc chacun reste sur son propre outil.
-7. **Opus 5.5 produit environ 1,6 fois plus de tokens de sortie** qu'Opus 5 en effort max. Sa baisse de prix garde le coût par tâche stable, d'où un effort plafonné à `high` pour le travail spécialisé courant.
+1. **GPT-6-Luna (max) is the best executor for the price, but not an autonomous agent.**
+   - Strength: on DeepSWE v1.1 (vendor), bounded fixes in real repositories, Luna max gets 66.6% for $0.22 per task, against 68.8% for $2.74 with Sol max. That is 12 times cheaper for 2 points less.
+   - Weakness: on long, autonomous terminal work (Terminal-Bench 4.0, AA), it drops to 13%. Its agentic coding index is 41, and when it doesn't know, it answers wrong instead of abstaining in 77% of cases.
+   - Consequence: Luna gets the **executor** role (bounded tickets under a lead agent), never the lead agent role.
+2. **Claude Opus 5.5 is the best lead agent.**
+   - It is 1st on the AA intelligence index (58 at max).
+   - It leads agentic office work: GDPval-AA 1846 Elo, AA-Briefcase 1822 Elo.
+   - It matches Astra on Terminal-Bench (59.6%). At medium effort, it already beats Sol at max (52.5% against 43.9%).
+   - At high effort, it gets 53.6 for $1.82 per task. Astra at max gets 53 for $3.26.
+3. **Opus 5.5 makes Fable 5.1 unnecessary.** It does better on most benchmarks, for about 40% of the price.
+4. **GPT-6-Sol is Codex's workhorse.**
+   - On business workflow automation (AutomationBench-AA), it matches Opus 5.5 at medium, 61.6% against 61.2%, for about 40% of the cost.
+   - Caveats: it regresses from GPT-5.6-Sol on DeepSWE (72.7% → 68.8%) and on GDPval (about −100 Elo).
+5. **GPT-6-Astra is the best fallback for deep work in full Codex**, and it leads graphical computer use: OSWorld 2.0 73.5%, against 64.4% for Sol.
+6. **Sonnet 5 and Sol cost the same ($2 / $10).** No direct independent comparison exists yet, so each stays on its own tool.
+7. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
 
-## Matrice des rôles qui en découle (profil Équilibré)
+## Resulting role matrix (Balanced profile)
 
-| Rôle | Full Claude Code | Full Codex | Hybride, lead Claude | Hybride, lead Codex | Pourquoi |
+| Role | Full Claude Code | Full Codex | Hybrid, Claude lead | Hybrid, Codex lead | Why |
 |---|---|---|---|---|---|
-| Orchestrateur | Opus 5.5 high | Astra high | Opus 5.5 high | Astra high | meilleur raisonnement pour planifier, déléguer et vérifier |
-| Architecte | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | Opus domine le raisonnement et le travail de bureau |
-| Débogueur | Opus 5.5 high | Sol xhigh | Opus 5.5 high | Opus 5.5 high (bridge) | Terminal-Bench : Opus 59,6 %, Sol 43 % |
-| Sécurité | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | jugement à fort enjeu |
-| Relecteur | Sonnet 5 high | Sol high | Sol high (Codex) | Sonnet 5 high (Claude) | revue croisée entre familles en hybride |
-| Développeur | Sonnet 5 medium | Sol high | Sonnet 5 medium | Sol high | même prix ; reste sur l'outil principal |
-| Exécutant | Sonnet 5 medium | Luna max | Luna max (Codex) | Luna max | DeepSWE 66,6 % pour 0,22 $ |
-| Explorateur | Haiku 4.5 low | Luna low | Haiku 4.5 low | Luna low | recherches peu coûteuses, sur l'outil principal |
-| Documentaliste | Sonnet 5 low | Sol low | Sonnet 5 low | Sol low | l'exactitude avant le prix (Luna se trompe trop souvent) |
+| Lead agent | Opus 5.5 high | Astra high | Opus 5.5 high | Astra high | best reasoning to plan, delegate and verify |
+| Architect | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | Opus leads on reasoning and office work |
+| Debugger | Opus 5.5 high | Sol xhigh | Opus 5.5 high | Opus 5.5 high (bridge) | Terminal-Bench: Opus 59.6%, Sol 43% |
+| Security | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | high-stakes judgement |
+| Reviewer | Sonnet 5 high | Sol high | Sol high (Codex) | Sonnet 5 high (Claude) | cross-family review in hybrid |
+| Developer | Sonnet 5 medium | Sol high | Sonnet 5 medium | Sol high | same price; stays on the main tool |
+| Executor | Sonnet 5 medium | Luna max | Luna max (Codex) | Luna max | DeepSWE 66.6% for $0.22 |
+| Explorer | Haiku 4.5 low | Luna low | Haiku 4.5 low | Luna low | cheap searches, on the main tool |
+| Documenter | Sonnet 5 low | Sol low | Sonnet 5 low | Sol low | accuracy over price (Luna is wrong too often) |
 
-Profils :
-- `econome` baisse d'un cran l'effort de l'orchestrateur et des spécialistes.
-- `qualite` le monte d'un cran (le débogueur full Codex passe sur Astra xhigh), place les revues sur le meilleur modèle et passe l'exécutant sur Sol ou Sonnet high.
+Profiles:
+- `econome` lowers the lead agent and specialists' effort by one notch.
+- `qualite` raises it by one notch (the full Codex debugger moves to Astra xhigh), puts reviews on the best model and moves the executor to Sol or Sonnet high.
 
-Lancez `ai-route.sh --profile <profil> all` pour voir les matrices exactes.
+Run `ai-route.sh --profile <profile> all` to see the exact matrices.
 
-## Limites
-- **Données récentes :** les modèles sont sortis le 22/09/2026.
-- **Comparaisons des éditeurs :** les graphiques de lancement d'OpenAI se comparent à Opus 5, pas à Opus 5.5.
-- **Chiffres manquants :** l'indice de codage agentique AA n'est pas encore publié pour Opus 5.5 et Sonnet 5.
-- **Effets de l'outillage :** les benchmarks agentiques mesurent un modèle avec son outillage, donc des scores issus d'outillages différents ne sont pas strictement comparables.
-- **Abonnements :** avec les forfaits Claude ou ChatGPT, le « coût » correspond à la consommation de quota. Les rapports entre modèles restent valables.
+## Limits
+- **Recent data:** the models came out on 2026-09-22.
+- **Vendor comparisons:** OpenAI's launch charts compare with Opus 5, not Opus 5.5.
+- **Missing figures:** the AA agentic coding index isn't published yet for Opus 5.5 and Sonnet 5.
+- **Harness effects:** agentic benchmarks measure a model with its harness, so scores from different harnesses aren't strictly comparable.
+- **Subscriptions:** with Claude or ChatGPT plans, "cost" means quota consumption. The ratios between models still hold.
 
-## Mettre à jour le catalogue
+## Updating the catalog
 
-Les modèles changent souvent : le catalogue se met à jour **sans nouvelle version de Loomy**. Le fichier de référence est `catalog/models.conf`, dans le dépôt ; chacun le récupère avec `loomy update --catalog`, et `loomy` (accueil) comme `loomy doctor` signalent quand un catalogue plus récent est publié.
+Models change often: the catalog is updated **without a new Loomy version**. The reference file is `catalog/models.conf`, in the repository; everyone fetches it with `loomy update --catalog`, and both `loomy` (home) and `loomy doctor` flag when a newer catalog is published.
 
-### Format de `catalog/models.conf`
+### `catalog/models.conf` format
 
-Une valeur par ligne, lue strictement (jamais exécutée) :
+One value per line, read strictly (never executed):
 
 ```
-date=2026-10-15                                   # obligatoire : un catalogue n'est utilisé que s'il est plus récent
-model.claude.mid=claude-sonnet-5-5, claude-sonnet-5   # chaîne : le premier modèle disponible est utilisé
-model.codex.top=gpt-6-5-astra, gpt-6-astra            # les suivants servent de repli
-price.claude-sonnet-5-5=2 10 0.20                 # $ par million de tokens : entrée, sortie, lecture de cache
-route.claude.explorer=MID low                     # facultatif : rééquilibrer un rôle (niveau TOP|MID|FAST, effort)
+date=2026-10-15                                   # required: a catalog is only used when newer
+model.claude.mid=claude-sonnet-5-5, claude-sonnet-5   # chain: the first available model is used
+model.codex.top=gpt-6-5-astra, gpt-6-astra            # the next ones are fallbacks
+price.claude-sonnet-5-5=2 10 0.20                 # $ per million tokens: input, output, cache read
+route.claude.explorer=MID low                     # optional: rebalance a role (TOP|MID|FAST tier, effort)
 ```
 
-### Chaînes de repli : tout le monde n'a pas accès aux derniers modèles
+### Fallback chains: not everyone has access to the latest models
 
-Chaque niveau (top, mid, fast) de chaque outil est une **chaîne**, du modèle le plus récent au plus ancien. Sur chaque machine, Loomy prend le premier modèle **disponible** :
-- **Codex** : la liste locale des modèles de Codex (`~/.codex/models_cache.json`) fait foi ;
-- **Claude** : `loomy doctor --live` teste chaque modèle des chaînes et retient le résultat (`~/.config/loomy/models.state`) ;
-- **en cours de route** : quand une délégation est refusée (« modèle inexistant ou pas d'accès »), le modèle est noté indisponible et la délégation repart aussitôt sur le suivant de sa chaîne.
+Each tier (top, mid, fast) of each tool is a **chain**, from the newest model to the oldest. On each machine, Loomy takes the first **available** model:
+- **Codex**: Codex's local model list (`~/.codex/models_cache.json`) is authoritative;
+- **Claude**: `loomy doctor --live` tests each model of the chains and remembers the result (`~/.config/loomy/models.state`);
+- **along the way**: when a delegation is refused ("model doesn't exist or no access"), the model is recorded as unavailable and the delegation moves straight on to the next one in its chain.
 
-Un modèle noté indisponible le reste jusqu'au prochain `loomy doctor --live` (après un changement de forfait, par exemple).
+A model recorded as unavailable stays so until the next `loomy doctor --live` (after a plan change, for example).
 
-### Priorités (de la plus forte à la plus faible)
+### Priorities (strongest first)
 
-1. Variable d'environnement `AI_MODEL_<CLAUDE|CODEX>_<TOP|MID|FAST>` (un essai ponctuel) ;
-2. modèle épinglé sur la machine : `loomy config set model.claude.mid <modèle>` (`auto` pour revenir au catalogue) ;
-3. chaîne du catalogue téléchargé, s'il est plus récent que celui livré avec Loomy ;
-4. chaîne intégrée à Loomy (`scripts/lib/models.sh`).
+1. `AI_MODEL_<CLAUDE|CODEX>_<TOP|MID|FAST>` environment variable (a one-off try);
+2. model pinned on the machine: `loomy config set model.claude.mid <model>` (`auto` to go back to the catalog);
+3. chain of the downloaded catalog, if newer than the one shipped with Loomy;
+4. chain built into Loomy (`scripts/lib/models.sh`).
 
-L'effort se règle à part, par projet et par rôle : `loomy effort`.
+Effort is set separately, per project and per role: `loomy effort`.
 
-### Protocole à la sortie d'un nouveau modèle
+### Protocol when a new model comes out
 
-1. **Ajouter le modèle en tête de sa chaîne**, sans retirer l'ancien (repli pour ceux qui n'y ont pas accès) : `model.claude.mid=claude-sonnet-5-5, claude-sonnet-5`.
-2. **Ajouter son prix** : `price.<modèle>=…`.
-3. **Revoir la répartition** si le nouveau modèle change l'équilibre (ex. un Haiku 5 assez bon pour l'explorateur, un Sonnet 5.5 pour le relecteur) : lignes `route.…`, et ce document (tableaux, constats).
-4. **Changer la date** : `date=AAAA-MM-JJ`.
-5. **Vérifier** : `loomy doctor --live` (chaque modèle des chaînes répond-il ?), puis `bash tests/run.sh`.
-6. **Publier** : commit et push sur `main`. Chacun le reçoit avec `loomy update --catalog` ; l'accueil le leur signale.
-7. **Plus tard**, quand l'ancien modèle n'est plus proposé nulle part : le retirer de la chaîne, et reporter la nouvelle chaîne dans `scripts/lib/models.sh` (valeurs intégrées) à la version suivante de Loomy. Un test vérifie que le catalogue du dépôt et les valeurs intégrées restent cohérents.
+1. **Add the model at the head of its chain**, without removing the old one (fallback for those without access): `model.claude.mid=claude-sonnet-5-5, claude-sonnet-5`.
+2. **Add its price**: `price.<model>=…`.
+3. **Review the split** if the new model changes the balance (e.g. a Haiku 5 good enough for the explorer, a Sonnet 5.5 for the reviewer): `route.…` lines, and this document (tables, findings).
+4. **Change the date**: `date=YYYY-MM-DD`.
+5. **Check**: `loomy doctor --live` (does each model of the chains answer?), then `bash tests/run.sh`.
+6. **Publish**: commit and push to `main`. Everyone gets it with `loomy update --catalog`; the home screen tells them.
+7. **Later**, when the old model isn't offered anywhere anymore: remove it from the chain, and carry the new chain over into `scripts/lib/models.sh` (built-in values) in the next Loomy version. A test checks that the repository catalog and the built-in values stay consistent.
 
-Pour essayer un modèle sur une machine sans rien modifier : `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`.
+To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`.
 
 ## Sources
-- [Lancement de GPT-6 Sol et Luna (VentureBeat)](https://venturebeat.com/technology/openai-releases-gpt-6-sol-and-luna-models-slashing-api-costs-50-or-more)
-- [GPT-6 Sol et Luna repoussent la frontière coût/efficacité (Artificial Analysis)](https://artificialanalysis.ai/articles/gpt-6-sol-and-luna-push-the-cost-efficiency-frontier)
-- [Benchmark de GPT-6 Astra (Artificial Analysis)](https://artificialanalysis.ai/articles/benchmarking-gpt-6-astra)
-- [Claude Opus 5.5 prend la première place (Artificial Analysis)](https://artificialanalysis.ai/articles/claude-opus-5-5)
-- [Claude Opus 5.5 par niveau d'effort (Artificial Analysis)](https://artificialanalysis.ai/models/releases/claude-opus-5-5)
-- [Lancement d'Opus 5.5 par Anthropic (VentureBeat)](https://venturebeat.com/technology/anthropic-releases-claude-opus-5-5-beating-fable-5-1-on-key-agentic-benchmarks-at-60-cheaper-api-price)
-- [Comparatif GPT-6 Sol et Luna (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-luna-specs-benchmarks-pricing-comparison/)
-- [GPT-6 Sol contre Claude Sonnet 5 (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-vs-claude-sonnet-5/)
-- [Coût par tâche GPT-6 Sol contre Claude Opus 5.5 (Digital Applied)](https://www.digitalapplied.com/blog/gpt-6-sol-vs-claude-opus-5-5-cost-benchmarks)
-- [Tarifs de l'API Claude (Anthropic)](https://platform.claude.com/docs/en/about-claude/pricing)
-- Catalogue local des modèles Codex (`~/.codex/models_cache.json`), et tests réels avec `ai-doctor.sh --live` le 23/09/2026.
+- [GPT-6 Sol and Luna launch (VentureBeat)](https://venturebeat.com/technology/openai-releases-gpt-6-sol-and-luna-models-slashing-api-costs-50-or-more)
+- [GPT-6 Sol and Luna push the cost-efficiency frontier (Artificial Analysis)](https://artificialanalysis.ai/articles/gpt-6-sol-and-luna-push-the-cost-efficiency-frontier)
+- [Benchmarking GPT-6 Astra (Artificial Analysis)](https://artificialanalysis.ai/articles/benchmarking-gpt-6-astra)
+- [Claude Opus 5.5 takes first place (Artificial Analysis)](https://artificialanalysis.ai/articles/claude-opus-5-5)
+- [Claude Opus 5.5 by effort level (Artificial Analysis)](https://artificialanalysis.ai/models/releases/claude-opus-5-5)
+- [Anthropic's Opus 5.5 launch (VentureBeat)](https://venturebeat.com/technology/anthropic-releases-claude-opus-5-5-beating-fable-5-1-on-key-agentic-benchmarks-at-60-cheaper-api-price)
+- [GPT-6 Sol and Luna comparison (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-luna-specs-benchmarks-pricing-comparison/)
+- [GPT-6 Sol vs Claude Sonnet 5 (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-vs-claude-sonnet-5/)
+- [GPT-6 Sol vs Claude Opus 5.5 cost per task (Digital Applied)](https://www.digitalapplied.com/blog/gpt-6-sol-vs-claude-opus-5-5-cost-benchmarks)
+- [Claude API pricing (Anthropic)](https://platform.claude.com/docs/en/about-claude/pricing)
+- Codex local model catalog (`~/.codex/models_cache.json`), and real tests with `ai-doctor.sh --live` on 2026-09-23.

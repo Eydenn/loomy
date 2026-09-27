@@ -1,21 +1,21 @@
 # Documentation
 
-Ne crée que des documents durables qui évitent de tout redécouvrir plus tard.
+Only create durable documents that save rediscovering everything later.
 
 ## AGENTS.md
-Règles de travail courtes et navigation. N'y stocke pas une connaissance encyclopédique du projet.
+Short working rules and navigation. Don't store encyclopaedic project knowledge there.
 
 ## CLAUDE.md
-Reste mince. Renvoie vers les sources durables communes au lieu de les dupliquer.
+Stays thin. Points to the shared durable sources instead of duplicating them.
 
 ## PROJECT.md
-Objectif produit, utilisateurs, périmètre, non-objectifs, exigences, contraintes, plateformes, données et intégrations, priorités de qualité, sécurité et confidentialité.
+Product goal, users, scope, non-goals, requirements, constraints, platforms, data and integrations, quality priorities, security and privacy.
 
 ## ARCHITECTURE.md
-À créer si l'architecture n'est pas triviale. Consigne la stack, les frontières entre modules, les flux, la persistance, les intégrations, le runtime et le déploiement, et les invariants importants.
+Create it when the architecture isn't trivial. Record the stack, module boundaries, flows, persistence, integrations, runtime and deployment, and important invariants.
 
-## ADR
-Uniquement pour les décisions importantes que de futurs mainteneurs pourraient remettre en cause. Consigne le contexte, la décision, les alternatives, les conséquences et les conditions de réexamen.
+## ADRs
+Only for important decisions that future maintainers could challenge. Record the context, decision, alternatives, consequences and conditions to revisit.
 
 ## Plans
-Pour les chantiers importants en cours. Archive-les ou supprime-les une fois périmés.
+For important ongoing work. Archive or delete them once stale.

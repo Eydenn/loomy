@@ -1,14 +1,14 @@
-# ADR NNN — Titre de la décision
+# ADR NNN — Decision title
 
-Statut : Acceptée
-Date : AAAA-MM-JJ
+Status: Accepted
+Date: YYYY-MM-DD
 
-## Contexte
+## Context
 
-## Décision
+## Decision
 
-## Alternatives envisagées
+## Alternatives considered
 
-## Conséquences
+## Consequences
 
-## À réexaminer quand
+## Revisit when

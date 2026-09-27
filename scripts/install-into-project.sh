@@ -113,6 +113,8 @@ if is_home_or_root "$TARGET"; then
   exit 1
 fi
 L="$TARGET/.loomy"
+# Agent-facing documents (START.md, templates, agents, skills) in the interface language: French copies live in fr/.
+DOCS_ROOT="$LOOMY_ROOT"; [[ "$(ui_lang)" == "fr" && -d "$LOOMY_ROOT/fr" ]] && DOCS_ROOT="$LOOMY_ROOT/fr"
 NEW_V="$(cat "$LOOMY_ROOT/VERSION")"
 
 # Copy of the files managed by Loomy. Brief, phase (state) and log (logs) are never touched.
@@ -122,7 +124,7 @@ copy_loomy_files() {
   # Document templates: copied, the agents read them in the project.
   for d in templates agents skills external-skills; do
     rm -rf "${L:?}/$d"
-    cp -R "$LOOMY_ROOT/$d" "$L/"
+    cp -R "$DOCS_ROOT/$d" "$L/"
   done
   # Scripts: no more copies, relays to the Loomy installed on the machine (same names, same arguments).
   # A Loomy update therefore applies to every project, without loomy init --update.
@@ -253,12 +255,12 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
 
   do_update() {
     copy_loomy_files
-    if (( IN_PROGRESS )); then cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"; fi
+    if (( IN_PROGRESS )); then cp "$DOCS_ROOT/START.md" "$TARGET/START.md"; fi
     ui_ok "$(t "Loomy updated in the project")" "v$OLD_V → v$NEW_V · $(t "brief, phase and log kept")"
   }
   do_reset() {
     copy_loomy_files
-    cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"
+    cp "$DOCS_ROOT/START.md" "$TARGET/START.md"
     rm -f "$L/state"
     if [[ -f "$L/brief.md" ]]; then mv "$L/brief.md" "$L/brief.previous.md"; fi
     ui_ok "$(t "Bootstrap reset")" "$(t "START.md copied again, phase reset; previous brief: .loomy/brief.previous.md")"
@@ -343,7 +345,7 @@ if [[ "$ACTION" == "update" ]]; then
   exit 1
 fi
 copy_loomy_files
-cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"
+cp "$DOCS_ROOT/START.md" "$TARGET/START.md"
 
 if (( RUN_WIZARD )); then run_wizard; fi
 

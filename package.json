@@ -32,9 +32,10 @@
     "external-skills/",
     "docs/",
     "START.md",
+    "fr/",
     "VERSION",
     "README.md",
-    "README.en.md",
+    "README.fr.md",
     "CHANGELOG.md"
   ],
   "os": [

@@ -1,26 +1,26 @@
-# Intégration du skill Cloudflare security-audit
+# Cloudflare security-audit skill integration
 
-Source : https://github.com/cloudflare/security-audit-skill
-Licence : MIT (voir le dépôt d'origine)
+Source: https://github.com/cloudflare/security-audit-skill
+License: MIT (see the original repository)
 
-Loomy n'embarque volontairement pas de copie figée du skill d'origine. Installe ou mets à jour le skill officiel à la demande, pour que les audits utilisent le workflow à jour.
+Loomy deliberately doesn't ship a frozen copy of the original skill. Install or update the official skill on demand, so that audits use the current workflow.
 
-## Installation globale
+## Global install
 
 ```bash
 ./.loomy/scripts/install-security-audit.sh --global
 ```
 
-## Installation pour le projet ou les outils courants
+## Install for the project or the current tools
 
 ```bash
 ./.loomy/scripts/install-security-audit.sh
 ```
 
-Commande d'origine équivalente :
+Equivalent original command:
 
 ```bash
 npx skills add https://github.com/cloudflare/security-audit-skill --skill security-audit
 ```
 
-À utiliser pour les audits de sécurité explicites, les revues de vulnérabilités ou les tests d'intrusion sur le code source.
+Use for explicit security audits, vulnerability reviews or penetration testing on source code.

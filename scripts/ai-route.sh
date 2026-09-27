@@ -100,7 +100,8 @@ case "$CMD" in
 
   claude-agents)
     dest="${ARG:-$ROOT/.claude/agents}"
-    tpl_dir="$SCRIPT_DIR/../templates/claude-agents"
+    # The project's own copy first (installed in its language), otherwise the one shipped with Loomy.
+    tpl_dir="$ROOT/.loomy/templates/claude-agents"; [[ -d "$tpl_dir" ]] || tpl_dir="$SCRIPT_DIR/../templates/claude-agents"
     [[ -d "$tpl_dir" ]] || { t "Agent templates not found: %s" "$tpl_dir" >&2; echo >&2; exit 1; }
     lead="${AI_ENV#hybrid-}"
     if [[ "$lead" != "claude" ]]; then

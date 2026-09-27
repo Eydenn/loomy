@@ -1,54 +1,54 @@
 # Orchestration
 
-## Complexité
-- SIMPLE : périmètre étroit, peu d'éléments en jeu, peu de coordination.
-- STANDARD : plusieurs composants ou des choix de conception significatifs.
-- COMPLEX : architecture transverse, nombreuses intégrations, périmètre large ou durable, ou forte incertitude.
+## Complexity
+- SIMPLE: narrow scope, few moving parts, little coordination.
+- STANDARD: several components or significant design choices.
+- COMPLEX: cross-cutting architecture, many integrations, broad or long-lived scope, or high uncertainty.
 
-## Risque
-Le risque monte avec : authentification et autorisations, paiements, secrets, données personnelles, migrations, infrastructure de production, cryptographie, actions destructives, API publiques, multi-tenant, frontières de sécurité, ou actions externes irréversibles.
+## Risk
+Risk rises with: authentication and authorisation, payments, secrets, personal data, migrations, production infrastructure, cryptography, destructive actions, public APIs, multi-tenancy, security boundaries, or irreversible external actions.
 
-## Délégation
-Ne délègue que si au moins un de ces cas s'applique :
-- des travaux indépendants peuvent tourner en parallèle ;
-- une expertise spécialisée améliore nettement la qualité ;
-- l'exploration encombrerait le contexte de l'orchestrateur ;
-- une vérification ou relecture indépendante réduit un risque réel.
+## Delegation
+Only delegate when at least one of these applies:
+- independent work can run in parallel;
+- specialised expertise clearly improves quality;
+- exploration would clutter the lead agent's context;
+- an independent check or review reduces a real risk.
 
-Ne délègue pas les modifications triviales, le travail séquentiel, les recherches en double ni les petits changements sur un seul fichier.
+Don't delegate trivial changes, sequential work, duplicate searches or small single-file changes.
 
-## Vivier de spécialistes suggéré
-Architecte, Explorateur, Implémenteur, Frontend/UX, Backend/API, Données, Mobile/Desktop, QA/Tests, Sécurité, Performance, DevOps, Relecteur, Documentation, Recherche.
-N'instancie que ce qui est nécessaire.
+## Suggested specialist pool
+Architect, Explorer, Implementer, Frontend/UX, Backend/API, Data, Mobile/Desktop, QA/Tests, Security, Performance, DevOps, Reviewer, Documentation, Research.
+Only instantiate what is needed.
 
-## Fonctionnement hybride Codex + Claude
-Quand les deux outils sont utilisés, le dépôt et l'historique Git sont l'état partagé. Ne suppose pas que le contexte de conversation est partagé entre les deux produits.
+## Hybrid Codex + Claude operation
+When both tools are used, the repository and the Git history are the shared state. Don't assume conversation context is shared between the two products.
 
-Utilise l'un des cinq modes :
-- SOLO : un seul outil porte la tâche.
-- REVIEW : l'un implémente, l'autre relit de façon indépendante le diff ou le commit réel.
-- HANDOFF : l'un crée un point de contrôle propre et un `.ai/HANDOFF.md` concis ; l'autre vérifie l'état et reprend.
-- PARALLEL : branches ou worktrees séparés avec des périmètres disjoints, suivis d'une vérification après intégration.
-- ORCHESTRATED : l'orchestrateur délègue des rôles à l'autre modèle (voir « Orchestration entre modèles » ci-dessous).
+Use one of five modes:
+- SOLO: a single tool owns the task.
+- REVIEW: one implements, the other independently reviews the actual diff or commit.
+- HANDOFF: one creates a clean checkpoint and a concise `.ai/HANDOFF.md`; the other checks the state and takes over.
+- PARALLEL: separate branches or worktrees with disjoint scopes, followed by a verification after integration.
+- ORCHESTRATED: the lead agent delegates roles to the other model (see "Cross-model orchestration" below).
 
-Préfère REVIEW à deux implémentations indépendantes en double, sauf si la diversité des solutions est l'objectif.
-En mode PARALLEL, ne laisse jamais les deux outils modifier en même temps le même répertoire de travail ou des fichiers qui se chevauchent sans coordination explicite.
+Prefer REVIEW over two duplicate independent implementations, unless diversity of solutions is the goal.
+In PARALLEL mode, never let both tools modify the same working tree or overlapping files at the same time without explicit coordination.
 
-## Étape de relecture
-Une relecture indépendante est fortement recommandée pour les changements transverses, les changements d'architecture, la logique d'authentification, de sécurité ou critique pour le métier, les migrations, les risques de régression significatifs, et le débogage ou les algorithmes complexes.
-Le relecteur inspecte le diff réel et signale des défauts et risques concrets, pas une approbation générique.
+## Review step
+An independent review is strongly recommended for cross-cutting changes, architecture changes, authentication, security or business-critical logic, migrations, significant regression risks, and complex debugging or algorithms.
+The reviewer inspects the actual diff and reports concrete defects and risks, not a generic approval.
 
-## Économie de contexte
-- Cherche avant de lire largement.
-- Réutilise les faits établis au lieu de les redécouvrir.
-- Demande aux sous-agents des constats concis, avec chemins de fichiers et décisions.
-- Ne déverse pas l'exploration brute dans le contexte de l'orchestrateur.
-- Ne charge les références spécialisées que quand c'est nécessaire.
-- Utilise de courts fichiers de relais plutôt que de rejouer des conversations passées.
+## Context economy
+- Search before reading broadly.
+- Reuse established facts instead of rediscovering them.
+- Ask subagents for concise findings, with file paths and decisions.
+- Don't dump raw exploration into the lead agent's context.
+- Only load specialised references when needed.
+- Use short handoff files rather than replaying past conversations.
 
-## Orchestration entre modèles
-La session principale est l'orchestrateur. Elle délègue des rôles d'une famille de modèles à l'autre via `scripts/delegate-to-claude.sh` (Claude, lecture seule) et `scripts/delegate-to-codex.sh` (Codex, écriture ou lecture seule selon le rôle), selon le routage de `scripts/ai-route.sh`.
+## Cross-model orchestration
+The main session is the lead agent. It delegates roles from one model family to the other through `scripts/delegate-to-claude.sh` (Claude, read-only) and `scripts/delegate-to-codex.sh` (Codex, writing or read-only depending on the role), following the routing of `scripts/ai-route.sh`.
 
-Utilise ces appels pour une relecture indépendante, une critique d'architecture, un débogage difficile, un second avis sécurité ou une recherche ciblée. L'orchestrateur reste responsable de la vérification des constats et de l'intégration finale.
+Use these calls for an independent review, an architecture critique, hard debugging, a second security opinion or focused research. The lead agent remains responsible for checking the findings and for the final integration.
 
-N'utilise pas ces appels pour des tâches triviales, des confirmations de routine ou des allers-retours répétés. Préfère un seul appel ciblé.
+Don't use these calls for trivial tasks, routine confirmations or repeated back-and-forth. Prefer a single focused call.

@@ -1,58 +1,58 @@
 # AI_ORCHESTRATION.md
 
-## Objectif
-Contrat d'orchestration entre modèles pour ce dépôt.
+## Goal
+Orchestration contract between models for this repository.
 
-La session principale est l'**orchestrateur**. Elle porte la tâche de bout en bout. Elle délègue un rôle à l'autre famille de modèles quand `.ai/AI_MODEL_ROUTING.md` l'y envoie ; sinon, elle le confie à ses propres sous-agents ou fait le travail elle-même.
+The main session is the **lead agent**. It owns the task end to end. It delegates a role to the other model family when `.ai/AI_MODEL_ROUTING.md` sends it there; otherwise it hands it to its own subagents or does the work itself.
 
-## Politique par défaut
-Ne délègue que si c'est clairement utile : un modèle moins cher capable de faire le travail de façon fiable, un spécialiste qui décidera mieux, une relecture indépendante, ou l'isolation du contexte.
+## Default policy
+Only delegate when clearly useful: a cheaper model able to do the work reliably, a specialist who will decide better, an independent review, or context isolation.
 
-Ne délègue pas les modifications triviales, les recherches simples dont l'orchestrateur a déjà le contexte, ni les tâches qu'il a déjà résolues avec assurance.
+Don't delegate trivial changes, simple searches the lead agent already has the context for, or tasks it has already solved with confidence.
 
 ## Bridges
-Les deux bridges lisent le modèle et l'effort de chaque rôle dans le moteur de routage (`ai-route.sh`).
+Both bridges read each role's model and effort from the routing engine (`ai-route.sh`).
 
-### Codex → Claude : `delegate-to-claude.sh` (lecture seule)
+### Codex → Claude: `delegate-to-claude.sh` (read-only)
 ```bash
-.loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<tâche>"
+.loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<task>"
 ```
-Claude inspecte et rend compte ; ses outils de modification de fichiers sont désactivés. Surcharges : `DELEGATE_CLAUDE_MODEL`, `DELEGATE_CLAUDE_EFFORT`, `DELEGATE_CLAUDE_MAX_TURNS`.
+Claude inspects and reports; its file editing tools are disabled. Overrides: `DELEGATE_CLAUDE_MODEL`, `DELEGATE_CLAUDE_EFFORT`, `DELEGATE_CLAUDE_MAX_TURNS`.
 
-### Claude → Codex : `delegate-to-codex.sh`
+### Claude → Codex: `delegate-to-codex.sh`
 ```bash
-.loomy/scripts/delegate-to-codex.sh <executor|developer|documenter> "<tâche>"   # sandbox workspace-write
-.loomy/scripts/delegate-to-codex.sh <reviewer|explorer|debugger|architect|security> "<tâche>"  # sandbox read-only
+.loomy/scripts/delegate-to-codex.sh <executor|developer|documenter> "<task>"   # workspace-write sandbox
+.loomy/scripts/delegate-to-codex.sh <reviewer|explorer|debugger|architect|security> "<task>"  # read-only sandbox
 ```
-Les rôles qui écrivent modifient le répertoire de travail ; le script liste les fichiers changés. Surcharges : `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
+Roles that write modify the working tree; the script lists the changed files. Overrides: `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
-Un orchestrateur Codex utilise aussi `delegate-to-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
+A Codex lead agent also uses `delegate-to-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
 
-## Responsabilités de l'orchestrateur
-- décider si une délégation est justifiée ;
-- rédiger la tâche déléguée avec son périmètre, ses fichiers et ses critères d'acceptation ;
-- ne jamais modifier de fichiers pendant qu'un délégué écrit dans le même répertoire de travail ;
-- vérifier les constats et relire les diffs au regard du dépôt (`git diff`) avant de les accepter ;
-- lancer les critères de qualité sur le résultat intégré ;
-- donner la réponse finale à l'utilisateur.
+## Lead agent responsibilities
+- decide whether a delegation is justified;
+- write the delegated task with its scope, files and acceptance criteria;
+- never modify files while a delegate writes in the same working tree;
+- check findings and review diffs against the repository (`git diff`) before accepting them;
+- run the quality criteria on the integrated result;
+- give the final answer to the user.
 
-Le résultat d'un délégué n'est qu'un avis tant que l'orchestrateur ne l'a pas vérifié.
+A delegate's result is only an opinion until the lead agent has checked it.
 
-## Journal d'activité
-Les deux bridges journalisent chaque appel dans `.loomy/logs/events.jsonl` (modèle, effort, durée, tokens, coût réel ou estimé). Ce journal alimente `loomy status` et `loomy watch`. L'utilisateur ouvre ou reprend la session de l'orchestrateur avec `loomy start`. Lance toujours les bridges au premier plan et attends leur résultat : en arrière-plan, une délégation est interrompue si la session se ferme. Annonce chaque délégation à l'utilisateur avant de la lancer (rôle, modèle, tâche, durée indicative) et son résultat après (statut, durée) : pendant qu'elle tourne, il ne voit qu'un indicateur d'attente. Il reste local (ignoré par Git). `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
+## Activity log
+Both bridges log each call in `.loomy/logs/events.jsonl` (model, effort, duration, tokens, real or estimated cost). This log feeds `loomy status` and `loomy watch`. The user opens or resumes the lead agent session with `loomy start`. Always run the bridges in the foreground and wait for their result: in the background, a delegation is interrupted if the session closes. Announce each delegation to the user before starting it (role, model, task, rough duration) and its result afterwards (status, duration): while it runs, they only see a waiting indicator. The log stays local (ignored by Git). `LOOMY_JOURNAL=0` turns it off, `LOOMY_JOURNAL_TASKS=0` doesn't record the task text.
 
-## Protocole de relecture
-1. Indique au relecteur le diff, le commit ou les fichiers réels.
-2. Demande uniquement des défauts concrets, avec gravité, raison et preuve.
-3. L'orchestrateur vérifie chaque constat important avant de modifier le code.
-4. Relance les vérifications pertinentes après les corrections.
+## Review protocol
+1. Point the reviewer to the actual diff, commit or files.
+2. Ask only for concrete defects, with severity, reason and evidence.
+3. The lead agent checks every important finding before changing the code.
+4. Run the relevant checks again after the fixes.
 
-Évite les relectures génériques du type « ça a l'air bien » et les réimplémentations en double.
+Avoid generic "looks good" reviews and duplicate reimplementations.
 
-## Garde-fous de tokens et de coût
-- Préfère un appel délégué ciblé à des allers-retours conversationnels.
-- Garde les consignes cadrées. Laisse le délégué lire le dépôt au lieu de lui coller du code.
-- Monte en gamme sur preuve (vérifications échouées, contradictions), pas par défaut.
+## Token and cost guardrails
+- Prefer one focused delegated call to conversational back-and-forth.
+- Keep instructions scoped. Let the delegate read the repository instead of pasting code to it.
+- Move up on evidence (failed checks, contradictions), not by default.
 
-## Mode parallèle
-Pour une vraie implémentation parallèle, donne à chaque outil son propre worktree et sa branche Git (`create-hybrid-worktrees.sh`), avec des périmètres disjoints. Après l'intégration, relance les critères de qualité sur la branche intégrée.
+## Parallel mode
+For real parallel implementation, give each tool its own worktree and Git branch (`create-hybrid-worktrees.sh`), with disjoint scopes. After integration, run the quality criteria again on the integrated branch.

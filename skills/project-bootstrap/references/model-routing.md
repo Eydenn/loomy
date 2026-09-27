@@ -1,32 +1,32 @@
-# Routage des modèles
+# Model routing
 
-Objectif : le meilleur raisonnement pour l'orchestrateur (session principale), et le modèle fiable le moins cher pour chaque morceau de travail.
+Goal: the best reasoning for the lead agent (main session), and the cheapest reliable model for each piece of work.
 
-## Rôles
-lead (orchestrateur), architect, debugger, security, reviewer, developer, executor, explorer, documenter. Voir `templates/MODEL_ROUTING.md` pour leur périmètre et leurs règles.
+## Roles
+lead, architect, debugger, security, reviewer, developer, executor, explorer, documenter. See `templates/MODEL_ROUTING.md` for their scope and rules.
 
-## Source de vérité
-`scripts/lib/models.sh` contient le catalogue des modèles et les règles de routage. Utilise `scripts/ai-route.sh` pour les lire :
-- `ai-route.sh` pour la matrice colorée ;
-- `ai-route.sh markdown` ou `all` pour les tableaux ;
-- `ai-route.sh get <rôle>` pour les scripts ;
-- `ai-route.sh claude-agents` pour générer `.claude/agents/` ;
-- `ai-route.sh codex-profiles` pour les profils Codex ;
-- `ai-route.sh lead` pour la commande de lancement de l'orchestrateur.
+## Source of truth
+`scripts/lib/models.sh` holds the model catalog and the routing rules. Use `scripts/ai-route.sh` to read them:
+- `ai-route.sh` for the coloured matrix;
+- `ai-route.sh markdown` or `all` for the tables;
+- `ai-route.sh get <role>` for scripts;
+- `ai-route.sh claude-agents` to generate `.claude/agents/`;
+- `ai-route.sh codex-profiles` for the Codex profiles;
+- `ai-route.sh lead` for the lead agent launch command.
 
-## Environnements
-- Full Claude Code et full Codex sont les replis à un seul outil.
-- En hybride :
-  - l'architecte, la sécurité et le débogueur tournent sur Claude Opus ;
-  - l'exécutant tourne sur Codex GPT-6-Luna en max ;
-  - la revue vient de l'autre famille que l'outil principal ;
-  - l'explorateur, le développeur et le documentaliste restent sur l'outil principal.
+## Environments
+- Full Claude Code and full Codex are the single-tool fallbacks.
+- In hybrid:
+  - architect, security and debugger run on Claude Opus;
+  - the executor runs on Codex GPT-6-Luna at max;
+  - review comes from the family other than the main tool;
+  - explorer, developer and documenter stay on the main tool.
 
-## Profils de budget
-L'orchestrateur reste toujours sur le meilleur modèle. `econome` baisse les efforts, `equilibre` est le profil par défaut, et `qualite` monte les efforts et place les revues sur le meilleur modèle.
+## Budget profiles
+The lead agent always stays on the best model. `econome` lowers the efforts, `equilibre` is the default profile, and `qualite` raises the efforts and puts reviews on the best model.
 
-## Vérification
-`scripts/ai-doctor.sh` contrôle les versions des CLI, la disponibilité des modèles et, avec `--live`, la réponse réelle de chaque modèle routé.
+## Verification
+`scripts/ai-doctor.sh` checks the CLI versions, model availability and, with `--live`, the actual answer of each routed model.
 
-## Escalade
-Monter d'un cran (exécutant → développeur → orchestrateur, ou effort +1) après deux vérifications échouées ou des preuves qui contredisent le résultat. Ne jamais boucler sur un modèle bon marché.
+## Escalation
+Move up one notch (executor → developer → lead agent, or effort +1) after two failed checks or evidence contradicting the result. Never loop on a cheap model.

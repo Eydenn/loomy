@@ -1,68 +1,68 @@
 ---
 name: project-bootstrap
-description: Initialise ou ré-initialise un dépôt logiciel avec un workflow adaptatif (découverte, entretien, validation), des instructions hybrides Codex + Claude Code, des agents et skills choisis, une documentation durable du projet et de l'architecture, des critères de vérification, des points de contrôle Git et le retrait du bootstrap. À utiliser pour créer un nouveau projet, transformer un dépôt vide en projet fonctionnel, standardiser un dépôt existant, ou quand l'utilisateur demande d'initialiser, bootstrapper ou démarrer ce projet.
+description: Sets up or resets a software repository with an adaptive workflow (discovery, interview, approval), hybrid Codex + Claude Code instructions, chosen agents and skills, durable project and architecture documentation, verification criteria, Git checkpoints and bootstrap retirement. Use to create a new project, turn an empty repository into a working project, standardise an existing repository, or when the user asks to initialise, bootstrap or start this project.
 ---
 
-# Bootstrap de projet
+# Project bootstrap
 
-Utilise le `START.md` du dépôt comme plan de contrôle temporaire s'il existe.
-Sinon, suis le même cycle de vie décrit ici.
+Use the repository's `START.md` as a temporary control plane if it exists.
+Otherwise, follow the same lifecycle described here.
 
-## Cycle de vie
+## Lifecycle
 
-1. Découvrir à moindre coût avant de poser des questions.
-2. Ne poser que les questions à fort impact encore ouvertes.
-3. Présenter une proposition de projet concise.
-4. Exiger une validation explicite avant de créer le projet, sauf si l'utilisateur y a renoncé.
-5. Construire le projet cohérent minimal.
-6. Ne configurer que les agents, skills et outils utiles.
-7. Configurer le fonctionnement IA (SOLO, HYBRID, ORCHESTRATED ou PARALLEL) selon les besoins du projet.
-8. Vérifier avec de vraies vérifications.
-9. Consigner le contexte durable dans la documentation du projet.
-10. Committer quand c'est autorisé et possible.
-11. Archiver ou supprimer les instructions de bootstrap.
+1. Discover cheaply before asking questions.
+2. Only ask the high-impact questions still open.
+3. Present a concise project proposal.
+4. Require explicit approval before creating the project, unless the user waived it.
+5. Build the minimal coherent project.
+6. Only configure the useful agents, skills and tools.
+7. Configure the AI operating mode (SOLO, HYBRID, ORCHESTRATED or PARALLEL) to the project's needs.
+8. Verify with real checks.
+9. Record the durable context in the project documentation.
+10. Commit when allowed and possible.
+11. Archive or delete the bootstrap instructions.
 
-## Équipe adaptative
+## Adaptive team
 
-Par défaut, l'orchestrateur travaille seul. N'ajoute des spécialistes que si le parallélisme, l'expertise, l'isolation du contexte ou une relecture indépendante apportent une valeur claire. Évite la multiplication des rôles.
+By default, the lead agent works alone. Only add specialists when parallelism, expertise, context isolation or an independent review bring clear value. Avoid multiplying roles.
 
-Quand Codex et Claude Code sont tous deux utilisés, préfère un fichier de workflow commun et de fins points d'entrée propres à chaque outil, plutôt que de dupliquer un gros jeu d'instructions.
+When Codex and Claude Code are both used, prefer a shared workflow file and thin per-tool entry points, rather than duplicating a large instruction set.
 
-Lis `references/orchestration.md` pour décider de la complexité, du risque, de la délégation, de la relecture, de la collaboration Codex/Claude, de l'orchestration entre modèles et du budget de tokens.
-Lis `references/documentation.md` pour générer les fichiers permanents du projet.
-Lis `references/model-routing.md` pour choisir les modèles, l'effort de raisonnement ou les niveaux des sous-agents.
-Ne lis `references/security.md` que pour une architecture sensible en sécurité ou une demande explicite d'audit.
+Read `references/orchestration.md` to decide complexity, risk, delegation, review, Codex/Claude collaboration, cross-model orchestration and token budget.
+Read `references/documentation.md` to generate the permanent project files.
+Read `references/model-routing.md` to choose models, reasoning effort or subagent tiers.
+Only read `references/security.md` for a security-sensitive architecture or an explicit audit request.
 
-## Structure d'un projet hybride
+## Hybrid project layout
 
-Pour un projet qui utilisera les deux outils, préfère :
+For a project that will use both tools, prefer:
 
 ```text
 AGENTS.md
 CLAUDE.md
 .ai/AI_WORKFLOW.md
-.ai/AI_ORCHESTRATION.md  # si la délégation entre modèles est activée
-.ai/AI_MODEL_ROUTING.md  # matrice rôle → modèle → effort
-.claude/agents/          # uniquement les sous-agents Claude retenus
+.ai/AI_ORCHESTRATION.md  # when cross-model delegation is enabled
+.ai/AI_MODEL_ROUTING.md  # role → model → effort matrix
+.claude/agents/          # only the chosen Claude subagents
 PROJECT.md
-ARCHITECTURE.md          # si justifié
-.ai/HANDOFF.md           # uniquement pendant un passage de relais
+ARCHITECTURE.md          # when justified
+.ai/HANDOFF.md           # only during a handoff
 ```
 
-Ne laisse pas Codex et Claude modifier les mêmes fichiers en même temps dans un même répertoire de travail. Utilise des worktrees ou branches Git séparés pour l'implémentation parallèle, ou fais implémenter un outil et relire l'autre.
+Don't let Codex and Claude modify the same files at the same time in one working tree. Use separate Git worktrees or branches for parallel implementation, or have one tool implement and the other review.
 
-## Discipline de production
+## Production discipline
 
-Garde les instructions permanentes du projet compactes.
-Préfère le chargement progressif plutôt que de copier de longues instructions dans `AGENTS.md` ou `CLAUDE.md`.
-Ne génère que les fichiers justifiés par la complexité du projet.
+Keep the project's permanent instructions compact.
+Prefer progressive loading over copying long instructions into `AGENTS.md` or `CLAUDE.md`.
+Only generate the files justified by the project's complexity.
 
-## Vérification
+## Verification
 
-N'annonce jamais une vérification comme passée sans l'avoir lancée.
-Quand c'est possible, commence par des vérifications ciblées avant les suites complètes.
-Après avoir intégré des chantiers parallèles, relance les vérifications pertinentes sur le résultat intégré.
+Never announce a check as passed without running it.
+When possible, start with targeted checks before full suites.
+After integrating parallel work streams, run the relevant checks again on the integrated result.
 
-## Audits de sécurité
+## Security audits
 
-Pour un audit de sécurité explicite, préfère le skill officiel Cloudflare `security-audit`. Ne réimplémente pas une checklist plus faible si le skill est disponible. Préserve la validation indépendante et les limites d'exécution sûres.
+For an explicit security audit, prefer the official Cloudflare `security-audit` skill. Don't reimplement a weaker checklist if the skill is available. Keep independent validation and safe execution limits.

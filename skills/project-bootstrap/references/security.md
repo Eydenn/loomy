@@ -1,26 +1,26 @@
-# Intégration de la sécurité
+# Security integration
 
-Applique un raisonnement de sécurité proportionné pour les tâches d'ingénierie courantes.
-N'utilise le workflow complet Cloudflare `security-audit` que pour une demande explicite d'audit ou de revue de vulnérabilités, ou quand l'utilisateur demande des livrables de sécurité.
+Apply proportionate security reasoning for everyday engineering tasks.
+Only use the full Cloudflare `security-audit` workflow for an explicit audit or vulnerability review request, or when the user asks for security deliverables.
 
-Source officielle :
+Official source:
 https://github.com/cloudflare/security-audit-skill
 
-Installation recommandée :
+Recommended install:
 
 ```bash
 npx skills add https://github.com/cloudflare/security-audit-skill --skill security-audit --global
 ```
 
-Loomy fournit aussi `.loomy/scripts/install-security-audit.sh`.
+Loomy also provides `.loomy/scripts/install-security-audit.sh`.
 
-Préserve ces garanties du workflow officiel :
-- reconnaissance à partir du code source et cartographie des frontières de confiance ;
-- registre de couverture déterministe ;
-- recherche guidée par la couverture, avec des agents isolés ;
-- agent de validation indépendant et neuf pour chaque constat candidat ;
-- résultats séparés en `confirmed`, `needs_validation` et `rejected` ;
-- validateurs et rapports structurés ;
-- aucune exécution de code contrôlé par la cible si les protections de sandbox requises manquent ;
-- aucun sondage des systèmes de production ou partagés par défaut ;
-- aucune gravité attribuée aux éléments `needs_validation` non résolus.
+Keep these guarantees of the official workflow:
+- reconnaissance from the source code and mapping of trust boundaries;
+- deterministic coverage register;
+- coverage-driven research, with isolated agents;
+- independent, fresh validation agent for each candidate finding;
+- results separated into `confirmed`, `needs_validation` and `rejected`;
+- structured validators and reports;
+- no execution of target-controlled code when the required sandbox protections are missing;
+- no probing of production or shared systems by default;
+- no severity assigned to unresolved `needs_validation` items.

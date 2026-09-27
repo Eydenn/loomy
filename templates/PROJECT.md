@@ -1,33 +1,33 @@
-# PROJET
+# PROJECT
 
-## Objectif
-<!-- Quel problème le projet résout-il ? -->
+## Goal
+<!-- What problem does the project solve? -->
 
-## Utilisateurs principaux
-<!-- Pour qui ? -->
+## Main users
+<!-- For whom? -->
 
-## Périmètre
-### Inclus
+## Scope
+### Included
 - 
 
-### Non-objectifs
+### Non-goals
 - 
 
-## Exigences principales
+## Main requirements
 - 
 
-## Contraintes
+## Constraints
 - 
 
-## Plateformes et environnements
+## Platforms and environments
 - 
 
-## Données et intégrations
+## Data and integrations
 - 
 
-## Priorités de qualité
-<!-- ex. maintenabilité, performance, accessibilité, hors ligne d'abord, coût -->
+## Quality priorities
+<!-- e.g. maintainability, performance, accessibility, offline first, cost -->
 - 
 
-## Sécurité et confidentialité
+## Security and privacy
 - 

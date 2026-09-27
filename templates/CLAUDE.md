@@ -1,27 +1,27 @@
 # CLAUDE.md
 
-Utilise l'`AGENTS.md` de ce dépôt comme règles d'ingénierie communes principales.
-Le contexte Loomy (phase, attentes de l'utilisateur, dernières délégations) t'est donné automatiquement à l'ouverture de chaque session par un hook du projet (`.claude/settings.json`) ; appuie-toi dessus pour reprendre là où le projet en est.
-Pour un travail conséquent ou toute collaboration Codex/Claude, lis `.ai/AI_WORKFLOW.md` s'il existe.
-Pour la délégation entre modèles, lis `.ai/AI_ORCHESTRATION.md` s'il existe.
-En tant que session principale, tu es l'orchestrateur : suis `.ai/AI_MODEL_ROUTING.md` s'il existe pour les rôles, les modèles et les efforts. Les sous-agents du projet sont dans `.claude/agents/`. Les rôles Codex passent par `.loomy/scripts/delegate-to-codex.sh`.
+Use this repository's `AGENTS.md` as the main shared engineering rules.
+The Loomy context (phase, what the user expects, latest delegations) is given to you automatically when each session opens, through a project hook (`.claude/settings.json`); rely on it to pick up where the project stands.
+For substantial work or any Codex/Claude collaboration, read `.ai/AI_WORKFLOW.md` if it exists.
+For delegation between models, read `.ai/AI_ORCHESTRATION.md` if it exists.
+As the main session, you are the lead agent: follow `.ai/AI_MODEL_ROUTING.md` if it exists for roles, models and efforts. The project's subagents are in `.claude/agents/`. Codex roles go through `.loomy/scripts/delegate-to-codex.sh`.
 
-Ne lis les sources durables du projet que lorsqu'elles sont utiles :
-- `PROJECT.md` pour l'intention produit, le périmètre et les contraintes ;
-- `ARCHITECTURE.md` pour l'architecture et les invariants ;
-- `docs/decisions/` pour les décisions importantes acceptées ;
-- `docs/plans/` pour les chantiers en cours ;
-- `.ai/HANDOFF.md` seulement si un passage de relais est en cours.
+Only read the project's durable sources when they are useful:
+- `PROJECT.md` for product intent, scope and constraints;
+- `ARCHITECTURE.md` for architecture and invariants;
+- `docs/decisions/` for important accepted decisions;
+- `docs/plans/` for ongoing work;
+- `.ai/HANDOFF.md` only if a handoff is in progress.
 
-Ne recopie pas ces documents ici. Garde le contexte léger.
+Don't copy these documents here. Keep the context light.
 
-Autonomie : suis la section « Autonomie et points d'arrêt » d'`AGENTS.md`. En résumé, avance seul sur une tâche bornée, mais arrête-toi et demande avant toute opération destructive ou difficile à annuler (suppression de données, migration, `push --force`, `reset --hard`, action en production).
+Autonomy: follow the "Autonomy and stop points" section of `AGENTS.md`. In short, move forward alone on a bounded task, but stop and ask before any destructive or hard-to-undo operation (deleting data, migrations, `push --force`, `reset --hard`, production actions).
 
-Pour collaborer avec Codex :
-- ne modifie jamais les mêmes fichiers en même temps dans le même répertoire de travail ;
-- suis `.ai/AI_WORKFLOW.md` pour les modes SOLO, REVIEW, HANDOFF, PARALLEL et ORCHESTRATED ;
-- utilise des branches ou worktrees Git séparés pour l'implémentation parallèle ;
-- utilise `.ai/HANDOFF.md` pour un passage de relais concis d'un outil à l'autre ;
-- quand Codex te sollicite via le bridge, agis en spécialiste et rends des constats concis au lieu de prendre la direction du projet.
+To work with Codex:
+- never modify the same files at the same time in the same working tree;
+- follow `.ai/AI_WORKFLOW.md` for the SOLO, REVIEW, HANDOFF, PARALLEL and ORCHESTRATED modes;
+- use separate Git branches or worktrees for parallel implementation;
+- use `.ai/HANDOFF.md` for a concise handoff from one tool to the other;
+- when Codex calls you through the bridge, act as a specialist and give concise findings instead of taking over the project.
 
-Pour un audit de sécurité explicite, utilise le skill officiel Cloudflare `security-audit` s'il est disponible et préserve son workflow de vérification indépendante.
+For an explicit security audit, use the official Cloudflare `security-audit` skill if available and keep its independent verification workflow.

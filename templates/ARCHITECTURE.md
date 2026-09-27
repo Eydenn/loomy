@@ -1,28 +1,28 @@
 # ARCHITECTURE
 
-## Vue d'ensemble
-<!-- Description courte du système. -->
+## Overview
+<!-- Short description of the system. -->
 
 ## Stack
 - 
 
-## Frontières entre modules
+## Module boundaries
 - 
 
-## Flux principaux
+## Main flows
 - 
 
-## Persistance
+## Persistence
 - 
 
-## Intégrations externes
+## External integrations
 - 
 
-## Build, runtime et déploiement
+## Build, runtime and deployment
 - 
 
-## Invariants importants
+## Important invariants
 - 
 
-## Stratégie de vérification
+## Verification strategy
 - 

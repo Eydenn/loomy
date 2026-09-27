@@ -1,25 +1,25 @@
-# Passage de relais IA
+# AI handoff
 
-Statut : ACTIF
-De : <Codex|Claude>
-Vers : <Codex|Claude>
-Branche/worktree : <nom/chemin>
-Commit : <hash ou AUCUN>
+Status: ACTIVE
+From: <Codex|Claude>
+To: <Codex|Claude>
+Branch/worktree: <name/path>
+Commit: <hash or NONE>
 
-## Objectif
-<un paragraphe concis>
+## Goal
+<one concise paragraph>
 
-## Terminé
-- <élément terminé>
+## Done
+- <finished item>
 
-## Fichiers modifiés
-- `<chemin>` — <pourquoi>
+## Files changed
+- `<path>` — <why>
 
-## Vérification
-- `<commande>` — OK | ÉCHEC | NON LANCÉ
+## Verification
+- `<command>` — OK | FAILED | NOT RUN
 
-## Problèmes et risques ouverts
-- <seulement les points importants non résolus>
+## Open issues and risks
+- <only the important unresolved points>
 
-## Action suivante
-<l'étape exacte que l'agent qui reprend doit faire>
+## Next action
+<the exact step the agent taking over must do>

@@ -766,6 +766,12 @@ hasnt "help: no English section title left" "◇  TRACKING"
 has "help: French titles" "<commande>|◇  PROJET"
 run "status in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr bash "$REPO/scripts/ai-status.sh" --root "$PROJ"
 has "status: French labels" "Statut du projet"
+PFR="$WORK/projet-fr"; mkdir -p "$PFR"
+run "init in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr "$LOOMY" init "$PFR" --yes --no-clipboard
+file_has "French START.md installed" "$PFR/START.md" "BOOTSTRAP TEMPORAIRE"
+file_has "French templates installed" "$PFR/.loomy/templates/AGENTS.md" "Autonomie et points d'arrêt"
+file_has "French brief" "$PFR/.loomy/brief.md" "Consignes pour l'agent"
+file_has "English START.md by default" "$PROJ/START.md" "TEMPORARY BOOTSTRAP"
 run "compiled dictionary up to date" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/fr.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/fr.sh; r=$?; cp "$tmp" scripts/lib/i18n/fr.sh; rm -f "$tmp"; exit $r' _ "$REPO"
 run "every interface sentence is translated" bash -c '[[ -z "$(bash "$1/tools/i18n-missing.sh")" ]]' _ "$REPO"
 

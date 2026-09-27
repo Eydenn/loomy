@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
     --full) COMPACT=0 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) t "Argument inconnu : %s" "$1" >&2; echo >&2; exit 2 ;;
+    *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
@@ -62,7 +62,7 @@ BRIEF="$ROOT/.loomy/brief.md"
 if [[ "$CMD" == "set" ]]; then
   case " $PHASES " in
     *" $PHASE_ARG "*) ;;
-    *) t "Phase inconnue : « %s ». Phases : %s" "$PHASE_ARG" "$PHASES" >&2; echo >&2; exit 2 ;;
+    *) t "Unknown phase: \"%s\". Phases: %s" "$PHASE_ARG" "$PHASES" >&2; echo >&2; exit 2 ;;
   esac
   mkdir -p "$ROOT/.loomy"
   now="$(date '+%Y-%m-%d %H:%M')"
@@ -76,7 +76,7 @@ if [[ "$CMD" == "set" ]]; then
   } >"$STATE.tmp"
   mv "$STATE.tmp" "$STATE"
   ai_journal_write "$ROOT" "\"type\":\"phase\",\"phase\":\"$PHASE_ARG\""
-  t "Phase enregistrée : %s (%s)" "$(loomy_phase_label "$PHASE_ARG")" "$PHASE_ARG"; echo
+  t "Phase recorded: %s (%s)" "$(loomy_phase_label "$PHASE_ARG")" "$PHASE_ARG"; echo
   exit 0
 fi
 
@@ -87,12 +87,12 @@ brief_get() {
 
 label_of() {
   case "$1" in
-    web) t "Application web / SaaS"; echo ;; api) t "API / backend"; echo ;; mobile) t "Application mobile"; echo ;;
-    desktop) t "Application desktop"; echo ;; cli) t "CLI / bibliothèque"; echo ;; ai) t "Application IA / LLM"; echo ;;
-    prototype) t "Prototype"; echo ;; other) t "Autre"; echo ;; mvp) t "MVP"; echo ;; production) t "Production"; echo ;;
-    econome) t "Économe"; echo ;; equilibre) t "Équilibré"; echo ;; qualite) t "Qualité max"; echo ;;
+    web) t "Web app / SaaS"; echo ;; api) t "API / backend"; echo ;; mobile) t "Mobile app"; echo ;;
+    desktop) t "Desktop app"; echo ;; cli) t "CLI / library"; echo ;; ai) t "AI / LLM app"; echo ;;
+    prototype) t "Prototype"; echo ;; other) t "Other"; echo ;; mvp) t "MVP"; echo ;; production) t "Production"; echo ;;
+    econome) t "Thrifty"; echo ;; equilibre) t "Balanced"; echo ;; qualite) t "Max quality"; echo ;;
     codex) t "Codex"; echo ;; claude) t "Claude Code"; echo ;;
-    yes) t "oui"; echo ;; no) t "non"; echo ;; "") echo "?" ;; *) echo "$1" ;;
+    yes) t "yes"; echo ;; no) t "no"; echo ;; "") echo "?" ;; *) echo "$1" ;;
   esac
 }
 
@@ -132,20 +132,20 @@ if (( WATCH )); then
     if (( ! first )); then
       if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
         hl_phase=$(( now + 8 ))
-        if [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Projet prêt")" "$(t "Bootstrap terminé : la suite se passe avec l'orchestrateur (loomy start).")"
+        if [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Project ready")" "$(t "Bootstrap done: what comes next happens with the lead agent (loomy start).")"
         else watch_notify "Phase $(loomy_phase_index "$phase")/10 · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
       fi
       if (( n_done > p_done )); then hl_deleg_n=$(( n_done - p_done )); hl_deleg_until=$(( now + 8 )); fi
-      if (( n_err > p_err )); then watch_notify "$(t "Délégation en échec")" "$(t "Voir le détail dans loomy watch (touche l) ou loomy log.")"; fi
+      if (( n_err > p_err )); then watch_notify "$(t "Delegation failed")" "$(t "See the details in loomy watch (key l) or loomy log.")"; fi
       if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
-        watch_notify "$(t "Session de l'orchestrateur fermée")" "$(t "Bootstrap en cours : loomy start pour la reprendre.")"
+        watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"
       fi
     fi
     first=0; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     # ---- image
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-    keys="q $(t "quitter") · c $( [[ "$size" == "--compact" ]] && t "vue complète" || t "vue resserrée") · l $( [[ "$view" == "journal" ]] && t "statut" || t "journal")"
+    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "journal" ]] && t "status" || t "journal")"
     [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
@@ -159,10 +159,10 @@ if (( WATCH )); then
     while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
     if [[ "$UI_SCREEN" == "1" ]]; then
       # Cadre de l'application : en-tête (projet, heure), corps affiché depuis le haut (↑↓ pour défiler), pied (touches).
-      ui_header "$NAME_W" "$(t "suivi en direct") · $(date '+%H:%M:%S')"
+      ui_header "$NAME_W" "$(t "live tracking") · $(date '+%H:%M:%S')"
       LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on)
       _ui_term_size; _ui_chrome
-      (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "défiler") · $keys"
+      (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
       UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
       _ui_page_draw; wtop=$UI_BODY_START
     else
@@ -205,28 +205,28 @@ elif [[ "$COMPACT" == "1" ]]; then
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_TITLE}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   fi
 else
-  ui_banner "$(t "Statut du projet")" "${C_RESET}${C_TITLE}$(brief_get name 2>/dev/null || basename "$ROOT")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
+  ui_banner "$(t "Project status")" "${C_RESET}${C_TITLE}$(brief_get name 2>/dev/null || basename "$ROOT")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 fi
 # Version de Loomy copiée dans le projet, comparée à celle installée (sauf si ce script est lui-même la copie du projet).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
 # Depuis la 0.3, le projet n'a plus que des relais vers le Loomy installé : rien à faire à chaque version.
 if [[ -d "$ROOT/.loomy/scripts/lib" ]]; then
-  ui_warn "$(t "scripts Loomy copiés dans ce projet (avant la 0.3)")" "$(t "une fois pour toutes : loomy init --update")"
+  ui_warn "$(t "Loomy scripts copied into this project (before 0.3)")" "$(t "once and for all: loomy init --update")"
 elif [[ -n "$proj_v" && -n "$inst_v" ]] && ! ai_version_ge "$inst_v" "$proj_v"; then
-  ui_warn "$(t "Loomy %s installé, plus ancien que ce projet (%s)" "$inst_v" "$proj_v")" "loomy update"
+  ui_warn "$(t "Loomy %s installed, older than this project (%s)" "$inst_v" "$proj_v")" "loomy update"
 fi
 
 # ---------------------------------------------------------------- vue journal (touche l de loomy watch)
 if (( JOURNAL_VIEW )); then
-  ui_section "$(t "JOURNAL")" "$(t "derniers événements, heure locale")"
+  ui_section "$(t "JOURNAL")" "$(t "latest events, local time")"
   _ui_term_size
   jn=$(( UI_ROWS - 9 )); (( jn < 5 )) && jn=5
   if [[ -s "$(ai_journal_file "$ROOT")" ]]; then
     while IFS= read -r l; do ui_rail "$l"; done < <(bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n "$jn" 2>/dev/null || true)
   else
-    ui_info "$(t "journal vide pour l'instant")"
+    ui_info "$(t "journal empty for now")"
   fi
-  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "journal complet : loomy log")}"
+  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "full journal: loomy log")}"
   exit 0
 fi
 
@@ -240,12 +240,12 @@ if [[ -z "$CURRENT" && -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then CURR
 if [[ -z "$CURRENT" && -f "$ROOT/START.md" && -f "$BRIEF" ]]; then CURRENT="brief"; fi
 idx="$(loomy_phase_index "$CURRENT")"
 note=""
-if [[ "$CURRENT" == "done" ]]; then note="$(t "bootstrap terminé")"
-elif (( idx > 0 )); then note="$(t "étape %s sur 10" "$idx")${UPDATED:+ · $(t "depuis %s" "${UPDATED##* }")}"; fi
+if [[ "$CURRENT" == "done" ]]; then note="$(t "bootstrap done")"
+elif (( idx > 0 )); then note="$(t "step %s of 10" "$idx")${UPDATED:+ · $(t "since %s" "${UPDATED##* }")}"; fi
 ui_section "PHASES" "$note"
 if [[ -z "$CURRENT" ]]; then
-  if [[ -f "$ROOT/START.md" ]]; then ui_info "$(t "START.md présent mais brief vide : lance loomy brief")"
-  else ui_info "$(t "aucun projet Loomy ici : lance loomy init")"; fi
+  if [[ -f "$ROOT/START.md" ]]; then ui_info "$(t "START.md present but brief empty: run loomy brief")"
+  else ui_info "$(t "no Loomy project here: run loomy init")"; fi
 else
   # Frise large : une case par phase (█ fait, ▓ en cours, ░ à venir), puis ▲ et le nom sous la case en cours.
   _ui_term_size
@@ -261,12 +261,12 @@ else
     else bar="${bar}${C_DIM}${cell_todo}${C_RESET}"; fi
   done
   ui_rail "$bar"
-  label="▲ $(loomy_phase_label "$CURRENT")"; [[ "$CURRENT" == "done" ]] && label="✓ $(t "Bootstrap terminé")"
+  label="▲ $(loomy_phase_label "$CURRENT")"; [[ "$CURRENT" == "done" ]] && label="✓ $(t "Bootstrap done")"
   total=$(( cw * 10 + 9 )); _ui_strlen "$label"
   off=$(( (idx > 10 ? 9 : idx - 1) * (cw + 1) )); (( off < 0 )) && off=0
   (( off + UI_LEN > total )) && off=$(( total - UI_LEN ))
   _ui_pad "" "$off"
-  hl=""; [[ "${LOOMY_HL_PHASE:-0}" == "1" ]] && hl="  ${C_BOLD}${C_BRAND}✦ $(t "nouvelle phase")${C_RESET}"
+  hl=""; [[ "${LOOMY_HL_PHASE:-0}" == "1" ]] && hl="  ${C_BOLD}${C_BRAND}✦ $(t "new phase")${C_RESET}"
   ui_rail "${UI_PADDED}${C_BRAND}${label}${C_RESET}${hl}"
   ui_print "${C_RAIL}│${C_RESET}"
   # Bootstrap terminé : le bilan (durée, délégations, coût), tiré du journal.
@@ -284,22 +284,22 @@ else
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
       d=$(( e_ep - s_ep )); if (( d >= 3600 )); then took="$(( d / 3600 )) h $(( d % 3600 / 60 )) min"; else took="$(( d / 60 )) min"; fi
     fi
-    ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Projet prêt")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap en %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s délégation(s)" "$b_n") ${C_DIM}·${C_RESET} \$${b_cost}"
+    ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n") ${C_DIM}·${C_RESET} \$${b_cost}"
   fi
   [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Session de l'orchestrateur : notée par les hooks Claude Code et par loomy start (Codex).
   sess="$(ai_session_state "$ROOT")"; tool_name="Claude Code"; [[ "$sess" == *"|codex" ]] && tool_name="Codex"
   you="$(loomy_you_now "$CURRENT" "$sess")"
-  ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}$(t "À toi :")${C_RESET} $you"
+  ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}$(t "Your turn:")${C_RESET} $you"
   case "$sess" in
-    open*) ui_rail "${C_GREEN}●${C_RESET} $(t "Session de l'orchestrateur ouverte depuis %s" "$(printf '%s' "$sess" | cut -d'|' -f2)") ${C_DIM}($tool_name)${C_RESET}" ;;
-    closed*) ui_rail "${C_DIM}○ $(t "Session de l'orchestrateur fermée à %s (%s) → loomy start pour la reprendre" "$(printf '%s' "$sess" | cut -d'|' -f2)" "$tool_name")${C_RESET}" ;;
-    *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ $(t "Aucune session de l'orchestrateur enregistrée → loomy start")${C_RESET}" ;;
+    open*) ui_rail "${C_GREEN}●${C_RESET} $(t "Lead agent session open since %s" "$(printf '%s' "$sess" | cut -d'|' -f2)") ${C_DIM}($tool_name)${C_RESET}" ;;
+    closed*) ui_rail "${C_DIM}○ $(t "Lead agent session closed at %s (%s) → loomy start to resume it" "$(printf '%s' "$sess" | cut -d'|' -f2)" "$tool_name")${C_RESET}" ;;
+    *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ $(t "No lead agent session recorded → loomy start")${C_RESET}" ;;
   esac
   if (( idx >= 1 && idx < 10 )) && [[ "$COMPACT" != "1" ]]; then
     next=""; i=0
     for p in $LOOMY_PHASES; do i=$(( i + 1 )); (( i > idx )) && next="${next:+$next → }$(loomy_phase_label "$p")"; done
-    _ui_term_size; _ui_fit "$(t "ensuite :") $next" $(( UI_W - 3 ))
+    _ui_term_size; _ui_fit "$(t "next:") $next" $(( UI_W - 3 ))
     ui_rail "${C_DIM}${UI_FIT}${C_RESET}"
   fi
 fi
@@ -309,17 +309,17 @@ if [[ -f "$BRIEF" && "$COMPACT" != "1" ]]; then
   ui_section "BRIEF"
   risk="$(brief_get risk)"
   risk_c="$C_GREEN"; [[ "$risk" == "MEDIUM" ]] && risk_c="$C_YELLOW"; [[ "$risk" == "HIGH" ]] && risk_c="$C_RED"
-  ui_kv "$(t "Nom")" "${C_TITLE}$(brief_get name)${C_RESET} · $(label_of "$(brief_get type)") · $(label_of "$(brief_get stage)")"
-  ui_kv "$(t "Risque")" "${risk_c}${risk:-?}${C_RESET}"
-  ui_kv "$(t "Mode IA")" "${C_MAGENTA}$(brief_get ai_mode)${C_RESET} · lead $(label_of "$(brief_get ai_lead)")"
+  ui_kv "$(t "Name")" "${C_TITLE}$(brief_get name)${C_RESET} · $(label_of "$(brief_get type)") · $(label_of "$(brief_get stage)")"
+  ui_kv "$(t "Risk")" "${risk_c}${risk:-?}${C_RESET}"
+  ui_kv "$(t "AI mode")" "${C_MAGENTA}$(brief_get ai_mode)${C_RESET} · lead $(label_of "$(brief_get ai_lead)")"
   ui_kv "Budget" "$(label_of "$(brief_get budget)")"
-  ui_kv "Git" "$(t "commit auto : %s · push auto : %s" "$(label_of "$(brief_get commit_after_setup)")" "$(label_of "$(brief_get push_after_commit)")")"
+  ui_kv "Git" "$(t "auto commit: %s · auto push: %s" "$(label_of "$(brief_get commit_after_setup)")" "$(label_of "$(brief_get push_after_commit)")")"
 fi
 
 # ---------------------------------------------------------------- activité
 JOURNAL="$(ai_journal_file "$ROOT")"
 if [[ -s "$JOURNAL" ]]; then
-  ui_section "$(t "ACTIVITÉ")"
+  ui_section "$(t "ACTIVITY")"
   # Délégations en cours : un début sans fin (une seule lecture du journal), dont le processus tourne encore.
   now_s="$(date +%s)"
   awk '
@@ -343,12 +343,12 @@ if [[ -s "$JOURNAL" ]]; then
       fill=$(( el_s * 10 / est )); (( fill > 10 )) && fill=10
       bar=""; for (( k = 0; k < 10; k++ )); do if (( k < fill )); then bar="${bar}▰"; else bar="${bar}▱"; fi; done
       _ui_dur $(( est * 1000 )); est_txt="${UI_DUR/,? s/ s}"
-      if (( el_s > est * 3 / 2 )); then prog="${C_YELLOW}${bar}${C_RESET} ${el} ${C_DIM}· $(t "plus long que d'habitude (~%s)" "$est_txt")${C_RESET}"
+      if (( el_s > est * 3 / 2 )); then prog="${C_YELLOW}${bar}${C_RESET} ${el} ${C_DIM}· $(t "longer than usual (~%s)" "$est_txt")${C_RESET}"
       else prog="${C_BRAND}${bar}${C_RESET} ${el} ${C_DIM}/ ~${est_txt}${C_RESET}"; fi
     else
-      prog="${el} ${C_DIM}· $(t "première fois pour ce rôle")${C_RESET}"
+      prog="${el} ${C_DIM}· $(t "first time for this role")${C_RESET}"
     fi
-    ui_rail "${C_YELLOW}${spin} $(t "en cours")${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
+    ui_rail "${C_YELLOW}${spin} $(t "running")${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
     ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
   # Travail direct de Claude Code (orchestrateur, sous-agents natifs) : coût mesuré par les hooks Stop et SubagentStop.
@@ -361,12 +361,12 @@ if [[ -s "$JOURNAL" ]]; then
         m = 0; if (match($0, /"messages":[0-9]+/)) m = substr($0, RSTART + 11, RLENGTH - 11)
         if (index($0, "\"scope\":\"lead\"")) { ln += m; lc += c } else { sn++; sc += c } }
       END { printf "%d %.4f %d %.4f\n", ln, lc, sn, sc }' "$JOURNAL")"
-    ui_kv "$(t "Orchestrateur")" "$(t "%s réponse(s) · coût %s" "${C_BOLD}${u_ln}${C_RESET}" "${C_BOLD}\$${u_lc}${C_RESET}") ${C_DIM}($(t "mesuré"))${C_RESET}"
-    (( u_sn > 0 )) && ui_kv "$(t "Sous-agents")" "$(t "%s · coût %s" "${C_BOLD}${u_sn}${C_RESET}" "${C_BOLD}\$${u_sc}${C_RESET}") ${C_DIM}($(t "mesuré"))${C_RESET}"
+    ui_kv "$(t "Lead agent")" "$(t "%s reply(ies) · cost %s" "${C_BOLD}${u_ln}${C_RESET}" "${C_BOLD}\$${u_lc}${C_RESET}") ${C_DIM}($(t "measured"))${C_RESET}"
+    (( u_sn > 0 )) && ui_kv "$(t "Sub-agents")" "$(t "%s · cost %s" "${C_BOLD}${u_sn}${C_RESET}" "${C_BOLD}\$${u_sc}${C_RESET}") ${C_DIM}($(t "measured"))${C_RESET}"
   fi
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
-    ui_info "$(t "aucune délégation terminée pour l'instant")"
-    ui_rail "${C_DIM}  $(t "elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex")${C_RESET}"
+    ui_info "$(t "no finished delegation yet")"
+    ui_rail "${C_DIM}  $(t "they show up here as soon as the lead agent hands a task to Claude or Codex")${C_RESET}"
   else
     summary="$(grep '"type":"delegation"' "$JOURNAL" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
@@ -376,7 +376,7 @@ if [[ -s "$JOURNAL" ]]; then
       END { printf "TOTAL %d %.4f %d\n", n, total, err
             for (m in calls) printf "MODEL %s %d %.4f %d\n", m, calls[m], cost[m], tok[m] }')"
     read -r _ n_calls total_cost n_err <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
-    ui_kv "$(t "Délégations")" "$(t "%s · coût %s" "${C_BOLD}${n_calls}${C_RESET}" "${C_BOLD}\$${total_cost}${C_RESET}")$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s en échec" "$n_err")" "$C_RESET")"
+    ui_kv "$(t "Delegations")" "$(t "%s · cost %s" "${C_BOLD}${n_calls}${C_RESET}" "${C_BOLD}\$${total_cost}${C_RESET}")$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
     printf '%s\n' "$summary" | grep '^MODEL' | sort -k4 -rn | while read -r _ m c cost tok; do
@@ -398,18 +398,18 @@ if [[ -s "$JOURNAL" ]]; then
       plan="$(loomy_plan "$fam")"; monthly="$(loomy_plan_monthly "$fam")"
       name="Claude"; [[ "$fam" == "codex" ]] && name="Codex"
       if [[ "$plan" == "api" ]]; then
-        ui_kv "$name" "API · $(t "coût ce mois :") ${C_BOLD}\$${value}${C_RESET}"
+        ui_kv "$name" "API · $(t "cost this month:") ${C_BOLD}\$${value}${C_RESET}"
       elif [[ -n "$monthly" ]]; then
         pct="$(awk -v v="$value" -v m="$monthly" 'BEGIN { printf "%d", (m > 0 ? v / m * 100 : 0) }')"
-        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "valeur API ce mois :") ${C_BOLD}\$${value}${C_RESET} / \$${monthly} (${pct} %)"
+        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "API value this month:") ${C_BOLD}\$${value}${C_RESET} / \$${monthly} (${pct} %)"
       else
-        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "valeur API ce mois :") ${C_BOLD}\$${value}${C_RESET}"
+        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "API value this month:") ${C_BOLD}\$${value}${C_RESET}"
       fi
     done
-    if (( HAS_USAGE )); then ui_info "$(t "délégations et travail de Claude Code (orchestrateur, sous-agents), au prix public")"
-    else ui_info "$(t "valeurs issues des délégations journalisées (orchestrateur compté à partir de loomy 0.3, hooks Stop et SubagentStop)")"; fi
+    if (( HAS_USAGE )); then ui_info "$(t "delegations and Claude Code work (lead agent, sub-agents), at list price")"
+    else ui_info "$(t "values from logged delegations (lead agent counted from loomy 0.3 on, Stop and SubagentStop hooks)")"; fi
     ui_rail ""
-    ui_rail "${C_DIM}$(t "Dernières délégations")${C_RESET}"
+    ui_rail "${C_DIM}$(t "Latest delegations")${C_RESET}"
     fi
     n_shown="$(grep -c '"type":"delegation",' "$JOURNAL" || true)"; (( n_shown > last_n )) && n_shown=$last_n
     row=0
@@ -429,25 +429,25 @@ if [[ -s "$JOURNAL" ]]; then
     done
   fi
 else
-  ui_section "$(t "ACTIVITÉ")"
-  ui_info "$(t "aucune délégation pour l'instant")"
-  ui_rail "${C_DIM}  $(t "elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex")${C_RESET}"
+  ui_section "$(t "ACTIVITY")"
+  ui_info "$(t "no delegation yet")"
+  ui_rail "${C_DIM}  $(t "they show up here as soon as the lead agent hands a task to Claude or Codex")${C_RESET}"
 fi
 
 # ---------------------------------------------------------------- fichiers IA
 if [[ "$COMPACT" != "1" ]]; then
-ui_section "$(t "FICHIERS IA")" "$(privacy_label "$(privacy_mode "$ROOT")")"
+ui_section "$(t "AI FILES")" "$(privacy_label "$(privacy_mode "$ROOT")")"
 if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then
-  if ! privacy_companion_ready "$ROOT"; then ui_warn "$(t "dépôt privé absent sur cette machine")" "loomy privacy restore <$(t "compte/dépôt")>"
-  elif [[ "$(privacy_pending "$ROOT")" != "0" ]]; then ui_warn "$(t "%s changement(s) non sauvegardé(s) dans le dépôt privé" "$(privacy_pending "$ROOT")")" "loomy privacy sync"; fi
+  if ! privacy_companion_ready "$ROOT"; then ui_warn "$(t "private repository missing on this machine")" "loomy privacy restore <$(t "account/repo")>"
+  elif [[ "$(privacy_pending "$ROOT")" != "0" ]]; then ui_warn "$(t "%s unsaved change(s) in the private repository" "$(privacy_pending "$ROOT")")" "loomy privacy sync"; fi
 elif [[ "$(privacy_mode "$ROOT")" == "local" ]] && [[ -n "$(privacy_git_root "$ROOT")" ]] && ! privacy_excluded "$ROOT"; then
-  ui_warn "$(t "fichiers IA pas encore exclus sur cette machine")" "loomy privacy local"
+  ui_warn "$(t "AI files not excluded on this machine yet")" "loomy privacy local"
 fi
 check_file() {
   if [[ -e "$ROOT/$1" ]]; then ui_ok "$1" "${2:-}"; else ui_rail "${C_DIM}○ $1${C_RESET}"; fi
 }
 if [[ ! -e "$ROOT/AGENTS.md" && ! -e "$ROOT/CLAUDE.md" ]]; then
-  ui_rail "${C_DIM}$(t "créés par l'orchestrateur pendant la Construction : c'est normal qu'ils manquent avant")${C_RESET}"
+  ui_rail "${C_DIM}$(t "created by the lead agent during Build: it's normal for them to be missing before")${C_RESET}"
 fi
 check_file AGENTS.md
 check_file CLAUDE.md
@@ -458,12 +458,12 @@ check_file .ai/AI_ORCHESTRATION.md
 check_file .ai/AI_MODEL_ROUTING.md
 if [[ -d "$ROOT/.claude/agents" ]]; then
   agents="$(find "$ROOT/.claude/agents" -maxdepth 1 -name '*.md' -exec basename {} .md \; | sort | paste -sd ',' - | sed 's/,/, /g')"
-  ui_ok ".claude/agents/" "${agents:-$(t "vide")}"
+  ui_ok ".claude/agents/" "${agents:-$(t "empty")}"
 else
   ui_rail "${C_DIM}○ .claude/agents/${C_RESET}"
 fi
 if [[ -f "$ROOT/.ai/HANDOFF.md" ]]; then
-  ui_warn ".ai/HANDOFF.md" "$(t "passage de relais actif :") $(sed -n 's/^De *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1)"
+  ui_warn ".ai/HANDOFF.md" "$(t "active handoff:") $(sed -n 's/^De *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1)"
 fi
 
 fi
@@ -471,31 +471,31 @@ fi
 # ---------------------------------------------------------------- git
 ui_section "GIT"
 if [[ "$COMPACT" == "1" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "détachée")"
+  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
-  if [[ "$dirty" == "0" ]]; then ui_ok "$(t "%s propre" "$branch")" "${last:0:48}"; else ui_warn "$branch" "$(t "%s fichier(s) non commité(s)" "$dirty")"; fi
+  if [[ "$dirty" == "0" ]]; then ui_ok "$(t "%s clean" "$branch")" "${last:0:48}"; else ui_warn "$branch" "$(t "%s uncommitted file(s)" "$dirty")"; fi
 elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "détachée")"
+  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
-  if [[ "$dirty" == "0" ]]; then ui_ok "$(t "branche %s" "$branch")" "$(t "propre")"
-  else ui_warn "$(t "branche %s" "$branch")" "$(t "%s fichier(s) modifié(s) non commité(s)" "$dirty")"; fi
-  if [[ -n "$last" ]]; then ui_info "$(t "dernier commit : %s" "$last")"; else ui_info "$(t "aucun commit")"; fi
+  if [[ "$dirty" == "0" ]]; then ui_ok "$(t "branch %s" "$branch")" "$(t "clean")"
+  else ui_warn "$(t "branch %s" "$branch")" "$(t "%s modified file(s) not committed" "$dirty")"; fi
+  if [[ -n "$last" ]]; then ui_info "$(t "last commit: %s" "$last")"; else ui_info "$(t "no commit")"; fi
   upstream="$(git -C "$ROOT" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
   if [[ -n "$upstream" ]]; then
     counts="$(git -C "$ROOT" rev-list --left-right --count "HEAD...$upstream" 2>/dev/null || echo "0 0")"
     ahead="${counts%%[[:space:]]*}"; behind="${counts##*[[:space:]]}"
-    if [[ "$ahead" == "0" && "$behind" == "0" ]]; then ui_ok "$(t "synchronisé avec %s" "$upstream")"
-    else ui_warn "$upstream" "$(t "%s en avance · %s en retard" "$ahead" "$behind")"; fi
+    if [[ "$ahead" == "0" && "$behind" == "0" ]]; then ui_ok "$(t "in sync with %s" "$upstream")"
+    else ui_warn "$upstream" "$(t "%s ahead · %s behind" "$ahead" "$behind")"; fi
   else
     remote="$(git -C "$ROOT" remote 2>/dev/null | head -1)"
-    if [[ -n "$remote" ]]; then ui_info "$(t "remote %s configuré, pas de branche suivie" "$remote")"
-    else ui_info "$(t "aucun remote configuré")"; fi
+    if [[ -n "$remote" ]]; then ui_info "$(t "remote %s set, no tracked branch" "$remote")"
+    else ui_info "$(t "no remote set")"; fi
   fi
   wt="$(git -C "$ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ')"
-  if (( wt > 1 )); then ui_warn "$(t "%s worktree(s) parallèle(s)" "$(( wt - 1 ))")" "git worktree list"; fi
+  if (( wt > 1 )); then ui_warn "$(t "%s parallel worktree(s)" "$(( wt - 1 ))")" "git worktree list"; fi
 else
-  ui_info "$(t "pas de dépôt Git")"
+  ui_info "$(t "no Git repository")"
 fi
-[[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "démarrer ou reprendre : loomy start · suivi en direct : loomy watch")}"
+[[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "start or resume: loomy start · live tracking: loomy watch")}"

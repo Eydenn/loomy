@@ -1,0 +1,1027 @@
+# English<TAB>French. Keys are the English strings used in the code; compiled by tools/i18n-build.sh.
+⏎ ← back · q quit	⏎ ← retour · q quitter
+↑↓ space b scroll	↑↓ espace b défiler
+Ctrl-C to interrupt	Ctrl-C pour interrompre
+done in %s	terminé en %s
+recommended	recommandé
+question %s/%s	question %s/%s
+What it means	Ce que ça implique
+previous question	question précédente
+next:	ensuite :
+default	par défaut
+⏎ confirm   ⌫ clear	⏎ valider   ⌫ effacer
+↑↓ choose   ⏎ confirm   s default	↑↓ choisir   ⏎ valider   s défaut
+↑↓ choose   space toggle   ⏎ confirm	↑↓ choisir   espace cocher   ⏎ valider
+Quit	Quitter
+Choice	Choix
+What do you want to do?	Que veux-tu faire ?
+Help	Aide
+All commands.	Toutes les commandes.
+Closes Loomy.	Ferme Loomy.
+Welcome	Bienvenue
+no Loomy project in %s	aucun projet Loomy dans %s
+Creates the project folder (or uses this one), then the questionnaire and the lead agent.	Crée le dossier du projet (ou utilise celui-ci), puis le questionnaire et l'orchestrateur.
+Checks Claude Code, Codex, the models and the machine's prerequisites (fixes are done with loomy doctor --fix).	Vérifie Claude Code, Codex, les modèles et les prérequis de la machine (les corrections se font avec loomy doctor --fix).
+Create a project	Créer un projet
+Check the machine	Vérifier la machine
+Machine check	Diagnostic de la machine
+WHERE THE PROJECT STANDS	OÙ EN EST LE PROJET
+done	terminé
+day-to-day development	développement au quotidien
+Phase	Phase
+step %s of 10	étape %s sur 10
+open	ouverte
+since %s	depuis %s
+closed at %s	fermée à %s
+not opened yet	pas encore ouverte
+Your turn	À toi
+Models	Modèles
+new catalog from %s	nouveau catalogue du %s
+Open or resume the lead agent session	Ouvrir ou reprendre la session de l'orchestrateur
+Live tracking	Suivre en direct
+Detailed status	Statut détaillé
+Journal	Journal
+AI files visibility	Visibilité des fichiers IA
+loomy start: resumes this project's last session, or opens a new one at the right place.	loomy start : reprend la dernière session de ce projet, ou en ouvre une nouvelle au bon endroit.
+loomy watch: phases, running delegations and activity, live.	loomy watch : phases, délégations en cours et activité, en direct.
+loomy status: phases, brief, activity, costs, AI files and Git (here, without leaving home).	loomy status : phases, brief, activité, coûts, fichiers IA et Git (ici, sans quitter l'accueil).
+loomy log: phases, delegations, sessions and costs, in local time.	loomy log : phases, délégations, sessions et coûts, à l'heure locale.
+loomy privacy: AI files versioned, local or in a private repository.	loomy privacy : fichiers IA versionnés, locaux ou dans un dépôt privé.
+Brief	Brief
+Discovery	Découverte
+Interview	Entretien
+Proposal	Proposition
+Approval	Validation
+Build	Construction
+Verification	Vérification
+Documentation	Documentation
+Commit	Commit
+Wrap-up	Clôture
+Done	Terminé
+Not started	Non démarré
+The questionnaire is filled in; the lead agent hasn't started yet.	Le questionnaire est rempli ; l'orchestrateur n'a pas encore démarré.
+The lead agent reads the brief and explores the project folder.	L'orchestrateur lit le brief et explore le dossier du projet.
+The lead agent asks the questions the brief still lacks.	L'orchestrateur pose les questions qui manquent encore au brief.
+The lead agent presents the stack, the repository layout and the plan.	L'orchestrateur présente la stack, la structure du dépôt et le plan.
+The lead agent waits for your go-ahead before creating anything.	L'orchestrateur attend ton feu vert avant de créer quoi que ce soit.
+The lead agent sets up the project and delegates to dedicated roles.	L'orchestrateur met en place le projet et délègue aux rôles dédiés.
+Tests, cross review and security checks of the delivered work.	Tests, relecture croisée et contrôles de sécurité du travail livré.
+Writing PROJECT.md, ARCHITECTURE.md and the .ai/ rules.	Rédaction de PROJECT.md, ARCHITECTURE.md et des règles .ai/.
+Initial commit, if you allowed it in the questionnaire.	Commit initial, si tu l'as autorisé dans le questionnaire.
+START.md is archived or deleted: the bootstrap is ending.	START.md est archivé ou supprimé : le bootstrap se termine.
+The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md.	Le projet est initialisé ; l'orchestrateur suit maintenant AGENTS.md et CLAUDE.md.
+No phase recorded yet.	Aucune phase enregistrée pour l'instant.
+start the lead agent with loomy start.	lance l'orchestrateur avec loomy start.
+nothing for now; keep its session open.	rien pour l'instant ; garde sa session ouverte.
+answer its questions in its session.	réponds à ses questions dans sa session.
+read the proposal, ask your questions.	lis la proposition, pose tes questions.
+approve the proposal or ask for changes in its session.	valide la proposition ou demande des changements dans sa session.
+follow the delegations here; the agent will ask you if a choice comes up.	suis les délégations ici ; l'agent te sollicite si un choix se présente.
+look at the review findings it reports.	regarde les constats de relecture qu'il te remonte.
+review PROJECT.md and ARCHITECTURE.md when it points you to them.	relis PROJECT.md et ARCHITECTURE.md quand il te les signale.
+check the proposed commit (git log, git show).	vérifie le commit proposé (git log, git show).
+nothing; the bootstrap is almost over.	rien ; le bootstrap est presque fini.
+ask the lead agent for your changes (loomy start opens its session).	demande tes évolutions à l'orchestrateur (loomy start ouvre sa session).
+loomy start to open the lead agent session.	loomy start pour ouvrir la session de l'orchestrateur.
+reopen the lead agent session with loomy start; it will resume at this phase.	rouvre la session de l'orchestrateur avec loomy start ; il reprendra à cette phase.
+open the lead agent session with loomy start.	ouvre la session de l'orchestrateur avec loomy start.
+Unknown argument: %s	Argument inconnu : %s
+-n: a number	-n : un nombre
+--since: a YYYY-MM-DD date	--since : une date AAAA-MM-JJ
+No journal in this project (%s).	Aucun journal dans ce projet (%s).
+starts	démarre
+in 	en 
+failed after 	échec après 
+Bootstrap done	Bootstrap terminé
+reply(ies)	réponse(s)
+sub-agent	sous-agent
+Session opened	Session ouverte
+Session closed	Session fermée
+Unknown phase: "%s". Phases: %s	Phase inconnue : « %s ». Phases : %s
+Phase recorded: %s (%s)	Phase enregistrée : %s (%s)
+Web app / SaaS	Application web / SaaS
+API / backend	API / backend
+Mobile app	Application mobile
+Desktop app	Application desktop
+CLI / library	CLI / bibliothèque
+AI / LLM app	Application IA / LLM
+Prototype	Prototype
+Other	Autre
+MVP	MVP
+Production	Production
+Thrifty	Économe
+Balanced	Équilibré
+Max quality	Qualité max
+Codex	Codex
+Claude Code	Claude Code
+yes	oui
+no	non
+Project ready	Projet prêt
+Bootstrap done: what comes next happens with the lead agent (loomy start).	Bootstrap terminé : la suite se passe avec l'orchestrateur (loomy start).
+Delegation failed	Délégation en échec
+See the details in loomy watch (key l) or loomy log.	Voir le détail dans loomy watch (touche l) ou loomy log.
+Lead agent session closed	Session de l'orchestrateur fermée
+Bootstrap in progress: loomy start to resume it.	Bootstrap en cours : loomy start pour la reprendre.
+quit	quitter
+full view	vue complète
+compact view	vue resserrée
+status	statut
+journal	journal
+session	session
+live tracking	suivi en direct
+scroll	défiler
+Project status	Statut du projet
+Loomy scripts copied into this project (before 0.3)	scripts Loomy copiés dans ce projet (avant la 0.3)
+once and for all: loomy init --update	une fois pour toutes : loomy init --update
+Loomy %s installed, older than this project (%s)	Loomy %s installé, plus ancien que ce projet (%s)
+JOURNAL	JOURNAL
+latest events, local time	derniers événements, heure locale
+journal empty for now	journal vide pour l'instant
+full journal: loomy log	journal complet : loomy log
+bootstrap done	bootstrap terminé
+START.md present but brief empty: run loomy brief	START.md présent mais brief vide : lance loomy brief
+no Loomy project here: run loomy init	aucun projet Loomy ici : lance loomy init
+new phase	nouvelle phase
+bootstrap in %s	bootstrap en %s
+%s delegation(s)	%s délégation(s)
+Your turn:	À toi :
+Lead agent session open since %s	Session de l'orchestrateur ouverte depuis %s
+Lead agent session closed at %s (%s) → loomy start to resume it	Session de l'orchestrateur fermée à %s (%s) → loomy start pour la reprendre
+No lead agent session recorded → loomy start	Aucune session de l'orchestrateur enregistrée → loomy start
+Name	Nom
+Risk	Risque
+AI mode	Mode IA
+auto commit: %s · auto push: %s	commit auto : %s · push auto : %s
+ACTIVITY	ACTIVITÉ
+longer than usual (~%s)	plus long que d'habitude (~%s)
+first time for this role	première fois pour ce rôle
+running	en cours
+Lead agent	Orchestrateur
+%s reply(ies) · cost %s	%s réponse(s) · coût %s
+measured	mesuré
+Sub-agents	Sous-agents
+%s · cost %s	%s · coût %s
+no finished delegation yet	aucune délégation terminée pour l'instant
+they show up here as soon as the lead agent hands a task to Claude or Codex	elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex
+Delegations	Délégations
+%s failed	%s en échec
+cost this month:	coût ce mois :
+API value this month:	valeur API ce mois :
+delegations and Claude Code work (lead agent, sub-agents), at list price	délégations et travail de Claude Code (orchestrateur, sous-agents), au prix public
+values from logged delegations (lead agent counted from loomy 0.3 on, Stop and SubagentStop hooks)	valeurs issues des délégations journalisées (orchestrateur compté à partir de loomy 0.3, hooks Stop et SubagentStop)
+Latest delegations	Dernières délégations
+no delegation yet	aucune délégation pour l'instant
+AI FILES	FICHIERS IA
+private repository missing on this machine	dépôt privé absent sur cette machine
+account/repo	compte/dépôt
+%s unsaved change(s) in the private repository	%s changement(s) non sauvegardé(s) dans le dépôt privé
+AI files not excluded on this machine yet	fichiers IA pas encore exclus sur cette machine
+created by the lead agent during Build: it's normal for them to be missing before	créés par l'orchestrateur pendant la Construction : c'est normal qu'ils manquent avant
+empty	vide
+active handoff:	passage de relais actif :
+detached	détachée
+%s clean	%s propre
+%s uncommitted file(s)	%s fichier(s) non commité(s)
+branch %s	branche %s
+clean	propre
+%s modified file(s) not committed	%s fichier(s) modifié(s) non commité(s)
+last commit: %s	dernier commit : %s
+no commit	aucun commit
+in sync with %s	synchronisé avec %s
+%s ahead · %s behind	%s en avance · %s en retard
+remote %s set, no tracked branch	remote %s configuré, pas de branche suivie
+no remote set	aucun remote configuré
+%s parallel worktree(s)	%s worktree(s) parallèle(s)
+no Git repository	pas de dépôt Git
+start or resume: loomy start · live tracking: loomy watch	démarrer ou reprendre : loomy start · suivi en direct : loomy watch
+API (pay as you go)	API (paiement à l'usage)
+Claude Pro	Claude Pro
+Claude Max 5x	Claude Max 5x
+Claude Max 20x	Claude Max 20x
+Claude Team	Claude Team
+Claude Enterprise	Claude Enterprise
+ChatGPT Plus	ChatGPT Plus
+ChatGPT Business	ChatGPT Business
+ChatGPT Enterprise	ChatGPT Enterprise
+not set	non renseigné
+Lead agent (orchestrator)	Orchestrateur (lead)
+Architect	Architecte
+Debugger	Débogueur
+Security	Sécurité
+Reviewer	Relecteur
+Developer	Développeur
+Executor	Exécutant
+Explorer	Explorateur
+Documenter	Documentaliste
+plan, breakdown, delegation, decisions, integration, final check	plan, découpage, délégation, décisions, intégration, vérification finale
+architecture, specs, ADRs, trade-offs	architecture, specs, ADR, arbitrages
+hard bugs, long terminal tasks, migrations	bugs difficiles, tâches longues en terminal, migrations
+targeted security review (auth, payments, data, secrets)	revue sécurité ciblée (auth, paiements, données, secrets)
+diff review: regressions, edge cases, missing tests	revue de diff : régressions, cas limites, tests manquants
+everyday features and fixes within a given scope	features et correctifs courants dans un périmètre donné
+precise, bounded tickets, tests, bulk changes	tickets précis et bornés, tests, modifications en masse
+code search, mapping, summaries, logs	recherche dans le code, cartographie, résumés, logs
+README, docs, changelogs	README, docs, changelogs
+Full Claude Code	Full Claude Code
+Full Codex	Full Codex
+Hybrid, Claude Code lead	Hybride, lead Claude Code
+Hybrid, Codex lead	Hybride, lead Codex
+local only	locaux uniquement
+separate private repository	dépôt privé séparé
+versioned with the project	versionnés avec le projet
+fast and thrifty: often enough to orchestrate	rapide et économe : suffit souvent pour orchestrer
+good speed / reasoning trade-off	bon compromis vitesse / réflexion
+deeper reasoning, slower and costlier	réflexion poussée, plus lent et plus coûteux
+very deep: tricky decisions	très poussé : décisions délicates
+maximum: slow and costly, for hard cases	maximum : lent et coûteux, pour les cas difficiles
+%s profile	profil %s
+set for this project	réglé pour ce projet
+applied at the next loomy start (and by the next delegations) · back to the profile: %s	pris en compte au prochain loomy start (et par les délégations suivantes) · retour au profil : %s
+Usage: loomy effort [<role>] [low|medium|high|xhigh|max|--reset]	Usage : loomy effort [<rôle>] [low|medium|high|xhigh|max|--reset]
+Unknown role: %s (%s)	Rôle inconnu : %s (%s)
+set: loomy effort [<role>] <level>	régler : loomy effort [<rôle>] <niveau>
+Efforts back to the profile's	Efforts revenus à ceux du profil
+all roles	tous les rôles
+%s effort back to the profile's	Effort de %s revenu à celui du profil
+set: loomy effort <low|medium|high|xhigh|max>	régler : loomy effort <low|medium|high|xhigh|max>
+Back to the profile	Revenir au profil
+Removes the setting: the effort follows the brief's profile (%s).	Supprime le réglage : l'effort suit le profil du brief (%s).
+Lead agent effort (%s)?	Effort de l'orchestrateur (%s) ?
+Unknown level: %s (%s)	Niveau inconnu : %s (%s)
+%s effort set	Effort de %s réglé
+Feedback	Retour
+to be completed	à compléter
+Context (attached by loomy feedback, anonymized)	Contexte (joint par loomy feedback, anonymisé)
+System	Système
+Project	Projet
+profile	profil
+ai_files	fichiers IA
+Project's Loomy	Loomy du projet
+Latest journal events (without task text)	Derniers événements du journal (sans le texte des tâches)
+Feedback on Loomy	Retour sur Loomy
+GitHub issue on %s · nothing is sent without your approval	issue GitHub sur %s · rien n'est envoyé sans ton accord
+A bug, an annoyance, an idea: what happened, and what you expected.	Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais.
+Your feedback, in one or two sentences	Ton retour, en une ou deux phrases
+E.g.: loomy watch doesn't see my Codex session	Ex. : loomy watch ne voit pas ma session Codex
+nothing to send	rien à envoyer
+Feedback:	Retour :
+PREVIEW	APERÇU
+issue text	texte de l'issue
+Create the issue now	Créer l'issue maintenant
+gh issue create on %s, with this title and text.	gh issue create sur %s, avec ce titre et ce texte.
+Open it in the browser	L'ouvrir dans le navigateur
+Prefilled GitHub form: you review and submit it yourself.	Formulaire GitHub pré-rempli : tu relis et tu envoies toi-même.
+Copy the text	Copier le texte
+To the clipboard, to paste wherever you want.	Dans le presse-papiers, à coller où tu veux.
+Cancel	Annuler
+Nothing is sent.	Rien n'est envoyé.
+Sending	Envoi
+What to do with this feedback?	Que faire de ce retour ?
+Issue created	Issue créée
+Issue not created	Issue non créée
+Form opened in the browser	Formulaire ouvert dans le navigateur
+Text copied	Texte copié
+title: %s	titre : %s
+Clipboard unavailable	Presse-papiers indisponible
+nothing was sent	rien n'a été envoyé
+thanks! feedback tracking: %s	merci ! suivi des retours : %s
+Unknown argument: %s (loomy privacy --help)	Argument inconnu : %s (loomy privacy --help)
+No Loomy project in %s: loomy init first (or loomy privacy restore <account/repo> to recover its AI files).	Pas de projet Loomy dans %s : loomy init d'abord (ou loomy privacy restore <compte/dépôt> pour récupérer ses fichiers IA).
+Can't create the private repository %s	Impossible de créer le dépôt privé %s
+gh missing or not logged in: gh auth login, or give an existing repository with --remote URL	gh absent ou non connecté : gh auth login, ou indique un dépôt existant avec --remote URL
+GitHub account not found	Compte GitHub introuvable
+gh auth login	gh auth login
+Private repository	Dépôt privé
+Private GitHub repository that will only hold the AI files.	Dépôt GitHub privé qui ne contiendra que les fichiers IA.
+Private repository name (%s/…)	Nom du dépôt privé (%s/…)
+repository %s already exists: used as is	dépôt %s déjà présent : utilisé tel quel
+Private repository creation failed	Création du dépôt privé échouée
+Private repository created	Dépôt privé créé
+No private repository for this project	Pas de dépôt privé pour ce projet
+loomy privacy private	loomy privacy private
+no AI file to back up	aucun fichier IA à sauvegarder
+The AI files changed on both sides	Les fichiers IA ont changé des deux côtés
+resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main	résous à la main : git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main
+Push to the private repository failed	Envoi vers le dépôt privé échoué
+AI files backed up	Fichiers IA sauvegardés
+Still tracked by the project repository	Encore suivis par le dépôt du projet
+to stop tracking them (they stay on your disk):	pour arrêter de les suivre (ils restent sur ton disque) :
+what was already pushed stays in the repository history	ce qui a déjà été envoyé reste dans l'historique du dépôt
+the private repository (.loomy/ai.git) stays in place; it's no longer updated	le dépôt privé (.loomy/ai.git) reste en place ; il n'est plus mis à jour
+no Git repository yet: loomy privacy %s will set the exclusion once the repository exists	pas encore de dépôt Git : l'exclusion sera posée par loomy privacy %s une fois le dépôt créé
+Mode	Mode
+Git repository	Dépôt Git
+none	aucun
+Exclusion	Exclusion
+active	active
+.git/info/exclude, specific to this machine	.git/info/exclude, propre à cette machine
+not set on this machine	absente sur cette machine
+Backup	Sauvegarde
+up to date	à jour
+%s change(s) to back up	%s changement(s) à sauvegarder
+missing on this machine	absent sur cette machine
+loomy privacy restore <account/repo>, or loomy privacy private to create it	loomy privacy restore <compte/dépôt>, ou loomy privacy private pour le créer
+CHANGE	CHANGER
+versioned with the project (private repository: recommended)	versionnés avec le projet (dépôt privé : recommandé)
+never pushed to GitHub, specific to this machine	jamais envoyés sur GitHub, propres à cette machine
+outside the project repository, backed up in a private repository (public repository: recommended)	hors du dépôt du projet, sauvegardés dans un dépôt privé (dépôt public : recommandé)
+GitHub doesn't handle visibility file by file: a repository is entirely public or private	GitHub ne gère pas la visibilité fichier par fichier : un dépôt est entièrement public ou privé
+MODE	MODE
+mode unchanged: %s	mode inchangé : %s
+Mode saved	Mode enregistré
+in .loomy/brief.md	dans .loomy/brief.md
+status: loomy privacy	état : loomy privacy
+backup: loomy privacy sync	sauvegarde : loomy privacy sync
+This project doesn't use a separate private repository (mode: %s).	Ce projet n'utilise pas de dépôt privé séparé (mode : %s).
+Usage: loomy privacy restore <URL | account/repo>	Usage : loomy privacy restore <URL | compte/dépôt>
+The private repository is already here (.loomy/ai.git): loomy privacy sync	Le dépôt privé est déjà présent (.loomy/ai.git) : loomy privacy sync
+Can't clone: %s	Clonage impossible : %s
+Can't restore: %s	Restauration impossible : %s
+%s different local file(s) set aside	%s fichier(s) local(aux) différent(s) mis de côté
+AI files recovered	Fichiers IA récupérés
+Unknown environment: %s	Environnement inconnu : %s
+Unknown profile: %s	Profil inconnu : %s
+Unknown role: "%s"	Rôle inconnu : « %s »
+Model routing	Routage des modèles
+catalog from %s	catalogue du %s
+Fallback	Repli
+ROLES	RÔLES
+model · effort · how to call it	modèle · effort · comment l'appeler
+colors:	couleurs :
+top	pointe
+standard	standard
+fast	rapide
+START THE LEAD AGENT	LANCER L'ORCHESTRATEUR
+compare environments: loomy route all · other profile: loomy route --profile qualite	comparer les environnements : loomy route all · autre profil : loomy route --profile qualite
+%s mode requested but %s is missing: falling back to full %s	mode %s demandé mais %s est absent : repli full %s
+%s lead missing: falling back to full %s	lead %s absent : repli full %s
+no AI CLI detected: theoretical matrix	aucune CLI IA détectée : matrice théorique
+No Loomy brief in %s: run loomy init first (new project) or loomy brief.	Pas de brief Loomy dans %s : lancez d'abord loomy init (nouveau projet) ou loomy brief.
+bootstrap start	démarrage du bootstrap
+Resume this project's setup by following START.md, where it stopped: phase "%s". First run .loomy/scripts/ai-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on.	Reprends l'initialisation de ce projet en suivant START.md, là où elle s'est arrêtée : phase « %s ». Lance d'abord .loomy/scripts/ai-context.sh pour le contexte (phase, attentes, dernières délégations). Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer.
+resuming at phase %s	reprise à la phase %s
+Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .ai/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.	Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh.
+everyday work (bootstrap done)	travail courant (bootstrap terminé)
+Start or resume	Démarrer ou reprendre
+a previous session exists on this machine	une session précédente existe sur cette machine
+no previous session on this machine	aucune session précédente sur cette machine
+%s missing from Codex's local catalog	%s absent du catalogue local de Codex
+update the Loomy catalog (loomy update --catalog) or Codex, then loomy doctor --live	mets à jour le catalogue Loomy (loomy update --catalog) ou Codex, puis loomy doctor --live
+%s not found	%s introuvable
+install it: %s	installez-le : %s
+full check: loomy doctor	diagnostic complet : loomy doctor
+live tracking in the right tmux pane, closed with the session	suivi en direct dans le panneau tmux de droite, fermé avec la session
+live tracking in the bottom tmux pane, closed with the session	suivi en direct dans le panneau tmux du bas, fermé avec la session
+live tracking in the next iTerm2 pane, closed with the session	suivi en direct dans le panneau iTerm2 voisin, fermé avec la session
+This project's agent and tracking already run in a tmux session: you get it back as is, in this terminal.	L'agent et le suivi de ce projet tournent déjà dans une session tmux : tu la retrouves telle quelle, dans ce terminal.
+Opens a second session next to the first (two agents on the same folder: avoid unless you really need it).	Ouvre une seconde session, à côté de la première (deux agents sur le même dossier : à éviter sauf besoin précis).
+Starts nothing.	Ne lance rien.
+A Loomy session is already open for this project. What now?	Une session Loomy est déjà ouverte pour ce projet. Que faire ?
+Join it	La rejoindre
+Open another one	En ouvrir une autre
+back in the open session · click or Ctrl-b + arrow to switch panes	retour dans la session ouverte · clic ou Ctrl-b + flèche pour changer de panneau
+nothing was started	rien n'a été lancé
+opening %s and live tracking, side by side (tmux) · click or Ctrl-b + arrow to switch panes	ouverture de %s et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau
+live tracking in a new Terminal window, closed with the session	suivi en direct dans une nouvelle fenêtre Terminal, fermée avec la session
+side-by-side tracking unavailable here (brew install tmux): run loomy watch in another terminal	suivi côte à côte indisponible ici (brew install tmux) : lance loomy watch dans un autre terminal
+COMMANDS	COMMANDES
+to run at the project root	à lancer à la racine du projet
+resume:	reprendre :
+new:   	nouvelle  :
+then paste the prompt:	puis colle le prompt :
+prompt copied to the clipboard	prompt copié dans le presse-papiers
+the Claude app (Code tab)	l'app Claude (onglet Code)
+the Codex app	l'app Codex
+in the app:	dans l'app :
+open this folder in %s, model %s, effort %s, then paste the prompt	ouvre ce dossier dans %s, modèle %s, effort %s, puis colle le prompt
+Resume the last session	Reprendre la dernière session
+Resumes this folder's latest conversation, with its history: %s	Reprend la conversation la plus récente de ce dossier, avec son historique : %s
+New session	Nouvelle session
+Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state.	Ouvre %s avec le prompt de %s. L'agent relit START.md, le brief et l'état du projet.
+Show the commands	Afficher les commandes
+Opens nothing: shows the commands and copies the prompt, so you run them yourself.	N'ouvre rien : affiche les commandes et copie le prompt, pour les lancer toi-même.
+live tracking: loomy watch	suivi en direct : loomy watch
+No session to resume	Aucune session à reprendre
+opening a new session	ouverture d'une nouvelle session
+first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)	premier lancement de Codex dans ce projet : accepte de faire confiance au dossier, puis approuve les hooks Loomy (reprise automatique)
+live tracking in another terminal: loomy watch (or loomy start --watch)	suivi en direct dans un autre terminal : loomy watch (ou loomy start --watch)
+opening %s…	ouverture de %s…
+Set up this project by strictly following START.md. The starting brief is in .loomy/brief.md: use it as answers already given, confirm it and only ask the missing questions. You are the lead agent: delegate each role according to .loomy/scripts/ai-route.sh. Stay in analysis/plan mode until I approve.	Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation.
+Codex leads; delegate architecture, security and hard debugging to Claude via delegate-to-claude.sh, only when it adds real value.	Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur.
+Claude Code leads; delegate bounded execution and cross review to Codex via delegate-to-codex.sh.	Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh.
+Set up the HYBRID Codex + Claude Code mode without multiplying agents.	Configure le mode HYBRID Codex + Claude Code sans multiplier les agents.
+Plan the PARALLEL mode with separate worktrees and a clear split of responsibilities.	Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités.
+fix: %s	correction : %s
+Runs: %s	Exécute : %s
+No change.	Aucune modification.
+Yes	Oui
+No	Non
+Fixed	Corrigé
+The fix failed	La correction a échoué
+install:	installer :
+or:     	ou        :
+then:   	puis      :
+Diagnostics	Diagnostic
+Prerequisites, models and fixes	Prérequis, modèles et corrections
+LOOMY	LOOMY
+installs found in the PATH	installations trouvées dans le PATH
+SYSTEM	SYSTÈME
+required — https://git-scm.com/downloads	requis — https://git-scm.com/downloads
+AI CLIS	CLI IA
+at least one required; ideal: both, for hybrid mode	au moins une requise ; idéal : les deux, pour le mode hybride
+Checking Claude Code	Vérification de Claude Code
+too old for %s (≥ %s)	trop ancien pour %s (≥ %s)
+Update Claude Code?	Mettre à jour Claude Code ?
+Claude Code up to date	Claude Code à jour
+Claude Code missing: %s lead agent and hybrid mode unavailable	Claude Code absent : orchestrateur sur %s et mode hybride indisponibles
+log in on first launch	connexion au premier lancement
+Install Claude Code now (official installer)?	Installer Claude Code maintenant (installateur officiel) ?
+open a new terminal, run claude to log in, then run loomy doctor again	ouvre un nouveau terminal, lance claude pour te connecter, puis relance loomy doctor
+Checking Codex	Vérification de Codex
+found in %s but not in the PATH	trouvé dans %s mais absent du PATH
+Make the Codex CLI reachable (small ~/.local/bin/codex script)?	Rendre la CLI Codex accessible (petit script ~/.local/bin/codex) ?
+%s not in the PATH	%s absent du PATH
+add:	ajoutez :
+older than the validated version (%s) — update the ChatGPT/Codex app	version antérieure à celle validée (%s) — mettez à jour l'app ChatGPT/Codex
+Codex up to date	Codex à jour
+not logged in — run: codex login	non connecté — lancez : codex login
+Codex logged in	Codex connecté
+Codex models	modèles Codex
+%s available	%s disponibles
+missing from the local catalog: %s (plan, region or CLI to update)	absents du catalogue local : %s (plan, région ou CLI à mettre à jour)
+Codex CLI missing: %s executor and hybrid mode unavailable	Codex CLI absent : exécutant %s et mode hybride indisponibles
+Install the Codex CLI now (official installer)?	Installer la CLI Codex maintenant (installateur officiel) ?
+open a new terminal, run codex to log in, then run loomy doctor again	ouvre un nouveau terminal, lance codex pour te connecter, puis relance loomy doctor
+No AI CLI	Aucune CLI IA
+install Claude Code or Codex (minimum required)	installez Claude Code ou Codex (minimum requis)
+COMFORT	CONFORT
+optional	facultatif
+gh missing	gh absent
+useful to create GitHub repositories and install Loomy from the private tap	utile pour créer les dépôts GitHub et installer Loomy depuis le tap privé
+Install gh (brew install gh)?	Installer gh (brew install gh) ?
+GitHub login (gh)	Connexion GitHub (gh)
+not logged in to GitHub	non connecté à GitHub
+Log in to GitHub now (gh auth login)?	Te connecter à GitHub maintenant (gh auth login) ?
+logged in to GitHub	connecté à GitHub
+Git access to the Loomy repository	Accès de git au dépôt Loomy
+git → Loomy repository	git → dépôt Loomy
+access denied: git doesn't authenticate with GitHub (or the invitation isn't accepted yet)	accès refusé : git ne s'authentifie pas auprès de GitHub (ou invitation pas encore acceptée)
+Set git up to use your gh account (gh auth setup-git)?	Configurer git pour utiliser ton compte gh (gh auth setup-git) ?
+repository invitation: %s	invitation au dépôt : %s
+git access to the Loomy repository	accès git au dépôt Loomy
+access checked (Homebrew updates possible)	accès vérifié (mises à jour Homebrew possibles)
+gh logged in	gh connecté
+clipboard	presse-papiers
+automatic copy of the start prompt	copie automatique du prompt de démarrage
+clipboard unavailable (wl-copy or xclip on Linux)	presse-papiers indisponible (wl-copy ou xclip sous Linux)
+PREFERENCES	PRÉFÉRENCES
+loomy config	loomy config
+month	mois
+CATALOG	CATALOGUE
+models and prices	modèles et prix
+it's %s days old: loomy update --catalog	il a %s jours : loomy update --catalog
+loomy update --catalog	loomy update --catalog
+unavailable here (fallback used): %s · to retest: loomy doctor --live	indisponibles ici (repli utilisé) : %s · à retester : loomy doctor --live
+ROUTING	ROUTAGE
+lead agent: %s (%s) · details: loomy route	orchestrateur : %s (%s) · détail : loomy route
+LIVE MODEL TEST	TEST RÉEL DES MODÈLES
+every catalog model for each installed CLI (one low-effort "OK" per model)	tous les modèles du catalogue pour chaque CLI installée (un « OK » en effort bas par modèle)
+Testing %s	Test de %s
+answers	répond
+failed	échec
+not used by the current routing	non utilisé par le routage actuel
+SUMMARY	BILAN
+Ideal setup	Configuration idéale
+everything is in place	tout est en place
+Minimum met	Minimum atteint
+for the ideal: %s	pour l'idéal : %s
+Minimum not met	Minimum non atteint
+fix the ✗ items above	corrigez les points ✗ ci-dessus
+built-in	intégré
+downloaded	téléchargé
+Claude plan	Forfait Claude
+Codex plan	Forfait Codex
+guided fixes: loomy doctor --fix	corrections guidées : loomy doctor --fix
+live model test: loomy doctor --live · guided fixes: loomy doctor --fix	test réel des modèles : loomy doctor --live · corrections guidées : loomy doctor --fix
+Error: unknown option %s	Erreur : option inconnue %s
+New project	Nouveau projet
+current folder: %s	dossier courant : %s
+PROJECT	PROJET
+It names the project and, if you create a folder, the folder too.	Il sert de nom au projet et, si tu crées un dossier, de nom de dossier.
+Project name	Nom du projet
+New folder ./%s	Nouveau dossier ./%s
+Creates %s and installs Loomy there.	Crée %s et y installe Loomy.
+Current folder (%s)	Dossier courant (%s)
+Installs Loomy here: for an empty folder or an existing project to standardize.	Installe Loomy ici : pour un dossier vide ou un projet existant à standardiser.
+Somewhere else…	Autre emplacement…
+You give the folder path; it's created if it doesn't exist.	Tu indiques le chemin du dossier ; il est créé s'il n'existe pas.
+Folder	Dossier
+Where to create the project?	Où créer le projet ?
+Path	Chemin
+Project folder path	Chemin du dossier du projet
+installing Loomy in %s…	installation de Loomy dans %s…
+Error: %s isn't a project folder. Give the folder to create: loomy init my-project	Erreur : %s n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet
+Error: the folder doesn't exist: %s	Erreur : le dossier n'existe pas : %s
+Error: can't create the folder %s	Erreur : impossible de créer le dossier %s
+existing .codex/hooks.json left unchanged	.codex/hooks.json existant non modifié
+add the Loomy hooks to it by hand (see .loomy/scripts/ai-context.sh)	ajoute-y les hooks Loomy à la main (voir .loomy/scripts/ai-context.sh)
+existing .claude/settings.json left unchanged	.claude/settings.json existant non modifié
+add the hooks from .loomy/claude-hooks.json to it	ajoute-y les hooks de .loomy/claude-hooks.json
+Error: %s exists but doesn't come from Loomy (no .loomy folder). Refusing to overwrite.	Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé.
+Loomy updated in the project	Loomy mis à jour dans le projet
+brief, phase and journal kept	brief, phase et journal conservés
+Bootstrap reset	Bootstrap réinitialisé
+START.md copied again, phase reset; previous brief: .loomy/brief.previous.md	START.md recopié, phase remise à zéro ; ancien brief : .loomy/brief.previous.md
+Files already created by the agent kept	Fichiers déjà créés par l'agent conservés
+AGENTS.md, CLAUDE.md, PROJECT.md… the lead agent will pick them up	AGENTS.md, CLAUDE.md, PROJECT.md… l'orchestrateur les reprendra
+Project already set up	Projet déjà initialisé
+STATE	ÉTAT
+v%s in the project · v%s installed	v%s dans le projet · v%s installé
+in progress · phase %s	en cours · phase %s
+Different project version	Version du projet différente
+the update keeps your brief, phase and journal	la mise à jour garde ton brief, ta phase et ton journal
+WHAT NOW?	QUE FAIRE ?
+resume the lead agent session	reprendre la session de l'orchestrateur
+update the project's Loomy files	mettre à jour les fichiers Loomy du projet
+redo the questionnaire	refaire le questionnaire
+reset the bootstrap	réinitialiser le bootstrap
+nothing was changed	rien n'a été modifié
+Resume the lead agent session	Reprendre la session de l'orchestrateur
+Opens loomy start: resumes this folder's last session, or opens a new one at the right point of the project.	Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.
+Update Loomy in this project (v%s → v%s)	Mettre à jour Loomy dans ce projet (v%s → v%s)
+Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.	Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.
+Reinstall the project's Loomy files	Réinstaller les fichiers Loomy du projet
+Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.	Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.
+Redo the questionnaire	Refaire le questionnaire
+Your current answers are the defaults; the brief is only replaced after confirmation.	Tes réponses actuelles servent de valeurs par défaut ; le brief n'est remplacé qu'après confirmation.
+Reset the project	Réinitialiser le projet
+Starts the bootstrap over: START.md copied again, phase reset, questionnaire run again. Files already created by the agent stay.	Repart du début du bootstrap : START.md recopié, phase remise à zéro, questionnaire relancé. Les fichiers déjà créés par l'agent restent.
+Create a new project in a subfolder	Créer un nouveau projet dans un sous-dossier
+This folder is itself a Loomy project: creates a new project next to it, in ./<project-name>.	Ce dossier est lui-même un projet Loomy : crée un nouveau projet à côté, dans ./<nom-du-projet>.
+Changes nothing.	Ne modifie rien.
+opening loomy start…	ouverture de loomy start…
+It also names the folder created here.	Il donne aussi le nom du dossier créé ici.
+New project name	Nom du nouveau projet
+my-project	mon-projet
+creating ./%s…	création de ./%s…
+Starts again from the Brief phase. Nothing is deleted apart from .loomy/state.	Repart de la phase Brief. Rien n'est supprimé en dehors de .loomy/state.
+Confirmation	Confirmation
+Reset this project's bootstrap?	Réinitialiser le bootstrap de ce projet ?
+Yes, reset	Oui, réinitialiser
+resume: loomy start · tracking: loomy watch	reprendre : loomy start · suivi : loomy watch
+questionnaire…	questionnaire…
+questionnaire (your previous answers are the defaults)…	questionnaire (tes anciennes réponses servent de valeurs par défaut)…
+fill in the brief: loomy brief · then: loomy start	remplis le brief : loomy brief · puis : loomy start
+Error: no Loomy project in %s to update. Run loomy init to create it.	Erreur : pas de projet Loomy dans %s à mettre à jour. Lancez loomy init pour le créer.
+Loomy installed	Loomy installé
+Non-interactive terminal	Terminal non interactif
+questionnaire skipped	questionnaire ignoré
+NEXT STEP	ÉTAPE SUIVANTE
+Fill in the project brief:	Remplis le brief du projet :
+Start the lead agent:	Lance l'orchestrateur :
+START.md, .loomy/ and one .gitignore line added; nothing else is changed	START.md, .loomy/ et une ligne de .gitignore ajoutés ; rien d'autre n'est modifié
+used by the loomy command	utilisée par la commande loomy
+hidden by another one in the PATH	masquée par une autre dans le PATH
+other install	autre installation
+to remove it:	pour la retirer :
+loomy not in the PATH	loomy absent du PATH
+install: see the README	installation : voir le README
+several installs: keep only one to avoid mixed versions	plusieurs installations : garde-en une seule pour éviter les versions mélangées
+Starts and structures your projects with Codex and Claude Code	Démarre et structure tes projets avec Codex et Claude Code
+questionnaire	questionnaire
+agent-ready structure	structure prête pour les agents
+lead agent and dedicated roles	orchestrateur et rôles dédiés
+Usage: loomy <command> [arguments] · loomy alone: project home	Usage : loomy <commande> [arguments] · loomy seul : accueil du projet
+[folder] [options]	[dossier] [options]
+Creates or sets up a project, new or existing (offers to create the folder from the project name): questionnaire, then structure set up by the lead agent. Project already set up: resume, --update, --reset	Crée ou initialise un projet, nouveau ou existant (propose de créer le dossier d'après le nom du projet) : questionnaire, puis structure mise en place par l'orchestrateur. Projet déjà initialisé : reprendre, --update, --reset
+Runs the current project's questionnaire again	Relance le questionnaire du projet courant
+Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside	Démarre ou reprend la session de l'orchestrateur, au bon endroit du projet (session fermée ? c'est ici) ; --watch ouvre le suivi en direct à côté
+[<role>] [level|--reset]	[<rôle>] [niveau|--reset]
+Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max	Effort de raisonnement de l'orchestrateur (ou d'un rôle) pour ce projet : low, medium, high, xhigh, max
+[command]	[commande]
+Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)	Matrice rôle → modèle → effort (lead, get <rôle>, markdown, all, claude-agents, codex-profiles)
+<claude|codex> <role> "task"	<claude|codex> <rôle> "tâche"
+Hands a role to Claude or Codex through the bridges	Confie un rôle à Claude ou à Codex via les bridges
+AI files visibility: versioned, local, or in a separate private repository	Visibilité des fichiers IA : versionnés, locaux, ou dans un dépôt privé séparé
+<task> [base]	<tâche> [base]
+Creates two separate worktrees for parallel mode	Crée deux worktrees séparés pour le mode parallèle
+TRACKING	SUIVI
+Project status: phases, running delegations, activity, costs, Git	Statut du projet : phases, délégations en cours, activité, coûts, Git
+Live tracking (keys: q, c view, l journal, s session)	Suivi en direct (touches : q, c vue, l journal, s session)
+Readable journal of phases, delegations and sessions (--raw: JSON)	Journal lisible des phases, délégations et sessions (--raw : JSON)
+Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval	Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord
+MACHINE	MACHINE
+Checks the prerequisites; --fix fixes, --live tests every model	Vérifie les prérequis ; --fix corrige, --live teste chaque modèle
+Preferences: Claude and Codex plans	Préférences : forfaits Claude et Codex
+Updates Loomy according to its install method; --catalog: only the model and price catalog	Met à jour Loomy selon sa méthode d'installation ; --catalog : seulement le catalogue des modèles et des prix
+Version and install method; --all lists every install found	Version et méthode d'installation ; --all liste toutes les installations trouvées
+Shows how to uninstall Loomy (depending on the install) and remove it from a project	Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet
+Help for a command: loomy help <command>	Aide d'une commande : loomy help <commande>
+Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]	Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]
+Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).	Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).
+Usage: loomy config [list | get <key> | set <key> <value>]	Usage : loomy config [list | get <clé> | set <clé> <valeur>]
+Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),	Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),
+      plan_claude_price, plan_codex_price (monthly price in $ if different from the list price),	       plan_claude_price, plan_codex_price (prix mensuel en $ si différent du prix public),
+      start_watch (yes: loomy start also opens live tracking next to the session),	       start_watch (yes : loomy start ouvre aussi le suivi en direct à côté de la session),
+      notify (no: loomy watch no longer notifies phase changes, failures and end of bootstrap),	       notify (no : loomy watch ne notifie plus les changements de phase, échecs et fin de bootstrap),
+      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),	       screen (alt : écran séparé ; clear : écran et historique vidés, pour les terminaux sans écran séparé ; auto),
+      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),	       model.<claude|codex>.<top|mid|fast> (épingle un modèle sur cette machine ; auto : choix du catalogue),
+      lang (fr or en: interface language; auto: system language, English by default).	       lang (fr ou en : langue de l'interface ; auto : langue du système, anglais par défaut).
+File: %s	Fichier : %s
+Usage: loomy delegate <claude|codex> <role> "task"	Usage : loomy delegate <claude|codex> <rôle> "tâche"
+codex : executor, developer, documenter (write in the project); reviewer, explorer, debugger, architect, security (read-only).	codex  : executor, developer, documenter (écrivent dans le projet) ; reviewer, explorer, debugger, architect, security (lecture seule).
+claude: architect, debugger, security, reviewer, explorer (read-only).	claude : architect, debugger, security, reviewer, explorer (lecture seule).
+Every delegation is logged; track it with loomy watch.	Chaque délégation est journalisée ; suivi avec loomy watch.
+No Loomy project in %s: create it first with loomy init.	Pas de projet Loomy dans %s : crée-le d'abord avec loomy init.
+plan_claude: api, pro, max5, max20, team or enterprise	plan_claude : api, pro, max5, max20, team ou enterprise
+plan_codex: api, plus, pro100, pro200, business or enterprise	plan_codex : api, plus, pro100, pro200, business ou enterprise
+%s: a monthly price in $	%s : un prix mensuel en $
+%s: yes or no	%s : yes ou no
+lang: auto, fr or en	lang : auto, fr ou en
+screen: auto, alt or clear	screen : auto, alt ou clear
+%s: a model id, or auto (catalog's choice)	%s : un identifiant de modèle, ou auto (choix du catalogue)
+Unknown key: %s (%s)	Clé inconnue : %s (%s)
+Usage: loomy update [--catalog]	Usage : loomy update [--catalog]
+Updates Loomy according to its install method (Homebrew, npm, bun or shell script).	Met à jour Loomy selon sa méthode d'installation (Homebrew, npm, bun ou script shell).
+--catalog: only updates the model and price catalog (no new Loomy version).	--catalog : met à jour seulement le catalogue des modèles et des prix (sans nouvelle version de Loomy).
+Catalog not found	Catalogue introuvable
+check your connection and gh auth status	vérifie ta connexion et gh auth status
+Unreadable catalog	Catalogue illisible
+no date	aucune date
+model catalog	catalogue des modèles
+Catalog up to date	Catalogue à jour
+from %s	du %s
+Catalog updated	Catalogue mis à jour
+from %s to %s	du %s au %s
+routed models: %s	modèles routés : %s
+check that they answer: loomy doctor --live	vérifie qu'ils répondent : loomy doctor --live
+applied to the next sessions and delegations	pris en compte par les prochaines sessions et délégations
+Updating Loomy (install: %s)…	Mise à jour de Loomy (installation : %s)…
+Unknown install method: reinstall Loomy (see README).	Méthode d'installation inconnue : réinstallez Loomy (voir README).
+The update failed (code %s)	La mise à jour a échoué (code %s)
+detected install: %s	installation détectée : %s
+by hand:	à la main :
+Loomy up to date	Loomy à jour
+your projects use this version right away; loomy init --update is only for new document templates	tes projets utilisent aussitôt cette version ; loomy init --update ne sert qu'aux nouveaux modèles de documents
+INSTALLS	INSTALLATIONS
+Several loomy installs in the PATH: loomy version --all	Plusieurs installations de loomy dans le PATH : loomy version --all
+Uninstall Loomy	Désinstaller Loomy
+nothing is deleted automatically	rien n'est supprimé automatiquement
+one command per install found	une commande par installation trouvée
+IN YOUR PROJECTS	DANS TES PROJETS
+Each project keeps its %s folder: the lead agent uses it to delegate and track phases.	Chaque projet garde son dossier %s : l'orchestrateur s'en sert pour déléguer et suivre les phases.
+To remove Loomy from a project:	Pour retirer Loomy d'un projet :
+and the .loomy/logs/ line in .gitignore	et la ligne .loomy/logs/ du .gitignore
+Personal settings: %s	Configuration personnelle : %s
+run the command that matches your install	lance la commande qui correspond à ton installation
+Unknown command: %s	Commande inconnue : %s
+Unknown option: %s	Option inconnue : %s
+Error: folder not found: %s	Erreur : dossier introuvable : %s
+Non-interactive terminal: run again with --yes (and optionally --answers FILE).	Terminal non interactif : relancez avec --yes (et éventuellement --answers FILE).
+Error: answers file not found: %s	Erreur : fichier de réponses introuvable : %s
+Minimum requirements not met	Prérequis minimum non atteints
+you can still write the brief; fix this before launching the agent	le brief reste possible, corrigez avant de lancer l'agent
+detected: empty folder (new project)	détecté : dossier vide (nouveau projet)
+detected: existing project (1 item at the root)	détecté : projet existant (1 élément à la racine)
+detected: existing project (%s items at the root)	détecté : projet existant (%s éléments à la racine)
+Used as the project name in the generated documentation.	Sert de nom au projet dans la documentation générée.
+Goal	Objectif
+One sentence is enough: the agent reuses it in PROJECT.md and asks fewer questions. Enter to leave empty.	Une phrase suffit : l'agent la reprend dans PROJECT.md et pose moins de questions. Entrée pour laisser vide.
+Goal in one sentence	Objectif en une phrase
+E.g.: Help freelancers keep track of their invoices	Ex. : Permettre aux freelances de suivre leurs factures
+Starting point	Point de départ
+Type	Type
+Hosting	Hébergement
+Accounts	Comptes
+Hosting: %s	Hébergement : %s
+User accounts: %s	Comptes utilisateurs : %s
+API style	Style d'API
+Database	Base de données
+API style: %s	Style d'API : %s
+Database: %s	Base de données : %s
+Approach	Approche
+Platforms	Plateformes
+Approach: %s	Approche : %s
+Platforms: %s	Plateformes : %s
+Systems	Systèmes
+Technology	Technologie
+Systems: %s	Systèmes : %s
+Technology: %s	Technologie : %s
+Language	Langage
+Distribution	Distribution
+Runtime: %s	Runtime : %s
+Distribution: %s	Distribution : %s
+Provider	Fournisseur
+Data exposed	Données exposées
+Provider: %s	Fournisseur : %s
+Data exposed: %s	Données exposées : %s
+Custom type	Type précisé
+A few words are enough; the agent will fill in the rest during the interview.	Quelques mots suffisent ; l'agent complétera pendant l'entretien.
+Describe the project type	Décrivez le type de projet
+Custom type: %s	Type précisé : %s
+REQUIREMENTS	EXIGENCES
+Stage	Stade
+Authentication / accounts	Authentification / comptes
+Payments	Paiements
+Personal data	Données personnelles
+Secrets / production infra	Secrets / infra de production
+Sensitive areas	Éléments sensibles
+Each checked item raises the risk and requires deeper reviews (DEEP models). Nothing checked = none.	Chaque élément coché élève le risque et impose des revues plus poussées (modèles DEEP). Rien de coché = aucun.
+MEDIUM risk: sessions, permissions, password storage.	Risque MEDIUM : sessions, permissions, stockage des mots de passe.
+HIGH risk: compliance, idempotency, systematic security review.	Risque HIGH : conformité, idempotence, revue de sécurité systématique.
+HIGH risk: GDPR, data minimisation and protection.	Risque HIGH : RGPD, minimisation et protection des données.
+HIGH risk: secrets management, irreversible operations.	Risque HIGH : gestion des secrets, opérations irréversibles.
+Sensitive areas?	Éléments sensibles ?
+Estimated risk	Risque estimé
+%s risk	risque %s
+AI TEAM	ÉQUIPE IA
+Collaboration	Collaboration
+Main tool	Outil principal
+Profile	Profil
+orchestrator %s	orchestrateur %s
+DELIVERABLES	LIVRABLES
+Docs language	Langue des docs
+START.md afterwards	START.md ensuite
+remote repository '%s', project name '%s'	dépôt distant « %s », nom du projet « %s »
+Repository name differs from the project	Nom du dépôt différent du projet
+GitHub repository	Dépôt GitHub
+Repository name	Nom du dépôt
+Suggested from the project name; change it if needed (letters, digits, hyphens).	Proposé d'après le nom du projet ; modifie-le si besoin (lettres, chiffres, tirets).
+GitHub repository name (%s/…)	Nom du dépôt GitHub (%s/…)
+Initial commit	Commit initial
+Push	Push
+Push to %s after the commit?	Pousser vers %s après le commit ?
+Remote detected: %s	Remote détecté : %s
+no remote, no push	pas de remote, pas de push
+no Git repository: no commit, no push	pas de dépôt Git : ni commit ni push
+Your GitHub repository is public.	Ton dépôt GitHub est public.
+Your GitHub repository is private.	Ton dépôt GitHub est privé.
+AI files	Fichiers IA
+These are your working rules with the agents. GitHub sets visibility per repository, not per file.	Ce sont tes règles de travail avec les agents. GitHub règle la visibilité par dépôt, pas par fichier.
+In a separate private repository	Dans un dépôt privé séparé
+Recommended for a public repository: excluded from the project and backed up in a private GitHub repository (%s), with loomy privacy sync.	Recommandé pour un dépôt public : exclus du projet et sauvegardés dans un dépôt GitHub privé (%s), avec loomy privacy sync.
+Private AI repository	Dépôt privé IA
+Private repository that will only hold the AI files; change the name if needed.	Dépôt privé qui ne contiendra que les fichiers IA ; modifie le nom si besoin.
+Name of the private AI files repository	Nom du dépôt privé des fichiers IA
+Two repositories	Deux dépôts
+Creates %s (%s) for the project and %s (private) for the AI files.	Crée %s (%s) pour le projet et %s (privé) pour les fichiers IA.
+public	public
+private	privé
+Ask for both names again.	Repose les deux noms.
+Create these two repositories: %s and %s?	Créer ces deux dépôts : %s et %s ?
+Yes, create both	Oui, créer les deux
+Change the names	Modifier les noms
+PLANS	FORFAITS
+startup brief	brief de démarrage
+Project brief	Brief du projet
+Details	Précisions
+Sensitive	Sensible
+AI team	Équipe IA
+lead %s	lead %s
+HIGH risk with the Frugal profile: use high effort for security on sensitive changes	risque HIGH en profil Économe : passe la sécurité en effort high sur les changements sensibles
+Routing	Routage
+Execution	Exécution
+Architecture	Architecture
+Deliverables	Livrables
+Docs	Docs
+Technical name	Nom technique
+folder, technical names	dossier, noms techniques
+GitHub repository %s %s	dépôt GitHub %s %s
+Git	Git
+no action	aucune action
+private repository	dépôt privé
+no remote: push later	pas de remote : push à faire plus tard
+Plans	Forfaits
+Startup brief	Brief de démarrage
+Existing brief	Brief existant
+Brief kept	Brief conservé
+Initialising the Git repository	Initialisation du dépôt Git
+Creating the GitHub repository	Création du dépôt GitHub
+Saving the brief	Enregistrement du brief
+Setting up AI files	Réglage des fichiers IA
+Saving the plans	Mémorisation des forfaits
+Preparing the session	Préparation de la session
+SETUP	MISE EN PLACE
+Git repository initialised	Dépôt Git initialisé
+main branch	branche main
+Git repository not initialised	Dépôt Git non initialisé
+git init failed	git init a échoué
+GitHub repository created	Dépôt GitHub créé
+GitHub repository not created	Dépôt GitHub non créé
+Brief saved	Brief enregistré
+AI files set up	Fichiers IA réglés
+local, outside Git	locaux, hors Git
+AI files: setup incomplete	Fichiers IA : réglage incomplet
+Plans saved	Forfaits mémorisés
+Session ready	Session prête
+Discovery phase	phase Découverte
+GitHub repository by hand:	dépôt GitHub à la main :
+Next step	Étape suivante
+Go to the project folder:	Va dans le dossier du projet :
+Open the orchestrator session:	Ouvre la session de l'orchestrateur :
+or by hand: %s, then paste the startup prompt	ou à la main : %s, puis colle le prompt de démarrage
+Launch the orchestrator at the project root:	Lance l'orchestrateur à la racine du projet :
+then paste the startup prompt:	puis colle le prompt de démarrage :
+or in the Codex app: model %s, effort %s	ou dans l'app Codex : modèle %s, effort %s
+startup prompt copied to the clipboard	prompt de démarrage copié dans le presse-papiers
+Follow progress live in another terminal:	Suis l'avancement en direct dans un autre terminal :
+Session	Session
+Opens the orchestrator now, in the project folder, with the startup prompt.	Ouvre l'orchestrateur maintenant, dans le dossier du projet, avec le prompt de démarrage.
+You can start it later with loomy start, from the project folder.	Tu la lanceras plus tard avec loomy start, depuis le dossier du projet.
+Open the orchestrator session now?	Ouvrir la session de l'orchestrateur maintenant ?
+Yes, now	Oui, maintenant
+Later	Plus tard
+routing: loomy route · diagnostics: loomy doctor --live · log: loomy log	routage : loomy route · diagnostic : loomy doctor --live · journal : loomy log
+New project or existing project?	Nouveau projet ou projet existant ?
+The agent proposes the stack and structure from scratch.	L'agent propose la stack et la structure à partir de zéro.
+Existing project to standardise	Projet existant à standardiser
+The agent first analyses what exists and only proposes standardisation changes, without breaking the architecture.	L'agent analyse d'abord l'existant et ne propose que des changements de standardisation, sans casser l'architecture.
+What kind of project?	Quel type de projet ?
+Determines the next questions and the suggested checks (build, tests, deployment).	Détermine les questions suivantes et les vérifications proposées (build, tests, déploiement).
+Front end and optional back end, web deployment; accessibility and SEO to consider.	Front et éventuel back, déploiement web ; accessibilité et SEO à considérer.
+API / backend service	API / service backend
+Service without a UI: API contracts, validation and integration tests at the core.	Service sans interface : contrats d'API, validation et tests d'intégration au centre.
+Store constraints, permissions, offline; iOS and/or Android builds.	Contraintes des stores, permissions, hors-ligne ; builds iOS et/ou Android.
+Packaging, signing and updates per operating system.	Packaging, signature et mises à jour par système d'exploitation.
+Stable public API, packaging and runtime compatibility.	API publique stable, packaging et compatibilité des runtimes.
+Provider choice, data exposure, guardrails and answer evaluation.	Choix du fournisseur, exposition des données, garde-fous et évaluation des réponses.
+You will describe the type; the agent will ask more questions.	Vous décrirez le type ; l'agent posera davantage de questions.
+Target hosting?	Hébergement cible ?
+Influences the framework, runtime and deployment pipeline.	Influence le framework, le runtime et la chaîne de déploiement.
+Vercel / Netlify	Vercel / Netlify
+Simple, serverless deployment, ideal for a modern front end.	Déploiement simple et serverless, idéal pour un front moderne.
+Cloudflare	Cloudflare
+Runs at the edge, very cheap, with runtime constraints.	Exécution en edge, très économique, avec des contraintes de runtime.
+Server / VPS / Docker	Serveur / VPS / Docker
+Full control, but more operations to handle.	Contrôle total, mais davantage d'exploitation à gérer.
+User accounts?	Comptes utilisateurs ?
+Authentication increases risk and scope.	L'authentification augmente le risque et le périmètre.
+Authentication and sessions required: at least MEDIUM risk.	Authentification et sessions à prévoir : risque au moins MEDIUM.
+No authentication required.	Pas d'authentification à prévoir.
+API style?	Style d'API ?
+Shapes the contracts, documentation and tests.	Structure les contrats, la documentation et les tests.
+REST	REST
+Standard, easy to consume and document (OpenAPI).	Standard, simple à consommer et à documenter (OpenAPI).
+GraphQL	GraphQL
+Flexible client queries, typed schema, more server complexity.	Requêtes flexibles côté client, schéma typé, plus de complexité serveur.
+RPC / gRPC	RPC / gRPC
+Fast between services, less suited to public web clients.	Performant entre services, moins adapté aux clients web publics.
+Database?	Base de données ?
+Guides persistence and migrations.	Oriente la persistance et les migrations.
+SQL	SQL
+Strong relations and integrity (PostgreSQL, SQLite…).	Relations et intégrité fortes (PostgreSQL, SQLite…).
+NoSQL	NoSQL
+Flexible schema, horizontal scaling.	Schéma souple, montée en charge horizontale.
+None	Aucune
+No persistence required.	Pas de persistance à prévoir.
+Approach?	Approche ?
+Determines the language, tooling and number of codebases.	Détermine le langage, l'outillage et le nombre de bases de code.
+Expo / React Native	Expo / React Native
+A single JS/TS codebase for iOS and Android, fast iterations.	Un seul code JS/TS pour iOS et Android, itérations rapides.
+Native (Swift / Kotlin)	Natif (Swift / Kotlin)
+Best integration and performance, but two codebases.	Meilleure intégration et performance, mais deux bases de code.
+Flutter	Flutter
+A single cross-platform Dart codebase, with its own rendering.	Un seul code Dart multi-plateforme, rendu propre au framework.
+Platforms?	Plateformes ?
+Each platform adds builds, tests and publishing.	Chaque plateforme ajoute builds, tests et publication.
+iOS and Android	iOS et Android
+Builds, tests and publishing on both stores.	Builds, tests et publication sur les deux stores.
+iOS	iOS
+A single platform: simpler to ship.	Une seule plateforme : plus simple à livrer.
+Android	Android
+Target systems?	Systèmes cibles ?
+Each OS adds packaging, signing and tests.	Chaque OS ajoute packaging, signature et tests.
+macOS	macOS
+A single target: simpler signing and packaging.	Une seule cible : signature et packaging simplifiés.
+Windows	Windows
+Linux	Linux
+A single target: simpler packaging.	Une seule cible : packaging simplifié.
+Cross-platform	Multi-plateforme
+Builds and tests needed for each OS.	Builds et tests à prévoir pour chaque OS.
+Technology?	Technologie ?
+Trade-off between binary size, ecosystem and native integration.	Arbitrage entre poids des binaires, écosystème et intégration native.
+Tauri	Tauri
+Lightweight (Rust + webview), small binaries.	Léger (Rust + webview), binaires petits.
+Electron	Electron
+Mature ecosystem, heavy binaries.	Écosystème mature, binaires lourds.
+Native	Natif
+Best integration, one codebase per OS.	Meilleure intégration, un code par OS.
+Language / runtime?	Langage / runtime ?
+Determines the ecosystem, packaging and distribution.	Détermine l'écosystème, le packaging et la distribution.
+Node.js	Node.js
+Distributed via npm, quick start.	Distribution via npm, démarrage rapide.
+Python	Python
+Rich ecosystem, pip/uv packaging.	Écosystème riche, packaging pip/uv.
+Go	Go
+Single binary, no runtime to install.	Binaire unique, sans runtime à installer.
+Rust	Rust
+Single fast binary, more demanding compilation.	Binaire unique et rapide, compilation plus exigeante.
+Bash	Bash
+Zero dependencies, limited to simple scripts.	Zéro dépendance, limité aux scripts simples.
+Distribution?	Distribution ?
+Sets how strict interface stability must be.	Fixe le niveau d'exigence sur la stabilité de l'interface.
+Public registry (npm, PyPI, crates…)	Registre public (npm, PyPI, crates…)
+Semantic versioning and a public API to stabilise.	Versioning sémantique et API publique à stabiliser.
+Binary	Binaire
+Multi-OS builds and releases to automate.	Builds multi-OS et releases à automatiser.
+Internal use	Usage interne
+Lighter compatibility constraints.	Contraintes de compatibilité plus légères.
+Model provider?	Fournisseur de modèles ?
+Determines the SDK, costs and data usage terms.	Détermine SDK, coûts et conditions d'usage des données.
+Anthropic (Claude)	Anthropic (Claude)
+SDK and models from a single provider.	SDK et modèles d'un seul fournisseur.
+OpenAI	OpenAI
+Several	Plusieurs
+An abstraction layer between providers is needed.	Couche d'abstraction à prévoir entre fournisseurs.
+Local models	Modèles locaux
+No API cost, performance depends on hardware.	Pas de coût d'API, performances liées au matériel.
+Data sent to the models?	Données envoyées aux modèles ?
+Determines the guardrails and risk level.	Conditionne les garde-fous et le niveau de risque.
+Public	Publiques
+Few constraints.	Peu de contraintes.
+Internal	Internes
+Check the provider's data retention and usage.	Vérifier la rétention et l'usage des données chez le fournisseur.
+Sensitive data	Sensibles
+HIGH risk: anonymisation, guardrails and DEEP security reviews.	Risque HIGH : anonymisation, garde-fous et revues de sécurité en DEEP.
+Target stage?	Stade visé ?
+Sets the bar from the start: tests, CI, security.	Fixe dès le départ le niveau d'exigence : tests, CI, sécurité.
+Prototype / exploration	Prototype / exploration
+Speed first: minimal tests, no mandatory CI.	Vitesse avant tout : tests minimaux, pas de CI obligatoire.
+Targeted tests, simple CI, controlled technical debt.	Tests ciblés, CI simple, dette technique maîtrisée.
+Full tests, CI/CD and observability; at least MEDIUM risk.	Tests complets, CI/CD et observabilité ; risque au moins MEDIUM.
+AI collaboration mode?	Mode de collaboration IA ?
+Main tool (lead)?	Outil principal (lead) ?
+Orchestrator on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via delegate-to-codex.sh (recommended).	Orchestrateur sur Opus 5.5, en tête des benchmarks de raisonnement et de travail agentique ; délègue à Codex via delegate-to-codex.sh (recommandé).
+Orchestrator on GPT-6-Astra; delegates to Claude via delegate-to-claude.sh (read-only).	Orchestrateur sur GPT-6-Astra ; délègue à Claude via delegate-to-claude.sh (lecture seule).
+Model cost / quality profile?	Profil de coût / qualité des modèles ?
+The orchestrator always stays on the best model; the profile sets each role's effort and model (details: loomy route).	L'orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route).
+Orchestrator and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks.	Orchestrateur et spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, un peu plus de reprises sur les tâches difficiles.
+Balanced (recommended)	Équilibré (recommandé)
+Orchestrator at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.	Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.
+Orchestrator and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries.	Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises.
+Project documentation language?	Langue de la documentation du projet ?
+Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English.	Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais.
+Français	Français
+Documentation written in French.	Documentation rédigée en français.
+English	English
+Documentation in English: better if the project is shared internationally.	Documentation en anglais : préférable si le projet est partagé à l'international.
+After initialisation, what to do with START.md?	Après l'initialisation, que faire de START.md ?
+START.md no longer has authority once the project is initialised.	START.md n'a plus d'autorité une fois le projet initialisé.
+Archive it in .ai/bootstrap/ (recommended)	L'archiver dans .ai/bootstrap/ (recommandé)
+Keeps a record of the initialisation for later.	Garde une trace de l'initialisation, consultable plus tard.
+Delete it	Le supprimer
+Lighter repo; the history stays only in Git.	Repo plus léger ; l'historique ne reste que dans Git.
+Create a dedicated Git repository for this project?	Créer un dépôt Git propre à ce projet ?
+Yes, dedicated repository (recommended for a new project)	Oui, dépôt dédié (recommandé pour un nouveau projet)
+The project has its own history, and can have its own GitHub repository.	Le projet a son propre historique, et peut avoir son dépôt GitHub.
+No, stay in the parent repository (monorepo)	Non, rester dans le dépôt parent (monorepo)
+Commits go to the parent repository; no GitHub repository of its own.	Commits dans le dépôt parent ; pas de dépôt GitHub propre au projet.
+Initialise a Git repository (main branch) now?	Initialiser un dépôt Git (branche main) maintenant ?
+Version control is required for commits, worktrees and handoffs.	Le versionnement est nécessaire pour les commits, les worktrees et les handoffs.
+Creates the local repository now; nothing is sent online.	Crée le dépôt local maintenant, rien n'est envoyé en ligne.
+No version control: no commit or push possible.	Pas de versionnement : ni commit ni push possibles.
+Create a GitHub repository for this project?	Créer un dépôt GitHub pour ce projet ?
+Yes, private	Oui, privé
+Visible only to you (and people you invite). Recommended.	Visible par toi seul (et les personnes que tu invites). Recommandé.
+Yes, public	Oui, public
+Visible to everyone: mind the AI files visibility, next question.	Visible par tous : pense à la visibilité des fichiers IA, question suivante.
+No, later	Non, plus tard
+No online repository for now; you can create it with gh repo create.	Aucun dépôt en ligne pour l'instant ; tu pourras le créer avec gh repo create.
+Initial commit once the setup is verified?	Commit initial une fois le setup vérifié ?
+Lets the agent finish the initialisation with a commit.	Autorise l'agent à clôturer l'initialisation par un commit.
+Yes, the agent commits	Oui, l'agent committe
+Commit 'chore: initialize project' only if all checks pass.	Commit « chore: initialize project » seulement si toutes les vérifications passent.
+No, I will commit myself	Non, je committerai moi-même
+Changes stay uncommitted; you stay in control.	Les changements restent non commités ; vous gardez la main.
+No, I will push myself	Non, je pousserai moi-même
+Nothing leaves your machine without you.	Rien ne quitte votre machine sans vous.
+Yes, push the current branch	Oui, push de la branche courante
+The branch is pushed after the initial commit, never force-pushed.	La branche est poussée après le commit initial, jamais de force-push.
+Where to keep the AI files (AGENTS.md, CLAUDE.md, .ai/, .loomy/…)?	Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .ai/, .loomy/…) ?
+Versioned with the project	Versionnés avec le projet
+Recommended for a private repository: you get them on all your machines, and agents working online on the repository can read them.	Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent.
+Local only	Locaux uniquement
+Never sent to GitHub: excluded via .git/info/exclude, invisible in the repository. Lost if you change machines.	Jamais envoyés sur GitHub : exclus via .git/info/exclude, invisible dans le dépôt. Perdus si tu changes de machine.
+What is your Claude plan?	Quel est ton forfait Claude ?
+Asked only once, saved in your Loomy configuration. Used to compare the value consumed with the plan price.	Demandé une seule fois, mémorisé dans ta configuration Loomy. Sert à afficher la valeur consommée face au prix du forfait.
+API	API
+Pay as you go: Loomy shows the actual cost.	Paiement à l'usage : Loomy affiche le coût réel.
+Claude Team or Enterprise	Claude Team ou Enterprise
+Price adjustable later with loomy config set plan_claude_price <price>.	Prix ajustable ensuite avec loomy config set plan_claude_price <prix>.
+What is your ChatGPT / Codex plan?	Quel est ton forfait ChatGPT / Codex ?
+Asked only once, saved in your Loomy configuration.	Demandé une seule fois, mémorisé dans ta configuration Loomy.
+Pay as you go: Loomy shows the cost estimated from tokens.	Paiement à l'usage : Loomy affiche le coût estimé à partir des tokens.
+ChatGPT Business or Enterprise	ChatGPT Business ou Enterprise
+Price adjustable later with loomy config set plan_codex_price <price>.	Prix ajustable ensuite avec loomy config set plan_codex_price <prix>.
+A brief already exists. What now?	Un brief existe déjà. Que faire ?
+Its answers become the defaults if you redo it.	Ses réponses servent de valeurs par défaut si tu le refais.
+Redo it	Le refaire
+The file is only replaced at the end, after you confirm.	Le fichier n'est remplacé qu'à la fin, après ta confirmation.
+Keep it and quit	Le garder et quitter
+Nothing is changed.	Rien n'est modifié.
+Save this brief?	Enregistrer ce brief ?
+Nothing is written before you confirm.	Rien n'est écrit avant ta confirmation.
+Yes, save	Oui, enregistrer
+Review the questions	Revoir les questions
+Your current answers become the defaults.	Tes réponses actuelles deviennent les valeurs par défaut.
+No file written, no Git action.	Aucun fichier écrit, aucune action Git.

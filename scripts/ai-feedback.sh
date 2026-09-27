@@ -33,16 +33,16 @@ ver() { "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || t
 LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 
 body() {
-  echo "## $(t "Retour")"
+  echo "## $(t "Feedback")"
   echo
-  echo "${MSG:-_($(t "à compléter"))_}"
+  echo "${MSG:-_($(t "to be completed"))_}"
   echo
-  echo "## $(t "Contexte (joint par loomy feedback, anonymisé)")"
+  echo "## $(t "Context (attached by loomy feedback, anonymized)")"
   echo
   echo "| | |"
   echo "|---|---|"
   echo "| Loomy | $LOOMY_V |"
-  echo "| $(t "Système") | $(uname -s) $(uname -r) $(uname -m) |"
+  echo "| $(t "System") | $(uname -s) $(uname -r) $(uname -m) |"
   echo "| bash | ${BASH_VERSION%%(*} |"
   echo "| git | $(ver git --version) |"
   echo "| Claude Code | $(ver claude --version || true) |"
@@ -52,12 +52,12 @@ body() {
   if (( IN_PROJECT )); then
     local b="$ROOT/.loomy/brief.md" phase
     phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
-    echo "| $(t "Projet") | $(_ai_brief_get "$b" type) · $(_ai_brief_get "$b" stage) · $(_ai_brief_get "$b" ai_mode) · lead $(_ai_brief_get "$b" ai_lead) · $(t "profil") $(_ai_brief_get "$b" budget) · $(t "fichiers IA") $(_ai_brief_get "$b" ai_files) |"
-    echo "| $(t "Loomy du projet") | $(cat "$ROOT/.loomy/VERSION" 2>/dev/null || echo "?") · phase ${phase:-?} |"
+    echo "| $(t "Project") | $(_ai_brief_get "$b" type) · $(_ai_brief_get "$b" stage) · $(_ai_brief_get "$b" ai_mode) · lead $(_ai_brief_get "$b" ai_lead) · $(t "profile") $(_ai_brief_get "$b" budget) · $(t "ai_files") $(_ai_brief_get "$b" ai_files) |"
+    echo "| $(t "Project's Loomy") | $(cat "$ROOT/.loomy/VERSION" 2>/dev/null || echo "?") · phase ${phase:-?} |"
     local j; j="$(ai_journal_file "$ROOT")"
     if [[ -s "$j" ]]; then
       echo
-      echo "<details><summary>$(t "Derniers événements du journal (sans le texte des tâches)")</summary>"
+      echo "<details><summary>$(t "Latest journal events (without task text)")</summary>"
       echo
       echo '```'
       # ROOT pointe ici sur une copie du journal dont le texte des tâches a été vidé (voir plus bas).
@@ -83,35 +83,35 @@ fi
 if (( PRINT )) || ! ui_is_interactive; then body; exit 0; fi
 
 ui_clear
-ui_banner "$(t "Retour sur Loomy")" "$(t "issue GitHub sur %s · rien n'est envoyé sans ton accord" "$REPO")"
+ui_banner "$(t "Feedback on Loomy")" "$(t "GitHub issue on %s · nothing is sent without your approval" "$REPO")"
 if [[ -z "$MSG" ]]; then
   ui_print "${C_RAIL}│${C_RESET}"
-  UI_LABEL="$(t "Retour")"; UI_HINT="$(t "Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais.")"
-  ui_input "$(t "Ton retour, en une ou deux phrases")" "" "$(t "Ex. : loomy watch ne voit pas ma session Codex")"
+  UI_LABEL="$(t "Feedback")"; UI_HINT="$(t "A bug, an annoyance, an idea: what happened, and what you expected.")"
+  ui_input "$(t "Your feedback, in one or two sentences")" "" "$(t "E.g.: loomy watch doesn't see my Codex session")"
   MSG="$UI_VALUE"
-  [[ -n "$MSG" ]] || { ui_end "$(t "rien à envoyer")"; exit 0; }
+  [[ -n "$MSG" ]] || { ui_end "$(t "nothing to send")"; exit 0; }
 fi
-TITLE="$(t "Retour :") $(printf '%s' "$MSG" | cut -c1-70)"
+TITLE="$(t "Feedback:") $(printf '%s' "$MSG" | cut -c1-70)"
 BODY_FILE="$(mktemp)"; body >"$BODY_FILE"
-ui_section "$(t "APERÇU")" "$(t "texte de l'issue")"
+ui_section "$(t "PREVIEW")" "$(t "issue text")"
 while IFS= read -r l; do ui_rail "${C_DIM}${l}${C_RESET}"; done <"$BODY_FILE"
 ui_print "${C_RAIL}│${C_RESET}"
 opts=(); UI_DESCS=(); codes=()
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  opts+=("$(t "Créer l'issue maintenant")"); codes+=(create); UI_DESCS+=("$(t "gh issue create sur %s, avec ce titre et ce texte." "$REPO")")
-  opts+=("$(t "L'ouvrir dans le navigateur")"); codes+=(web); UI_DESCS+=("$(t "Formulaire GitHub pré-rempli : tu relis et tu envoies toi-même.")")
+  opts+=("$(t "Create the issue now")"); codes+=(create); UI_DESCS+=("$(t "gh issue create on %s, with this title and text." "$REPO")")
+  opts+=("$(t "Open it in the browser")"); codes+=(web); UI_DESCS+=("$(t "Prefilled GitHub form: you review and submit it yourself.")")
 fi
-opts+=("$(t "Copier le texte")"); codes+=(copy); UI_DESCS+=("$(t "Dans le presse-papiers, à coller où tu veux.")")
-opts+=("$(t "Annuler")"); codes+=(cancel); UI_DESCS+=("$(t "Rien n'est envoyé.")")
-UI_LABEL="$(t "Envoi")"
-ui_choose "$(t "Que faire de ce retour ?")" 0 "${opts[@]}"
+opts+=("$(t "Copy the text")"); codes+=(copy); UI_DESCS+=("$(t "To the clipboard, to paste wherever you want.")")
+opts+=("$(t "Cancel")"); codes+=(cancel); UI_DESCS+=("$(t "Nothing is sent.")")
+UI_LABEL="$(t "Sending")"
+ui_choose "$(t "What to do with this feedback?")" 0 "${opts[@]}"
 case "${codes[$UI_INDEX]}" in
   create)
-    if url="$(gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" 2>&1)"; then ui_ok "$(t "Issue créée")" "$url"
-    else ui_warn "$(t "Issue non créée")" "$(printf '%s' "$url" | tail -1)"; fi ;;
-  web) gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" --web >/dev/null 2>&1 && ui_ok "$(t "Formulaire ouvert dans le navigateur")" ;;
-  copy) if ui_copy "$(cat "$BODY_FILE")"; then ui_ok "$(t "Texte copié")" "$(t "titre : %s" "$TITLE")"; else ui_warn "$(t "Presse-papiers indisponible")" "loomy feedback --print"; fi ;;
-  *) ui_end "$(t "rien n'a été envoyé")"; rm -f "$BODY_FILE"; exit 0 ;;
+    if url="$(gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" 2>&1)"; then ui_ok "$(t "Issue created")" "$url"
+    else ui_warn "$(t "Issue not created")" "$(printf '%s' "$url" | tail -1)"; fi ;;
+  web) gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" --web >/dev/null 2>&1 && ui_ok "$(t "Form opened in the browser")" ;;
+  copy) if ui_copy "$(cat "$BODY_FILE")"; then ui_ok "$(t "Text copied")" "$(t "title: %s" "$TITLE")"; else ui_warn "$(t "Clipboard unavailable")" "loomy feedback --print"; fi ;;
+  *) ui_end "$(t "nothing was sent")"; rm -f "$BODY_FILE"; exit 0 ;;
 esac
 rm -f "$BODY_FILE"
-ui_end "$(t "merci ! suivi des retours : %s" "https://github.com/$REPO/issues")"
+ui_end "$(t "thanks! feedback tracking: %s" "https://github.com/$REPO/issues")"

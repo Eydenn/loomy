@@ -19,9 +19,9 @@ PRIVACY_END="# <<< loomy"
 
 privacy_label() {
   case "$1" in
-    local) t "locaux uniquement"; echo ;;
-    private) t "dépôt privé séparé"; echo ;;
-    *) t "versionnés avec le projet"; echo ;;
+    local) t "local only"; echo ;;
+    private) t "separate private repository"; echo ;;
+    *) t "versioned with the project"; echo ;;
   esac
 }
 

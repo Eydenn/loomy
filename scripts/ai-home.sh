@@ -33,17 +33,17 @@ view() {   # view <titre> <commande>... : sortie de la commande dans la visionne
 if [[ ! -f "$ROOT/.loomy/brief.md" ]]; then
   while true; do
     ui_clear
-    ui_banner "$(t "Bienvenue")" "$(t "aucun projet Loomy dans %s" "${PWD/#$HOME/~}")"
+    ui_banner "$(t "Welcome")" "$(t "no Loomy project in %s" "${PWD/#$HOME/~}")"
     ui_print "${C_RAIL}│${C_RESET}"
-    UI_LABEL="$(t "Choix")"
-    UI_DESCS=("$(t "Crée le dossier du projet (ou utilise celui-ci), puis le questionnaire et l'orchestrateur.")" \
-      "$(t "Vérifie Claude Code, Codex, les modèles et les prérequis de la machine (les corrections se font avec loomy doctor --fix).")" \
-      "$(t "Toutes les commandes.")" "$(t "Ferme Loomy.")")
-    ui_choose "$(t "Que veux-tu faire ?")" 0 "$(t "Créer un projet")" "$(t "Vérifier la machine")" "$(t "Aide")" "$(t "Quitter")"
+    UI_LABEL="$(t "Choice")"
+    UI_DESCS=("$(t "Creates the project folder (or uses this one), then the questionnaire and the lead agent.")" \
+      "$(t "Checks Claude Code, Codex, the models and the machine's prerequisites (fixes are done with loomy doctor --fix).")" \
+      "$(t "All commands.")" "$(t "Closes Loomy.")")
+    ui_choose "$(t "What do you want to do?")" 0 "$(t "Create a project")" "$(t "Check the machine")" "$(t "Help")" "$(t "Quit")"
     case "$UI_INDEX" in
       0) ui_exec "$LOOMY_BIN" init ;;
-      1) view "$(t "Diagnostic de la machine")" bash "$SCRIPT_DIR/ai-doctor.sh" ;;
-      2) view "$(t "Aide")" bash "$LOOMY_BIN" help ;;
+      1) view "$(t "Machine check")" bash "$SCRIPT_DIR/ai-doctor.sh" ;;
+      2) view "$(t "Help")" bash "$LOOMY_BIN" help ;;
       *) leave ;;
     esac
   done
@@ -60,36 +60,36 @@ while true; do
 
   ui_clear
   ui_banner "$(brief name)" "${ROOT/#$HOME/~}"
-  ui_section "$(t "OÙ EN EST LE PROJET")"
-  if [[ "$PHASE" == "done" ]]; then ui_kv "Bootstrap" "${C_GREEN}$(t "terminé")${C_RESET} · $(t "développement au quotidien")"
-  else ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET} ${C_DIM}($(t "étape %s sur 10" "$idx"))${C_RESET}"; fi
+  ui_section "$(t "WHERE THE PROJECT STANDS")"
+  if [[ "$PHASE" == "done" ]]; then ui_kv "Bootstrap" "${C_GREEN}$(t "done")${C_RESET} · $(t "day-to-day development")"
+  else ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET} ${C_DIM}($(t "step %s of 10" "$idx"))${C_RESET}"; fi
   case "$sess" in
-    open*) ui_kv "Session" "${C_GREEN}$(t "ouverte")${C_RESET} $(t "depuis %s" "$(printf '%s' "$sess" | cut -d'|' -f2)")" ;;
-    closed*) ui_kv "Session" "${C_DIM}$(t "fermée à %s" "$(printf '%s' "$sess" | cut -d'|' -f2)")${C_RESET}" ;;
-    *) ui_kv "Session" "${C_DIM}$(t "pas encore ouverte")${C_RESET}" ;;
+    open*) ui_kv "Session" "${C_GREEN}$(t "open")${C_RESET} $(t "since %s" "$(printf '%s' "$sess" | cut -d'|' -f2)")" ;;
+    closed*) ui_kv "Session" "${C_DIM}$(t "closed at %s" "$(printf '%s' "$sess" | cut -d'|' -f2)")${C_RESET}" ;;
+    *) ui_kv "Session" "${C_DIM}$(t "not opened yet")${C_RESET}" ;;
   esac
-  ui_kv "$(t "À toi")" "$(loomy_you_now "$PHASE" "$sess")"
+  ui_kv "$(t "Your turn")" "$(loomy_you_now "$PHASE" "$sess")"
   newcat="$(bash "$SCRIPT_DIR/ai-catalog-check.sh" 2>/dev/null || true)"
-  [[ -n "$newcat" ]] && ui_kv "$(t "Modèles")" "${C_YELLOW}$(t "nouveau catalogue du %s" "$newcat")${C_RESET} ${C_DIM}→ loomy update --catalog${C_RESET}"
+  [[ -n "$newcat" ]] && ui_kv "$(t "Models")" "${C_YELLOW}$(t "new catalog from %s" "$newcat")${C_RESET} ${C_DIM}→ loomy update --catalog${C_RESET}"
   ui_print "${C_RAIL}│${C_RESET}"
 
-  opts=("$(t "Ouvrir ou reprendre la session de l'orchestrateur")" "$(t "Suivre en direct")" "$(t "Statut détaillé")" "$(t "Journal")" "$(t "Visibilité des fichiers IA")" "$(t "Aide")" "$(t "Quitter")")
-  UI_DESCS=("$(t "loomy start : reprend la dernière session de ce projet, ou en ouvre une nouvelle au bon endroit.")" \
-    "$(t "loomy watch : phases, délégations en cours et activité, en direct.")" \
-    "$(t "loomy status : phases, brief, activité, coûts, fichiers IA et Git (ici, sans quitter l'accueil).")" \
-    "$(t "loomy log : phases, délégations, sessions et coûts, à l'heure locale.")" \
-    "$(t "loomy privacy : fichiers IA versionnés, locaux ou dans un dépôt privé.")" \
-    "$(t "Toutes les commandes.")" "$(t "Ferme Loomy.")")
+  opts=("$(t "Open or resume the lead agent session")" "$(t "Live tracking")" "$(t "Detailed status")" "$(t "Journal")" "$(t "AI files visibility")" "$(t "Help")" "$(t "Quit")")
+  UI_DESCS=("$(t "loomy start: resumes this project's last session, or opens a new one at the right place.")" \
+    "$(t "loomy watch: phases, running delegations and activity, live.")" \
+    "$(t "loomy status: phases, brief, activity, costs, AI files and Git (here, without leaving home).")" \
+    "$(t "loomy log: phases, delegations, sessions and costs, in local time.")" \
+    "$(t "loomy privacy: AI files versioned, local or in a private repository.")" \
+    "$(t "All commands.")" "$(t "Closes Loomy.")")
   default=0; [[ "$sess" == open* ]] && default=1
-  UI_LABEL="$(t "Choix")"
-  ui_choose "$(t "Que veux-tu faire ?")" "$default" "${opts[@]}"
+  UI_LABEL="$(t "Choice")"
+  ui_choose "$(t "What do you want to do?")" "$default" "${opts[@]}"
   case "$UI_INDEX" in
     0) ui_exec "$LOOMY_BIN" start ;;
     1) ui_exec "$LOOMY_BIN" watch ;;
-    2) view "$(t "Statut détaillé")" bash "$SCRIPT_DIR/ai-status.sh" --root "$ROOT" --full ;;
+    2) view "$(t "Detailed status")" bash "$SCRIPT_DIR/ai-status.sh" --root "$ROOT" --full ;;
     3) view "$(t "Journal")" bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n 200 ;;
-    4) view "$(t "Visibilité des fichiers IA")" bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" ;;
-    5) view "$(t "Aide")" bash "$LOOMY_BIN" help ;;
+    4) view "$(t "AI files visibility")" bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" ;;
+    5) view "$(t "Help")" bash "$LOOMY_BIN" help ;;
     *) leave ;;
   esac
 done

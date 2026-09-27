@@ -31,7 +31,7 @@ while [[ $# -gt 0 ]]; do
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
     -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//; s/ai-start.sh/loomy start/'; exit 0 ;;
-    *) t "Argument inconnu : %s" "$1" >&2; echo >&2; exit 2 ;;
+    *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
@@ -39,7 +39,7 @@ done
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
 if [[ ! -f "$BRIEF" ]]; then
-  t "Pas de brief Loomy dans %s : lancez d'abord loomy init (nouveau projet) ou loomy brief." "${ROOT/#$HOME/~}" >&2; echo >&2
+  t "No Loomy brief in %s: run loomy init first (new project) or loomy brief." "${ROOT/#$HOME/~}" >&2; echo >&2
   exit 1
 fi
 
@@ -53,13 +53,13 @@ NAME="$(_ai_brief_get "$BRIEF" name)"
 
 # Prompt de la nouvelle session selon l'avancement.
 if [[ -f "$ROOT/START.md" && ( -z "$PHASE" || "$PHASE" == "brief" || "$PHASE" == "discover" ) ]]; then
-  PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="$(t "démarrage du bootstrap")"
+  PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="$(t "bootstrap start")"
 elif [[ -f "$ROOT/START.md" ]]; then
-  PROMPT="$(t "Reprends l'initialisation de ce projet en suivant START.md, là où elle s'est arrêtée : phase « %s ». Lance d'abord .loomy/scripts/ai-context.sh pour le contexte (phase, attentes, dernières délégations). Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer." "$(loomy_phase_label "$PHASE")")"
-  KIND="$(t "reprise à la phase %s" "$(loomy_phase_label "$PHASE")")"
+  PROMPT="$(t "Resume this project's setup by following START.md, where it stopped: phase \"%s\". First run .loomy/scripts/ai-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on." "$(loomy_phase_label "$PHASE")")"
+  KIND="$(t "resuming at phase %s" "$(loomy_phase_label "$PHASE")")"
 else
-  PROMPT="$(t "Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh.")"
-  KIND="$(t "travail courant (bootstrap terminé)")"
+  PROMPT="$(t "Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .ai/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.")"
+  KIND="$(t "everyday work (bootstrap done)")"
 fi
 
 # Session précédente sur cette machine : Claude range ses conversations par dossier, Codex note le dossier de chaque session.
@@ -84,19 +84,19 @@ short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $
 
 # ---------------------------------------------------------------- affichage
 ui_clear
-ui_banner "$(t "Démarrer ou reprendre")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
+ui_banner "$(t "Start or resume")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 ui_section "SESSION"
 ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
-ui_kv "$(t "Orchestrateur")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
-if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "une session précédente existe sur cette machine")${C_RESET}"
-else ui_kv "Session" "${C_DIM}$(t "aucune session précédente sur cette machine")${C_RESET}"; fi
+ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
+if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "a previous session exists on this machine")${C_RESET}"
+else ui_kv "Session" "${C_DIM}$(t "no previous session on this machine")${C_RESET}"; fi
 # Modèle de l'orchestrateur absent du catalogue local de Codex (renommé ou retiré) : on prévient avant de lancer.
 if [[ "$TOOL" == "codex" && -f "$HOME/.codex/models_cache.json" ]] && ! grep -qF "\"$MODEL\"" "$HOME/.codex/models_cache.json"; then
-  ui_warn "$(t "%s absent du catalogue local de Codex" "$MODEL")" "$(t "mets à jour le catalogue Loomy (loomy update --catalog) ou Codex, puis loomy doctor --live")"
+  ui_warn "$(t "%s missing from Codex's local catalog" "$MODEL")" "$(t "update the Loomy catalog (loomy update --catalog) or Codex, then loomy doctor --live")"
 fi
 if (( ! CLI_OK )); then
-  ui_err "$(t "%s introuvable" "$tool_label")" "$(t "installez-le : %s" "$INSTALL")"
-  ui_end "$(t "diagnostic complet : loomy doctor")"
+  ui_err "$(t "%s not found" "$tool_label")" "$(t "install it: %s" "$INSTALL")"
+  ui_end "$(t "full check: loomy doctor")"
   exit 1
 fi
 
@@ -122,13 +122,13 @@ start_with_watch() {
     w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
-    WATCH_NOTE="$( (( side )) && t "suivi en direct dans le panneau tmux de droite, fermé avec la session" || t "suivi en direct dans le panneau tmux du bas, fermé avec la session")"
+    WATCH_NOTE="$( (( side )) && t "live tracking in the right tmux pane, closed with the session" || t "live tracking in the bottom tmux pane, closed with the session")"
     return 0
   fi
   if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
-      WATCH_NOTE="$(t "suivi en direct dans le panneau iTerm2 voisin, fermé avec la session")"
+      WATCH_NOTE="$(t "live tracking in the next iTerm2 pane, closed with the session")"
       return 0
     fi
   fi
@@ -137,14 +137,14 @@ start_with_watch() {
     name="loomy-$(printf '%s' "$(basename "$ROOT")" | tr -c 'A-Za-z0-9_-' '-')"
     # Session déjà ouverte (autre terminal) : on la rejoint plutôt que de la fermer, sauf demande contraire.
     if tmux has-session -t "=$name" 2>/dev/null; then
-      UI_LABEL="$(t "Session ouverte")"
-      UI_DESCS=("$(t "L'agent et le suivi de ce projet tournent déjà dans une session tmux : tu la retrouves telle quelle, dans ce terminal.")" \
-        "$(t "Ouvre une seconde session, à côté de la première (deux agents sur le même dossier : à éviter sauf besoin précis).")" \
-        "$(t "Ne lance rien.")")
-      ui_choose "$(t "Une session Loomy est déjà ouverte pour ce projet. Que faire ?")" 0 "$(t "La rejoindre")" "$(t "En ouvrir une autre")" "$(t "Annuler")"
+      UI_LABEL="$(t "Session opened")"
+      UI_DESCS=("$(t "This project's agent and tracking already run in a tmux session: you get it back as is, in this terminal.")" \
+        "$(t "Opens a second session next to the first (two agents on the same folder: avoid unless you really need it).")" \
+        "$(t "Starts nothing.")")
+      ui_choose "$(t "A Loomy session is already open for this project. What now?")" 0 "$(t "Join it")" "$(t "Open another one")" "$(t "Cancel")"
       case "$UI_INDEX" in
-        0) ui_end "$(t "retour dans la session ouverte · clic ou Ctrl-b + flèche pour changer de panneau")"; ui_exec tmux attach-session -t "=$name" ;;
-        2) ui_end "$(t "rien n'a été lancé")"; exit 0 ;;
+        0) ui_end "$(t "back in the open session · click or Ctrl-b + arrow to switch panes")"; ui_exec tmux attach-session -t "=$name" ;;
+        2) ui_end "$(t "nothing was started")"; exit 0 ;;
       esac
       n=2; while tmux has-session -t "=$name-$n" 2>/dev/null; do n=$(( n + 1 )); done
       name="$name-$n"
@@ -158,31 +158,31 @@ start_with_watch() {
     w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$name.sh")"
     if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
-    ui_end "$(t "ouverture de %s et du suivi en direct, côte à côte (tmux) · clic ou Ctrl-b + flèche pour changer de panneau" "$tool_label")"
+    ui_end "$(t "opening %s and live tracking, side by side (tmux) · click or Ctrl-b + arrow to switch panes" "$tool_label")"
     ui_exec tmux attach-session -t "$name"
   fi
   if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script "${TMPDIR:-/tmp}/loomy-watch-$$.sh" $$)"
     if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
-      WATCH_NOTE="$(t "suivi en direct dans une nouvelle fenêtre Terminal, fermée avec la session")"
+      WATCH_NOTE="$(t "live tracking in a new Terminal window, closed with the session")"
       return 0
     fi
   fi
-  WATCH_NOTE="$(t "suivi côte à côte indisponible ici (brew install tmux) : lance loomy watch dans un autre terminal")"
+  WATCH_NOTE="$(t "side-by-side tracking unavailable here (brew install tmux): run loomy watch in another terminal")"
   return 0
 }
 
 print_cmds() {
-  ui_section "$(t "COMMANDES")" "$(t "à lancer à la racine du projet")"
+  ui_section "$(t "COMMANDS")" "$(t "to run at the project root")"
   if (( HAS_SESSION )); then
-    ui_rail "${C_DIM}$(t "reprendre :")${C_RESET} ${C_BOLD}$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")${C_RESET}"
+    ui_rail "${C_DIM}$(t "resume:")${C_RESET} ${C_BOLD}$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")${C_RESET}"
   fi
-  ui_rail "${C_DIM}$(t "nouvelle  :")${C_RESET} ${C_BOLD}$(short_cmd)${C_RESET} ${C_DIM}$(t "puis colle le prompt :")${C_RESET}"
+  ui_rail "${C_DIM}$(t "new:   ")${C_RESET} ${C_BOLD}$(short_cmd)${C_RESET} ${C_DIM}$(t "then paste the prompt:")${C_RESET}"
   _ui_term_size; _ui_wrap "$PROMPT" $(( UI_W - 8 ))
   for l in "${UI_LINES[@]}"; do ui_rail "   ${C_DIM}${l}${C_RESET}"; done
-  if ui_is_interactive && ui_copy "$PROMPT"; then ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}$(t "prompt copié dans le presse-papiers")${C_RESET}"; fi
-  app="$(t "l'app Claude (onglet Code)")"; [[ "$TOOL" == "codex" ]] && app="$(t "l'app Codex")"
-  ui_rail "${C_DIM}$(t "dans l'app :")${C_RESET} $(t "ouvre ce dossier dans %s, modèle %s, effort %s, puis colle le prompt" "$app" "${C_BOLD}$MODEL${C_RESET}" "${C_BOLD}$EFFORT${C_RESET}")"
+  if ui_is_interactive && ui_copy "$PROMPT"; then ui_rail "   ${C_GREEN}✓${C_RESET} ${C_DIM}$(t "prompt copied to the clipboard")${C_RESET}"; fi
+  app="$(t "the Claude app (Code tab)")"; [[ "$TOOL" == "codex" ]] && app="$(t "the Codex app")"
+  ui_rail "${C_DIM}$(t "in the app:")${C_RESET} $(t "open this folder in %s, model %s, effort %s, then paste the prompt" "$app" "${C_BOLD}$MODEL${C_RESET}" "${C_BOLD}$EFFORT${C_RESET}")"
 }
 
 if [[ "$MODE" == "menu" ]]; then
@@ -191,13 +191,13 @@ if [[ "$MODE" == "menu" ]]; then
     ui_print "${C_RAIL}│${C_RESET}"
     opts=(); descs=(); codes=()
     if (( HAS_SESSION )); then
-      opts+=("$(t "Reprendre la dernière session")"); codes+=(resume)
-      descs+=("$(t "Reprend la conversation la plus récente de ce dossier, avec son historique : %s" "$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")")")
+      opts+=("$(t "Resume the last session")"); codes+=(resume)
+      descs+=("$(t "Resumes this folder's latest conversation, with its history: %s" "$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")")")
     fi
-    opts+=("$(t "Nouvelle session")"); codes+=(new); descs+=("$(t "Ouvre %s avec le prompt de %s. L'agent relit START.md, le brief et l'état du projet." "$tool_label" "$KIND")")
-    opts+=("$(t "Afficher les commandes")"); codes+=(print); descs+=("$(t "N'ouvre rien : affiche les commandes et copie le prompt, pour les lancer toi-même.")")
-    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choix")"
-    ui_choose "$(t "Que veux-tu faire ?")" 0 "${opts[@]}"
+    opts+=("$(t "New session")"); codes+=(new); descs+=("$(t "Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state." "$tool_label" "$KIND")")
+    opts+=("$(t "Show the commands")"); codes+=(print); descs+=("$(t "Opens nothing: shows the commands and copies the prompt, so you run them yourself.")")
+    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choice")"
+    ui_choose "$(t "What do you want to do?")" 0 "${opts[@]}"
     MODE="${codes[$UI_INDEX]:-print}"
   fi
 fi
@@ -205,10 +205,10 @@ fi
 case "$MODE" in
   print)
     print_cmds
-    ui_end "$(t "suivi en direct : loomy watch")"
+    ui_end "$(t "live tracking: loomy watch")"
     ;;
   resume)
-    if (( ! HAS_SESSION )); then ui_warn "$(t "Aucune session à reprendre")" "$(t "ouverture d'une nouvelle session")"; MODE="new"; fi
+    if (( ! HAS_SESSION )); then ui_warn "$(t "No session to resume")" "$(t "opening a new session")"; MODE="new"; fi
     ;;
 esac
 [[ "$MODE" == "print" ]] && exit 0
@@ -216,13 +216,13 @@ esac
 # Codex n'exécute les hooks d'un projet (contexte automatique, suivi de session) qu'une fois le dossier jugé de confiance
 # et les hooks approuvés : il le demande lui-même au premier lancement.
 if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
-  ui_info "$(t "premier lancement de Codex dans ce projet : accepte de faire confiance au dossier, puis approuve les hooks Loomy (reprise automatique)")"
+  ui_info "$(t "first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)")"
 fi
 [[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "yes" ]] && WATCH=1 || WATCH=0; }
 if [[ "$MODE" == "resume" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); fi
-WATCH_NOTE="$(t "suivi en direct dans un autre terminal : loomy watch (ou loomy start --watch)")"
+WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start --watch)")"
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
-ui_end "$(t "ouverture de %s…" "$tool_label") · $WATCH_NOTE"
+ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
 # Codex n'a pas de hooks par projet : la session est notée ici. Après exec, Codex garde ce pid.
 if [[ "$TOOL" == "codex" ]]; then

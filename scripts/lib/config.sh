@@ -57,7 +57,7 @@ ai_plan_price() {
 
 ai_plan_label() {
   case "$1:$2" in
-    claude:api|codex:api) t "API (paiement à l'usage)"; echo ;;
+    claude:api|codex:api) t "API (pay as you go)"; echo ;;
     claude:pro) t "Claude Pro"; echo ;;
     claude:max5) t "Claude Max 5x"; echo ;;
     claude:max20) t "Claude Max 20x"; echo ;;
@@ -68,7 +68,7 @@ ai_plan_label() {
     codex:pro200) echo "ChatGPT Pro (200 $)" ;;
     codex:business) t "ChatGPT Business"; echo ;;
     codex:enterprise) t "ChatGPT Enterprise"; echo ;;
-    *) t "non renseigné"; echo ;;
+    *) t "not set"; echo ;;
   esac
 }
 

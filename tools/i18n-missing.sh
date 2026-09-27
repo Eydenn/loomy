@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Phrases passées à t "…" dans les scripts et absentes du dictionnaire anglais (scripts/lib/i18n/en.tsv).
-# Sortie : une phrase par ligne (vide si tout est traduit). Code 1 s'il en manque.
+# Sentences passed to t "…" in the scripts and missing from the French dictionary (scripts/lib/i18n/fr.tsv).
+# Output: one sentence per line (empty when everything is translated). Exit 1 when some are missing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import re, glob, sys
 known = set()
-for raw in open("scripts/lib/i18n/en.tsv", encoding="utf-8"):
+for raw in open("scripts/lib/i18n/fr.tsv", encoding="utf-8"):
     raw = raw.rstrip("\n")
     if raw and not raw.startswith("#") and "\t" in raw: known.add(raw.split("\t", 1)[0])
 files = glob.glob("scripts/*.sh") + glob.glob("scripts/lib/*.sh") + ["bin/loomy"]
@@ -17,7 +17,7 @@ for f in sorted(files):
     for m in pat.finditer(text):
         s = m.group(1).replace("\\\"", "\"").replace("\\$", "$").replace("\\\\", "\\")
         if s and s not in known and s not in missing: missing.append(s)
-# Questions à choix du questionnaire : choose_coded VAR "question" "défaut" "aide" "code|libellé|description"…
+# Questionnaire choices: choose_coded VAR "question" "default" "hint" "code|label|description"…
 qs = re.compile(r'"((?:[^"\\]|\\.)*)"')
 for f in sorted(files):
     lines = open(f, encoding="utf-8").read().split("\n")

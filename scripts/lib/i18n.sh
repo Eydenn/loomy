@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-# Langue de l'interface de Loomy : anglais ou français. À charger (source) ; ui.sh le fait. Compatible bash 3.2.
+# Loomy interface language: English by default, French when detected. Sourced by ui.sh. Bash 3.2 compatible.
 #
-# Langue retenue, dans l'ordre : LOOMY_LANG, puis « loomy config set lang fr|en|auto », puis les variables LC_ALL,
-# LC_MESSAGES, LANG, puis la langue du système sous macOS (AppleLocale) ; français si elle commence par « fr »,
-# anglais sinon, et anglais quand rien n'est détectable. Calculée une fois, puis transmise aux sous-processus
-# (LOOMY_UI_LANG).
+# Resolution order: LOOMY_LANG, then "loomy config set lang fr|en|auto", then LC_ALL, LC_MESSAGES, LANG, then the
+# macOS system language (AppleLocale). French when it starts with "fr", English otherwise, and English when nothing
+# can be detected. Computed once, then passed to child processes (LOOMY_UI_LANG).
 #
-# Textes : t "phrase en français" [arguments printf]. La phrase française sert de clé ; sa traduction anglaise vient
-# du dictionnaire (scripts/lib/i18n/en.tsv, compilé en en.sh par tools/i18n-build.sh). Une phrase pas encore traduite
-# s'affiche en français plutôt que de casser l'affichage.
+# Strings: t "English sentence" [printf arguments]. The English sentence is the key; its French translation comes
+# from the dictionary (scripts/lib/i18n/fr.tsv, compiled into fr.sh by tools/i18n-build.sh). A sentence not yet
+# translated is shown in English rather than breaking the display.
 
 _i18n_detect() {
   local l="${LOOMY_LANG:-}" cfg="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"
@@ -18,7 +17,7 @@ _i18n_detect() {
   if [[ -z "$l" ]]; then
     local v
     for v in "${LC_ALL:-}" "${LC_MESSAGES:-}" "${LANG:-}"; do
-      # C, POSIX et les locales purement techniques ne disent rien de la langue de l'utilisateur.
+      # C, POSIX and purely technical locales say nothing about the user's language.
       case "$v" in ""|C|POSIX|C.*|POSIX.*) continue ;; esac
       l="$v"; break
     done
@@ -31,18 +30,18 @@ _i18n_detect() {
 
 if [[ -z "${LOOMY_UI_LANG:-}" ]]; then LOOMY_UI_LANG="$(_i18n_detect)"; export LOOMY_UI_LANG; fi
 _T=""
-if [[ "$LOOMY_UI_LANG" == "en" ]]; then
-  # shellcheck source=i18n/en.sh
-  source "$(dirname "${BASH_SOURCE[0]}")/i18n/en.sh" 2>/dev/null || _t_en() { _T=""; }
+if [[ "$LOOMY_UI_LANG" == "fr" ]]; then
+  # shellcheck source=i18n/fr.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh" 2>/dev/null || _t_fr() { _T=""; }
 fi
 
-# t <phrase> [arguments] : phrase dans la langue de l'interface (printf si des arguments suivent).
+# t <sentence> [arguments]: sentence in the interface language (printf when arguments follow).
 t() {
   local s="$1"; shift
-  if [[ "$LOOMY_UI_LANG" == "en" ]]; then _t_en "$s"; [[ -n "$_T" ]] && s="$_T"; fi
+  if [[ "$LOOMY_UI_LANG" == "fr" ]]; then _t_fr "$s"; [[ -n "$_T" ]] && s="$_T"; fi
   # shellcheck disable=SC2059
   if (( $# )); then printf "$s" "$@"; else printf '%s' "$s"; fi
 }
 
-# ui_lang : langue de l'interface (fr ou en).
+# ui_lang: interface language (en or fr).
 ui_lang() { echo "$LOOMY_UI_LANG"; }

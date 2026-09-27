@@ -30,7 +30,7 @@ fi
 unset _ui_probe _l _locs
 
 AI_CATALOG_DATE="2026-09-23"
-AI_CATALOG_SOURCE="intégré"
+AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # prix du catalogue téléchargé : "modèle=entrée sortie cache;…"
 AI_ROUTE_EXTRA=""    # répartition du catalogue téléchargé : "famille:rôle=NIVEAU effort;…"
 
@@ -54,7 +54,7 @@ _ai_catalog_load() {
   [[ -f "$f" ]] || return 0
   d="$(sed -n 's/^date=\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)$/\1/p' "$f" | head -1)"
   [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
-  AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="téléchargé"
+  AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="downloaded"
   while IFS= read -r line; do
     if [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9._,\ -]+)$ ]]; then
       k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
@@ -154,23 +154,23 @@ AI_EFFORTS="low medium high xhigh max ultra"
 
 ai_role_label() {
   case "$1" in
-    lead) t "Orchestrateur (lead)"; echo ;; architect) t "Architecte"; echo ;; debugger) t "Débogueur"; echo ;;
-    security) t "Sécurité"; echo ;; reviewer) t "Relecteur"; echo ;; developer) t "Développeur"; echo ;;
-    executor) t "Exécutant"; echo ;; explorer) t "Explorateur"; echo ;; documenter) t "Documentaliste"; echo ;;
+    lead) t "Lead agent (orchestrator)"; echo ;; architect) t "Architect"; echo ;; debugger) t "Debugger"; echo ;;
+    security) t "Security"; echo ;; reviewer) t "Reviewer"; echo ;; developer) t "Developer"; echo ;;
+    executor) t "Executor"; echo ;; explorer) t "Explorer"; echo ;; documenter) t "Documenter"; echo ;;
     *) echo "$1" ;;
   esac
 }
 
 ai_role_scope() {
   case "$1" in
-    lead) t "plan, découpage, délégation, décisions, intégration, vérification finale"; echo ;;
-    architect) t "architecture, specs, ADR, arbitrages"; echo ;;
-    debugger) t "bugs difficiles, tâches longues en terminal, migrations"; echo ;;
-    security) t "revue sécurité ciblée (auth, paiements, données, secrets)"; echo ;;
-    reviewer) t "revue de diff : régressions, cas limites, tests manquants"; echo ;;
-    developer) t "features et correctifs courants dans un périmètre donné"; echo ;;
-    executor) t "tickets précis et bornés, tests, modifications en masse"; echo ;;
-    explorer) t "recherche dans le code, cartographie, résumés, logs"; echo ;;
+    lead) t "plan, breakdown, delegation, decisions, integration, final check"; echo ;;
+    architect) t "architecture, specs, ADRs, trade-offs"; echo ;;
+    debugger) t "hard bugs, long terminal tasks, migrations"; echo ;;
+    security) t "targeted security review (auth, payments, data, secrets)"; echo ;;
+    reviewer) t "diff review: regressions, edge cases, missing tests"; echo ;;
+    developer) t "everyday features and fixes within a given scope"; echo ;;
+    executor) t "precise, bounded tickets, tests, bulk changes"; echo ;;
+    explorer) t "code search, mapping, summaries, logs"; echo ;;
     documenter) t "README, docs, changelogs"; echo ;;
   esac
 }
@@ -389,13 +389,13 @@ ai_env_for() {
   case "$mode" in
     HYBRID|ORCHESTRATED|PARALLEL)
       if (( lead_ok && other_ok )); then AI_ENV="hybrid-$lead"
-      elif (( lead_ok )); then AI_ENV="$lead"; AI_ENV_NOTE="$(t "mode %s demandé mais %s est absent : repli full %s" "$mode" "$other" "$lead")"
-      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "lead %s absent : repli full %s" "$lead" "$other")"
-      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "aucune CLI IA détectée : matrice théorique")"; fi ;;
+      elif (( lead_ok )); then AI_ENV="$lead"; AI_ENV_NOTE="$(t "%s mode requested but %s is missing: falling back to full %s" "$mode" "$other" "$lead")"
+      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "%s lead missing: falling back to full %s" "$lead" "$other")"
+      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "no AI CLI detected: theoretical matrix")"; fi ;;
     *)
       if (( lead_ok )); then AI_ENV="$lead"
-      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "lead %s absent : repli full %s" "$lead" "$other")"
-      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "aucune CLI IA détectée : matrice théorique")"; fi ;;
+      elif (( other_ok )); then AI_ENV="$other"; AI_ENV_NOTE="$(t "%s lead missing: falling back to full %s" "$lead" "$other")"
+      else AI_ENV="$lead"; AI_ENV_NOTE="$(t "no AI CLI detected: theoretical matrix")"; fi ;;
   esac
 }
 
@@ -418,26 +418,26 @@ ai_detect_env() {
 ai_env_label() {
   case "$1" in
     claude) t "Full Claude Code"; echo ;; codex) t "Full Codex"; echo ;;
-    hybrid-claude) t "Hybride, lead Claude Code"; echo ;; hybrid-codex) t "Hybride, lead Codex"; echo ;;
+    hybrid-claude) t "Hybrid, Claude Code lead"; echo ;; hybrid-codex) t "Hybrid, Codex lead"; echo ;;
     *) echo "$1" ;;
   esac
 }
 
 ai_profile_label() {
-  case "$1" in econome) t "Économe"; echo ;; equilibre) t "Équilibré"; echo ;; qualite) t "Qualité max"; echo ;; *) echo "$1" ;; esac
+  case "$1" in econome) t "Thrifty"; echo ;; equilibre) t "Balanced"; echo ;; qualite) t "Max quality"; echo ;; *) echo "$1" ;; esac
 }
 
 # ai_start_prompt <mode> <lead> : prompt de démarrage du bootstrap pour l'orchestrateur (questionnaire et loomy start).
 ai_start_prompt() {
   local MODE="${1:-SOLO}" LEAD="${2:-claude}"
   local p
-  p="$(t "Initialise ce projet en suivant strictement START.md. Le brief de démarrage est dans .loomy/brief.md : utilise-le comme réponses déjà données, confirme-le et ne pose que les questions manquantes. Tu es l'orchestrateur : délègue chaque rôle selon .loomy/scripts/ai-route.sh. Reste en mode analyse/plan jusqu'à ma validation.")"
+  p="$(t "Set up this project by strictly following START.md. The starting brief is in .loomy/brief.md: use it as answers already given, confirm it and only ask the missing questions. You are the lead agent: delegate each role according to .loomy/scripts/ai-route.sh. Stay in analysis/plan mode until I approve.")"
   case "$MODE" in
     ORCHESTRATED)
-      if [[ "$LEAD" == "codex" ]]; then p="$p $(t "Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile à Claude via delegate-to-claude.sh, uniquement quand cela apporte une vraie valeur.")"
-      else p="$p $(t "Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh.")"; fi ;;
-    HYBRID) p="$p $(t "Configure le mode HYBRID Codex + Claude Code sans multiplier les agents.")" ;;
-    PARALLEL) p="$p $(t "Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités.")" ;;
+      if [[ "$LEAD" == "codex" ]]; then p="$p $(t "Codex leads; delegate architecture, security and hard debugging to Claude via delegate-to-claude.sh, only when it adds real value.")"
+      else p="$p $(t "Claude Code leads; delegate bounded execution and cross review to Codex via delegate-to-codex.sh.")"; fi ;;
+    HYBRID) p="$p $(t "Set up the HYBRID Codex + Claude Code mode without multiplying agents.")" ;;
+    PARALLEL) p="$p $(t "Plan the PARALLEL mode with separate worktrees and a clear split of responsibilities.")" ;;
   esac
   printf '%s' "$p"
 }

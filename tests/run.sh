@@ -421,7 +421,7 @@ mkdir -p "$XDG_CONFIG_HOME/loomy"
 sed 's/^date=.*/date=2099-01-01/; s/^model.codex.fast=.*/model.codex.fast=luna-test/; s/^price.gpt-6-sol=.*/price.gpt-6-sol=9 9 9/' "$REPO/catalog/models.conf" >"$XDG_CONFIG_HOME/loomy/catalog.conf"
 echo 'model.claude.top=$(touch '"$WORK"'/injecte)' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_MODEL_CODEX_FAST $AI_MODEL_CLAUDE_TOP $(ai_price gpt-6-sol)"' _ "$REPO")"
-[[ "$got" == "téléchargé luna-test claude-opus-5-5 9 9 9" ]] && ok "catalogue téléchargé pris en compte" || ko "catalogue téléchargé : $got"
+[[ "$got" == "downloaded luna-test claude-opus-5-5 9 9 9" ]] && ok "catalogue téléchargé pris en compte" || ko "catalogue téléchargé : $got"
 [[ ! -e "$WORK/injecte" ]] && ok "catalogue : contenu jamais exécuté" || ko "catalogue : injection exécutée"
 rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
 
@@ -766,7 +766,7 @@ has "aide : textes traduits" "Usage|Commands|commands"
 hasnt "aide : pas de français résiduel dans les titres" "<commande>|◇  PROJET"
 run "statut en anglais" env -u LOOMY_UI_LANG LOOMY_LANG=en bash "$REPO/scripts/ai-status.sh" --root "$PROJ"
 hasnt "statut : pas de libellé français" "Statut du projet|ACTIVITÉ|étape [0-9]"
-run "dictionnaire compilé à jour" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/en.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/en.sh; r=$?; cp "$tmp" scripts/lib/i18n/en.sh; rm -f "$tmp"; exit $r' _ "$REPO"
+run "dictionnaire compilé à jour" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/fr.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/fr.sh; r=$?; cp "$tmp" scripts/lib/i18n/fr.sh; rm -f "$tmp"; exit $r' _ "$REPO"
 run "toutes les phrases de l'interface sont traduites" bash -c '[[ -z "$(bash "$1/tools/i18n-missing.sh")" ]]' _ "$REPO"
 
 # ------------------------------------------------------------------ install.sh

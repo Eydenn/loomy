@@ -30,11 +30,11 @@ LEVELS="low medium high xhigh max"
 
 label() {
   case "$1" in
-    low) t "rapide et économe : suffit souvent pour orchestrer"; echo ;;
-    medium) t "bon compromis vitesse / réflexion"; echo ;;
-    high) t "réflexion poussée, plus lent et plus coûteux"; echo ;;
-    xhigh) t "très poussé : décisions délicates"; echo ;;
-    max) t "maximum : lent et coûteux, pour les cas difficiles"; echo ;;
+    low) t "fast and thrifty: often enough to orchestrate"; echo ;;
+    medium) t "good speed / reasoning trade-off"; echo ;;
+    high) t "deeper reasoning, slower and costlier"; echo ;;
+    xhigh) t "very deep: tricky decisions"; echo ;;
+    max) t "maximum: slow and costly, for hard cases"; echo ;;
   esac
 }
 
@@ -54,12 +54,12 @@ show_role() {
   local role="$1"
   ai_detect_env "$ROOT"; ai_resolve "$role" "$AI_ENV" "$AI_PROFILE"
   local src
-  src="$(t "profil %s" "$(ai_profile_label "$AI_PROFILE")")"; (( R_EFFORT_SET )) && src="$(t "réglé pour ce projet")"
+  src="$(t "%s profile" "$(ai_profile_label "$AI_PROFILE")")"; (( R_EFFORT_SET )) && src="$(t "set for this project")"
   ui_kv "$role" "${C_BRAND}${R_MODEL}${C_RESET} · effort ${C_BOLD}${R_EFFORT}${C_RESET} ${C_DIM}(${src})${C_RESET}"
 }
 
 done_msg() {
-  ui_end "$(t "pris en compte au prochain loomy start (et par les délégations suivantes) · retour au profil : %s" "loomy effort ${1:+$1 }--reset")"
+  ui_end "$(t "applied at the next loomy start (and by the next delegations) · back to the profile: %s" "loomy effort ${1:+$1 }--reset")"
 }
 
 role="lead"; level=""
@@ -69,27 +69,27 @@ case "${#ARGS[@]}" in
      elif [[ "${ARGS[0]}" == "--reset" ]]; then level="--reset-all"
      else level="${ARGS[0]}"; fi ;;
   2) role="${ARGS[0]}"; level="${ARGS[1]}" ;;
-  *) t "Usage : loomy effort [<rôle>] [low|medium|high|xhigh|max|--reset]" >&2; echo >&2; exit 2 ;;
+  *) t "Usage: loomy effort [<role>] [low|medium|high|xhigh|max|--reset]" >&2; echo >&2; exit 2 ;;
 esac
-valid_role "$role" || { t "Rôle inconnu : %s (%s)" "$role" "$AI_ROLES" >&2; echo >&2; exit 2; }
+valid_role "$role" || { t "Unknown role: %s (%s)" "$role" "$AI_ROLES" >&2; echo >&2; exit 2; }
 
 ui_clear
 ui_rail_head "effort · $(basename "$ROOT")"
 case "$level" in
   --list)
     for r in $AI_ROLES; do show_role "$r"; done
-    ui_end "$(t "régler : loomy effort [<rôle>] <niveau>")" ;;
+    ui_end "$(t "set: loomy effort [<role>] <level>")" ;;
   --reset-all)
     rm -f "$FILE"
-    ui_ok "$(t "Efforts revenus à ceux du profil")" "$(t "tous les rôles")"
+    ui_ok "$(t "Efforts back to the profile's")" "$(t "all roles")"
     show_role lead; done_msg ;;
   --reset)
     set_effort "$role" ""
-    ui_ok "$(t "Effort de %s revenu à celui du profil" "$role")"
+    ui_ok "$(t "%s effort back to the profile's" "$role")"
     show_role "$role"; done_msg "$( [[ "$role" != lead ]] && echo "$role")" ;;
   "")
     show_role lead
-    if ! ui_is_interactive; then ui_end "$(t "régler : loomy effort <low|medium|high|xhigh|max>")"; exit 0; fi
+    if ! ui_is_interactive; then ui_end "$(t "set: loomy effort <low|medium|high|xhigh|max>")"; exit 0; fi
     ui_print "${C_RAIL}│${C_RESET}"
     ai_detect_env "$ROOT"; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
     cur="$R_EFFORT"; def=0; i=0; opts=(); UI_DESCS=()
@@ -97,14 +97,14 @@ case "$level" in
       [[ "$l" == "$cur" ]] && def=$i
       opts+=("$l"); UI_DESCS+=("$(label "$l")"); i=$(( i + 1 ))
     done
-    opts+=("$(t "Revenir au profil")"); UI_DESCS+=("$(t "Supprime le réglage : l'effort suit le profil du brief (%s)." "$(ai_profile_label "$AI_PROFILE")")"); UI_LABEL="Effort"
-    ui_choose "$(t "Effort de l'orchestrateur (%s) ?" "$R_MODEL")" "$def" "${opts[@]}"
+    opts+=("$(t "Back to the profile")"); UI_DESCS+=("$(t "Removes the setting: the effort follows the brief's profile (%s)." "$(ai_profile_label "$AI_PROFILE")")"); UI_LABEL="Effort"
+    ui_choose "$(t "Lead agent effort (%s)?" "$R_MODEL")" "$def" "${opts[@]}"
     # Les niveaux d'abord (mêmes noms dans les deux langues), puis « Revenir au profil ».
     if (( UI_INDEX >= $(set -- $LEVELS; echo $#) )); then set_effort lead ""; else set_effort lead "$UI_VALUE"; fi
     show_role lead; done_msg ;;
   *)
-    valid_level "$level" || { t "Niveau inconnu : %s (%s)" "$level" "$LEVELS" >&2; echo >&2; exit 2; }
+    valid_level "$level" || { t "Unknown level: %s (%s)" "$level" "$LEVELS" >&2; echo >&2; exit 2; }
     set_effort "$role" "$level"
-    ui_ok "$(t "Effort de %s réglé" "$role")" "$level · $(label "$level")"
+    ui_ok "$(t "%s effort set" "$role")" "$level · $(label "$level")"
     show_role "$role"; done_msg "$( [[ "$role" != lead ]] && echo "$role")" ;;
 esac

@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
     --yes|-y|--no-clipboard) WIZARD_ARGS+=("$1") ;;
     --answers) WIZARD_ARGS+=("$1" "${2:-}"); shift ;;
     -h|--help) usage; exit 0 ;;
-    -*) t "Erreur : option inconnue %s" "$1" >&2; echo >&2; usage >&2; exit 2 ;;
+    -*) t "Error: unknown option %s" "$1" >&2; echo >&2; usage >&2; exit 2 ;;
     *) TARGET_INPUT="$1" ;;
   esac
   shift
@@ -73,30 +73,30 @@ if [[ -z "$TARGET_INPUT" ]]; then
   elif ui_is_interactive; then
     # Choix du dossier : ici, un nouveau dossier nommé d'après le projet, ou un autre emplacement.
     ui_clear
-    ui_banner "$(t "Nouveau projet")" "$(t "dossier courant : %s" "${CWD/#$HOME/~}")"
-    ui_section "$(t "PROJET")"
+    ui_banner "$(t "New project")" "$(t "current folder: %s" "${CWD/#$HOME/~}")"
+    ui_section "$(t "PROJECT")"
     here_ok=1; is_home_or_root "$CWD" && here_ok=0
     default_name="mon-projet"; if (( here_ok )) && looks_like_project "$CWD"; then default_name="$(basename "$CWD")"; fi
-    UI_LABEL="$(t "Nom")"; UI_HINT="$(t "Il sert de nom au projet et, si tu crées un dossier, de nom de dossier.")"
-    ui_input "$(t "Nom du projet")" "$default_name"
+    UI_LABEL="$(t "Name")"; UI_HINT="$(t "It names the project and, if you create a folder, the folder too.")"
+    ui_input "$(t "Project name")" "$default_name"
     PROJECT_NAME="$UI_VALUE"; slug="$(loomy_slug "$PROJECT_NAME")"
-    opts=("$(t "Nouveau dossier ./%s" "$slug")"); codes=(new); descs=("$(t "Crée %s et y installe Loomy." "${CWD/#$HOME/~}/$slug")")
+    opts=("$(t "New folder ./%s" "$slug")"); codes=(new); descs=("$(t "Creates %s and installs Loomy there." "${CWD/#$HOME/~}/$slug")")
     if (( here_ok )); then
-      opts+=("$(t "Dossier courant (%s)" "${CWD/#$HOME/~}")"); codes+=(here); descs+=("$(t "Installe Loomy ici : pour un dossier vide ou un projet existant à standardiser.")")
+      opts+=("$(t "Current folder (%s)" "${CWD/#$HOME/~}")"); codes+=(here); descs+=("$(t "Installs Loomy here: for an empty folder or an existing project to standardize.")")
     fi
-    opts+=("$(t "Autre emplacement…")"); codes+=(other); descs+=("$(t "Tu indiques le chemin du dossier ; il est créé s'il n'existe pas.")")
+    opts+=("$(t "Somewhere else…")"); codes+=(other); descs+=("$(t "You give the folder path; it's created if it doesn't exist.")")
     default=0; if (( here_ok )) && looks_like_project "$CWD"; then default=1; fi
-    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Dossier")"
-    ui_choose "$(t "Où créer le projet ?")" "$default" "${opts[@]}"
+    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Folder")"
+    ui_choose "$(t "Where to create the project?")" "$default" "${opts[@]}"
     case "${codes[$UI_INDEX]}" in
       new) TARGET_INPUT="$CWD/$slug" ;;
       here) TARGET_INPUT="$CWD" ;;
-      *) UI_LABEL="$(t "Chemin")"; ui_input "$(t "Chemin du dossier du projet")" "${CWD/#$HOME/~}/$slug"; TARGET_INPUT="${UI_VALUE/#\~/$HOME}" ;;
+      *) UI_LABEL="$(t "Path")"; ui_input "$(t "Project folder path")" "${CWD/#$HOME/~}/$slug"; TARGET_INPUT="${UI_VALUE/#\~/$HOME}" ;;
     esac
     export LOOMY_PROJECT_NAME="$PROJECT_NAME"
-    ui_end "$(t "installation de Loomy dans %s…" "${TARGET_INPUT/#$HOME/~}")"
+    ui_end "$(t "installing Loomy in %s…" "${TARGET_INPUT/#$HOME/~}")"
   elif is_home_or_root "$CWD"; then
-    t "Erreur : %s n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet" "${CWD/#$HOME/~}" >&2; echo >&2
+    t "Error: %s isn't a project folder. Give the folder to create: loomy init my-project" "${CWD/#$HOME/~}" >&2; echo >&2
     exit 1
   else
     TARGET_INPUT="$CWD"
@@ -104,12 +104,12 @@ if [[ -z "$TARGET_INPUT" ]]; then
 fi
 
 if [[ ! -d "$TARGET_INPUT" ]]; then
-  if [[ "$ACTION" == "update" ]]; then t "Erreur : le dossier n'existe pas : %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; fi
-  mkdir -p "$TARGET_INPUT" || { t "Erreur : impossible de créer le dossier %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; }
+  if [[ "$ACTION" == "update" ]]; then t "Error: the folder doesn't exist: %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; fi
+  mkdir -p "$TARGET_INPUT" || { t "Error: can't create the folder %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; }
 fi
 TARGET="$(cd "$TARGET_INPUT" && pwd)"
 if is_home_or_root "$TARGET"; then
-  t "Erreur : %s n'est pas un dossier de projet. Indique le dossier à créer : loomy init mon-projet" "${TARGET/#$HOME/~}" >&2; echo >&2
+  t "Error: %s isn't a project folder. Give the folder to create: loomy init my-project" "${TARGET/#$HOME/~}" >&2; echo >&2
   exit 1
 fi
 L="$TARGET/.loomy"
@@ -205,7 +205,7 @@ out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.w
     printf '{\n  "hooks": {\n    "SessionStart": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] } ],\n    "SessionEnd": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] } ]\n  }\n}\n' "$s" "$e" >"$f"
     return 0
   fi
-  ui_warn "$(t ".codex/hooks.json existant non modifié")" "$(t "ajoute-y les hooks Loomy à la main (voir .loomy/scripts/ai-context.sh)")"
+  ui_warn "$(t "existing .codex/hooks.json left unchanged")" "$(t "add the Loomy hooks to it by hand (see .loomy/scripts/ai-context.sh)")"
   return 0
 }
 
@@ -226,7 +226,7 @@ for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Sto
 out = open(path, "w"); json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")'
   if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" 2>/dev/null; then return 0; fi
   _hooks_json >"$L/claude-hooks.json"
-  ui_warn "$(t ".claude/settings.json existant non modifié")" "$(t "ajoute-y les hooks de .loomy/claude-hooks.json")"
+  ui_warn "$(t "existing .claude/settings.json left unchanged")" "$(t "add the hooks from .loomy/claude-hooks.json to it")"
   return 0
 }
 
@@ -241,7 +241,7 @@ run_wizard() {
 
 # ---------------------------------------------------------------- projet déjà initialisé
 if [[ -e "$TARGET/START.md" && ! -d "$L" ]]; then
-  t "Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé." "$TARGET/START.md" >&2; echo >&2
+  t "Error: %s exists but doesn't come from Loomy (no .loomy folder). Refusing to overwrite." "$TARGET/START.md" >&2; echo >&2
   exit 1
 fi
 
@@ -254,73 +254,73 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
   do_update() {
     copy_loomy_files
     if (( IN_PROGRESS )); then cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"; fi
-    ui_ok "$(t "Loomy mis à jour dans le projet")" "v$OLD_V → v$NEW_V · $(t "brief, phase et journal conservés")"
+    ui_ok "$(t "Loomy updated in the project")" "v$OLD_V → v$NEW_V · $(t "brief, phase and journal kept")"
   }
   do_reset() {
     copy_loomy_files
     cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"
     rm -f "$L/state"
     if [[ -f "$L/brief.md" ]]; then mv "$L/brief.md" "$L/brief.previous.md"; fi
-    ui_ok "$(t "Bootstrap réinitialisé")" "$(t "START.md recopié, phase remise à zéro ; ancien brief : .loomy/brief.previous.md")"
-    ui_warn "$(t "Fichiers déjà créés par l'agent conservés")" "$(t "AGENTS.md, CLAUDE.md, PROJECT.md… l'orchestrateur les reprendra")"
+    ui_ok "$(t "Bootstrap reset")" "$(t "START.md copied again, phase reset; previous brief: .loomy/brief.previous.md")"
+    ui_warn "$(t "Files already created by the agent kept")" "$(t "AGENTS.md, CLAUDE.md, PROJECT.md… the lead agent will pick them up")"
   }
 
   ui_clear
-  ui_banner "$(t "Projet déjà initialisé")" "${TARGET/#$HOME/~}"
-  ui_section "$(t "ÉTAT")"
-  ui_kv "Loomy" "$(t "v%s dans le projet · v%s installé" "$OLD_V" "$NEW_V")"
-  ui_kv "Bootstrap" "$( (( IN_PROGRESS )) && t "en cours · phase %s" "$(loomy_phase_label "$PHASE")" || t "terminé")"
-  if [[ "$OLD_V" != "$NEW_V" ]]; then ui_warn "$(t "Version du projet différente")" "$(t "la mise à jour garde ton brief, ta phase et ton journal")"; fi
+  ui_banner "$(t "Project already set up")" "${TARGET/#$HOME/~}"
+  ui_section "$(t "STATE")"
+  ui_kv "Loomy" "$(t "v%s in the project · v%s installed" "$OLD_V" "$NEW_V")"
+  ui_kv "Bootstrap" "$( (( IN_PROGRESS )) && t "in progress · phase %s" "$(loomy_phase_label "$PHASE")" || t "done")"
+  if [[ "$OLD_V" != "$NEW_V" ]]; then ui_warn "$(t "Different project version")" "$(t "the update keeps your brief, phase and journal")"; fi
 
   if [[ -z "$ACTION" ]]; then
     if ! ui_is_interactive; then
-      ui_section "$(t "QUE FAIRE ?")"
-      ui_rail "${C_BOLD}loomy start${C_RESET}           ${C_DIM}$(t "reprendre la session de l'orchestrateur")${C_RESET}"
-      ui_rail "${C_BOLD}loomy init --update${C_RESET}   ${C_DIM}$(t "mettre à jour les fichiers Loomy du projet")${C_RESET}"
-      ui_rail "${C_BOLD}loomy brief${C_RESET}           ${C_DIM}$(t "refaire le questionnaire")${C_RESET}"
-      ui_rail "${C_BOLD}loomy init --reset${C_RESET}    ${C_DIM}$(t "réinitialiser le bootstrap")${C_RESET}"
-      ui_end "$(t "rien n'a été modifié")"
+      ui_section "$(t "WHAT NOW?")"
+      ui_rail "${C_BOLD}loomy start${C_RESET}           ${C_DIM}$(t "resume the lead agent session")${C_RESET}"
+      ui_rail "${C_BOLD}loomy init --update${C_RESET}   ${C_DIM}$(t "update the project's Loomy files")${C_RESET}"
+      ui_rail "${C_BOLD}loomy brief${C_RESET}           ${C_DIM}$(t "redo the questionnaire")${C_RESET}"
+      ui_rail "${C_BOLD}loomy init --reset${C_RESET}    ${C_DIM}$(t "reset the bootstrap")${C_RESET}"
+      ui_end "$(t "nothing was changed")"
       exit 1
     fi
     ui_print "${C_RAIL}│${C_RESET}"
-    opts=("$(t "Reprendre la session de l'orchestrateur")"); codes=(resume); descs=("$(t "Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.")")
+    opts=("$(t "Resume the lead agent session")"); codes=(resume); descs=("$(t "Opens loomy start: resumes this folder's last session, or opens a new one at the right point of the project.")")
     if [[ "$OLD_V" != "$NEW_V" ]]; then
-      opts+=("$(t "Mettre à jour Loomy dans ce projet (v%s → v%s)" "$OLD_V" "$NEW_V")"); codes+=(update); descs+=("$(t "Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.")")
+      opts+=("$(t "Update Loomy in this project (v%s → v%s)" "$OLD_V" "$NEW_V")"); codes+=(update); descs+=("$(t "Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.")")
     else
-      opts+=("$(t "Réinstaller les fichiers Loomy du projet")"); codes+=(update); descs+=("$(t "Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.")")
+      opts+=("$(t "Reinstall the project's Loomy files")"); codes+=(update); descs+=("$(t "Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.")")
     fi
-    if (( IN_PROGRESS )); then opts+=("$(t "Refaire le questionnaire")"); codes+=(brief); descs+=("$(t "Tes réponses actuelles servent de valeurs par défaut ; le brief n'est remplacé qu'après confirmation.")"); fi
-    opts+=("$(t "Réinitialiser le projet")"); codes+=(reset); descs+=("$(t "Repart du début du bootstrap : START.md recopié, phase remise à zéro, questionnaire relancé. Les fichiers déjà créés par l'agent restent.")")
+    if (( IN_PROGRESS )); then opts+=("$(t "Redo the questionnaire")"); codes+=(brief); descs+=("$(t "Your current answers are the defaults; the brief is only replaced after confirmation.")"); fi
+    opts+=("$(t "Reset the project")"); codes+=(reset); descs+=("$(t "Starts the bootstrap over: START.md copied again, phase reset, questionnaire run again. Files already created by the agent stay.")")
     if [[ "$INIT_NO_TARGET" == "1" ]]; then
-      opts+=("$(t "Créer un nouveau projet dans un sous-dossier")"); codes+=(sub); descs+=("$(t "Ce dossier est lui-même un projet Loomy : crée un nouveau projet à côté, dans ./<nom-du-projet>.")")
+      opts+=("$(t "Create a new project in a subfolder")"); codes+=(sub); descs+=("$(t "This folder is itself a Loomy project: creates a new project next to it, in ./<project-name>.")")
     fi
-    opts+=("$(t "Annuler")"); codes+=(cancel); descs+=("$(t "Ne modifie rien.")")
-    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choix")"
+    opts+=("$(t "Cancel")"); codes+=(cancel); descs+=("$(t "Changes nothing.")")
+    UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choice")"
     default=0; [[ "$OLD_V" != "$NEW_V" ]] && default=1
-    ui_choose "$(t "Que veux-tu faire ?")" "$default" "${opts[@]}"
+    ui_choose "$(t "What do you want to do?")" "$default" "${opts[@]}"
     case "${codes[$UI_INDEX]}" in
-      resume) ui_end "$(t "ouverture de loomy start…")"; ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" ;;
+      resume) ui_end "$(t "opening loomy start…")"; ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$TARGET" ;;
       update) ACTION="update" ;;
       brief) ACTION="brief" ;;
       sub)
-        UI_LABEL="$(t "Nom")"; UI_HINT="$(t "Il donne aussi le nom du dossier créé ici.")"
-        ui_input "$(t "Nom du nouveau projet")" "$(t "mon-projet")"
+        UI_LABEL="$(t "Name")"; UI_HINT="$(t "It also names the folder created here.")"
+        ui_input "$(t "New project name")" "$(t "my-project")"
         export LOOMY_PROJECT_NAME="$UI_VALUE"
-        ui_end "$(t "création de ./%s…" "$(loomy_slug "$UI_VALUE")")"
+        ui_end "$(t "creating ./%s…" "$(loomy_slug "$UI_VALUE")")"
         ui_exec bash "$0" "$TARGET/$(loomy_slug "$UI_VALUE")" ${WIZARD_ARGS[@]+"${WIZARD_ARGS[@]}"} ;;
       reset)
-        UI_DESCS=("$(t "Repart de la phase Brief. Rien n'est supprimé en dehors de .loomy/state.")" "$(t "Ne modifie rien.")")
+        UI_DESCS=("$(t "Starts again from the Brief phase. Nothing is deleted apart from .loomy/state.")" "$(t "Changes nothing.")")
         UI_LABEL="$(t "Confirmation")"
-        ui_choose "$(t "Réinitialiser le bootstrap de ce projet ?")" 1 "$(t "Oui, réinitialiser")" "$(t "Non")"
-        if [[ "$UI_INDEX" == "0" ]]; then ACTION="reset"; else ui_end "$(t "rien n'a été modifié")"; exit 0; fi ;;
-      *) ui_end "$(t "rien n'a été modifié")"; exit 0 ;;
+        ui_choose "$(t "Reset this project's bootstrap?")" 1 "$(t "Yes, reset")" "$(t "No")"
+        if [[ "$UI_INDEX" == "0" ]]; then ACTION="reset"; else ui_end "$(t "nothing was changed")"; exit 0; fi ;;
+      *) ui_end "$(t "nothing was changed")"; exit 0 ;;
     esac
   fi
 
   case "$ACTION" in
     update)
       do_update
-      ui_end "$(t "reprendre : loomy start · suivi : loomy watch")"
+      ui_end "$(t "resume: loomy start · tracking: loomy watch")"
       exit 0 ;;
     brief)
       ui_end "$(t "questionnaire…")"
@@ -329,17 +329,17 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
       do_reset
       if (( RUN_WIZARD )); then
         answers=(); [[ -f "$L/brief.previous.md" ]] && answers=(--answers "$L/brief.previous.md")
-        ui_end "$(t "questionnaire (tes anciennes réponses servent de valeurs par défaut)…")"
+        ui_end "$(t "questionnaire (your previous answers are the defaults)…")"
         run_wizard ${answers[@]+"${answers[@]}"}
       fi
-      ui_end "$(t "remplis le brief : loomy brief · puis : loomy start")"
+      ui_end "$(t "fill in the brief: loomy brief · then: loomy start")"
       exit 0 ;;
   esac
 fi
 
 # ---------------------------------------------------------------- nouveau projet
 if [[ "$ACTION" == "update" ]]; then
-  t "Erreur : pas de projet Loomy dans %s à mettre à jour. Lancez loomy init pour le créer." "$TARGET" >&2; echo >&2
+  t "Error: no Loomy project in %s to update. Run loomy init to create it." "$TARGET" >&2; echo >&2
   exit 1
 fi
 copy_loomy_files
@@ -348,9 +348,9 @@ cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"
 if (( RUN_WIZARD )); then run_wizard; fi
 
 brief_cmd=".loomy/scripts/init-wizard.sh"; command -v loomy >/dev/null 2>&1 && brief_cmd="loomy brief"
-ui_banner "$(t "Loomy installé")" "v$NEW_V · ${TARGET/#$HOME/~}"
-if (( RUN_WIZARD )); then ui_warn "$(t "Terminal non interactif")" "$(t "questionnaire ignoré")"; fi
-ui_section "$(t "ÉTAPE SUIVANTE")"
-ui_rail "${C_BRAND}1${C_RESET}  $(t "Remplis le brief du projet :") ${C_BOLD}${brief_cmd}${C_RESET}"
-ui_rail "${C_BRAND}2${C_RESET}  $(t "Lance l'orchestrateur :") ${C_BOLD}loomy start${C_RESET}"
-ui_end "$(t "START.md, .loomy/ et une ligne de .gitignore ajoutés ; rien d'autre n'est modifié")"
+ui_banner "$(t "Loomy installed")" "v$NEW_V · ${TARGET/#$HOME/~}"
+if (( RUN_WIZARD )); then ui_warn "$(t "Non-interactive terminal")" "$(t "questionnaire skipped")"; fi
+ui_section "$(t "NEXT STEP")"
+ui_rail "${C_BRAND}1${C_RESET}  $(t "Fill in the project brief:") ${C_BOLD}${brief_cmd}${C_RESET}"
+ui_rail "${C_BRAND}2${C_RESET}  $(t "Start the lead agent:") ${C_BOLD}loomy start${C_RESET}"
+ui_end "$(t "START.md, .loomy/ and one .gitignore line added; nothing else is changed")"

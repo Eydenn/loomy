@@ -169,8 +169,8 @@ ui_pager() {
     _ui_term_size; _ui_chrome
     avail=$(( UI_ROWS - UI_CHROME_H )); (( avail < 3 )) && avail=3
     (( top > n - avail )) && top=$(( n - avail )); (( top < 0 )) && top=0
-    UI_FTR_KEYS="$(t "⏎ ← retour · q quitter")"
-    (( n > avail )) && UI_FTR_KEYS="$(t "↑↓ espace b défiler") ($(( top + 1 ))–$(( top + avail < n ? top + avail : n ))/$n) · $UI_FTR_KEYS"
+    UI_FTR_KEYS="$(t "⏎ ← back · q quit")"
+    (( n > avail )) && UI_FTR_KEYS="$(t "↑↓ space b scroll") ($(( top + 1 ))–$(( top + avail < n ? top + avail : n ))/$n) · $UI_FTR_KEYS"
     UI_BODY_TOP=$top; _ui_page_draw
     _ui_read_key
     case "$UI_KEY" in
@@ -230,7 +230,7 @@ _ui_chrome() {
   fi
   UI_HDR_LINES[${#UI_HDR_LINES[@]}]="$head"
   UI_CHROME_H=$(( ${#UI_HDR_LINES[@]} + 1 ))
-  left="${UI_FTR_KEYS:-$(t "Ctrl-C pour interrompre")}"; right="loomy${UI_LOOMY_V:+ $UI_LOOMY_V}"
+  left="${UI_FTR_KEYS:-$(t "Ctrl-C to interrupt")}"; right="loomy${UI_LOOMY_V:+ $UI_LOOMY_V}"
   _ui_strlen "$left$right"; pad=$(( UI_COLS - 6 - UI_LEN )); (( pad < 2 )) && pad=2
   UI_FOOTER="${C_RAIL}└${C_RESET}  ${C_DIM}${left}$(printf '%*s' "$pad" '')${right}${C_RESET}"
 }
@@ -415,7 +415,7 @@ ui_step_done() {
 ui_steps_end() {
   _ui_tick_stop
   _ui_now_ms; _ui_dur $(( UI_NOW - UI_ST_T0 ))
-  if [[ "$UI_SCREEN" == "1" ]]; then _ui_steps_paint "$(t "terminé en %s" "$UI_DUR")"; _ui_page_draw; fi
+  if [[ "$UI_SCREEN" == "1" ]]; then _ui_steps_paint "$(t "done in %s" "$UI_DUR")"; _ui_page_draw; fi
   UI_ST_BASE=-1; UI_ROW_LW=""
   return 0
 }
@@ -676,7 +676,7 @@ _ui_q_end() {
     UI_BACK=1; UI_TARGET=$(( UI_QI - 1 ))
   elif [[ "$UI_FORM_ACTIVE" == "1" && "$UI_MODE" != "skip" ]]; then
     UI_RQ[$UI_QI]="$1"; UI_RV[$UI_QI]="$UI_VALUE"
-    _ui_log answer "$label" "${UI_VALUE% ($(t "recommandé"))}"
+    _ui_log answer "$label" "${UI_VALUE% ($(t "recommended"))}"
   fi
   _ui_reset_ctx
   UI_FTR_KEYS=""
@@ -792,7 +792,7 @@ _ui_boxes() {
   done
   (( UI_BOX_H == 0 )) && return 0
   (( UI_BOX_H > 5 )) && UI_BOX_H=5
-  title="─ $(t "Ce que ça implique") "
+  title="─ $(t "What it means") "
   _ui_strlen "$title"
   rule="$(printf '%*s' $(( cw - 2 - UI_LEN )) '' | sed 's/ /─/g')"
   UI_BOX_TOP="${C_BOX}╭${title}${rule}╮${C_RESET}"
@@ -847,7 +847,7 @@ _ui_show_cursor() { printf '\033[?25h' >&2; [[ "$UI_FORM_ACTIVE" == "1" ]] || st
 
 _ui_footer() {
   local keys="$1"
-  if ui_can_go_back; then keys="$keys   ← $(t "question précédente")"; fi
+  if ui_can_go_back; then keys="$keys   ← $(t "previous question")"; fi
   # Écran de Loomy : les touches vont dans le pied du cadre.
   if [[ "$UI_SCREEN" == "1" ]]; then UI_FTR_KEYS="$keys"; return 0; fi
   _ui_add "${C_RAIL}└${C_RESET}  ${C_DIM}${keys}${C_RESET}"
@@ -860,7 +860,7 @@ _ui_upcoming() {
     if (( seen )); then next="${next:+$next · }$g"; fi
     [[ "$g" == "$UI_GROUP" ]] && seen=1
   done
-  if [[ -n "$next" ]]; then _ui_r "${C_DIM}$(t "ensuite :") ${next}${C_RESET}"; fi
+  if [[ -n "$next" ]]; then _ui_r "${C_DIM}$(t "next:") ${next}${C_RESET}"; fi
   return 0
 }
 
@@ -878,12 +878,12 @@ ui_input() {
   while true; do
     UI_FRAME=""; UI_FRAME_N=0
     if [[ -n "$buf" ]]; then shown="${C_BOLD}${buf}${C_RESET}${C_RAIL}▌${C_RESET}"
-    elif [[ -n "$def" ]]; then shown="${C_RAIL}▌${C_RESET}${C_DIM}${def}  ($(t "par défaut"))${C_RESET}"
+    elif [[ -n "$def" ]]; then shown="${C_RAIL}▌${C_RESET}${C_DIM}${def}  ($(t "default"))${C_RESET}"
     else shown="${C_RAIL}▌${C_RESET}${C_DIM}${ph}${C_RESET}"; fi
     _ui_r "${C_RAIL}›${C_RESET} ${shown}"
     _ui_add "${C_RAIL}│${C_RESET}"
     _ui_upcoming
-    _ui_footer "$(t "⏎ valider   ⌫ effacer")"
+    _ui_footer "$(t "⏎ confirm   ⌫ clear")"
     _ui_render
     _ui_read_key
     case "$UI_KEY" in
@@ -926,7 +926,7 @@ ui_choose() {
   while true; do
     UI_FRAME=""; UI_FRAME_N=0
     for (( i = 0; i < n; i++ )); do
-      mark=""; if (( i == def && n > 1 )) && [[ "${opts[$i]}" != *"($(t "recommandé"))"* ]]; then mark="  ${C_DIM}($(t "par défaut"))${C_RESET}"; fi
+      mark=""; if (( i == def && n > 1 )) && [[ "${opts[$i]}" != *"($(t "recommended"))"* ]]; then mark="  ${C_DIM}($(t "default"))${C_RESET}"; fi
       _ui_fit "${opts[$i]}" $(( cw - 18 ))
       if (( i == sel )); then _ui_r "${C_RAIL}❯ ●${C_RESET} ${C_BOLD}${UI_FIT}${C_RESET}${mark}"
       else _ui_r "  ${C_DIM}○${C_RESET} ${UI_FIT}${mark}"; fi
@@ -939,7 +939,7 @@ ui_choose() {
     fi
     _ui_add "${C_RAIL}│${C_RESET}"
     _ui_upcoming
-    _ui_footer "$(t "↑↓ choisir   ⏎ valider   s défaut")${quit_i:+   q ${opts[$quit_i]}}"
+    _ui_footer "$(t "↑↓ choose   ⏎ confirm   s default")${quit_i:+   q ${opts[$quit_i]}}"
     _ui_render
     _ui_read_key
     case "$UI_KEY" in
@@ -991,7 +991,7 @@ ui_multi() {
     fi
     _ui_add "${C_RAIL}│${C_RESET}"
     _ui_upcoming
-    _ui_footer "$(t "↑↓ choisir   espace cocher   ⏎ valider")"
+    _ui_footer "$(t "↑↓ choose   space toggle   ⏎ confirm")"
     _ui_render
     _ui_read_key
     case "$UI_KEY" in

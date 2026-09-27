@@ -28,15 +28,15 @@ while [[ $# -gt 0 ]]; do
     --since) SINCE="${2:-}"; shift ;;
     --csv) CSV=1 ;;
     -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//; s/ai-log.sh/loomy log/'; exit 0 ;;
-    *) t "Argument inconnu : %s" "$1" >&2; echo >&2; exit 2 ;;
+    *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
-[[ "$N" =~ ^[0-9]+$ ]] || { t "-n : un nombre" >&2; echo >&2; exit 2; }
-[[ -z "$SINCE" || "$SINCE" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]] || { t "--since : une date AAAA-MM-JJ" >&2; echo >&2; exit 2; }
+[[ "$N" =~ ^[0-9]+$ ]] || { t "-n: a number" >&2; echo >&2; exit 2; }
+[[ -z "$SINCE" || "$SINCE" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]] || { t "--since: a YYYY-MM-DD date" >&2; echo >&2; exit 2; }
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd)"
 FILE="$(ai_journal_file "$ROOT")"
-[[ -f "$FILE" ]] || { t "Aucun journal dans ce projet (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
+[[ -f "$FILE" ]] || { t "No journal in this project (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
 
 # Événements choisis : tout l'historique (archives comprises), à partir de --since ; les N derniers sans --since.
 events() {
@@ -69,9 +69,9 @@ for p in $LOOMY_PHASES "done"; do i=$(( i + 1 )); PHASEMAP="$PHASEMAP$p=$i:$(loo
 pretty() {
   awk -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
       -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
-      -v T_START="$(t "démarre")" -v T_IN="$(t "en ")" -v T_FAIL="$(t "échec après ")" -v T_DONE="$(t "Bootstrap terminé")" \
-      -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "réponse(s)")" -v T_SUB="$(t "sous-agent")" \
-      -v T_OPEN="$(t "Session ouverte")" -v T_CLOSED="$(t "Session fermée")" '
+      -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
+      -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \
+      -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" '
     BEGIN { n = split(pm, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") { split(a[i], kv, "="); split(kv[2], il, ":"); idx[kv[1]] = il[1]; lab[kv[1]] = il[2] } }
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }

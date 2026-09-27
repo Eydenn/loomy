@@ -423,3 +423,96 @@ Codex orchestre ; délègue l'architecture, la sécurité et le debug difficile 
 Claude Code orchestre ; délègue l'exécution cadrée et la revue croisée à Codex via delegate-to-codex.sh.	Claude Code leads; delegate bounded execution and cross review to Codex via delegate-to-codex.sh.
 Configure le mode HYBRID Codex + Claude Code sans multiplier les agents.	Set up the HYBRID Codex + Claude Code mode without multiplying agents.
 Prévois le mode PARALLEL avec worktrees séparés et une répartition claire des responsabilités.	Plan the PARALLEL mode with separate worktrees and a clear split of responsibilities.
+# Diagnostic
+correction : %s	fix: %s
+Exécute : %s	Runs: %s
+Aucune modification.	No change.
+Oui	Yes
+Non	No
+Corrigé	Fixed
+La correction a échoué	The fix failed
+installer :	install:
+ou        :	or:     
+puis      :	then:   
+Diagnostic	Machine check
+Prérequis, modèles et corrections	Prerequisites, models and fixes
+LOOMY	LOOMY
+installations trouvées dans le PATH	installs found in the PATH
+SYSTÈME	SYSTEM
+requis — https://git-scm.com/downloads	required — https://git-scm.com/downloads
+CLI IA	AI CLIS
+au moins une requise ; idéal : les deux, pour le mode hybride	at least one required; ideal: both, for hybrid mode
+Vérification de Claude Code	Checking Claude Code
+trop ancien pour %s (≥ %s)	too old for %s (≥ %s)
+Mettre à jour Claude Code ?	Update Claude Code?
+Claude Code à jour	Claude Code up to date
+Claude Code absent : orchestrateur sur %s et mode hybride indisponibles	Claude Code missing: %s lead agent and hybrid mode unavailable
+connexion au premier lancement	log in on first launch
+Installer Claude Code maintenant (installateur officiel) ?	Install Claude Code now (official installer)?
+ouvre un nouveau terminal, lance claude pour te connecter, puis relance loomy doctor	open a new terminal, run claude to log in, then run loomy doctor again
+Vérification de Codex	Checking Codex
+trouvé dans %s mais absent du PATH	found in %s but not in the PATH
+Rendre la CLI Codex accessible (petit script ~/.local/bin/codex) ?	Make the Codex CLI reachable (small ~/.local/bin/codex script)?
+%s absent du PATH	%s not in the PATH
+ajoutez :	add:
+version antérieure à celle validée (%s) — mettez à jour l'app ChatGPT/Codex	older than the validated version (%s) — update the ChatGPT/Codex app
+Codex à jour	Codex up to date
+non connecté — lancez : codex login	not logged in — run: codex login
+Codex connecté	Codex logged in
+modèles Codex	Codex models
+%s disponibles	%s available
+absents du catalogue local : %s (plan, région ou CLI à mettre à jour)	missing from the local catalog: %s (plan, region or CLI to update)
+Codex CLI absent : exécutant %s et mode hybride indisponibles	Codex CLI missing: %s executor and hybrid mode unavailable
+Installer la CLI Codex maintenant (installateur officiel) ?	Install the Codex CLI now (official installer)?
+ouvre un nouveau terminal, lance codex pour te connecter, puis relance loomy doctor	open a new terminal, run codex to log in, then run loomy doctor again
+Aucune CLI IA	No AI CLI
+installez Claude Code ou Codex (minimum requis)	install Claude Code or Codex (minimum required)
+CONFORT	COMFORT
+facultatif	optional
+gh absent	gh missing
+utile pour créer les dépôts GitHub et installer Loomy depuis le tap privé	useful to create GitHub repositories and install Loomy from the private tap
+Installer gh (brew install gh) ?	Install gh (brew install gh)?
+Connexion GitHub (gh)	GitHub login (gh)
+non connecté à GitHub	not logged in to GitHub
+Te connecter à GitHub maintenant (gh auth login) ?	Log in to GitHub now (gh auth login)?
+connecté à GitHub	logged in to GitHub
+Accès de git au dépôt Loomy	Git access to the Loomy repository
+git → dépôt Loomy	git → Loomy repository
+accès refusé : git ne s'authentifie pas auprès de GitHub (ou invitation pas encore acceptée)	access denied: git doesn't authenticate with GitHub (or the invitation isn't accepted yet)
+Configurer git pour utiliser ton compte gh (gh auth setup-git) ?	Set git up to use your gh account (gh auth setup-git)?
+invitation au dépôt : %s	repository invitation: %s
+accès git au dépôt Loomy	git access to the Loomy repository
+accès vérifié (mises à jour Homebrew possibles)	access checked (Homebrew updates possible)
+gh connecté	gh logged in
+presse-papiers	clipboard
+copie automatique du prompt de démarrage	automatic copy of the start prompt
+presse-papiers indisponible (wl-copy ou xclip sous Linux)	clipboard unavailable (wl-copy or xclip on Linux)
+PRÉFÉRENCES	PREFERENCES
+loomy config	loomy config
+mois	month
+CATALOGUE	CATALOG
+modèles et prix	models and prices
+il a %s jours : loomy update --catalog	it's %s days old: loomy update --catalog
+loomy update --catalog	loomy update --catalog
+indisponibles ici (repli utilisé) : %s · à retester : loomy doctor --live	unavailable here (fallback used): %s · to retest: loomy doctor --live
+ROUTAGE	ROUTING
+orchestrateur : %s (%s) · détail : loomy route	lead agent: %s (%s) · details: loomy route
+TEST RÉEL DES MODÈLES	LIVE MODEL TEST
+tous les modèles du catalogue pour chaque CLI installée (un « OK » en effort bas par modèle)	every catalog model for each installed CLI (one low-effort "OK" per model)
+Test de %s	Testing %s
+répond	answers
+échec	failed
+non utilisé par le routage actuel	not used by the current routing
+BILAN	SUMMARY
+Configuration idéale	Ideal setup
+tout est en place	everything is in place
+Minimum atteint	Minimum met
+pour l'idéal : %s	for the ideal: %s
+Minimum non atteint	Minimum not met
+corrigez les points ✗ ci-dessus	fix the ✗ items above
+intégré	built-in
+téléchargé	downloaded
+Forfait Claude	Claude plan
+Forfait Codex	Codex plan
+corrections guidées : loomy doctor --fix	guided fixes: loomy doctor --fix
+test réel des modèles : loomy doctor --live · corrections guidées : loomy doctor --fix	live model test: loomy doctor --live · guided fixes: loomy doctor --fix

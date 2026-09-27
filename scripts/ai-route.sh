@@ -70,8 +70,8 @@ case "$CMD" in
     ;;
 
   markdown)
-    echo "Environnement : **$(ai_env_label "$AI_ENV")** · profil **$(ai_profile_label "$AI_PROFILE")** · catalogue du $AI_CATALOG_DATE"
-    [[ -n "$AI_ENV_NOTE" ]] && echo "" && echo "> Repli : $AI_ENV_NOTE"
+    t "Environment: **%s** · profile **%s** · catalog from %s" "$(ai_env_label "$AI_ENV")" "$(ai_profile_label "$AI_PROFILE")" "$AI_CATALOG_DATE"; echo
+    [[ -n "$AI_ENV_NOTE" ]] && echo "" && t "> Fallback: %s" "$AI_ENV_NOTE"; echo
     echo ""
     t "| Role | Scope | Tool | Model | Effort | How to call it |"; echo
     echo "|---|---|---|---|---|---|"
@@ -80,11 +80,11 @@ case "$CMD" in
       echo "| $(ai_role_label "$r") | $(ai_role_scope "$r") | $R_FAMILY | \`$R_MODEL\` | $R_EFFORT | \`$R_VIA\` |"
     done
     echo ""
-    echo "Lancer l'orchestrateur : \`$(ai_lead_command "$AI_ENV" "$AI_PROFILE")\`"
+    t "Launch the lead agent: \`%s\`" "$(ai_lead_command "$AI_ENV" "$AI_PROFILE")"; echo
     ;;
 
   all)
-    echo "Profil **$(ai_profile_label "$AI_PROFILE")**"
+    t "Profile **%s**" "$(ai_profile_label "$AI_PROFILE")"; echo
     echo ""
     t "| Role | Full Claude Code | Full Codex | Hybrid, Claude lead | Hybrid, Codex lead |"; echo
     echo "|---|---|---|---|---|"

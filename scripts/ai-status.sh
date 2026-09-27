@@ -145,11 +145,11 @@ if (( WATCH )); then
     # ---- image
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "journal" ]] && t "status" || t "journal")"
+    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "log" ]] && t "status" || t "log")"
     [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
-    extra=(); [[ "$view" == "journal" ]] && extra=(--journal)
+    extra=(); [[ "$view" == "log" ]] && extra=(--journal)
     frame="$(LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
@@ -180,7 +180,7 @@ if (( WATCH )); then
     case "$key" in
       q|Q) break ;;
       c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
-      l|L) if [[ "$view" == "journal" ]]; then view="status"; else view="journal"; fi ;;
+      l|L) if [[ "$view" == "log" ]]; then view="status"; else view="log"; fi ;;
       s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
     esac
     # Tracking opened by loomy start --watch: it closes with the agent session.
@@ -218,15 +218,15 @@ fi
 
 # ---------------------------------------------------------------- vue journal (touche l de loomy watch)
 if (( JOURNAL_VIEW )); then
-  ui_section "$(t "JOURNAL")" "$(t "latest events, local time")"
+  ui_section "$(t "LOG")" "$(t "latest events, local time")"
   _ui_term_size
   jn=$(( UI_ROWS - 9 )); (( jn < 5 )) && jn=5
   if [[ -s "$(ai_journal_file "$ROOT")" ]]; then
     while IFS= read -r l; do ui_rail "$l"; done < <(bash "$SCRIPT_DIR/ai-log.sh" --root "$ROOT" -n "$jn" 2>/dev/null || true)
   else
-    ui_info "$(t "journal empty for now")"
+    ui_info "$(t "log empty for now")"
   fi
-  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "full journal: loomy log")}"
+  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "full log: loomy log")}"
   exit 0
 fi
 

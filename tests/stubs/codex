@@ -8,7 +8,7 @@ if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'codex\t%s\n' "$*") >>"$STU
 # Interactive session (without exec subcommand): nothing to simulate.
 case "${1:-}" in exec|--version) ;; *) exit 0 ;; esac
 if [[ "${1:-}" == "--version" ]]; then echo "codex-cli 0.160.0"; exit 0; fi
-[[ "${1:-}" == "exec" ]] || { echo "doublure codex : commande non prise en charge : $*" >&2; exit 2; }
+[[ "${1:-}" == "exec" ]] || { echo "codex double: unsupported command: $*" >&2; exit 2; }
 shift
 out=""; dir="."; sandbox="read-only"; prompt=""
 while [[ $# -gt 0 ]]; do

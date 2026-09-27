@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd)"
-[[ -f "$ROOT/.loomy/brief.md" ]] || { echo "Pas de projet Loomy ici : lancez loomy init." >&2; exit 1; }
+[[ -f "$ROOT/.loomy/brief.md" ]] || { t "No Loomy project here: run loomy init." >&2; echo >&2; exit 1; }
 FILE="$ROOT/.loomy/efforts"
 LEVELS="low medium high xhigh max"
 

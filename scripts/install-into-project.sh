@@ -76,7 +76,7 @@ if [[ -z "$TARGET_INPUT" ]]; then
     ui_banner "$(t "New project")" "$(t "current folder: %s" "${CWD/#$HOME/~}")"
     ui_section "$(t "PROJECT")"
     here_ok=1; is_home_or_root "$CWD" && here_ok=0
-    default_name="mon-projet"; if (( here_ok )) && looks_like_project "$CWD"; then default_name="$(basename "$CWD")"; fi
+    default_name="my-project"; if (( here_ok )) && looks_like_project "$CWD"; then default_name="$(basename "$CWD")"; fi
     UI_LABEL="$(t "Name")"; UI_HINT="$(t "It names the project and, if you create a folder, the folder too.")"
     ui_input "$(t "Project name")" "$default_name"
     PROJECT_NAME="$UI_VALUE"; slug="$(loomy_slug "$PROJECT_NAME")"
@@ -143,15 +143,15 @@ _loomy_run() {
     done
   fi
   if [ -z "$home" ]; then
-    echo "Loomy n'est pas installé sur cette machine (ou trop ancien) : installe-le, voir le README du projet Loomy." >&2
     echo "Loomy is not installed on this machine (or too old): install it, see the Loomy project README." >&2
+    echo "Loomy n'est pas installé sur cette machine (ou trop ancien) : installe-le, voir le README du projet Loomy." >&2
     return 127
   fi
   LOOMY_PROJECT_ROOT="$(dirname "$(dirname "$here")")" LOOMY_HOME="$home" exec bash "$home/scripts/$name" "$@"
 }
 RELAIS
   for f in "$LOOMY_ROOT"/scripts/*.sh; do
-    printf '#!/usr/bin/env bash\n# Relais Loomy : lance %s du Loomy installé (voir _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' \
+    printf '#!/usr/bin/env bash\n# Loomy relay: runs %s from the installed Loomy (see _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' \
       "$(basename "$f")" "$(basename "$f")" >"$L/scripts/$(basename "$f")"
     chmod +x "$L/scripts/$(basename "$f")"
   done
@@ -254,7 +254,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
   do_update() {
     copy_loomy_files
     if (( IN_PROGRESS )); then cp "$LOOMY_ROOT/START.md" "$TARGET/START.md"; fi
-    ui_ok "$(t "Loomy updated in the project")" "v$OLD_V → v$NEW_V · $(t "brief, phase and journal kept")"
+    ui_ok "$(t "Loomy updated in the project")" "v$OLD_V → v$NEW_V · $(t "brief, phase and log kept")"
   }
   do_reset() {
     copy_loomy_files
@@ -270,7 +270,7 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
   ui_section "$(t "STATE")"
   ui_kv "Loomy" "$(t "v%s in the project · v%s installed" "$OLD_V" "$NEW_V")"
   ui_kv "Bootstrap" "$( (( IN_PROGRESS )) && t "in progress · phase %s" "$(loomy_phase_label "$PHASE")" || t "done")"
-  if [[ "$OLD_V" != "$NEW_V" ]]; then ui_warn "$(t "Different project version")" "$(t "the update keeps your brief, phase and journal")"; fi
+  if [[ "$OLD_V" != "$NEW_V" ]]; then ui_warn "$(t "Different project version")" "$(t "the update keeps your brief, phase and log")"; fi
 
   if [[ -z "$ACTION" ]]; then
     if ! ui_is_interactive; then
@@ -285,9 +285,9 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
     ui_print "${C_RAIL}│${C_RESET}"
     opts=("$(t "Resume the lead agent session")"); codes=(resume); descs=("$(t "Opens loomy start: resumes this folder's last session, or opens a new one at the right point of the project.")")
     if [[ "$OLD_V" != "$NEW_V" ]]; then
-      opts+=("$(t "Update Loomy in this project (v%s → v%s)" "$OLD_V" "$NEW_V")"); codes+=(update); descs+=("$(t "Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.")")
+      opts+=("$(t "Update Loomy in this project (v%s → v%s)" "$OLD_V" "$NEW_V")"); codes+=(update); descs+=("$(t "Updates the document templates and the relays to Loomy. Brief, phase and log kept. Recommended.")")
     else
-      opts+=("$(t "Reinstall the project's Loomy files")"); codes+=(update); descs+=("$(t "Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.")")
+      opts+=("$(t "Reinstall the project's Loomy files")"); codes+=(update); descs+=("$(t "Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and log kept.")")
     fi
     if (( IN_PROGRESS )); then opts+=("$(t "Redo the questionnaire")"); codes+=(brief); descs+=("$(t "Your current answers are the defaults; the brief is only replaced after confirmation.")"); fi
     opts+=("$(t "Reset the project")"); codes+=(reset); descs+=("$(t "Starts the bootstrap over: START.md copied again, phase reset, questionnaire run again. Files already created by the agent stay.")")

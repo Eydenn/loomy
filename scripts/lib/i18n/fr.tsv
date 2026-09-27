@@ -88,7 +88,7 @@ open the lead agent session with loomy start.	ouvre la session de l'orchestrateu
 Unknown argument: %s	Argument inconnu : %s
 -n: a number	-n : un nombre
 --since: a YYYY-MM-DD date	--since : une date AAAA-MM-JJ
-No journal in this project (%s).	Aucun journal dans ce projet (%s).
+No log in this project (%s).	Aucun journal dans ce projet (%s).
 starts	démarre
 in 	en 
 failed after 	échec après 
@@ -126,7 +126,7 @@ quit	quitter
 full view	vue complète
 compact view	vue resserrée
 status	statut
-journal	journal
+log	journal
 session	session
 live tracking	suivi en direct
 scroll	défiler
@@ -134,10 +134,10 @@ Project status	Statut du projet
 Loomy scripts copied into this project (before 0.3)	scripts Loomy copiés dans ce projet (avant la 0.3)
 once and for all: loomy init --update	une fois pour toutes : loomy init --update
 Loomy %s installed, older than this project (%s)	Loomy %s installé, plus ancien que ce projet (%s)
-JOURNAL	JOURNAL
+LOG	JOURNAL
 latest events, local time	derniers événements, heure locale
-journal empty for now	journal vide pour l'instant
-full journal: loomy log	journal complet : loomy log
+log empty for now	journal vide pour l'instant
+full log: loomy log	journal complet : loomy log
 bootstrap done	bootstrap terminé
 START.md present but brief empty: run loomy brief	START.md présent mais brief vide : lance loomy brief
 no Loomy project here: run loomy init	aucun projet Loomy ici : lance loomy init
@@ -257,7 +257,7 @@ Project	Projet
 profile	profil
 ai_files	fichiers IA
 Project's Loomy	Loomy du projet
-Latest journal events (without task text)	Derniers événements du journal (sans le texte des tâches)
+Latest log events (without task text)	Derniers événements du journal (sans le texte des tâches)
 Feedback on Loomy	Retour sur Loomy
 GitHub issue on %s · nothing is sent without your approval	issue GitHub sur %s · rien n'est envoyé sans ton accord
 A bug, an annoyance, an idea: what happened, and what you expected.	Un bug, une gêne, une idée : ce qui s'est passé, et ce que tu attendais.
@@ -529,7 +529,7 @@ existing .claude/settings.json left unchanged	.claude/settings.json existant non
 add the hooks from .loomy/claude-hooks.json to it	ajoute-y les hooks de .loomy/claude-hooks.json
 Error: %s exists but doesn't come from Loomy (no .loomy folder). Refusing to overwrite.	Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé.
 Loomy updated in the project	Loomy mis à jour dans le projet
-brief, phase and journal kept	brief, phase et journal conservés
+brief, phase and log kept	brief, phase et journal conservés
 Bootstrap reset	Bootstrap réinitialisé
 START.md copied again, phase reset; previous brief: .loomy/brief.previous.md	START.md recopié, phase remise à zéro ; ancien brief : .loomy/brief.previous.md
 Files already created by the agent kept	Fichiers déjà créés par l'agent conservés
@@ -539,7 +539,7 @@ STATE	ÉTAT
 v%s in the project · v%s installed	v%s dans le projet · v%s installé
 in progress · phase %s	en cours · phase %s
 Different project version	Version du projet différente
-the update keeps your brief, phase and journal	la mise à jour garde ton brief, ta phase et ton journal
+the update keeps your brief, phase and log	la mise à jour garde ton brief, ta phase et ton journal
 WHAT NOW?	QUE FAIRE ?
 resume the lead agent session	reprendre la session de l'orchestrateur
 update the project's Loomy files	mettre à jour les fichiers Loomy du projet
@@ -549,9 +549,9 @@ nothing was changed	rien n'a été modifié
 Resume the lead agent session	Reprendre la session de l'orchestrateur
 Opens loomy start: resumes this folder's last session, or opens a new one at the right point of the project.	Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.
 Update Loomy in this project (v%s → v%s)	Mettre à jour Loomy dans ce projet (v%s → v%s)
-Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.	Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.
+Updates the document templates and the relays to Loomy. Brief, phase and log kept. Recommended.	Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.
 Reinstall the project's Loomy files	Réinstaller les fichiers Loomy du projet
-Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.	Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.
+Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and log kept.	Recopie scripts et modèles (même version), par exemple s'ils ont été modifiés. Brief, phase et journal conservés.
 Redo the questionnaire	Refaire le questionnaire
 Your current answers are the defaults; the brief is only replaced after confirmation.	Tes réponses actuelles servent de valeurs par défaut ; le brief n'est remplacé qu'après confirmation.
 Reset the project	Réinitialiser le projet
@@ -607,8 +607,8 @@ AI files visibility: versioned, local, or in a separate private repository	Visib
 Creates two separate worktrees for parallel mode	Crée deux worktrees séparés pour le mode parallèle
 TRACKING	SUIVI
 Project status: phases, running delegations, activity, costs, Git	Statut du projet : phases, délégations en cours, activité, coûts, Git
-Live tracking (keys: q, c view, l journal, s session)	Suivi en direct (touches : q, c vue, l journal, s session)
-Readable journal of phases, delegations and sessions (--raw: JSON)	Journal lisible des phases, délégations et sessions (--raw : JSON)
+Live tracking (keys: q, c view, l log, s session)	Suivi en direct (touches : q, c vue, l journal, s session)
+Readable log of phases, delegations and sessions (--raw: JSON)	Journal lisible des phases, délégations et sessions (--raw : JSON)
 Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval	Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord
 MACHINE	MACHINE
 Checks the prerequisites; --fix fixes, --live tests every model	Vérifie les prérequis ; --fix corrige, --live teste chaque modèle
@@ -618,7 +618,7 @@ Version and install method; --all lists every install found	Version et méthode 
 Shows how to uninstall Loomy (depending on the install) and remove it from a project	Montre comment désinstaller Loomy (selon l'installation) et le retirer d'un projet
 Help for a command: loomy help <command>	Aide d'une commande : loomy help <commande>
 Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]	Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]
-Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).	Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).
+Shows the last N log events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).	Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).
 Usage: loomy config [list | get <key> | set <key> <value>]	Usage : loomy config [list | get <clé> | set <clé> <valeur>]
 Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),	Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),
       plan_claude_price, plan_codex_price (monthly price in $ if different from the list price),	       plan_claude_price, plan_codex_price (prix mensuel en $ si différent du prix public),
@@ -1231,3 +1231,8 @@ Creates the private repository %s for the AI files.	Crée le dépôt privé %s p
 Cancelled: no file written.	Annulé : aucun fichier écrit.
 - Write the project documentation in English.	- Rédige la documentation du projet en anglais.
 - Write the project documentation in French.	- Rédige la documentation du projet en français.
+No Loomy project here: run loomy init.	Pas de projet Loomy ici : lancez loomy init.
+Environment: **%s** · profile **%s** · catalog from %s	Environnement : **%s** · profil **%s** · catalogue du %s
+> Fallback: %s	> Repli : %s
+Launch the lead agent: `%s`	Lancer l'orchestrateur : `%s`
+Profile **%s**	Profil **%s**

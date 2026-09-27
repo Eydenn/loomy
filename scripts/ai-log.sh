@@ -36,7 +36,7 @@ done
 [[ -z "$SINCE" || "$SINCE" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]] || { t "--since: a YYYY-MM-DD date" >&2; echo >&2; exit 2; }
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd)"
 FILE="$(ai_journal_file "$ROOT")"
-[[ -f "$FILE" ]] || { t "No journal in this project (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
+[[ -f "$FILE" ]] || { t "No log in this project (%s)." "${FILE/#$HOME/~}" >&2; echo >&2; exit 1; }
 
 # Selected events: the whole history (archives included) from --since; the last N without --since.
 events() {

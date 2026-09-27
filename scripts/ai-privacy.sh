@@ -86,7 +86,7 @@ do_sync() {
   (( ${#paths[@]} )) || { ui_info "$(t "no AI file to back up")"; return 0; }
   ai_git "$ROOT" add -A -- "${paths[@]}"
   if ! ai_git "$ROOT" diff --cached --quiet 2>/dev/null; then
-    msg="loomy : fichiers IA du $(date '+%Y-%m-%d %H:%M')"
+    msg="loomy: AI files $(date '+%Y-%m-%d %H:%M')"
     ai_git "$ROOT" commit -q -m "$msg"
   fi
   # Another machine may have backed up in the meantime: we replay our changes on top of theirs.

@@ -57,7 +57,7 @@ body() {
     local j; j="$(ai_journal_file "$ROOT")"
     if [[ -s "$j" ]]; then
       echo
-      echo "<details><summary>$(t "Latest journal events (without task text)")</summary>"
+      echo "<details><summary>$(t "Latest log events (without task text)")</summary>"
       echo
       echo '```'
       # ROOT points here to a copy of the log whose task text was emptied (see below).

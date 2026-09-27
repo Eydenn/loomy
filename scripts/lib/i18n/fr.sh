@@ -93,7 +93,7 @@ _t_fr() {
     'Unknown argument: %s') _T='Argument inconnu : %s' ;;
     '-n: a number') _T='-n : un nombre' ;;
     '--since: a YYYY-MM-DD date') _T='--since : une date AAAA-MM-JJ' ;;
-    'No journal in this project (%s).') _T='Aucun journal dans ce projet (%s).' ;;
+    'No log in this project (%s).') _T='Aucun journal dans ce projet (%s).' ;;
     'starts') _T='démarre' ;;
     'in ') _T='en ' ;;
     'failed after ') _T='échec après ' ;;
@@ -131,7 +131,7 @@ _t_fr() {
     'full view') _T='vue complète' ;;
     'compact view') _T='vue resserrée' ;;
     'status') _T='statut' ;;
-    'journal') _T='journal' ;;
+    'log') _T='journal' ;;
     'session') _T='session' ;;
     'live tracking') _T='suivi en direct' ;;
     'scroll') _T='défiler' ;;
@@ -139,10 +139,10 @@ _t_fr() {
     'Loomy scripts copied into this project (before 0.3)') _T='scripts Loomy copiés dans ce projet (avant la 0.3)' ;;
     'once and for all: loomy init --update') _T='une fois pour toutes : loomy init --update' ;;
     'Loomy %s installed, older than this project (%s)') _T='Loomy %s installé, plus ancien que ce projet (%s)' ;;
-    'JOURNAL') _T='JOURNAL' ;;
+    'LOG') _T='JOURNAL' ;;
     'latest events, local time') _T='derniers événements, heure locale' ;;
-    'journal empty for now') _T='journal vide pour l'\''instant' ;;
-    'full journal: loomy log') _T='journal complet : loomy log' ;;
+    'log empty for now') _T='journal vide pour l'\''instant' ;;
+    'full log: loomy log') _T='journal complet : loomy log' ;;
     'bootstrap done') _T='bootstrap terminé' ;;
     'START.md present but brief empty: run loomy brief') _T='START.md présent mais brief vide : lance loomy brief' ;;
     'no Loomy project here: run loomy init') _T='aucun projet Loomy ici : lance loomy init' ;;
@@ -262,7 +262,7 @@ _t_fr() {
     'profile') _T='profil' ;;
     'ai_files') _T='fichiers IA' ;;
     'Project'\''s Loomy') _T='Loomy du projet' ;;
-    'Latest journal events (without task text)') _T='Derniers événements du journal (sans le texte des tâches)' ;;
+    'Latest log events (without task text)') _T='Derniers événements du journal (sans le texte des tâches)' ;;
     'Feedback on Loomy') _T='Retour sur Loomy' ;;
     'GitHub issue on %s · nothing is sent without your approval') _T='issue GitHub sur %s · rien n'\''est envoyé sans ton accord' ;;
     'A bug, an annoyance, an idea: what happened, and what you expected.') _T='Un bug, une gêne, une idée : ce qui s'\''est passé, et ce que tu attendais.' ;;
@@ -534,7 +534,7 @@ _t_fr() {
     'add the hooks from .loomy/claude-hooks.json to it') _T='ajoute-y les hooks de .loomy/claude-hooks.json' ;;
     'Error: %s exists but doesn'\''t come from Loomy (no .loomy folder). Refusing to overwrite.') _T='Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé.' ;;
     'Loomy updated in the project') _T='Loomy mis à jour dans le projet' ;;
-    'brief, phase and journal kept') _T='brief, phase et journal conservés' ;;
+    'brief, phase and log kept') _T='brief, phase et journal conservés' ;;
     'Bootstrap reset') _T='Bootstrap réinitialisé' ;;
     'START.md copied again, phase reset; previous brief: .loomy/brief.previous.md') _T='START.md recopié, phase remise à zéro ; ancien brief : .loomy/brief.previous.md' ;;
     'Files already created by the agent kept') _T='Fichiers déjà créés par l'\''agent conservés' ;;
@@ -544,7 +544,7 @@ _t_fr() {
     'v%s in the project · v%s installed') _T='v%s dans le projet · v%s installé' ;;
     'in progress · phase %s') _T='en cours · phase %s' ;;
     'Different project version') _T='Version du projet différente' ;;
-    'the update keeps your brief, phase and journal') _T='la mise à jour garde ton brief, ta phase et ton journal' ;;
+    'the update keeps your brief, phase and log') _T='la mise à jour garde ton brief, ta phase et ton journal' ;;
     'WHAT NOW?') _T='QUE FAIRE ?' ;;
     'resume the lead agent session') _T='reprendre la session de l'\''orchestrateur' ;;
     'update the project'\''s Loomy files') _T='mettre à jour les fichiers Loomy du projet' ;;
@@ -554,9 +554,9 @@ _t_fr() {
     'Resume the lead agent session') _T='Reprendre la session de l'\''orchestrateur' ;;
     'Opens loomy start: resumes this folder'\''s last session, or opens a new one at the right point of the project.') _T='Ouvre loomy start : reprend la dernière session de ce dossier, ou en ouvre une nouvelle au bon endroit du projet.' ;;
     'Update Loomy in this project (v%s → v%s)') _T='Mettre à jour Loomy dans ce projet (v%s → v%s)' ;;
-    'Updates the document templates and the relays to Loomy. Brief, phase and journal kept. Recommended.') _T='Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.' ;;
+    'Updates the document templates and the relays to Loomy. Brief, phase and log kept. Recommended.') _T='Met à jour les modèles de documents et les relais vers Loomy. Brief, phase et journal conservés. Recommandé.' ;;
     'Reinstall the project'\''s Loomy files') _T='Réinstaller les fichiers Loomy du projet' ;;
-    'Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and journal kept.') _T='Recopie scripts et modèles (même version), par exemple s'\''ils ont été modifiés. Brief, phase et journal conservés.' ;;
+    'Copies scripts and templates again (same version), for instance if they were changed. Brief, phase and log kept.') _T='Recopie scripts et modèles (même version), par exemple s'\''ils ont été modifiés. Brief, phase et journal conservés.' ;;
     'Redo the questionnaire') _T='Refaire le questionnaire' ;;
     'Your current answers are the defaults; the brief is only replaced after confirmation.') _T='Tes réponses actuelles servent de valeurs par défaut ; le brief n'\''est remplacé qu'\''après confirmation.' ;;
     'Reset the project') _T='Réinitialiser le projet' ;;
@@ -612,8 +612,8 @@ _t_fr() {
     'Creates two separate worktrees for parallel mode') _T='Crée deux worktrees séparés pour le mode parallèle' ;;
     'TRACKING') _T='SUIVI' ;;
     'Project status: phases, running delegations, activity, costs, Git') _T='Statut du projet : phases, délégations en cours, activité, coûts, Git' ;;
-    'Live tracking (keys: q, c view, l journal, s session)') _T='Suivi en direct (touches : q, c vue, l journal, s session)' ;;
-    'Readable journal of phases, delegations and sessions (--raw: JSON)') _T='Journal lisible des phases, délégations et sessions (--raw : JSON)' ;;
+    'Live tracking (keys: q, c view, l log, s session)') _T='Suivi en direct (touches : q, c vue, l journal, s session)' ;;
+    'Readable log of phases, delegations and sessions (--raw: JSON)') _T='Journal lisible des phases, délégations et sessions (--raw : JSON)' ;;
     'Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval') _T='Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé), envoyée seulement après ton accord' ;;
     'MACHINE') _T='MACHINE' ;;
     'Checks the prerequisites; --fix fixes, --live tests every model') _T='Vérifie les prérequis ; --fix corrige, --live teste chaque modèle' ;;
@@ -623,7 +623,7 @@ _t_fr() {
     'Shows how to uninstall Loomy (depending on the install) and remove it from a project') _T='Montre comment désinstaller Loomy (selon l'\''installation) et le retirer d'\''un projet' ;;
     'Help for a command: loomy help <command>') _T='Aide d'\''une commande : loomy help <commande>' ;;
     'Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]') _T='Usage : loomy log [-n N] [-f] [--raw] [--since AAAA-MM-JJ] [--csv]' ;;
-    'Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).') _T='Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'\''heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).' ;;
+    'Shows the last N log events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl).') _T='Affiche les N derniers événements du journal (20 par défaut), lisibles et à l'\''heure locale ; -f le suit en continu ; --raw donne les lignes JSON brutes (.loomy/logs/events.jsonl).' ;;
     'Usage: loomy config [list | get <key> | set <key> <value>]') _T='Usage : loomy config [list | get <clé> | set <clé> <valeur>]' ;;
     'Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),') _T='Clés : plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),' ;;
     '      plan_claude_price, plan_codex_price (monthly price in $ if different from the list price),') _T='       plan_claude_price, plan_codex_price (prix mensuel en $ si différent du prix public),' ;;
@@ -1236,5 +1236,10 @@ _t_fr() {
     'Cancelled: no file written.') _T='Annulé : aucun fichier écrit.' ;;
     '- Write the project documentation in English.') _T='- Rédige la documentation du projet en anglais.' ;;
     '- Write the project documentation in French.') _T='- Rédige la documentation du projet en français.' ;;
+    'No Loomy project here: run loomy init.') _T='Pas de projet Loomy ici : lancez loomy init.' ;;
+    'Environment: **%s** · profile **%s** · catalog from %s') _T='Environnement : **%s** · profil **%s** · catalogue du %s' ;;
+    '> Fallback: %s') _T='> Repli : %s' ;;
+    'Launch the lead agent: `%s`') _T='Lancer l'\''orchestrateur : `%s`' ;;
+    'Profile **%s**') _T='Profil **%s**' ;;
   esac
 }

@@ -156,8 +156,8 @@ usage() {
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"
   _h_group "$(t "TRACKING")"
   _h_cmd status "" "$(t "Project status: phases, running delegations, activity, costs, Git")"
-  _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l journal, s session)")"
-  _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable journal of phases, delegations and sessions (--raw: JSON)")"
+  _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l log, s session)")"
+  _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
   _h_group "$(t "MACHINE")"
   _h_cmd doctor "[--fix] [--live]" "$(t "Checks the prerequisites; --fix fixes, --live tests every model")"
@@ -171,7 +171,7 @@ usage() {
 # Short help for the commands handled directly here.
 sub_help() {
   case "$1" in
-    log) t "Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]"; echo; t "Shows the last N journal events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl)."; echo ;;
+    log) t "Usage: loomy log [-n N] [-f] [--raw] [--since YYYY-MM-DD] [--csv]"; echo; t "Shows the last N log events (20 by default), readable and in local time; -f follows it live; --raw gives the raw JSON lines (.loomy/logs/events.jsonl)."; echo ;;
     config) t "Usage: loomy config [list | get <key> | set <key> <value>]"; echo
             t "Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"; echo
             t "      plan_claude_price, plan_codex_price (monthly price in \$ if different from the list price),"; echo

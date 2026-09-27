@@ -36,11 +36,11 @@ AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 
 # Model chains per tier: the first model available on this machine is used, the next ones are
 # fallbacks (not everyone has access to the latest models). The downloaded catalog can replace them.
-AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # meilleur raisonnement, code agentique, travail de bureau
+AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic coding, office work
 AI_CHAIN_CLAUDE_MID="claude-sonnet-5"                # travail courant
 AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
-AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # raisonnement de pointe, pilotage d'interfaces
-AI_CHAIN_CODEX_MID="gpt-6-sol"                       # cheval de trait, workflows
+AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # frontier reasoning, computer use
+AI_CHAIN_CODEX_MID="gpt-6-sol"                       # workhorse, workflows
 AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 
 # Downloaded catalog (loomy update --catalog): used when newer than the one shipped with Loomy.
@@ -467,5 +467,5 @@ loomy_slug() {
   if [[ -z "$s" ]] && command -v iconv >/dev/null 2>&1; then s="$(printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || true)"; fi
   [[ -n "$s" ]] || s="$1"
   s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
-  echo "${s:-mon-projet}"
+  echo "${s:-my-project}"
 }

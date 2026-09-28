@@ -643,3 +643,4 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | | README court (« 5 minutes pour démarrer »), référence complète à part |
 | | Dépôt public et Homebrew sans jeton, sur décision |
 | 💡 | Intégration de [Jev](https://github.com/WXK-AI/jev-opus) : effort d'Opus 5.5 réajusté à chaque étape pendant les délégations Claude, quand Jev est installé |
+| 💡 | Modèle local via [LM Studio](https://lmstudio.ai) (à déterminer) : un rôle confié à un modèle local, pour du code confidentiel ou pour épargner les quotas sur les tâches mécaniques, son travail relu par l'orchestrateur ; plutôt en réutilisant un profil Codex pointé vers LM Studio qu'avec une troisième famille de modèles |

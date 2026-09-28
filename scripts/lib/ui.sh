@@ -576,7 +576,7 @@ ui_rail() { ui_print "${C_RAIL}│${C_RESET}  $*"; }
 ui_rail_end() { ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; }
 
 # ---------------------------------------------------------------- lecture du clavier
-# _ui_read_key: UI_KEY = up|down|left|right|enter|space|backspace|clear|char|other; UI_CH = typed character.
+# _ui_read_key: UI_KEY = up|down|left|right|enter|space|backspace|clear|tab|char|other; UI_CH = typed character.
 _ui_read_key() {
   local c="" c2="" c3=""
   UI_CH=""
@@ -594,7 +594,7 @@ _ui_read_key() {
     " ") UI_KEY="space"; UI_CH=" " ;;
     $'\177'|$'\010') UI_KEY="backspace" ;;
     $'\025') UI_KEY="clear" ;;
-    $'\t') UI_KEY="other" ;;
+    $'\t') UI_KEY="tab" ;;
     *) if [[ "$c" < " " ]]; then UI_KEY="other"; else UI_KEY="char"; UI_CH="$c"; fi ;;
   esac
   return 0
@@ -892,7 +892,8 @@ ui_input() {
     _ui_r "${C_RAIL}›${C_RESET} ${shown}"
     _ui_add "${C_RAIL}│${C_RESET}"
     _ui_upcoming
-    _ui_footer "$(t "⏎ confirm   ⌫ clear")"
+    if [[ -z "$buf" && -n "$def" ]]; then _ui_footer "$(t "⏎ confirm   ⇥ edit the suggestion   ⌫ clear")"
+    else _ui_footer "$(t "⏎ confirm   ⌫ clear")"; fi
     _ui_render
     _ui_read_key
     case "$UI_KEY" in
@@ -900,6 +901,8 @@ ui_input() {
       char|space) buf="${buf}${UI_CH}" ;;
       backspace) buf="${buf%?}" ;;
       clear) buf="" ;;
+      # Tab: the suggestion becomes the text being typed, to edit it instead of retyping it.
+      tab) [[ -z "$buf" ]] && buf="$def" ;;
       left) if ui_can_go_back; then UI_KEY="back"; break; fi ;;
     esac
   done

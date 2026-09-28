@@ -1428,5 +1428,6 @@ _t_fr() {
     '- The GitHub repository `%s` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history.') _T='- Le dépôt GitHub `%s` contenait déjà des fichiers (specs, docs…), maintenant dans le dossier : les lire d'\''abord, ce sont des données d'\''entrée du projet. Ne jamais forcer un push ni réécrire son historique.' ;;
     'content retrieved, branch %s') _T='contenu récupéré, branche %s' ;;
     'content not retrieved (files in the way): git pull origin %s') _T='contenu non récupéré (fichiers en conflit) : git pull origin %s' ;;
+    '⏎ confirm   ⇥ edit the suggestion   ⌫ clear') _T='⏎ valider   ⇥ modifier la suggestion   ⌫ effacer' ;;
   esac
 }

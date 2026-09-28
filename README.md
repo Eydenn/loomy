@@ -125,7 +125,7 @@ flowchart LR
 ```
 
 1. **Check.** Verifies CLI versions, finds Codex even when it is bundled inside the ChatGPT app, checks model availability, and offers fixes.
-2. **Questionnaire.** Twelve questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a thirteenth asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question.
+2. **Questionnaire.** Thirteen questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a fourteenth asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
 3. **Routing.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing.
 4. **Lead agent.** The main session follows `START.md`:
 
@@ -565,7 +565,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.3 | **Real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
 | ✅&nbsp;0.5.4 | **Automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
 | ✅&nbsp;0.5.5 | **structured delegations** (optional, chosen in the questionnaire): tasks and results as fixed fields, checked by the bridges, outcomes in status, log and stats; Codex CLI found again after a ChatGPT app update |
-| ✅&nbsp;0.5.6 | **Current version** · **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
+| ✅&nbsp;0.5.6 | **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
+| ✅&nbsp;0.5.7 | **Current version** · **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

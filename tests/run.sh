@@ -625,7 +625,7 @@ EXP
   W5="$WORK/deja-pris"; mkdir -p "$W5"
   run "questionnaire, repository name already taken" wizard_expect "$W5"
   has "existing repository detected" "already exists"
-  [[ "$(git -C "$W5" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/deja-pris-2.git" ]] && ok "taken name: another name suggested and created" || ko "taken name: remote $(git -C "$W5" config --get remote.origin.url 2>&1)"
+  [[ "$(git -C "$W5" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/deja-pris-loomy.git" ]] && ok "taken name: another name suggested and created" || ko "taken name: remote $(git -C "$W5" config --get remote.origin.url 2>&1)"
   [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-pris.git" rev-list --count main)" == "1" ]] && ok "existing repository left untouched" || ko "existing repository changed"
   cat >"$WORK/lier.exp" <<EXP
 set timeout 15
@@ -649,6 +649,23 @@ EXP
   file_has "agent told to read the existing content" "$W6/.loomy/brief.md" "already had content"
   file_has "agent told to reconcile through the branch" "$W6/.loomy/brief.md" "loomy/setup"
   [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-relie.git" rev-list --count main)" == "1" ]] && ok "linked repository left untouched" || ko "linked repository changed"
+  # Tab: the suggestion becomes editable text (here the repository name, completed rather than retyped).
+  cat >"$WORK/tab.exp" <<EXP
+set timeout 15
+spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+for {set i 0} {\$i < 60} {incr i} {
+  expect {
+    -re {GitHub repository name \\(} { expect "edit the suggestion" ; send "\t" ; after 200 ; send -- "-edit\r" }
+    -re {⏎ confirm} { send "\r" }
+    eof { exit [lindex [wait] 3] }
+    timeout { exit 3 }
+  }
+}
+exit 4
+EXP
+  W7="$WORK/tabulation"; mkdir -p "$W7"
+  run "questionnaire, Tab edits the suggestion" env WIZ_DIR="$W7" expect "$WORK/tab.exp"
+  [[ "$(git -C "$W7" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/tabulation-edit.git" ]] && ok "Tab: suggested name completed, not retyped" || ko "Tab: remote $(git -C "$W7" config --get remote.origin.url 2>&1)"
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
 set timeout 15

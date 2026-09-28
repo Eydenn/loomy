@@ -123,7 +123,7 @@ flowchart LR
 ```
 
 1. **Diagnostic.** Vérifie les versions des CLI, trouve Codex même caché dans l'app ChatGPT, contrôle les modèles disponibles, et propose les corrections.
-2. **Questionnaire.** Douze questions en français, groupées par thème, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une treizième demande tes forfaits Claude et ChatGPT. ← revient à la question précédente.
+2. **Questionnaire.** Treize questions en français, groupées par thème, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une quatorzième demande tes forfaits Claude et ChatGPT. ← revient à la question précédente ; dans un champ texte, Tab reprend la suggestion pour la modifier (nom du projet, nom du dépôt…).
 3. **Routage.** Transforme le brief et les outils installés en une matrice rôle → modèle → effort, avec repli automatique si une CLI manque.
 4. **Orchestrateur.** La session principale suit `START.md` :
 
@@ -630,7 +630,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.5.3 | **Quotas réels des abonnements** : part des quotas Claude et Codex utilisée (fenêtres de 5 heures et de la semaine) au lieu des dollars avec un abonnement, tokens par tâche, alertes à 80 % et 95 % ; `loomy stats` pour des statistiques détaillées |
 | ✅&nbsp;0.5.4 | **Bascule automatique en fin de quota** : à partir de 95 % d'un quota d'abonnement, les rôles (et une nouvelle session de l'orchestrateur) passent à l'autre outil avec un modèle adapté, les rôles qui écrivent dans le bac à sable de Claude Code ; réglage `quota_switch` |
 | ✅&nbsp;0.5.5 | **délégations structurées** (option du questionnaire) : tâches et résultats en champs fixes, vérifiés par les bridges, résultats dans status, log et stats ; CLI Codex retrouvée après une mise à jour de l'app ChatGPT |
-| ✅&nbsp;0.5.6 | **Version actuelle** · **dépôt GitHub existant** : nom déjà pris détecté dans le questionnaire ; autre nom, ou dépôt relié (son contenu récupéré, mise en place sur une branche `loomy/setup` à réconcilier par pull request), jamais écrasé |
+| ✅&nbsp;0.5.6 | **dépôt GitHub existant** : nom déjà pris détecté dans le questionnaire ; autre nom, ou dépôt relié (son contenu récupéré, mise en place sur une branche `loomy/setup` à réconcilier par pull request), jamais écrasé |
+| ✅&nbsp;0.5.7 | **Version actuelle** · **Tab reprend une suggestion** pour la modifier dans les champs texte (nom du projet, nom du dépôt…) ; nom de dépôt déjà pris : `<nom>-loomy` proposé |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |

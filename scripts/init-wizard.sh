@@ -458,7 +458,7 @@ ask_all() {
             "link|$(t "Use it as the project's remote")|$( [[ "$ex_empty" == "true" ]] && t "Linked as origin; the initial commit can be pushed to it." || t "Linked as origin: its content (specs, docs…) is brought into the folder, and the setup is done on a loomy/setup branch, to reconcile with %s through a pull request; %s stays untouched." "${ex_base:-main}" "${ex_base:-main}")" \
             "no|No GitHub repository for now|Local only; you can link or create one later."
           case "$REPO_EXISTING" in
-            rename) name_def="$REPO_NAME-2" ;;
+            rename) if [[ "$REPO_NAME" == *-loomy ]]; then name_def="$REPO_NAME-2"; else name_def="$REPO_NAME-loomy"; fi ;;
             link) GITHUB_REPO="existing"; REMOTE_VIS="$ex_vis"
                   if [[ "$ex_empty" != "true" ]]; then REMOTE_HAS_HISTORY=1; ADOPT_BRANCH="loomy/setup"; BASE_BRANCH="${ex_base:-main}"; fi
                   break ;;

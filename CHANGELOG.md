@@ -2,6 +2,22 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.5 — 2026-09-28
+
+### Added
+- **Structured delegations** (optional, a new questionnaire question in the AI team group, recommended): tasks written as GOAL / SCOPE / FILES / ACCEPTANCE, answers as STATUS (done, partial, blocked) / SUMMARY / FINDINGS (path:line, evidence) / FILES / CHECKS / RISKS / NEXT, without prose.
+  - The bridges add the answer contract to their prompt and check it; the log records `format` and `outcome`.
+  - `loomy status` and `loomy log` mark ◐ partial and ■ blocked results; `loomy stats` shows how many answers followed the format.
+  - The lead agent's resume context, the brief and `.ai/AI_ORCHESTRATION.md` explain it; generated Claude subagents carry the contract.
+  - Checked with a real Codex delegation (GPT-6-Luna): the answer followed the format exactly.
+  - `loomy config set delegation_format structured|free|auto` overrides every project's choice. Projects set up earlier keep free text.
+
+### Fixed
+- **Codex CLI moved by a ChatGPT app update** (September 27): the bundled CLI now lives in `Resources/codex-cli/` (entry point read from `codex-package.json`). Loomy finds it in both layouts, in `/Applications` and `~/Applications`, and skips a `codex` wrapper script whose target is gone; delegations to Codex work again. `loomy doctor` flags the broken `~/.local/bin/codex` script and `doctor --fix` rewrites it.
+- `loomy doctor`: internal fixes are described by their question (`fix: loomy doctor --fix`) instead of a raw shell command; official installer commands stay visible.
+- A failed delegation is no longer logged as an unformatted answer.
+- Codex quota cache: a log that grew twice within the same second could serve an outdated reading (the file size is now part of the cache key); this made the failover tests fail now and then on Linux.
+
 ## 0.5.4 — 2026-09-28
 
 ### Added

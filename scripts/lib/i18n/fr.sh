@@ -1385,5 +1385,27 @@ _t_fr() {
     'Switched') _T='Basculées' ;;
     '%s delegation(s) moved to the other tool (quota nearly exhausted)') _T='%s délégation(s) confiée(s) à l'\''autre outil (quota presque épuisé)' ;;
     'Its roles go to %s until it resets.') _T='Ses rôles passent à %s jusqu'\''à la remise à zéro.' ;;
+    'Answer with exactly these fields, nothing before or after, one short line per item:') _T='Réponds avec exactement ces champs, rien avant ni après, une ligne courte par élément :' ;;
+    'one or two sentences') _T='une ou deux phrases' ;;
+    'fact, with its evidence') _T='fait, avec sa preuve' ;;
+    'what changed (or: none)') _T='ce qui a changé (ou : none)' ;;
+    'open risk (or: none)') _T='risque ouvert (ou : none)' ;;
+    'what the lead agent should do with this result') _T='ce que l'\''orchestrateur doit faire de ce résultat' ;;
+    '- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .ai/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done.') _T='- Délégations structurées : rédige chaque tâche en GOAL / SCOPE / FILES / ACCEPTANCE ; les résultats reviennent en STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (voir .ai/AI_ORCHESTRATION.md). Agis selon STATUS : partial ou blocked signifie que la tâche n'\''est pas terminée.' ;;
+    'delegation_format: structured, free or auto (the project'\''s choice)') _T='delegation_format : structured, free ou auto (le choix du projet)' ;;
+    '      delegation_format (structured or free: overrides every project'\''s choice; auto: the project'\''s choice),') _T='      delegation_format (structured ou free : remplace le choix de chaque projet ; auto : le choix du projet),' ;;
+    'Delegation format') _T='Format des délégations' ;;
+    'How should agents exchange tasks and results?') _T='Comment les agents échangent-ils tâches et résultats ?' ;;
+    'Structured exchanges are shorter and easier for the lead agent to check; free text reads like a conversation.') _T='Les échanges structurés sont plus courts et plus faciles à vérifier pour l'\''orchestrateur ; le texte libre se lit comme une conversation.' ;;
+    'Structured (recommended)') _T='Structuré (recommandé)' ;;
+    'Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges.') _T='Champs fixes, sans prose : tâches en GOAL / SCOPE / FILES / ACCEPTANCE, résultats en STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Moins de tokens, résultats vérifiés par les bridges.' ;;
+    'Free text') _T='Texte libre' ;;
+    'Each agent answers in its own words, as concisely as it sees fit.') _T='Chaque agent répond avec ses propres mots, aussi concis qu'\''il le juge utile.' ;;
+    '- Delegations in structured form: see "Structured delegations" in `.ai/AI_ORCHESTRATION.md` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).') _T='- Délégations en forme structurée : voir « Délégations structurées » dans `.ai/AI_ORCHESTRATION.md` (tâches : GOAL / SCOPE / FILES / ACCEPTANCE ; résultats : STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).' ;;
+    'Structured') _T='Structurées' ;;
+    '%s of %s answers followed the format') _T='%s réponse(s) sur %s au format' ;;
+    '%s partial') _T='%s partielle(s)' ;;
+    '%s blocked') _T='%s bloquée(s)' ;;
+    '%s points to a Codex CLI that no longer exists (desktop app updated); Loomy uses %s') _T='%s pointe vers une CLI Codex qui n'\''existe plus (app de bureau mise à jour) ; Loomy utilise %s' ;;
   esac
 }

@@ -25,6 +25,8 @@ done
 if [[ -n "${STUB_FAIL:-}" ]]; then echo '{"type":"error","message":"simulated failure"}'; exit 1; fi
 text="answer from the codex double"
 case "$prompt" in *"Reply exactly: OK"*) text="OK" ;; esac
+# Structured delegation asked: answer with the contract's fields.
+case "$prompt" in *"STATUS: done | partial | blocked"*) text="$(printf 'STATUS: partial\nSUMMARY: answer from the codex double\nFINDINGS:\n- [low] a.txt:1 — stub\nFILES:\n- none\nCHECKS:\n- `true` — passed\nRISKS:\n- none\nNEXT: finish it')" ;; esac
 if [[ -n "${STUB_WRITE:-}" && "$sandbox" == "workspace-write" ]]; then echo "written by the double" >"$dir/fichier_doublure.txt"; fi
 echo '{"type":"thread.started","thread_id":"stub"}'
 echo '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":200}}'

@@ -115,6 +115,8 @@ case "$CMD" in
       [[ "$R_FAMILY" == "claude" ]] || continue
       [[ -f "$tpl_dir/$r.md" ]] || continue
       sed -e "s/__MODEL__/$R_MODEL/" -e "s/__EFFORT__/$R_EFFORT/" "$tpl_dir/$r.md" >"$dest/$r.md"
+      # Structured delegations: the subagent answers the lead agent with the same fixed fields as the bridges.
+      if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then printf '\n%s\n' "$(ai_result_contract)" >>"$dest/$r.md"; fi
       echo "$dest/$r.md  ($R_MODEL, $R_EFFORT)"
     done
     ;;

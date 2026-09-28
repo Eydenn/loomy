@@ -53,8 +53,13 @@ missing_ideal() { IDEAL_MISSING="${IDEAL_MISSING:+$IDEAL_MISSING, }$1"; }
 # offer_fix <question> <command...>: asks, then runs the command. Returns 0 when it was applied.
 offer_fix() {
   local q="$1"; shift
-  if (( ! FIX )) || ! ui_is_interactive; then ui_info "$(t "fix: %s" "$*")"; return 1; fi
-  UI_DESCS=("$(t "Runs: %s" "$*")" "$(t "No change.")")
+  # Internal fixes (a small shell script) are described by their question, not by their raw command.
+  local shown="$*"; [[ "$1" == "sh" && "${2:-}" == "-c" && "${3:-}" == *printf* ]] && shown="$q"
+  if (( ! FIX )) || ! ui_is_interactive; then
+    if [[ "$shown" == "$q" ]]; then ui_info "$(t "fix: %s" "loomy doctor --fix")"; else ui_info "$(t "fix: %s" "$shown")"; fi
+    return 1
+  fi
+  UI_DESCS=("$(t "Runs: %s" "$shown")" "$(t "No change.")")
   ui_choose "$q" 0 "$(t "Yes")" "$(t "No")"
   if [[ "$UI_INDEX" == "0" ]]; then
     if "$@"; then ui_ok "$(t "Fixed")"; return 0; fi
@@ -115,13 +120,17 @@ fi
 CODEX_BIN="$(ai_codex_bin || true)"
 if [[ -n "$CODEX_BIN" ]]; then
   ui_wait "$(t "Checking Codex")"; v="$(ai_codex_version)"; ui_wait_end
-  if command -v codex >/dev/null 2>&1; then
+  cpath="$(command -v codex 2>/dev/null || true)"
+  if [[ -n "$cpath" ]] && _ai_wrapper_ok "$cpath"; then
     ui_ok "codex ${v:-?}" "Codex CLI · $(printf '%s' "$CODEX_BIN" | sed "s|^$HOME|~|")"
   else
-    ui_warn "codex ${v:-?}" "$(t "found in %s but not in the PATH" "$CODEX_BIN")"
+    # A ~/.local/bin/codex script pointing to a bundled CLI that moved (desktop app update): Loomy uses the new one,
+    # the codex command typed in a terminal is broken until the script is rewritten.
+    if [[ -n "$cpath" ]]; then ui_warn "codex ${v:-?}" "$(t "%s points to a Codex CLI that no longer exists (desktop app updated); Loomy uses %s" "$(printf '%s' "$cpath" | sed "s|^$HOME|~|")" "$(printf '%s' "$CODEX_BIN" | sed "s|^$HOME|~|")")"
+    else ui_warn "codex ${v:-?}" "$(t "found in %s but not in the PATH" "$CODEX_BIN")"; fi
     mkdir -p "$HOME/.local/bin"
     # A small script, not a link: the shipped CLI looks for its helper programs next to the path it is called by.
-    if offer_fix "$(t "Make the Codex CLI reachable (small ~/.local/bin/codex script)?")" \
+    if [[ -z "$cpath" || "$cpath" == "$HOME/.local/bin/codex" ]] && offer_fix "$(t "Make the Codex CLI reachable (small ~/.local/bin/codex script)?")" \
          sh -c 'printf "#!/bin/sh\nexec \"%s\" \"\$@\"\n" "$1" > "$HOME/.local/bin/codex" && chmod +x "$HOME/.local/bin/codex"' _ "$CODEX_BIN"; then
       case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) ui_warn "$(t "%s not in the PATH" "$HOME/.local/bin")" "$(t "add:") export PATH=\"\$HOME/.local/bin:\$PATH\"" ;; esac
     fi

@@ -30,6 +30,34 @@ Near the end of a subscription quota (95 % by default), a bridge may hand the ro
 
 A Codex lead agent also uses `delegate-to-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
 
+## Structured delegations
+When the brief says `delegation_format: structured` (questionnaire choice, or `loomy config set delegation_format structured`), tasks and results are exchanged as fixed fields, without prose: fewer tokens, nothing lost in wording, and results the bridges check.
+
+Write each delegated task as:
+```
+GOAL: the expected outcome, in one sentence
+SCOPE: what may be touched, and what must not
+FILES: the files or folders involved
+ACCEPTANCE: the checks that prove it is done
+```
+
+Every role answers (the bridges add this contract to their prompt; generated Claude subagents carry it too):
+```
+STATUS: done | partial | blocked
+SUMMARY: one or two sentences
+FINDINGS:
+- [high|medium|low] path:line — fact, with its evidence
+FILES:
+- path — what changed (or: none)
+CHECKS:
+- `command` — passed | failed | not run
+RISKS:
+- open risk (or: none)
+NEXT: what the lead agent should do with this result
+```
+
+Act on STATUS: `partial` or `blocked` means the task is not done; read RISKS and NEXT before deciding. The log records the outcome (◐ partial, ■ blocked in `loomy status`), and `loomy stats` shows how many answers followed the format.
+
 ## Lead agent responsibilities
 - decide whether a delegation is justified;
 - write the delegated task with its scope, files and acceptance criteria;

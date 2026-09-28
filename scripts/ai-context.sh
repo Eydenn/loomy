@@ -99,6 +99,9 @@ case "$(privacy_mode "$ROOT")" in
   private) t "- AI files in a separate private repository: don't version them in the project repository; back them up at the end of each step with .loomy/scripts/ai-privacy.sh sync."; echo ;;
 esac
 t "- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration)."; echo
+if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then
+  t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .ai/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
+fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
 t "- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now."; echo
 exit 0

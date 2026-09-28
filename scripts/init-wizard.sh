@@ -163,7 +163,7 @@ env_check() {
 }
 
 # ---------------------------------------------------------------- questionnaire
-TOTAL=12
+TOTAL=13
 
 # Claude and Codex plans: asked only once, in interactive mode, for a tool that is present and not set yet.
 ASK_PLAN_CLAUDE=0; ASK_PLAN_CODEX=0; PLAN_CLAUDE_NEW=""; PLAN_CODEX_NEW=""
@@ -171,7 +171,7 @@ plan_questions() {
   ui_is_interactive || return 0
   if (( HAS_CLAUDE )) && [[ -z "$(loomy_config_get plan_claude "")" ]]; then ASK_PLAN_CLAUDE=1; fi
   if (( HAS_CODEX )) && [[ -z "$(loomy_config_get plan_codex "")" ]]; then ASK_PLAN_CODEX=1; fi
-  if (( ASK_PLAN_CLAUDE || ASK_PLAN_CODEX )); then TOTAL=13; fi
+  if (( ASK_PLAN_CLAUDE || ASK_PLAN_CODEX )); then TOTAL=14; fi
   return 0
 }
 
@@ -376,22 +376,29 @@ ask_all() {
   ai_resolve architect "$ROUTE_ENV" "$BUDGET"; DEEP_LINE="$R_MODEL ($R_EFFORT)"
   ui_fact "$(t "Lead agent")" "$(t "lead agent %s" "${LEAD_LINE}")"
 
-  ui_group "$(t "DELIVERABLES")"
   ui_step 10 $TOTAL
+  UI_LABEL="$(t "Delegation format")"
+  choose_coded DELEG_FORMAT "How should agents exchange tasks and results?" "$(ans delegation_format structured)" \
+    "Structured exchanges are shorter and easier for the lead agent to check; free text reads like a conversation." \
+    "structured|Structured (recommended)|Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges." \
+    "free|Free text|Each agent answers in its own words, as concisely as it sees fit."
+
+  ui_group "$(t "DELIVERABLES")"
+  ui_step 11 $TOTAL
   UI_LABEL="$(t "Docs language")"
   choose_coded DOCLANG "Project documentation language?" "$(ans doc_language "$(ui_lang)")" \
     "Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English." \
     "fr|Français|Documentation written in French." \
     "en|English|Documentation in English: better if the project is shared internationally."
 
-  ui_step 11 $TOTAL
+  ui_step 12 $TOTAL
   UI_LABEL="$(t "START.md afterwards")"
   choose_coded HISTORY "After initialisation, what to do with START.md?" "$(ans bootstrap_history archive)" \
     "START.md no longer has authority once the project is initialised." \
     "archive|Archive it in .ai/bootstrap/ (recommended)|Keeps a record of the initialisation for later." \
     "delete|Delete it|Lighter repo; the history stays only in Git."
 
-  ui_step 12 $TOTAL
+  ui_step 13 $TOTAL
   GIT_INIT="no"; COMMIT="no"; PUSH="no"
   if (( HAS_GIT )) && [[ -n "$PARENT_REPO" ]]; then
     UI_LABEL="$(t "Git repository")"
@@ -487,7 +494,7 @@ ask_all() {
     done
   fi
 
-  if (( TOTAL == 13 )); then ui_group "$(t "PLANS")"; ui_step 13 $TOTAL; fi
+  if (( TOTAL == 14 )); then ui_group "$(t "PLANS")"; ui_step 14 $TOTAL; fi
   if (( ASK_PLAN_CLAUDE )); then
     UI_LABEL="$(t "Claude plan")"
     choose_coded PLAN_CLAUDE_NEW "What is your Claude plan?" "${PLAN_CLAUDE_NEW:-api}" \
@@ -530,6 +537,7 @@ show_recap() {
   ui_rail_group "$(t "AI team")"
   ui_rail_kv "$(t "Mode")" "${C_BOLD}${MODE}${C_RESET} · $(t "lead %s" "${LEAD_LABEL}")"
   ui_rail_kv "$(t "Profile")" "$(no_rec "$BUDGET_LABEL")"
+  ui_rail_kv "$(t "Delegation format")" "$(no_rec "$DELEG_FORMAT_LABEL")"
   if [[ "$BUDGET" == "econome" && "$RISK" == "HIGH" ]]; then
     ui_rail_kv "" "${C_YELLOW}! $(t "HIGH risk with the Frugal profile: use high effort for security on sensitive changes")${C_RESET}"
   fi
@@ -582,6 +590,7 @@ write_brief() {
     echo "ai_mode: $MODE"
     echo "ai_lead: $LEAD"
     echo "budget: $BUDGET"
+    echo "delegation_format: $DELEG_FORMAT"
     echo "doc_language: $DOCLANG"
     echo "bootstrap_history: $HISTORY"
     echo "git_init: $GIT_INIT"
@@ -610,6 +619,7 @@ write_brief() {
     echo "| $(t "Estimated risk") | $RISK |"
     echo "| $(t "AI mode") | $(t "%s (lead: %s)" "$MODE" "$LEAD_LABEL") |"
     echo "| $(t "Model profile") | $BUDGET_LABEL |"
+    echo "| $(t "Delegation format") | $DELEG_FORMAT_LABEL |"
     echo "| $(t "Docs language") | $DOCLANG_LABEL |"
     echo "| $(t "START.md after init") | $HISTORY_LABEL |"
     echo "| $(t "Initial commit") | $commit_txt |"
@@ -646,6 +656,9 @@ write_brief() {
     if [[ -n "$ADOPT_BRANCH" ]]; then
       t "- Work only on the \`%s\` branch, created from \`%s\`, which stays untouched. Never merge into or push \`%s\` yourself: at the end, offer a pull request or a merge, as the user prefers." "$ADOPT_BRANCH" "$BASE_BRANCH" "$BASE_BRANCH"; echo
     fi
+    if [[ "$DELEG_FORMAT" == "structured" ]]; then
+      t "- Delegations in structured form: see \"Structured delegations\" in \`.ai/AI_ORCHESTRATION.md\` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT)."; echo
+    fi
     t "- Update progress with \`.loomy/scripts/ai-status.sh set <phase>\`."; echo
   } >"$BRIEF"
 }
@@ -668,7 +681,7 @@ fi
 
 plan_questions
 FORM_GROUPS="$(t "PROJECT")|$(t "REQUIREMENTS")|$(t "AI TEAM")|$(t "DELIVERABLES")"
-if (( TOTAL == 13 )); then FORM_GROUPS="$FORM_GROUPS|$(t "PLANS")"; fi
+if (( TOTAL == 14 )); then FORM_GROUPS="$FORM_GROUPS|$(t "PLANS")"; fi
 while true; do
   # Full screen during the questions; ← replays the pass up to the previous question.
   ui_form_begin "v$LOOMY_VERSION · $(t "startup brief") · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
@@ -694,7 +707,7 @@ while true; do
     again)
       A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"
       A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
-      A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_doc_language="$DOCLANG"
+      A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_delegation_format="$DELEG_FORMAT"; A_doc_language="$DOCLANG"
       A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES"; A_github_repo="$GITHUB_REPO"; A_repo_name="$REPO_NAME"; A_ai_repo_name="$AI_REPO_NAME" ;;
   esac
 done

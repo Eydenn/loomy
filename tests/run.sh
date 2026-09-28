@@ -608,7 +608,7 @@ EXP
   }
   W1="$WORK/interactif1"; mkdir -p "$W1"
   run "full questionnaire, plans not set" wizard_expect "$W1"
-  has "13 steps when plans must be asked" "question 13/13"
+  has "14 steps when plans must be asked" "question 14/14"
   has "Claude plan question" "your Claude plan"
   file_has "plans saved" "$XDG_CONFIG_HOME/loomy/config" "^plan_codex=api$"
   file_has "brief written" "$W1/.loomy/brief.md" "^ai_mode: "
@@ -616,9 +616,9 @@ EXP
   file_has "brief: private GitHub repository" "$W1/.loomy/brief.md" "^github_repo: private$"
   W2="$WORK/interactif2"; mkdir -p "$W2"
   run "full questionnaire, plans already known" wizard_expect "$W2"
-  has "12 steps" "question 12/12"
+  has "13 steps" "question 13/13"
   hasnt "questionnaire: no raw variable on screen" '\$save_desc|\$\(t '
-  hasnt "plans not asked again" "your Claude plan|/13"
+  hasnt "plans not asked again" "your Claude plan|/14"
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
 set timeout 15
@@ -909,6 +909,53 @@ run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD"
 has "start: lead agent session on the other tool" "Claude Code quota at 97 %: this session runs on Codex"
 has "start: Codex command for the lead agent" "codex -m gpt-6-astra"
 rm -f "$QC/loomy/claude-limits"
+
+section "Codex CLI discovery"
+CA="$WORK/apps/ChatGPT.app/Contents/Resources/codex-cli"; mkdir -p "$CA/bin" "$WORK/stalebin"
+printf '{ "layoutVersion": 1, "entrypoint": "bin/codex" }\n' >"$CA/codex-package.json"
+printf '#!/bin/sh\necho "codex-cli 0.158.0"\n' >"$CA/bin/codex"; chmod +x "$CA/bin/codex"
+printf '#!/bin/sh\nexec "%s/gone/codex" "$@"\n' "$WORK" >"$WORK/stalebin/codex"; chmod +x "$WORK/stalebin/codex"
+got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_bin' _ "$REPO")"
+[[ "$got" == "$CA/bin/codex" ]] && ok "codex: stale wrapper skipped, current app layout found" || ko "codex discovery: $got"
+got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_version' _ "$REPO")"
+[[ "$got" == "0.158.0" ]] && ok "codex: version read from the bundled CLI" || ko "codex version: $got"
+mkdir -p "$HOME/.local/bin" && cp "$WORK/stalebin/codex" "$HOME/.local/bin/codex"
+env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/ai-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
+rm -f "$HOME/.local/bin/codex"
+has "doctor: broken codex command flagged" "points to a Codex CLI that no longer exists"
+has "doctor: readable fix" "fix: loomy doctor --fix"
+
+section "Structured delegations"
+SD="$WORK/structured"; mkdir -p "$SD"
+run "init with the default delegation format" "$LOOMY" init "$SD" --yes --no-clipboard
+file_has "brief: structured delegations by default" "$SD/.loomy/brief.md" "^delegation_format: structured$"
+file_has "brief: instruction for the agent" "$SD/.loomy/brief.md" "Delegations in structured form"
+SL="$WORK/structured.log"; : >"$SL"
+(cd "$SD" && STUB_LOG="$SL" "$LOOMY" delegate codex reviewer "Review the diff") >"$OUT" 2>&1
+grep -q 'STATUS: done | partial | blocked' "$SL" && ok "structured: contract added to the Codex prompt" || ko "structured: no contract in the prompt"
+has "structured: fields returned" "^STATUS: partial$"
+(cd "$SD" && STUB_LOG="$SL" "$LOOMY" delegate claude explorer "Map the code") >"$OUT" 2>&1
+J2="$SD/.loomy/logs/events.jsonl"
+file_has "structured: Codex outcome logged" "$J2" '"bridge":"codex".*"format":"structured","outcome":"partial"'
+file_has "structured: Claude outcome logged" "$J2" '"bridge":"claude".*"format":"structured","outcome":"blocked"'
+run "status with structured outcomes" "$LOOMY" status --root "$SD"
+has "status: partial result marked" "◐ .*reviewer"
+has "status: blocked result marked" "■ .*explorer"
+run "log with structured outcomes" "$LOOMY" log --root "$SD"
+has "log: partial result marked" "◐ reviewer"
+run "stats with structured outcomes" "$LOOMY" stats --root "$SD"
+has "stats: format compliance" "2 of 2 answers followed the format · 1 partial · 1 blocked"
+run "context in structured mode" bash "$REPO/scripts/ai-context.sh" --root "$SD"
+has "context: structured delegations explained" "Structured delegations: write each task as GOAL"
+run "generated Claude subagents carry the contract" "$LOOMY" route --root "$SD" claude-agents "$WORK/sd-agents"
+file_has "subagent: answer contract" "$WORK/sd-agents/explorer.md" "^STATUS: done \| partial \| blocked$"
+: >"$SL"; (cd "$SD" && LOOMY_DELEGATION_FORMAT=free STUB_LOG="$SL" "$LOOMY" delegate codex reviewer "x") >"$OUT" 2>&1
+grep -q 'STATUS: done' "$SL" && ko "free format: contract still added" || ok "free format: no contract"
+run "config: delegation_format" "$LOOMY" config set delegation_format free
+[[ "$(bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; ai_delegation_format "$2"' _ "$REPO" "$SD")" == free ]] && ok "config overrides the project's choice" || ko "config override ignored"
+fails "config: invalid delegation_format refused" 2 "$LOOMY" config set delegation_format yaml
+run "config: back to the project's choice" "$LOOMY" config set delegation_format auto
+[[ "$(bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; ai_delegation_format "$2"' _ "$REPO" "$QD")" == free ]] && ok "older project without the option: free text" || ko "older project: format changed"
 
 section "Screens without leftovers"
 run "doctor for the installs listing" "$LOOMY" doctor

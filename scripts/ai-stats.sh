@@ -58,6 +58,7 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
     if (ty == "delegation") {
       r = field("role"); n++; d = num("duration_s"); dur += d
       ok = (field("status") == "ok"); if (!ok) err++; if (field("failover_from") != "") fo++
+      if (field("format") == "structured") { sf++; oc = field("outcome"); if (oc == "unformatted") suf++; else if (oc == "partial") sp++; else if (oc == "blocked") sb++ }
       rn[r]++; rd[r] += d; rt[r] += ti + to; rv[r] += c; rp[r] = (rp[r] == "" ? plan : (rp[r] == plan ? plan : 2)); if (!ok) re[r]++
       mn[m]++; dn[day]++
     } else {
@@ -66,13 +67,13 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
     }
   }
   END {
-    printf "ALL|%s|%s|%d|%d|%d|%d|%d|%d|%.4f|%.4f|%d|%d|%.4f|%d|%d|%.4f|%d\n", first, last, n, err, dur, ti_all, tc_all, to_all, ac, pv, lr, lt, lv, sn, st, sv, fo
+    printf "ALL|%s|%s|%d|%d|%d|%d|%d|%d|%.4f|%.4f|%d|%d|%.4f|%d|%d|%.4f|%d|%d|%d|%d|%d\n", first, last, n, err, dur, ti_all, tc_all, to_all, ac, pv, lr, lt, lv, sn, st, sv, fo, sf, suf, sp, sb
     for (r in rn) printf "ROLE|%s|%d|%d|%d|%.4f|%d|%d\n", r, rn[r], rd[r], rt[r], rv[r], rp[r], re[r]
     for (m in md) printf "MODEL|%s|%d|%d|%d|%d|%d|%.4f|%d\n", m, mn[m], mu[m], mi[m], mc[m], mo[m], mv[m], md[m]
     for (d in dt) printf "DAY|%s|%d|%d|%.4f|%.4f\n", d, dn[d], dt[d], da[d], dp[d]
   }')"
 
-IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
+IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
 
 day_of() { local ep; ep="$(ai_ts_epoch "$1")"; [[ -n "$ep" ]] && { date -r "$ep" +%Y-%m-%d 2>/dev/null || date -d "@$ep" +%Y-%m-%d; }; }
 money() {   # money <amount> <on plan: 0|1|2>: real cost, or "≈ API value" when covered by a subscription
@@ -95,6 +96,9 @@ else
     ok_pct=$(( (N - ERR) * 100 / N ))
     ui_kv "$(t "Delegations")" "${C_BOLD}${N}${C_RESET} · $(t "%s %% succeeded" "$ok_pct")$( (( ERR > 0 )) && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$ERR")" "$C_RESET")"
     (( FO > 0 )) && ui_kv "$(t "Switched")" "$(t "%s delegation(s) moved to the other tool (quota nearly exhausted)" "$FO")"
+    if (( SF > 0 )); then
+      ui_kv "$(t "Structured")" "$(t "%s of %s answers followed the format" "$(( SF - SUF ))" "$SF")$( (( SP > 0 )) && printf ' · %s' "$(t "%s partial" "$SP")")$( (( SB > 0 )) && printf ' · %s' "$(t "%s blocked" "$SB")")"
+    fi
     ui_kv "$(t "Duration")" "$(t "%s in total · %s on average" "$(dur_label "$DUR")" "$(dur_label $(( DUR / N )))")"
   fi
   (( LR > 0 )) && ui_kv "$(t "Lead agent")" "$(t "%s reply(ies)" "$LR") · $(ai_tokens_label "$LT") $(t "tokens") · $(money "$LV" "$PC")"

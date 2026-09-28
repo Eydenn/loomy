@@ -14,4 +14,6 @@ esac
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
 text="answer from the claude double"
 case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
+# Structured delegation asked: answer with the contract's fields (newlines escaped for the JSON output).
+case "$*" in *"STATUS: done | partial | blocked"*) text='STATUS: blocked\nSUMMARY: answer from the claude double\nFINDINGS:\n- none\nFILES:\n- none\nCHECKS:\n- none\nRISKS:\n- missing access\nNEXT: grant access' ;; esac
 printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","total_cost_usd":0.0123,"usage":{"input_tokens":120,"cache_creation_input_tokens":0,"cache_read_input_tokens":80,"output_tokens":40}}\n' "$text"

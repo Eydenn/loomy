@@ -30,6 +30,34 @@ En fin de quota d'abonnement (95 % par défaut), un bridge peut confier le rôle
 
 Un orchestrateur Codex utilise aussi `delegate-to-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
 
+## Délégations structurées
+Quand le brief indique `delegation_format: structured` (choix du questionnaire, ou `loomy config set delegation_format structured`), tâches et résultats s'échangent en champs fixes, sans prose : moins de tokens, rien de perdu dans la formulation, et des résultats que les bridges vérifient.
+
+Rédige chaque tâche déléguée ainsi :
+```
+GOAL: le résultat attendu, en une phrase
+SCOPE: ce qui peut être touché, et ce qui ne doit pas l'être
+FILES: les fichiers ou dossiers concernés
+ACCEPTANCE: les vérifications qui prouvent que c'est fait
+```
+
+Chaque rôle répond (les bridges ajoutent ce contrat à leur prompt ; les sous-agents Claude générés le portent aussi) :
+```
+STATUS: done | partial | blocked
+SUMMARY: une ou deux phrases
+FINDINGS:
+- [high|medium|low] chemin:ligne — fait, avec sa preuve
+FILES:
+- chemin — ce qui a changé (ou : none)
+CHECKS:
+- `commande` — passed | failed | not run
+RISKS:
+- risque ouvert (ou : none)
+NEXT: ce que l'orchestrateur doit faire de ce résultat
+```
+
+Agis selon STATUS : `partial` ou `blocked` signifie que la tâche n'est pas terminée ; lis RISKS et NEXT avant de décider. Le journal enregistre le résultat (◐ partiel, ■ bloqué dans `loomy status`), et `loomy stats` indique combien de réponses ont respecté le format.
+
 ## Responsabilités de l'orchestrateur
 - décider si une délégation est justifiée ;
 - rédiger la tâche déléguée avec son périmètre, ses fichiers et ses critères d'acceptation ;

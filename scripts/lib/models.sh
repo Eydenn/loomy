@@ -201,10 +201,35 @@ ai_codex_bin() {
     if [[ -x "$LOOMY_CODEX_BIN" ]]; then echo "$LOOMY_CODEX_BIN"; return 0; fi
     return 1
   fi
-  if command -v codex >/dev/null 2>&1; then _ai_realpath "$(command -v codex)"; return 0; fi
-  local p
-  for p in /Applications/Codex.app/Contents/Resources/codex /Applications/ChatGPT.app/Contents/Resources/codex; do
-    if [[ -x "$p" ]]; then echo "$p"; return 0; fi
+  local c
+  c="$(command -v codex 2>/dev/null || true)"
+  if [[ -n "$c" ]] && _ai_wrapper_ok "$c"; then _ai_realpath "$c"; return 0; fi
+  _ai_bundled_codex
+}
+
+# _ai_wrapper_ok <path>: false for a small "exec <target>" script whose target is gone (for instance after a desktop app
+# update moved its bundled CLI); true for anything else.
+_ai_wrapper_ok() {
+  local f="$1" target
+  [[ -f "$f" && ! -L "$f" ]] || return 0
+  (( $(wc -c <"$f") < 2048 )) || return 0
+  [[ "$(head -c 2 "$f")" == "#!" ]] || return 0
+  target="$(sed -n 's/^exec "\([^"]*\)".*/\1/p' "$f" | head -1)"
+  [[ -z "$target" || -x "$target" ]]
+}
+
+# _ai_bundled_codex: the Codex CLI shipped with the Codex or ChatGPT desktop app. Current layout: codex-cli/ with a
+# codex-package.json naming its entry point; older layout: Resources/codex.
+_ai_bundled_codex() {
+  local app res entry
+  # LOOMY_CODEX_APPS: the app bundles to look into (tests, unusual installs).
+  for app in ${LOOMY_CODEX_APPS:-/Applications/Codex.app /Applications/ChatGPT.app "$HOME/Applications/Codex.app" "$HOME/Applications/ChatGPT.app"}; do
+    res="$app/Contents/Resources"
+    if [[ -f "$res/codex-cli/codex-package.json" ]]; then
+      entry="$(sed -n 's/.*"entrypoint"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$res/codex-cli/codex-package.json" | head -1)"
+      if [[ -x "$res/codex-cli/${entry:-bin/codex}" ]]; then echo "$res/codex-cli/${entry:-bin/codex}"; return 0; fi
+    fi
+    if [[ -x "$res/codex" ]]; then echo "$res/codex"; return 0; fi
   done
   return 1
 }
@@ -375,6 +400,37 @@ _ai_brief_get() {
   [[ -f "$brief" ]] || return 0
   # Control characters removed: a brief can come from a cloned repository, its values must not drive the terminal.
   sed -n '/^---$/,/^---$/p' "$brief" | sed -n "s/^$key:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//' | LC_ALL=C tr -d '\000-\010\013-\037\177'
+}
+
+# ---------------------------------------------------------------- delegation format
+# "structured": tasks and results exchanged as fixed fields, no prose (fewer tokens, results the lead agent and the
+# bridges can check); "free": each agent answers in its own words. Chosen in the questionnaire (brief:
+# delegation_format), overridden by loomy config set delegation_format, or LOOMY_DELEGATION_FORMAT for one call.
+# Projects set up before this option keep "free".
+ai_delegation_format() {
+  local v="${LOOMY_DELEGATION_FORMAT:-}" cfg="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"
+  [[ -z "$v" && -f "$cfg" ]] && v="$(sed -n 's/^delegation_format=//p' "$cfg" 2>/dev/null | tail -1)"
+  [[ "$v" == "auto" ]] && v=""
+  [[ -z "$v" ]] && v="$(_ai_brief_get "${1:-.}/.loomy/brief.md" delegation_format)"
+  case "$v" in structured) echo structured ;; *) echo free ;; esac
+}
+
+# ai_result_contract: the answer format asked from a delegated role (field names stay in English: the bridges read them).
+ai_result_contract() {
+  t "Answer with exactly these fields, nothing before or after, one short line per item:"; echo
+  printf '%s\n' "STATUS: done | partial | blocked"
+  printf 'SUMMARY: %s\n' "$(t "one or two sentences")"
+  printf 'FINDINGS:\n- [high|medium|low] path:line — %s\n' "$(t "fact, with its evidence")"
+  printf 'FILES:\n- path — %s\n' "$(t "what changed (or: none)")"
+  printf 'CHECKS:\n- `command` — passed | failed | not run\n'
+  printf 'RISKS:\n- %s\n' "$(t "open risk (or: none)")"
+  printf 'NEXT: %s\n' "$(t "what the lead agent should do with this result")"
+}
+
+# ai_result_outcome <text>: done | partial | blocked when the answer follows the contract, empty otherwise.
+ai_result_outcome() {
+  printf '%s' "$1" | grep -q 'SUMMARY:' || return 0
+  printf '%s' "$1" | grep -oE 'STATUS:[[:space:]]*(done|partial|blocked)' | head -1 | sed 's/.*[[:space:]:]//'
 }
 
 # ai_env_for <mode> <lead>: works out the environment from the mode, the requested main tool and the installed tools.

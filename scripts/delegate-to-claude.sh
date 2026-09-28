@@ -82,6 +82,12 @@ $TASK
 
 $( (( WRITES )) && t "You are a specialist. Don't take over the project. Give the lead agent a concise result: what you did or found, the files involved, the checks run and their results, the open risks. Reply in English." || t "You are a specialist. Don't take over the project. Don't modify any file in the repository. Give your result only to the lead agent. Reply in English.")"
 
+# Structured delegations: the answer comes back as fixed fields the lead agent (and this bridge) can check.
+DFORMAT="$(ai_delegation_format "$ROOT")"
+[[ "$DFORMAT" == "structured" ]] && PROMPT="$PROMPT
+
+$(ai_result_contract)"
+
 run_claude() {
   if (( WRITES )); then
     # Like Codex's workspace-write sandbox: file edits accepted in the project, shell commands only inside Claude
@@ -141,12 +147,18 @@ T_OUT="$(ai_json_num "$OUT" output_tokens)"
 COST="$(ai_json_num "$OUT" total_cost_usd)"
 RESULT="ok"
 if [[ $STATUS -ne 0 ]] || grep -q '"is_error":true' <<<"$OUT"; then RESULT="error"; fi
+FORMAT_JSON=""
+if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
+  ANSWER="$OUT"; command -v python3 >/dev/null 2>&1 && ANSWER="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
+  OUTCOME="$(ai_result_outcome "$ANSWER")"
+  FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
+fi
 CHANGED=0; AFTER=""
 if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   AFTER="$(git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":$CHANGED$FAILOVER_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 t "delegate-to-claude: %ss · input tokens %s (%s cached), output %s · cost \$%s" "$DURATION" "$(( T_IN + T_CACHED + T_CWRITE ))" "$T_CACHED" "$T_OUT" "$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2; echo >&2
 
 # Handed over by the Codex bridge: its caller expects Codex's plain answer, not Claude's JSON.

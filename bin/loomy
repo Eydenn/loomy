@@ -183,6 +183,7 @@ sub_help() {
             t "Keys: plan_claude (api, pro, max5, max20, team, enterprise), plan_codex (api, plus, pro100, pro200, business, enterprise),"; echo
             t "      plan_claude_price, plan_codex_price (monthly price in \$ if different from the list price),"; echo
             t "      quota_switch (95 by default: from this share of a subscription quota, work moves to the other tool; off: never),"; echo
+            t "      delegation_format (structured or free: overrides every project's choice; auto: the project's choice),"; echo
             t "      start_watch (yes: loomy start also opens live tracking next to the session),"; echo
             t "      notify (no: loomy watch no longer notifies phase changes, failures and end of bootstrap),"; echo
             t "      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),"; echo
@@ -247,11 +248,12 @@ case "$cmd" in
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { t "%s: a monthly price in \$" "$key" >&2; echo >&2; exit 2; } ;;
           start_watch|notify) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s: yes or no" "$key" >&2; echo >&2; exit 2; } ;;
           quota_switch) [[ "$val" == "off" || ( "$val" =~ ^[0-9]+$ && "$val" -ge 1 && "$val" -le 100 ) ]] || { t "quota_switch: a percentage (1 to 100) or off" >&2; echo >&2; exit 2; } ;;
+          delegation_format) [[ "$val" =~ ^(auto|structured|free)$ ]] || { t "delegation_format: structured, free or auto (the project's choice)" >&2; echo >&2; exit 2; } ;;
           lang) [[ "$val" =~ ^(auto|fr|en)$ ]] || { t "lang: auto, fr or en" >&2; echo >&2; exit 2; } ;;
           screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { t "screen: auto, alt or clear" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

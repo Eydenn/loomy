@@ -73,6 +73,12 @@ $TASK
 
 $(t "You are a specialist. Don't take over the project. Give the lead agent a concise result: what you did or found, the files involved, the checks run and their results, the open risks. Reply in English.")"
 
+# Structured delegations: the answer comes back as fixed fields the lead agent (and this bridge) can check.
+DFORMAT="$(ai_delegation_format "$ROOT")"
+[[ "$DFORMAT" == "structured" ]] && PROMPT="$PROMPT
+
+$(ai_result_contract)"
+
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-codex.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -123,7 +129,12 @@ if [[ $STATUS -eq 0 && "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-
 fi
 
 RESULT="ok"; [[ $STATUS -ne 0 ]] && RESULT="error"
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+FORMAT_JSON=""
+if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
+  OUTCOME="$(ai_result_outcome "$(cat "$TMP/last.txt" 2>/dev/null)")"
+  FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
+fi
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 
 if [[ $STATUS -ne 0 ]]; then
   t "delegate-to-codex: codex exec failed (code %s). Last log lines:" "$STATUS" >&2; echo >&2

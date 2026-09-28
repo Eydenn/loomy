@@ -324,6 +324,22 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 ---
 
+### 🧾 Structured delegations
+
+Agents normally exchange tasks and results in prose. With **structured delegations** (a questionnaire choice, recommended), they use fixed fields instead: fewer tokens, nothing lost in the wording, and results the lead agent and the bridges can check.
+
+```text
+GOAL / SCOPE / FILES / ACCEPTANCE                          ← the lead agent's task
+STATUS: done | partial | blocked                           ← every role's answer
+SUMMARY · FINDINGS (path:line, evidence) · FILES · CHECKS · RISKS · NEXT
+```
+
+The bridges add this contract to their prompt, generated Claude subagents carry it, and the lead agent is told to act on `STATUS`. The log records the outcome: `loomy status` and `loomy log` mark ◐ partial and ■ blocked results, `loomy stats` shows how many answers followed the format. Projects set up before this option keep free text; switch any project with `loomy brief` (questionnaire again) or for all of them with `loomy config set delegation_format structured` (`auto`: each project's choice).
+
+This is a text protocol that works with Claude and Codex as they are. Exchanging internal model states ("latent communication") is still research: it needs access to the models' internals, which the Claude and Codex products don't offer.
+
+---
+
 ## 📊 Why this split
 
 <sub>Analysis of 2026-09-23. "AA" = independent measurements by Artificial Analysis. Details, caveats and sources (in French): <a href="docs/MODEL_CATALOG.md">docs/MODEL_CATALOG.md</a>.</sub>
@@ -403,7 +419,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
@@ -547,7 +563,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.1 | Screen-by-screen check of every command, in English and French |
 | ✅&nbsp;0.5.2 | Security and robustness review ([SECURITY.md](SECURITY.md)) |
 | ✅&nbsp;0.5.3 | **Real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
-| ✅&nbsp;0.5.4 | **Current version** · **automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
+| ✅&nbsp;0.5.4 | **Automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
+| ✅&nbsp;0.5.5 | **Current version** · **structured delegations** (optional, chosen in the questionnaire): tasks and results as fixed fields, checked by the bridges, outcomes in status, log and stats; Codex CLI found again after a ChatGPT app update |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

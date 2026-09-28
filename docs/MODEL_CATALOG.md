@@ -1,6 +1,6 @@
 # Model catalog and routing rationale
 
-Checked on **2026-09-23**. The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
+Checked on **2026-09-28** (Claude Sonnet 5.5 added; the rest as of 2026-09-23). The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
 Models change every few weeks: see [Updating the catalog](#updating-the-catalog).
 
 Sources are listed at the end. "AA" means Artificial Analysis (independent measurements). "Vendor" means figures published by OpenAI or Anthropic.
@@ -13,7 +13,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | GPT-6-Sol | 2 / 10 | 0.20 | $0.13 (low) → $1.06 (max) | 57 ($2.99/task) | 43% | workhorse |
 | GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1.00 | $0.82 (low) → $3.26 (max) | **62** ($7.09/task) | 59% | OpenAI's frontier model, computer use |
 | Claude Haiku 4.5 | 1 / 5 | 0.10 | not measured | not measured | not measured | fast Claude subagents |
-| Claude Sonnet 5 | 2 / 10 | 0.20 | not yet compared with GPT-6 | not measured | not measured | everyday work on the Claude side |
+| Claude Sonnet 5.5 | 2 / 10 | 0.20 | $0.41 (low) → $7.60 (max); intelligence from 36 to 56 | not published yet | **70.6%** (vendor; Opus 5.5: 66.4%) | everyday work on the Claude side, 1M context, fast (171 t/s at xhigh) |
+| Claude Sonnet 5 | 2 / 10 | 0.20 | not yet compared with GPT-6 | not measured | not measured | fallback for Sonnet 5.5 |
 | Claude Opus 5.5 | 4 / 20 (fast 8 / 40) | 0.20 | $0.55 (low) → $5.98 (max); intelligence from 42 to **58, 1st** | not published yet | **59.6%** (vendor: 66.4%) | best reasoning and best agentic work |
 | Claude Fable 5.1 | 10 / 50 | 0.25 | $7.63 (max) | 62 | 55.8% (vendor) | replaced by Opus 5.5 |
 
@@ -34,7 +35,11 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
    - Caveats: it regresses from GPT-5.6-Sol on DeepSWE (72.7% → 68.8%) and on GDPval (about −100 Elo).
 5. **GPT-6-Astra is the best fallback for deep work in full Codex**, and it leads graphical computer use: OSWorld 2.0 73.5%, against 64.4% for Sol.
 6. **Sonnet 5 and Sol cost the same ($2 / $10).** No direct independent comparison exists yet, so each stays on its own tool.
-7. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
+7. **Claude Sonnet 5.5 (2026-09-28) replaces Sonnet 5 at the same price.**
+   - Vendor figures: 97.8 % of Opus 5.5 on average across eight benchmarks, ahead on Terminal-Bench 4.0 (70.6 % against 66.4 %); up to 30 % fewer tokens per task (12 to 14 % in early customer tests).
+   - AA: intelligence 52 at xhigh and 56 at max, against 58 for Opus 5.5 at max; but at max effort it costs $7.60 per task, far above Opus 5.5 at high ($1.82 for 53.6).
+   - Consequence: it takes the head of the Claude `mid` chain (developer, reviewer, executor, documenter on the Claude side), Sonnet 5 as fallback. The lead agent and the high-stakes specialists stay on Opus 5.5 at high, which is still cheaper for the same level of reasoning. To be reviewed once independent agentic coding figures are out.
+8. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
 
 ## Resulting role matrix (Balanced profile)
 
@@ -44,11 +49,11 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | Architect | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | Opus leads on reasoning and office work |
 | Debugger | Opus 5.5 high | Sol xhigh | Opus 5.5 high | Opus 5.5 high (bridge) | Terminal-Bench: Opus 59.6%, Sol 43% |
 | Security | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | high-stakes judgement |
-| Reviewer | Sonnet 5 high | Sol high | Sol high (Codex) | Sonnet 5 high (Claude) | cross-family review in hybrid |
-| Developer | Sonnet 5 medium | Sol high | Sonnet 5 medium | Sol high | same price; stays on the main tool |
-| Executor | Sonnet 5 medium | Luna max | Luna max (Codex) | Luna max | DeepSWE 66.6% for $0.22 |
+| Reviewer | Sonnet 5.5 high | Sol high | Sol high (Codex) | Sonnet 5.5 high (Claude) | cross-family review in hybrid |
+| Developer | Sonnet 5.5 medium | Sol high | Sonnet 5 medium | Sol high | same price; stays on the main tool |
+| Executor | Sonnet 5.5 medium | Luna max | Luna max (Codex) | Luna max | DeepSWE 66.6% for $0.22 |
 | Explorer | Haiku 4.5 low | Luna low | Haiku 4.5 low | Luna low | cheap searches, on the main tool |
-| Documenter | Sonnet 5 low | Sol low | Sonnet 5 low | Sol low | accuracy over price (Luna is wrong too often) |
+| Documenter | Sonnet 5.5 low | Sol low | Sonnet 5 low | Sol low | accuracy over price (Luna is wrong too often) |
 
 Profiles:
 - `econome` lowers the lead agent and specialists' effort by one notch.
@@ -120,4 +125,7 @@ To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gp
 - [GPT-6 Sol vs Claude Sonnet 5 (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-vs-claude-sonnet-5/)
 - [GPT-6 Sol vs Claude Opus 5.5 cost per task (Digital Applied)](https://www.digitalapplied.com/blog/gpt-6-sol-vs-claude-opus-5-5-cost-benchmarks)
 - [Claude API pricing (Anthropic)](https://platform.claude.com/docs/en/about-claude/pricing)
+- [Claude Sonnet 5.5 at unchanged Sonnet 5 pricing (Unite.AI)](https://www.unite.ai/anthropic-releases-claude-sonnet-5-5-at-unchanged-sonnet-5-pricing/)
+- [Claude Sonnet 5.5 by effort level (Artificial Analysis)](https://artificialanalysis.ai/models/releases/claude-sonnet-5-5)
+- [Claude Sonnet 5.5 against Opus 5.5, cost per task (Roo)](https://roo.beehiiv.com/p/claude-sonnet-5-5-cost-benchmarks)
 - Codex local model catalog (`~/.codex/models_cache.json`), and real tests with `ai-doctor.sh --live` on 2026-09-23.

@@ -415,10 +415,10 @@ if [[ -d "$PROJ/.loomy/scripts" ]]; then
   fails "relays: clear message without Loomy" 127 env -u LOOMY_HOME LOOMY_RELAY_PATHS= PATH=/usr/bin:/bin bash "$PROJ/.loomy/scripts/ai-route.sh" lead
 fi
 
-# Catalog: the repository one matches the built-in values; a newer downloaded catalog replaces them,
+# Catalog: the repository one matches the built-in values (whole fallback chains); a newer downloaded catalog replaces them,
 # without ever running its content.
-cat_vals="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_DATE $AI_MODEL_CLAUDE_TOP $AI_MODEL_CLAUDE_MID $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_TOP $AI_MODEL_CODEX_MID $AI_MODEL_CODEX_FAST"' _ "$REPO")"
-file_vals="$(awk -F= '/^date=/{d=$2} /^model\.claude\.top=/{a=$2} /^model\.claude\.mid=/{b=$2} /^model\.claude\.fast=/{c=$2} /^model\.codex\.top=/{e=$2} /^model\.codex\.mid=/{f=$2} /^model\.codex\.fast=/{g=$2} END{print d, a, b, c, e, f, g}' "$REPO/catalog/models.conf")"
+cat_vals="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_DATE $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST"' _ "$REPO")"
+file_vals="$(awk -F= '/^date=/{d=$2} /^model\.claude\.top=/{a=$2} /^model\.claude\.mid=/{b=$2} /^model\.claude\.fast=/{c=$2} /^model\.codex\.top=/{e=$2} /^model\.codex\.mid=/{f=$2} /^model\.codex\.fast=/{g=$2} END{print d, a, b, c, e, f, g}' "$REPO/catalog/models.conf" | tr -d ',')"
 [[ "$cat_vals" == "$file_vals" ]] && ok "repository catalog = built-in values" || ko "catalog: $cat_vals ≠ $file_vals"
 mkdir -p "$XDG_CONFIG_HOME/loomy"
 sed 's/^date=.*/date=2099-01-01/; s/^model.codex.fast=.*/model.codex.fast=luna-test/; s/^price.gpt-6-sol=.*/price.gpt-6-sol=9 9 9/' "$REPO/catalog/models.conf" >"$XDG_CONFIG_HOME/loomy/catalog.conf"

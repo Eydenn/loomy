@@ -29,7 +29,7 @@ if [[ ${#_ui_probe} != 1 ]]; then
 fi
 unset _ui_probe _l _locs
 
-AI_CATALOG_DATE="2026-09-23"
+AI_CATALOG_DATE="2026-09-28"
 AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # downloaded catalog prices: "model=input output cache;…"
 AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
@@ -37,7 +37,7 @@ AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 # Model chains per tier: the first model available on this machine is used, the next ones are
 # fallbacks (not everyone has access to the latest models). The downloaded catalog can replace them.
 AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic coding, office work
-AI_CHAIN_CLAUDE_MID="claude-sonnet-5"                # travail courant
+AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5 claude-sonnet-5" # everyday work (Sonnet 5 as fallback)
 AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
 AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # frontier reasoning, computer use
 AI_CHAIN_CODEX_MID="gpt-6-sol"                       # workhorse, workflows

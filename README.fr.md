@@ -334,10 +334,10 @@ flowchart TB
   L --> DB["🐞 Débogueur<br/>Opus 5.5 · high"]:::deep
   L --> SE["🔒 Sécurité<br/>Opus 5.5 · high"]:::deep
   L --> RV["🔍 Relecteur<br/>GPT-6-Sol · high ⇄"]:::std
-  L --> DV["🛠️ Développeur<br/>Sonnet 5 · medium"]:::std
+  L --> DV["🛠️ Développeur<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Exécutant<br/>GPT-6-Luna · max ⇄"]:::fast
   L --> XP["🔎 Explorateur<br/>Haiku 4.5 · low"]:::fast
-  L --> DO["📚 Documentaliste<br/>Sonnet 5 · low"]:::std
+  L --> DO["📚 Documentaliste<br/>Sonnet 5.5 · low"]:::std
   classDef lead fill:#534AB7,stroke:#26215C,color:#FFFFFF
   classDef deep fill:#EEEDFE,stroke:#534AB7,color:#26215C
   classDef std fill:#E1F5EE,stroke:#1D9E75,color:#085041
@@ -354,11 +354,11 @@ flowchart TB
 | 🏛️&nbsp;Architecte | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔒&nbsp;Sécurité | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Relecteur | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
-| 🛠️&nbsp;Développeur | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
-| ⚙️&nbsp;Exécutant | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol · high | Sol · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol · high | Sonnet 5.5 · medium | Sol · high |
+| ⚙️&nbsp;Exécutant | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorateur | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚&nbsp;Documentaliste | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
+| 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol · low | Sonnet 5.5 · low | Sol · low |
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
 
@@ -631,7 +631,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.5.4 | **Bascule automatique en fin de quota** : à partir de 95 % d'un quota d'abonnement, les rôles (et une nouvelle session de l'orchestrateur) passent à l'autre outil avec un modèle adapté, les rôles qui écrivent dans le bac à sable de Claude Code ; réglage `quota_switch` |
 | ✅&nbsp;0.5.5 | **délégations structurées** (option du questionnaire) : tâches et résultats en champs fixes, vérifiés par les bridges, résultats dans status, log et stats ; CLI Codex retrouvée après une mise à jour de l'app ChatGPT |
 | ✅&nbsp;0.5.6 | **dépôt GitHub existant** : nom déjà pris détecté dans le questionnaire ; autre nom, ou dépôt relié (son contenu récupéré, mise en place sur une branche `loomy/setup` à réconcilier par pull request), jamais écrasé |
-| ✅&nbsp;0.5.7 | **Version actuelle** · **Tab reprend une suggestion** pour la modifier dans les champs texte (nom du projet, nom du dépôt…) ; nom de dépôt déjà pris : `<nom>-loomy` proposé |
+| ✅&nbsp;0.5.7 | **Tab reprend une suggestion** pour la modifier dans les champs texte (nom du projet, nom du dépôt…) ; nom de dépôt déjà pris : `<nom>-loomy` proposé |
+| ✅&nbsp;0.5.8 | **Version actuelle** · **Claude Sonnet 5.5** en tête du travail courant côté Claude (Sonnet 5 en repli) ; orchestrateurs inchangés |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |

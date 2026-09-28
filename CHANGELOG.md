@@ -2,7 +2,13 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.5.7 — 2026-09-28
+## 0.5.8 — 2026-09-28
+
+### Changed
+- **Claude Sonnet 5.5** (released 2026-09-28, same price as Sonnet 5) heads the Claude `mid` chain: developer, reviewer, executor and documenter on the Claude side. Sonnet 5 stays as its fallback for accounts without access, to be removed once it is no longer offered. The lead agent and the high-stakes specialists stay on Opus 5.5 at high. Catalog dated 2026-09-28 (`loomy update --catalog` for earlier versions); rationale and sources in `docs/MODEL_CATALOG.md`. Checked with `loomy doctor --live`: every model of the chains answers.
+- The catalog consistency test compares whole fallback chains, not just their first model.
+
+
 
 ### Added
 - **Tab in text fields**: the suggestion (project name, repository name, private AI repository name…) becomes the text being typed, to edit it instead of retyping it; the footer shows `⇥ edit the suggestion` when one is offered.

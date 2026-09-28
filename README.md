@@ -307,11 +307,11 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 | 🏛️&nbsp;Architect | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🐞&nbsp;Debugger | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔒&nbsp;Security | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Reviewer | Sonnet 5 · high | Sol · high | Sol · high ⇄ | Sonnet 5 · high ⇄ |
-| 🛠️&nbsp;Developer | Sonnet 5 · medium | Sol · high | Sonnet 5 · medium | Sol · high |
-| ⚙️&nbsp;Executor | Sonnet 5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol · high | Sol · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol · high | Sonnet 5.5 · medium | Sol · high |
+| ⚙️&nbsp;Executor | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚&nbsp;Documenter | Sonnet 5 · low | Sol · low | Sonnet 5 · low | Sol · low |
+| 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol · low | Sonnet 5.5 · low | Sol · low |
 
 <sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
 
@@ -566,7 +566,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.4 | **Automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
 | ✅&nbsp;0.5.5 | **structured delegations** (optional, chosen in the questionnaire): tasks and results as fixed fields, checked by the bridges, outcomes in status, log and stats; Codex CLI found again after a ChatGPT app update |
 | ✅&nbsp;0.5.6 | **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
-| ✅&nbsp;0.5.7 | **Current version** · **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
+| ✅&nbsp;0.5.7 | **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
+| ✅&nbsp;0.5.8 | **Current version** · **Claude Sonnet 5.5** heads everyday Claude work (Sonnet 5 as fallback); lead agents unchanged |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

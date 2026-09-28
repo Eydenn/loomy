@@ -26,6 +26,8 @@ Claude inspecte et rend compte ; ses outils de modification de fichiers sont dé
 ```
 Les rôles qui écrivent modifient le répertoire de travail ; le script liste les fichiers changés. Surcharges : `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
+En fin de quota d'abonnement (95 % par défaut), un bridge peut confier le rôle à l'autre outil, avec le modèle que le routage prévoit pour ce rôle de ce côté ; il l'annonce sur stderr et le journalise. Rien ne change pour toi : même appel, même type de réponse ; vérifie le résultat comme d'habitude.
+
 Un orchestrateur Codex utilise aussi `delegate-to-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
 
 ## Responsabilités de l'orchestrateur

@@ -155,7 +155,7 @@ if (( WATCH )); then
         qm="$(ai_quota_max "$fam")"; ql=0; [[ -n "$qm" ]] && { (( qm >= 80 )) && ql=1; (( qm >= 95 )) && ql=2; }
         pv="p_ql_$fam"
         if (( ! first_q && ql > ${!pv} )); then
-          watch_notify "$(t "%s quota at %s %%" "$( [[ "$fam" == codex ]] && echo Codex || echo Claude)" "$qm")" "$( (( ql == 2 )) && t "Almost exhausted: the next tasks may be cut off until it resets." || t "Keep an eye on it: loomy stats shows what consumed it.")"
+          watch_notify "$(t "%s quota at %s %%" "$( [[ "$fam" == codex ]] && echo Codex || echo Claude)" "$qm")" "$(sw="$(ai_switch_family "$fam")"; if [[ -n "$sw" ]]; then t "Its roles go to %s until it resets." "$( [[ "$sw" == codex ]] && echo Codex || echo Claude)"; elif (( ql == 2 )); then t "Almost exhausted: the next tasks may be cut off until it resets."; else t "Keep an eye on it: loomy stats shows what consumed it."; fi)"
         fi
         printf -v "$pv" '%s' "$ql"
       done
@@ -428,7 +428,7 @@ if [[ -s "$JOURNAL" ]]; then
     grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out") }' |
+      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out") }' |
     while IFS='|' read -r t st role m d cost task fam tk; do
       row=$(( row + 1 ))
       # Log in UTC, shown in local time.
@@ -466,6 +466,12 @@ plan_lines() {
       q="$(ai_quota_line "$fam")"
       if [[ -n "$q" ]]; then ui_kv "$name" "$( [[ "$COMPACT" == "1" ]] || printf '%s · ' "$(ai_plan_label "$fam" "$plan")")$q"
       elif [[ "$COMPACT" != "1" ]]; then ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · ${C_DIM}$(ai_quota_hint "$fam")${C_RESET}"; fi
+      # Nearly exhausted: where the work goes now.
+      if ai_quota_saturated "$fam"; then
+        sw="$(ai_switch_family "$fam")"
+        if [[ -n "$sw" ]]; then ui_rail "                 ${C_YELLOW}⇄ $(t "%s's roles go to %s until it resets" "$name" "$( [[ "$sw" == codex ]] && echo Codex || echo Claude)")${C_RESET}"
+        else ui_rail "                 ${C_RED}! $(t "no other tool with room left: tasks may stop until it resets")${C_RESET}"; fi
+      fi
     fi
   done
 }

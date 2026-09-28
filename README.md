@@ -256,6 +256,15 @@ Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 
 `loomy watch` notifies you when a quota crosses 80 %, then 95 %.
 
+**Automatic switch near the end of a quota.** From 95 % of a subscription quota (or when the tool reports its limit reached), the work moves to the other tool, if it is installed and has room left:
+- a delegation to Codex (executor, reviewer…) is run by Claude, on the model and effort the routing gives that role on the Claude side, and vice versa;
+- a role that writes, moved to Claude, gets accepted edits and shell commands only inside Claude Code's sandbox (the project folder, no network), like Codex's `workspace-write` sandbox; read-only roles stay read-only;
+- the lead agent receives the same kind of answer as usual; the switch is announced, logged (⇄ in `status`, `log` and `stats`) and shown in the plans section;
+- `loomy start` opens the lead agent session on the other tool when its own is nearly exhausted (`LOOMY_NO_SWITCH=1 loomy start` to keep it);
+- no ping-pong: a switched delegation never switches back, and nothing moves when both tools are exhausted.
+
+Threshold: `loomy config set quota_switch 90` (a percentage), or `off` to never switch.
+
 Where the figures come from, without network or credentials:
 - **Codex** writes its quota into its own session logs (`~/.codex/sessions`); Loomy reads the latest reading.
 - **Claude Code** gives its status line command a documented `rate_limits` field. `loomy init` adds a small Loomy status line to the project (`.claude/settings.json`) that saves it, then shows **your own status line** if you have one (an existing project status line is never replaced). The Claude quota appears once a session has answered in a Loomy project.
@@ -394,7 +403,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
@@ -537,7 +546,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅ | Adoption plan reviewed before any commit: what was understood, what remains to confirm, prioritized recommendations |
 | ✅&nbsp;0.5.1 | Screen-by-screen check of every command, in English and French |
 | ✅&nbsp;0.5.2 | Security and robustness review ([SECURITY.md](SECURITY.md)) |
-| ✅&nbsp;0.5.3 | **Current version** · **real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
+| ✅&nbsp;0.5.3 | **Real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
+| ✅&nbsp;0.5.4 | **Current version** · **automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

@@ -107,3 +107,42 @@ ai_quota_hint() {
     codex) t "quota shown once a Codex session has run on this machine" ;;
   esac
 }
+
+# ---------------------------------------------------------------- quota failover
+# Close to the end of a subscription quota, work moves to the other tool when it is installed and has room left.
+# Threshold: loomy config set quota_switch <percent> (95 by default), or "off" to never switch.
+
+# ai_switch_threshold: the percentage from which a quota counts as nearly exhausted (empty when switching is off).
+ai_switch_threshold() {
+  local v; v="$(loomy_config_get quota_switch 2>/dev/null || true)"
+  [[ "$v" == "off" ]] && return 0
+  [[ "$v" =~ ^[0-9]+$ ]] && (( v >= 1 && v <= 100 )) || v=95
+  echo "$v"
+}
+
+# ai_quota_saturated <claude|codex>: true when that tool's subscription quota is nearly exhausted or reached.
+# A tool used through the API is never saturated.
+ai_quota_saturated() {
+  local th q; th="$(ai_switch_threshold)"
+  [[ -n "$th" ]] || return 1
+  loomy_on_plan "$1" || return 1
+  q="$(ai_quota "$1")"
+  [[ -n "$q" ]] || return 1
+  printf '%s\n' "$q" | awk -v th="$th" '$1 == "reached" || $2 + 0 >= th { hit = 1 } END { exit !hit }'
+}
+
+# ai_switch_family <claude|codex>: the tool to use instead when this one is saturated (installed, not saturated
+# itself); empty otherwise.
+ai_switch_family() {
+  local other="codex"; [[ "$1" == "codex" ]] && other="claude"
+  ai_quota_saturated "$1" || return 0
+  if [[ "$other" == "claude" ]]; then ai_has_claude || return 0; else ai_has_codex || return 0; fi
+  ai_quota_saturated "$other" && return 0
+  echo "$other"
+}
+
+# ai_quota_state <claude|codex>: "limit reached" or "N %" for messages.
+ai_quota_state() {
+  local q; q="$(ai_quota "$1")"
+  if grep -q '^reached' <<<"$q"; then t "limit reached"; else printf '%s %%' "$(ai_quota_max "$1")"; fi
+}

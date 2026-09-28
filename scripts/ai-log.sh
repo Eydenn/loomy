@@ -90,7 +90,7 @@ pretty() {
       if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, cut(field("task"), 36), Z
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") cut(field("task"), 36), Z
       }
       else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {

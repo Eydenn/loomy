@@ -10,13 +10,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
 
 ROLE="${1:-}"
 TASK="${2:-}"
 
 if [[ -z "$ROLE" || -z "$TASK" ]]; then
-  echo "Usage : $0 <executor|developer|documenter|reviewer|explorer|debugger|architect|security> \"tâche\"" >&2
-  echo "Surcharges possibles : DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)" >&2
+  t "Usage: %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> \"task\"" "$0" >&2; echo >&2
+  t "Possible overrides: DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)" >&2; echo >&2
   exit 2
 fi
 
@@ -44,6 +46,14 @@ case "$ROLE" in
     GUIDANCE="$(t "You are the Security reviewer. Only inspect the given scope. Report concrete weaknesses with their exploitability, evidence and fix, separating confirmed issues from hypotheses. Don't modify any file.")" ;;
   *) t "Error: unsupported role '%s'." "$ROLE" >&2; echo >&2; exit 2 ;;
 esac
+
+# Codex quota nearly exhausted, Claude available with room left: the role goes to Claude, on the model the routing
+# gives that role on the Claude side (once: a delegation that already switched never switches back).
+if [[ -z "${LOOMY_FAILOVER_FROM:-}" && "$(ai_switch_family codex)" == "claude" ]]; then
+  t "delegate-to-codex: Codex quota at %s (threshold %s %%): %s handed to Claude until it resets." "$(ai_quota_state codex)" "$(ai_switch_threshold)" "$ROLE" >&2; echo >&2
+  LOOMY_FAILOVER_FROM=codex exec bash "$SCRIPT_DIR/delegate-to-claude.sh" "$ROLE" "$TASK"
+fi
+FAILOVER_JSON=""; [[ -n "${LOOMY_FAILOVER_FROM:-}" ]] && FAILOVER_JSON=",\"failover_from\":\"$LOOMY_FAILOVER_FROM\""
 
 CODEX="$(ai_codex_bin)" || { t "Error: Codex CLI not found (PATH, Codex.app or ChatGPT.app). Run loomy doctor." >&2; echo >&2; exit 127; }
 
@@ -113,7 +123,7 @@ if [[ $STATUS -eq 0 && "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-
 fi
 
 RESULT="ok"; [[ $STATUS -ne 0 ]] && RESULT="error"
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 
 if [[ $STATUS -ne 0 ]]; then
   t "delegate-to-codex: codex exec failed (code %s). Last log lines:" "$STATUS" >&2; echo >&2

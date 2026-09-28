@@ -282,6 +282,15 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 
 `loomy watch` te prévient quand un quota dépasse 80 %, puis 95 %.
 
+**Bascule automatique en fin de quota.** À partir de 95 % d'un quota d'abonnement (ou quand l'outil signale sa limite atteinte), le travail passe à l'autre outil, s'il est installé et a encore de la marge :
+- une délégation à Codex (exécutant, relecteur…) est faite par Claude, avec le modèle et l'effort que le routage prévoit pour ce rôle côté Claude, et inversement ;
+- un rôle qui écrit, basculé vers Claude, a ses modifications acceptées et ses commandes limitées au bac à sable de Claude Code (dossier du projet, pas de réseau), comme le bac à sable `workspace-write` de Codex ; les rôles en lecture seule le restent ;
+- l'orchestrateur reçoit le même type de réponse que d'habitude ; la bascule est annoncée, journalisée (⇄ dans `status`, `log` et `stats`) et indiquée dans la section forfaits ;
+- `loomy start` ouvre la session de l'orchestrateur sur l'autre outil quand le sien est presque épuisé (`LOOMY_NO_SWITCH=1 loomy start` pour le garder) ;
+- pas d'aller-retour : une délégation basculée ne rebascule jamais, et rien ne bouge quand les deux outils sont épuisés.
+
+Seuil : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour ne jamais basculer.
+
 D'où viennent les chiffres, sans réseau ni identifiants :
 - **Codex** écrit son quota dans ses propres journaux de session (`~/.codex/sessions`) ; Loomy lit le dernier relevé.
 - **Claude Code** transmet à sa commande de barre d'état un champ documenté `rate_limits`. `loomy init` ajoute au projet une petite barre d'état Loomy (`.claude/settings.json`) qui l'enregistre, puis affiche **ta propre barre d'état** si tu en as une (une barre d'état déjà définie dans le projet n'est jamais remplacée). Le quota Claude apparaît dès qu'une session a répondu dans un projet Loomy.
@@ -455,7 +464,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | statistiques détaillées : par rôle, modèle et jour, durées, tokens, coût ou quota (`--days N`, `--since AAAA-MM-JJ`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : à partir de cette part d'un quota d'abonnement, le travail passe à l'autre outil ; `off` : jamais), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy, valable pour tous les projets ; `update --catalog` : seulement le catalogue des modèles et des prix ; `version --all` liste toutes les installations |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | montre comment désinstaller Loomy selon l'installation, et comment le retirer d'un projet |
@@ -602,7 +611,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅ | Plan d'adoption relu avant tout commit : ce qui a été compris, ce qui reste à confirmer, recommandations priorisées |
 | ✅&nbsp;0.5.1 | Vérification écran par écran de toutes les commandes, en anglais et en français |
 | ✅&nbsp;0.5.2 | Revue de sécurité et de robustesse ([SECURITY.md](SECURITY.md)) |
-| ✅&nbsp;0.5.3 | **Version actuelle** · **quotas réels des abonnements** : part des quotas Claude et Codex utilisée (fenêtres de 5 heures et de la semaine) au lieu des dollars avec un abonnement, tokens par tâche, alertes à 80 % et 95 % ; `loomy stats` pour des statistiques détaillées |
+| ✅&nbsp;0.5.3 | **Quotas réels des abonnements** : part des quotas Claude et Codex utilisée (fenêtres de 5 heures et de la semaine) au lieu des dollars avec un abonnement, tokens par tâche, alertes à 80 % et 95 % ; `loomy stats` pour des statistiques détaillées |
+| ✅&nbsp;0.5.4 | **Version actuelle** · **bascule automatique en fin de quota** : à partir de 95 % d'un quota d'abonnement, les rôles (et une nouvelle session de l'orchestrateur) passent à l'autre outil avec un modèle adapté, les rôles qui écrivent dans le bac à sable de Claude Code ; réglage `quota_switch` |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |

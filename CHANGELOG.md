@@ -2,6 +2,20 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.4 — 2026-09-28
+
+### Added
+- **Automatic switch near the end of a subscription quota.** From 95 % of a quota (or when the tool reports its limit reached), the work moves to the other tool when it is installed and has room left:
+  - the bridges hand the role over (`delegate-to-codex.sh` → Claude, `delegate-to-claude.sh` → Codex), on the model and effort the routing gives that role on the other side; the lead agent gets the same kind of answer as usual;
+  - roles that write (executor, developer, documenter), moved to Claude, run with accepted edits and shell commands only inside Claude Code's sandbox (project folder, no network), like Codex's `workspace-write`; checked with a real call: edits and sandboxed commands succeed, writing outside the project is refused. Read-only roles stay read-only;
+  - `loomy start` opens the lead agent session on the other tool when its own quota is nearly exhausted (`LOOMY_NO_SWITCH=1` to keep it);
+  - no ping-pong (a switched delegation never switches back), nothing moves when both tools are exhausted;
+  - announced on the bridge output, logged (`failover_from`), marked ⇄ in `status` and `log`, counted in `stats`, shown in the plans section and in `loomy watch` notifications.
+- `loomy config set quota_switch <percent|off>`.
+
+### Fixed
+- `delegate-to-codex.sh` usage message was still in French.
+
 ## 0.5.3 — 2026-09-28
 
 ### Added

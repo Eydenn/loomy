@@ -1369,5 +1369,21 @@ _t_fr() {
     '%s quota at %s %%') _T='Quota %s à %s %%' ;;
     'Almost exhausted: the next tasks may be cut off until it resets.') _T='Presque épuisé : les prochaines tâches risquent d'\''être coupées jusqu'\''à la remise à zéro.' ;;
     'Keep an eye on it: loomy stats shows what consumed it.') _T='À surveiller : loomy stats montre ce qui l'\''a consommé.' ;;
+    'delegate-to-codex: Codex quota at %s (threshold %s %%): %s handed to Claude until it resets.') _T='delegate-to-codex : quota Codex à %s (seuil %s %%) : %s confié à Claude jusqu'\''à la remise à zéro.' ;;
+    'delegate-to-claude: Claude quota at %s (threshold %s %%): %s handed to Codex until it resets.') _T='delegate-to-claude : quota Claude à %s (seuil %s %%) : %s confié à Codex jusqu'\''à la remise à zéro.' ;;
+    'delegate-to-claude: the working tree changed — review with '\''git diff'\'' before accepting:') _T='delegate-to-claude : le répertoire de travail a changé — relisez avec '\''git diff'\'' avant d'\''accepter :' ;;
+    'delegate-to-claude: no file modified.') _T='delegate-to-claude : aucun fichier modifié.' ;;
+    'limit reached') _T='limite atteinte' ;;
+    'quota_switch: a percentage (1 to 100) or off') _T='quota_switch : un pourcentage (1 à 100) ou off' ;;
+    '      quota_switch (95 by default: from this share of a subscription quota, work moves to the other tool; off: never),') _T='      quota_switch (95 par défaut : à partir de cette part d'\''un quota d'\''abonnement, le travail passe à l'\''autre outil ; off : jamais),' ;;
+    'Usage: %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> "task"') _T='Usage : %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> "tâche"' ;;
+    'Possible overrides: DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)') _T='Surcharges possibles : DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)' ;;
+    '%s quota at %s: this session runs on %s') _T='Quota %s à %s : cette session tourne sur %s' ;;
+    'back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start') _T='retour sur %s à la remise à zéro du quota · pour le garder : LOOMY_NO_SWITCH=1 loomy start' ;;
+    '%s'\''s roles go to %s until it resets') _T='Les rôles de %s passent à %s jusqu'\''à la remise à zéro' ;;
+    'no other tool with room left: tasks may stop until it resets') _T='aucun autre outil disponible : les tâches peuvent s'\''arrêter jusqu'\''à la remise à zéro' ;;
+    'Switched') _T='Basculées' ;;
+    '%s delegation(s) moved to the other tool (quota nearly exhausted)') _T='%s délégation(s) confiée(s) à l'\''autre outil (quota presque épuisé)' ;;
+    'Its roles go to %s until it resets.') _T='Ses rôles passent à %s jusqu'\''à la remise à zéro.' ;;
   esac
 }

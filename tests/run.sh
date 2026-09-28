@@ -878,6 +878,37 @@ hasnt "status API: no quota" "week [0-9]+ %"
 printf '{"type":"event_msg","payload":{"rate_limits":{"primary":null,"secondary":null,"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >>"$QX/sessions/2026/09/28/r.jsonl"; touch "$QX/sessions/2026/09/28/r.jsonl"
 got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
 [[ "$got" == "reached workspace_member_credits_depleted" ]] && ok "codex quota: limit reached reported" || ko "codex reached: $got"
+# Failover: close to the end of a subscription quota, the role goes to the other tool.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+FL="$WORK/failover.log"; : >"$FL"
+(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "Add a test") >"$OUT" 2>&1
+has "failover: announced" "Codex quota at limit reached .*executor handed to Claude"
+has "failover: plain answer, as from Codex" "^answer from the claude double$"
+grep -q $'^claude\t-p' "$FL" && ! grep -q '^codex' "$FL" && ok "failover: Codex role run by Claude" || ko "failover: calls $(cut -c1-60 "$FL" | tr '\n' ' ')"
+grep -q 'acceptEdits' "$FL" && grep -q '"sandbox":{"enabled":true' "$FL" && ok "failover: writing role with accepted edits inside Claude's sandbox" || ko "failover: write mode missing"
+grep -q -- '--model	claude-sonnet' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
+file_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '"role":"executor","family":"claude".*"sandbox":"workspace-write".*"failover_from":"codex"'
+run "status after a failover" qenv "$LOOMY" status --root "$QD"
+has "status: Codex roles go to Claude" "Codex's roles go to Claude until it resets"
+has "status: switched delegation marked" "⇄ Add a test"
+run "stats after a failover" qenv "$LOOMY" stats --root "$QD"
+has "stats: switched delegations counted" "1 delegation\(s\) moved to the other tool"
+: >"$FL"; printf 'quota_switch=off\nplan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "x") >"$OUT" 2>&1
+grep -q '^codex' "$FL" && ok "quota_switch off: no failover" || ko "quota_switch off ignored"
+# Claude nearly exhausted: a read-only role goes to Codex, unless Codex has no room left either.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' $(( NQ + 3600 )) >"$QC/loomy/claude-limits"
+: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
+grep -q '^claude' "$FL" && ok "both quotas exhausted: no ping-pong, Claude keeps the role" || ko "failover with both exhausted"
+printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20.0,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) >>"$QX/sessions/2026/09/28/r.jsonl"
+: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
+has "failover to Codex: announced" "Claude quota at 97 % .*reviewer handed to Codex"
+grep -q '^codex' "$FL" && ! grep -q '^claude' "$FL" && grep -q 'read-only' "$FL" && ok "failover to Codex: read-only role stays read-only" || ko "failover to codex: $(cut -c1-80 "$FL")"
+run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD" --print
+has "start: lead agent session on the other tool" "Claude Code quota at 97 %: this session runs on Codex"
+has "start: Codex command for the lead agent" "codex -m gpt-6-astra"
+rm -f "$QC/loomy/claude-limits"
 
 section "Screens without leftovers"
 run "doctor for the installs listing" "$LOOMY" doctor

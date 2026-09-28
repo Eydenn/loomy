@@ -14,6 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/config.sh
@@ -47,6 +49,14 @@ fi
 ai_detect_env "$ROOT"
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
 TOOL="$R_FAMILY"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
+# The lead tool's subscription quota nearly exhausted, the other tool available with room left: this session runs
+# on the other tool, with its lead agent model (the brief is unchanged; the next start goes back once it resets).
+SWITCHED_FROM=""
+if [[ "${LOOMY_NO_SWITCH:-}" != "1" ]] && sw="$(ai_switch_family "$TOOL")" && [[ -n "$sw" ]]; then
+  SWITCHED_FROM="$TOOL"; SWITCH_STATE="$(ai_quota_state "$TOOL")"
+  ai_route lead "$sw" "$AI_PROFILE"
+  TOOL="$sw"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"; AI_LEAD="$sw"
+fi
 PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
 NAME="$(_ai_brief_get "$BRIEF" name)"
 
@@ -88,6 +98,10 @@ ui_banner "$(t "Start or resume")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROO
 ui_section "SESSION"
 ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
 ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
+if [[ -n "$SWITCHED_FROM" ]]; then
+  from_label="Claude Code"; [[ "$SWITCHED_FROM" == "codex" ]] && from_label="Codex"
+  ui_warn "$(t "%s quota at %s: this session runs on %s" "$from_label" "$SWITCH_STATE" "$tool_label")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$from_label")"
+fi
 if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "a previous session exists on this machine")${C_RESET}"
 else ui_kv "Session" "${C_DIM}$(t "no previous session on this machine")${C_RESET}"; fi
 # Lead agent model missing from Codex's local catalog (renamed or removed): warn before launching.

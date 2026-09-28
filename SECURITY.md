@@ -9,7 +9,7 @@
 - **No secret leaves your machine.** `loomy assess` flags files that look like committed secrets without reading or copying their content. The activity log (`.loomy/logs/`, which holds delegated task text) is ignored by Git. `loomy feedback` attaches versions and project settings only, never names, goals, paths, code or task text, and sends nothing without your approval.
 - **Quotas are read locally, never with your credentials.** Subscription quotas come from Codex's own session logs and from the `rate_limits` field Claude Code hands to its status line; Loomy never reads your login tokens and never calls private usage endpoints. The project status line Loomy adds is only set when the project has none, and it shows your own status line command when you have one.
 - **Temporary files are private.** They are created with `mktemp` (random names, owner-only), never at predictable paths.
-- **Agents keep their guardrails.** Delegations to Claude are read-only; Codex roles that write run in the `workspace-write` sandbox; the generated instructions tell agents to stop before any destructive or hard-to-undo operation.
+- **Agents keep their guardrails.** Delegations to Claude are read-only; Codex roles that write run in the `workspace-write` sandbox; a writing role moved to Claude when the Codex quota runs out gets accepted edits and shell commands only inside Claude Code's sandbox (project folder, no network), never unrestricted commands; the generated instructions tell agents to stop before any destructive or hard-to-undo operation.
 
 ## Reporting a vulnerability
 

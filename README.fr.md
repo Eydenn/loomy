@@ -266,13 +266,25 @@ Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de G
 
 ### 💳 Forfaits Claude et ChatGPT
 
-Loomy sait si tu paies à l'usage (API) ou par abonnement :
+Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 
 | Forfait | Ce que Loomy affiche |
 |---|---|
-| API | le **coût** réel (Claude) ou estimé à partir des tokens (Codex) |
-| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | la **valeur API consommée ce mois**, face à 20 $, 100 $ ou 200 $ par mois |
-| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | idem, face à 20 $, 100 $, 200 $ ou 25 $ par mois |
+| API | le **coût** réel (Claude) ou estimé à partir des tokens (Codex), par tâche et par mois |
+| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x&nbsp;·&nbsp;Team | la **part de ton quota utilisée** : fenêtres de 5 heures et de la semaine, avec leur heure de remise à zéro ; des **tokens** par tâche plutôt que des dollars |
+| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | idem, d'après les fenêtres que rapporte Codex |
+
+```text
+◇  FORFAITS  quota pour les abonnements, coût pour l'API
+│  Claude          Claude Pro · 5 h 42 % (remise à zéro 12:57) · semaine 86 % (remise à zéro jeu. 23:17)
+│  Codex           ChatGPT Business · semaine 12 % (remise à zéro mer. 19:30)
+```
+
+`loomy watch` te prévient quand un quota dépasse 80 %, puis 95 %.
+
+D'où viennent les chiffres, sans réseau ni identifiants :
+- **Codex** écrit son quota dans ses propres journaux de session (`~/.codex/sessions`) ; Loomy lit le dernier relevé.
+- **Claude Code** transmet à sa commande de barre d'état un champ documenté `rate_limits`. `loomy init` ajoute au projet une petite barre d'état Loomy (`.claude/settings.json`) qui l'enregistre, puis affiche **ta propre barre d'état** si tu en as une (une barre d'état déjà définie dans le projet n'est jamais remplacée). Le quota Claude apparaît dès qu'une session a répondu dans un projet Loomy.
 
 Forfait Claude : `api`, `pro`, `max5`, `max20`, `team` ou `enterprise`
 
@@ -286,14 +298,19 @@ Forfait ChatGPT / Codex : `api`, `plus`, `pro100`, `pro200`, `business` ou `ente
 loomy config set plan_codex pro200
 ```
 
-Prix personnalisé, si besoin (en $ par mois)
+Prix personnalisé du forfait (en $ par mois), utilisé par `loomy stats` pour le comparer à la valeur API de ton travail
 
 ```bash
 loomy config set plan_claude_price 180
 ```
 
-> [!NOTE]
-> Anthropic et OpenAI ne publient pas les quotas exacts de leurs forfaits : Loomy ne prétend donc pas afficher un pourcentage de quota. Il indique si ton abonnement est rentabilisé. Seules les délégations journalisées sont comptées, pas le travail que l'orchestrateur fait lui-même.
+### 📊 Statistiques détaillées
+
+```bash
+loomy stats
+```
+
+Délégations et taux de réussite, durées totale et moyenne, tokens (entrée, cache, sortie) et travail propre de Claude Code (orchestrateur, sous-agents), puis par rôle, par modèle (avec la part du cache) et par jour, et tes forfaits. Avec un abonnement, les montants s'affichent en `≈$…` : ce que le travail coûterait via l'API, couvert par le forfait, à côté de son prix mensuel. `--days 7` ou `--since AAAA-MM-JJ` pour une période ; `loomy log --csv` pour les chiffres bruts.
 
 ---
 
@@ -436,6 +453,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
+| 📊&nbsp;<code>loomy&nbsp;stats</code> | statistiques détaillées : par rôle, modèle et jour, durées, tokens, coût ou quota (`--days N`, `--since AAAA-MM-JJ`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes` : `loomy start` ouvre toujours le suivi à côté), `notify` (`no` : pas de notifications dans `loomy watch`), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
@@ -583,7 +601,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅ | Adaptation initiale d'après cet état des lieux : `PROJECT.md`, `ARCHITECTURE.md` et décisions reconstitués à partir du code, `AGENTS.md` et `CLAUDE.md` alignés sur les conventions du dépôt (commandes de test, de lint, de build), rôles, routage et effort ajustés à la taille et au risque du projet |
 | ✅ | Plan d'adoption relu avant tout commit : ce qui a été compris, ce qui reste à confirmer, recommandations priorisées |
 | ✅&nbsp;0.5.1 | Vérification écran par écran de toutes les commandes, en anglais et en français |
-| ✅&nbsp;0.5.2 | **Version actuelle** · revue de sécurité et de robustesse ([SECURITY.md](SECURITY.md)) |
+| ✅&nbsp;0.5.2 | Revue de sécurité et de robustesse ([SECURITY.md](SECURITY.md)) |
+| ✅&nbsp;0.5.3 | **Version actuelle** · **quotas réels des abonnements** : part des quotas Claude et Codex utilisée (fenêtres de 5 heures et de la semaine) au lieu des dollars avec un abonnement, tokens par tâche, alertes à 80 % et 95 % ; `loomy stats` pour des statistiques détaillées |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |
@@ -597,4 +616,3 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | | README court (« 5 minutes pour démarrer »), référence complète à part |
 | | Dépôt public et Homebrew sans jeton, sur décision |
 | 💡 | Intégration de [Jev](https://github.com/WXK-AI/jev-opus) : effort d'Opus 5.5 réajusté à chaque étape pendant les délégations Claude, quand Jev est installé |
-| 💡 | Suivi du quota réel des forfaits, dès que Claude Code ou Codex l'exposeront |

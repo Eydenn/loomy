@@ -163,6 +163,7 @@ usage() {
   _h_group "$(t "TRACKING")"
   _h_cmd status "" "$(t "Project status: phases, running delegations, activity, costs, Git")"
   _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l log, s session)")"
+  _h_cmd stats "[--days N|--since D]" "$(t "Detailed statistics: delegations by role, model and day, durations, tokens, cost (or quota with a subscription)")"
   _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
   _h_group "$(t "MACHINE")"
@@ -213,6 +214,7 @@ case "$cmd" in
   feedback) exec bash "$S/ai-feedback.sh" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   assess) exec bash "$S/ai-assess.sh" --root "$(project_root)" "$@" ;;
+  stats) exec bash "$S/ai-stats.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
   worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;
   delegate)

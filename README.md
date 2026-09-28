@@ -240,13 +240,25 @@ The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded f
 
 ### 💳 Claude and ChatGPT subscriptions
 
-Loomy knows whether you pay per use (API) or by subscription:
+Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 
 | Plan | What Loomy shows |
 |---|---|
-| API | the real **cost** (Claude) or an estimate from tokens (Codex) |
-| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x | the **API value consumed this month**, against $20, $100 or $200 per month |
-| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | the same, against $20, $100, $200 or $25 per month |
+| API | the real **cost** (Claude) or an estimate from tokens (Codex), per task and per month |
+| Claude&nbsp;Pro&nbsp;·&nbsp;Max&nbsp;5x&nbsp;·&nbsp;Max&nbsp;20x&nbsp;·&nbsp;Team | the **share of your quota in use**: 5-hour and weekly windows, with their reset time; **tokens** per task instead of dollars |
+| ChatGPT&nbsp;Plus&nbsp;·&nbsp;Pro&nbsp;·&nbsp;Business | the same, from the windows Codex reports |
+
+```text
+◇  PLANS  quota for subscriptions, cost for the API
+│  Claude          Claude Pro · 5 h 42 % (resets 12:57) · week 86 % (resets Thu 23:17)
+│  Codex           ChatGPT Business · week 12 % (resets Wed 19:30)
+```
+
+`loomy watch` notifies you when a quota crosses 80 %, then 95 %.
+
+Where the figures come from, without network or credentials:
+- **Codex** writes its quota into its own session logs (`~/.codex/sessions`); Loomy reads the latest reading.
+- **Claude Code** gives its status line command a documented `rate_limits` field. `loomy init` adds a small Loomy status line to the project (`.claude/settings.json`) that saves it, then shows **your own status line** if you have one (an existing project status line is never replaced). The Claude quota appears once a session has answered in a Loomy project.
 
 Claude plan: `api`, `pro`, `max5`, `max20`, `team` or `enterprise`
 
@@ -260,14 +272,19 @@ ChatGPT / Codex plan: `api`, `plus`, `pro100`, `pro200`, `business` or `enterpri
 loomy config set plan_codex pro200
 ```
 
-Custom price, if needed ($ per month)
+Custom plan price ($ per month), used by `loomy stats` to compare with the API value of your work
 
 ```bash
 loomy config set plan_claude_price 180
 ```
 
-> [!NOTE]
-> Anthropic and OpenAI do not publish the exact quotas of their plans, so Loomy does not pretend to show a quota percentage. It tells you whether your subscription pays for itself. Only journaled delegations are counted, not the work the lead agent does itself.
+### 📊 Detailed statistics
+
+```bash
+loomy stats
+```
+
+Delegations and success rate, total and average durations, tokens (in, from cache, out), and Claude Code's own work (lead agent, sub-agents), then by role, by model (with the cache share) and by day, and your plans. With a subscription, amounts show as `≈$…`: what the work would cost through the API, covered by the plan, next to its monthly price. `--days 7` or `--since YYYY-MM-DD` for a period; `loomy log --csv` for the raw figures.
 
 ---
 
@@ -375,6 +392,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
+| 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
 | ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
@@ -518,7 +536,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅ | Initial adaptation from that assessment: `PROJECT.md`, `ARCHITECTURE.md` and decisions rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's conventions (test, lint, build commands), roles, routing and effort tuned to the project's size and risk |
 | ✅ | Adoption plan reviewed before any commit: what was understood, what remains to confirm, prioritized recommendations |
 | ✅&nbsp;0.5.1 | Screen-by-screen check of every command, in English and French |
-| ✅&nbsp;0.5.2 | **Current version** · security and robustness review ([SECURITY.md](SECURITY.md)) |
+| ✅&nbsp;0.5.2 | Security and robustness review ([SECURITY.md](SECURITY.md)) |
+| ✅&nbsp;0.5.3 | **Current version** · **real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |
@@ -532,4 +551,3 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | | Short README ("5 minutes to start"), full reference separately |
 | | Public repository and token-free Homebrew, when decided |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus) integration: Opus 5.5 effort readjusted at every step during Claude delegations, when Jev is installed |
-| 💡 | Real subscription quota tracking, once Claude Code or Codex expose it |

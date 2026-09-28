@@ -157,18 +157,13 @@ longer than usual (~%s)	plus long que d'habitude (~%s)
 first time for this role	première fois pour ce rôle
 running	en cours
 Lead agent	Orchestrateur
-%s reply(ies) · cost %s	%s réponse(s) · coût %s
 measured	mesuré
 Sub-agents	Sous-agents
-%s · cost %s	%s · coût %s
 no finished delegation yet	aucune délégation terminée pour l'instant
 they show up here as soon as the lead agent hands a task to Claude or Codex	elles s'affichent ici dès que l'orchestrateur confie une tâche à Claude ou à Codex
 Delegations	Délégations
 %s failed	%s en échec
 cost this month:	coût ce mois :
-API value this month:	valeur API ce mois :
-delegations and Claude Code work (lead agent, sub-agents), at list price	délégations et travail de Claude Code (orchestrateur, sous-agents), au prix public
-values from logged delegations (lead agent counted from loomy 0.3 on, Stop and SubagentStop hooks)	valeurs issues des délégations journalisées (orchestrateur compté à partir de loomy 0.3, hooks Stop et SubagentStop)
 Latest delegations	Dernières délégations
 no delegation yet	aucune délégation pour l'instant
 AI FILES	FICHIERS IA
@@ -1309,3 +1304,63 @@ subagent %s	sous-agent %s
 %s (lead: %s)	%s (lead : %s)
 MB	Mo
 remove %s from your PATH	retire %s de ton PATH
+Detailed statistics: delegations by role, model and day, durations, tokens, cost (or quota with a subscription)	Statistiques détaillées : délégations par rôle, modèle et jour, durées, tokens, coût (ou quota avec un abonnement)
+--days: a number of days	--days : un nombre de jours
+Unknown argument: %s (loomy stats --help)	Argument inconnu : %s (loomy stats --help)
+--since: a date YYYY-MM-DD	--since : une date AAAA-MM-JJ
+Statistics	Statistiques
+nothing logged yet%s	rien d'enregistré pour l'instant%s
+figures show up as soon as the lead agent works or delegates	les chiffres apparaissent dès que l'orchestrateur travaille ou délègue
+OVERVIEW	VUE D'ENSEMBLE
+%s %% succeeded	%s %% réussies
+Duration	Durée
+%s in total · %s on average	%s au total · %s en moyenne
+%s reply(ies)	%s réponse(s)
+tokens	tokens
+Tokens	Tokens
+%s in · %s from cache · %s out	%s en entrée · %s depuis le cache · %s en sortie
+API cost	Coût API
+Subscriptions	Abonnements
+API value %s, covered by your plan(s)	valeur API %s, couverte par ton ou tes forfaits
+BY ROLE	PAR RÔLE
+calls · average time · tokens · cost	appels · durée moyenne · tokens · coût
+BY MODEL	PAR MODÈLE
+calls · tokens in / cache / out · cache share · cost	appels · tokens entrée / cache / sortie · part du cache · coût
+calls: delegations, +Nr: Claude Code replies on that model	appels : délégations, +Nr : réponses de Claude Code sur ce modèle
+BY DAY	PAR JOUR
+last 14 days with activity	14 derniers jours avec de l'activité
+delegation(s)	délégation(s)
+pay as you go	paiement à l'usage
+≈ amounts: what the work would cost through the API, covered by your subscription	montants ≈ : ce que le travail coûterait via l'API, couvert par ton abonnement
+other period: loomy stats --days 7 · --since YYYY-MM-DD · raw figures: loomy log --csv	autre période : loomy stats --days 7 · --since AAAA-MM-JJ · chiffres bruts : loomy log --csv
+cost %s	coût %s
+call(s)	appel(s)
+quota for subscriptions, cost for the API	quota pour les abonnements, coût pour l'API
+API costs at list price, from the logged work (delegations, lead agent, sub-agents)	coûts API au prix public, d'après le travail enregistré (délégations, orchestrateur, sous-agents)
+details: loomy stats	détails : loomy stats
+5 h	5 h
+week	semaine
+day	jour
+limit reached (%s)	limite atteinte (%s)
+resets %s	remise à zéro %s
+quota shown once a Claude Code session has answered in a Loomy project (status line)	quota affiché dès qu'une session Claude Code a répondu dans un projet Loomy (barre d'état)
+quota shown once a Codex session has run on this machine	quota affiché dès qu'une session Codex a tourné sur cette machine
+Detailed usage statistics of a Loomy project. Bash 3.2 compatible.	Statistiques d'utilisation détaillées d'un projet Loomy. Compatible bash 3.2.
+  loomy stats                     the whole history (monthly archives included)	  loomy stats                     tout l'historique (archives mensuelles comprises)
+  loomy stats --since YYYY-MM-DD  from that date	  loomy stats --since AAAA-MM-JJ  à partir de cette date
+  loomy stats --days N            the last N days	  loomy stats --days N            les N derniers jours
+  loomy stats --root <dir>        works on another project folder	  loomy stats --root <dir>        agit sur un autre dossier de projet
+Delegations (role, model, duration, tokens, success) and Claude Code's own work (lead agent, sub-agents).	Délégations (rôle, modèle, durée, tokens, réussite) et travail propre de Claude Code (orchestrateur, sous-agents).
+Subscription: amounts are the API value of the work, covered by the plan, next to the quota; API: the real cost.	Abonnement : les montants sont la valeur API du travail, couverte par le forfait, à côté du quota ; API : le coût réel.
+this month: API value ≈$%s%s	ce mois-ci : valeur API ≈$%s%s
+for a $%s/month plan	pour un forfait à %s $/mois
+Mon	lun.
+Tue	mar.
+Wed	mer.
+Thu	jeu.
+Fri	ven.
+Sat	sam.
+Sun	dim.
+%s quota at %s %%	Quota %s à %s %%
+Almost exhausted: the next tasks may be cut off until it resets.	Presque épuisé : les prochaines tâches risquent d'être coupées jusqu'à la remise à zéro.
+Keep an eye on it: loomy stats shows what consumed it.	À surveiller : loomy stats montre ce qui l'a consommé.

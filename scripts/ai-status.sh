@@ -16,6 +16,11 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
+# Subscription (1) or API (0) per tool: a subscription shows its quota and tokens, the API its cost.
+PLAN_C=0; loomy_on_plan claude && PLAN_C=1
+PLAN_X=0; loomy_on_plan codex && PLAN_X=1
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/privacy.sh
@@ -118,7 +123,9 @@ if (( WATCH )); then
   NAME_W="$(brief_get name 2>/dev/null || basename "$ROOT")"
   J="$(ai_journal_file "$ROOT")"
   tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
-  p_phase=""; p_done=0; p_err=0; p_sess=""
+  p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
+  # shellcheck disable=SC2034  # read through ${!pv} below
+  p_ql_claude=0 p_ql_codex=0
   while true; do
     now="$(date +%s)"
     # ---- what changed since the previous frame
@@ -139,6 +146,20 @@ if (( WATCH )); then
       if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
         watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"
       fi
+    fi
+    # Subscription quota: read every 15 s; a notification when it crosses 80 %, then 95 %.
+    if (( now >= q_next )); then
+      q_next=$(( now + 15 ))
+      for fam in claude codex; do
+        loomy_on_plan "$fam" || continue
+        qm="$(ai_quota_max "$fam")"; ql=0; [[ -n "$qm" ]] && { (( qm >= 80 )) && ql=1; (( qm >= 95 )) && ql=2; }
+        pv="p_ql_$fam"
+        if (( ! first_q && ql > ${!pv} )); then
+          watch_notify "$(t "%s quota at %s %%" "$( [[ "$fam" == codex ]] && echo Codex || echo Claude)" "$qm")" "$( (( ql == 2 )) && t "Almost exhausted: the next tasks may be cut off until it resets." || t "Keep an eye on it: loomy stats shows what consumed it.")"
+        fi
+        printf -v "$pv" '%s' "$ql"
+      done
+      first_q=0
     fi
     first=0; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     # ---- image
@@ -272,18 +293,20 @@ else
   # Bootstrap summary (archives included): duration, delegations, cost of delegations and Claude Code until the end.
   J_DONE="$(ai_journal_file "$ROOT")"
   if [[ "$CURRENT" == "done" && -s "$J_DONE" ]]; then
-    read -r b_start b_end b_n b_cost <<<"$(awk '
+    read -r b_start b_end b_n b_cost b_tok <<<"$(awk -v pc="$PLAN_C" -v px="$PLAN_X" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+      function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
+      function add() { if ((field("family") == "claude" ? pc : px) + 0) tk += num("tokens_in") + num("tokens_out"); else c += num("cost_usd") }
       index($0, "\"type\":\"phase\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
-      e == "" && index($0, "\"type\":\"delegation\",") { n++; if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
-      e == "" && index($0, "\"type\":\"usage\"") { if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
-      END { printf "%s %s %d %.2f\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c }' < <(ai_journal_all "$ROOT"))"
+      e == "" && index($0, "\"type\":\"delegation\",") { n++; add() }
+      e == "" && index($0, "\"type\":\"usage\"") { add() }
+      END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT"))"
     s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
       d=$(( e_ep - s_ep )); if (( d >= 3600 )); then took="$(( d / 3600 )) h $(( d % 3600 / 60 )) min"; else took="$(( d / 60 )) min"; fi
     fi
-    ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n") ${C_DIM}·${C_RESET} \$${b_cost}"
+    ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n")$( (( PLAN_C && PLAN_X )) || printf ' %s·%s $%s' "$C_DIM" "$C_RESET" "$b_cost")$( (( b_tok > 0 )) && printf ' %s·%s %s %s' "$C_DIM" "$C_RESET" "$(ai_tokens_label "$b_tok")" "$(t "tokens")")"
   fi
   [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Lead agent session: recorded by the Claude Code hooks and by loomy start (Codex).
@@ -351,62 +374,52 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
   # Claude Code direct work (lead agent, native subagents): cost measured by the Stop and SubagentStop hooks.
-  HAS_USAGE=0
   if grep -q '"type":"usage"' "$JOURNAL"; then
-    HAS_USAGE=1
-    read -r u_ln u_lc u_sn u_sc <<<"$(awk '
+    read -r u_ln u_lc u_lt u_sn u_sc u_st <<<"$(awk '
+      function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       index($0, "\"type\":\"usage\"") {
-        c = 0; if (match($0, /"cost_usd":[0-9.]+/)) c = substr($0, RSTART + 11, RLENGTH - 11)
-        m = 0; if (match($0, /"messages":[0-9]+/)) m = substr($0, RSTART + 11, RLENGTH - 11)
-        if (index($0, "\"scope\":\"lead\"")) { ln += m; lc += c } else { sn++; sc += c } }
-      END { printf "%d %.4f %d %.4f\n", ln, lc, sn, sc }' "$JOURNAL")"
-    ui_kv "$(t "Lead agent")" "$(t "%s reply(ies) · cost %s" "${C_BOLD}${u_ln}${C_RESET}" "${C_BOLD}\$${u_lc}${C_RESET}") ${C_DIM}($(t "measured"))${C_RESET}"
-    (( u_sn > 0 )) && ui_kv "$(t "Sub-agents")" "$(t "%s · cost %s" "${C_BOLD}${u_sn}${C_RESET}" "${C_BOLD}\$${u_sc}${C_RESET}") ${C_DIM}($(t "measured"))${C_RESET}"
+        c = num("cost_usd"); m = num("messages"); tk = num("tokens_in") + num("tokens_out")
+        if (index($0, "\"scope\":\"lead\"")) { ln += m; lc += c; lt += tk } else { sn++; sc += c; st += tk } }
+      END { printf "%d %.4f %d %d %.4f %d\n", ln, lc, lt, sn, sc, st }' "$JOURNAL")"
+    # Subscription: tokens (the quota is shown below); API: the real cost.
+    if (( PLAN_C )); then u_lv="$(ai_tokens_label "$u_lt") $(t "tokens")"; u_sv="$(ai_tokens_label "$u_st") $(t "tokens")"
+    else u_lv="$(t "cost %s" "\$${u_lc}")"; u_sv="$(t "cost %s" "\$${u_sc}")"; fi
+    ui_kv "$(t "Lead agent")" "$(t "%s reply(ies)" "${C_BOLD}${u_ln}${C_RESET}") · ${C_BOLD}${u_lv}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
+    (( u_sn > 0 )) && ui_kv "$(t "Sub-agents")" "${C_BOLD}${u_sn}${C_RESET} · ${C_BOLD}${u_sv}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
   fi
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
     ui_info "$(t "no finished delegation yet")"
     ui_rail "${C_DIM}  $(t "they show up here as soon as the lead agent hands a task to Claude or Codex")${C_RESET}"
   else
-    summary="$(grep '"type":"delegation"' "$JOURNAL" | awk '
+    summary="$(grep '"type":"delegation"' "$JOURNAL" | awk -v pc="$PLAN_C" -v px="$PLAN_X" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-      { m = field("model"); calls[m]++; cost[m] += num("cost_usd"); tok[m] += num("tokens_in") + num("tokens_out")
-        n++; total += num("cost_usd"); if (field("status") != "ok") err++ }
-      END { printf "TOTAL %d %.4f %d\n", n, total, err
-            for (m in calls) printf "MODEL %s %d %.4f %d\n", m, calls[m], cost[m], tok[m] }')"
-    read -r _ n_calls total_cost n_err <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
-    ui_kv "$(t "Delegations")" "$(t "%s · cost %s" "${C_BOLD}${n_calls}${C_RESET}" "${C_BOLD}\$${total_cost}${C_RESET}")$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
+      { m = field("model"); f = field("family"); plan = (f == "claude" ? pc : px) + 0
+        tk = num("tokens_in") + num("tokens_out"); calls[m]++; tok[m] += tk; mp[m] = plan
+        if (plan) { ptok += tk } else { cost[m] += num("cost_usd"); total += num("cost_usd"); api++ }
+        n++; if (field("status") != "ok") err++ }
+      END { printf "TOTAL %d %.4f %d %d %d\n", n, total, err, api, ptok
+            for (m in calls) printf "MODEL %s %d %.4f %d %d\n", m, calls[m], cost[m], tok[m], mp[m] }')"
+    read -r _ n_calls total_cost n_err n_api plan_tok <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
+    # API part: its cost; subscription part: its tokens (the quota is in the plans lines).
+    d_val=""
+    (( n_api > 0 )) && d_val="${C_BOLD}\$${total_cost}${C_RESET}"
+    (( n_api < n_calls )) && d_val="${d_val:+$d_val · }${C_BOLD}$(ai_tokens_label "$plan_tok")${C_RESET} $(t "tokens")"
+    ui_kv "$(t "Delegations")" "${C_BOLD}${n_calls}${C_RESET} · ${d_val}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
-    printf '%s\n' "$summary" | grep '^MODEL' | sort -k4 -rn | while read -r _ m c cost tok; do
+    all_tok="$(printf '%s\n' "$summary" | awk '/^MODEL/ { s += $5 } END { print s + 0 }')"
+    printf '%s\n' "$summary" | grep '^MODEL' | sort -k5 -rn | while read -r _ m c cost tok onplan; do
+      # Bar: share of the tokens (comparable across API and subscription).
       width=0
-      if awk -v t="$total_cost" 'BEGIN{exit !(t>0)}'; then width="$(awk -v c="$cost" -v t="$total_cost" 'BEGIN{printf "%d", (c/t)*24 + 0.5}')"; fi
+      (( all_tok > 0 )) && width=$(( tok * 24 / all_tok ))
       bar=""; rest=""; i=0
       while (( i < 24 )); do if (( i < width )); then bar="${bar}█"; else rest="${rest}░"; fi; i=$(( i + 1 )); done
       color="$C_CYAN"; case "$m" in *opus*|*astra*) color="$C_MAGENTA" ;; *luna*|*haiku*) color="$C_GREEN" ;; esac
-      line="$(printf '%-17s %3s appel(s)  %9s tokens  $%.4f' "$m" "$c" "$tok" "$cost")"
+      line="$(printf '%-17s %3s %-8s %7s %s' "$m" "$c" "$(t "call(s)")" "$(ai_tokens_label "$tok")" "$(t "tokens")")"
+      (( onplan )) || line="$line  $(printf '$%.4f' "$cost")"
       ui_rail "${color}${bar}${C_RESET}${C_DIM}${rest}${C_RESET} ${line}"
     done
-    # Plans: real pay-as-you-go cost (API) or API value consumed this month, compared with the subscription price.
-    month="$(date -u +%Y-%m)"
-    for fam in claude codex; do
-      value="$(awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$month" '
-        (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) {
-          if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART+11, RLENGTH-11) }
-        END { printf (c >= 1 ? "%.2f" : "%.4f"), c }' "$JOURNAL")"
-      plan="$(loomy_plan "$fam")"; monthly="$(loomy_plan_monthly "$fam")"
-      name="Claude"; [[ "$fam" == "codex" ]] && name="Codex"
-      if [[ "$plan" == "api" ]]; then
-        ui_kv "$name" "API · $(t "cost this month:") ${C_BOLD}\$${value}${C_RESET}"
-      elif [[ -n "$monthly" ]]; then
-        pct="$(awk -v v="$value" -v m="$monthly" 'BEGIN { printf "%d", (m > 0 ? v / m * 100 : 0) }')"
-        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "API value this month:") ${C_BOLD}\$${value}${C_RESET} / \$${monthly} (${pct} %)"
-      else
-        ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · $(t "API value this month:") ${C_BOLD}\$${value}${C_RESET}"
-      fi
-    done
-    if (( HAS_USAGE )); then ui_info "$(t "delegations and Claude Code work (lead agent, sub-agents), at list price")"
-    else ui_info "$(t "values from logged delegations (lead agent counted from loomy 0.3 on, Stop and SubagentStop hooks)")"; fi
     ui_rail ""
     ui_rail "${C_DIM}$(t "Latest delegations")${C_RESET}"
     fi
@@ -415,8 +428,8 @@ if [[ -s "$JOURNAL" ]]; then
     grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { printf "%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40) }' |
-    while IFS='|' read -r t st role m d cost task; do
+      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out") }' |
+    while IFS='|' read -r t st role m d cost task fam tk; do
       row=$(( row + 1 ))
       # Log in UTC, shown in local time.
       ep="$(ai_ts_epoch "$t")"
@@ -424,7 +437,9 @@ if [[ -s "$JOURNAL" ]]; then
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
       # Delegation just finished (loomy watch): highlighted for a few seconds.
       if (( row > n_shown - ${LOOMY_HL_DELEG:-0} )); then mark="${mark}${C_BRAND}${C_BOLD}✦${C_RESET}"; t="${C_BOLD}${t}"; else mark="${mark} "; fi
-      ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  $%.4f' "$role" "$m" "$d" "$cost")  ${C_DIM}${task}${C_RESET}"
+      if { [[ "$fam" == "claude" ]] && (( PLAN_C )); } || { [[ "$fam" != "claude" ]] && (( PLAN_X )); }; then val="$(printf '%7s' "$(ai_tokens_label "$tk")") tk"
+      else val="$(printf '%10s' "$(printf '$%.4f' "$cost")")"; fi
+      ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  %s' "$role" "$m" "$d" "$val")  ${C_DIM}${task}${C_RESET}"
     done
   fi
 else
@@ -433,7 +448,37 @@ else
   ui_rail "${C_DIM}  $(t "they show up here as soon as the lead agent hands a task to Claude or Codex")${C_RESET}"
 fi
 
-# ---------------------------------------------------------------- fichiers IA
+# ---------------------------------------------------------------- plans
+# Subscription: the share of the plan's quota in use, as Claude Code and Codex report it. API: the real cost this month.
+plan_lines() {
+  local fam plan name value q month
+  month="$(date -u +%Y-%m)"
+  for fam in claude codex; do
+    plan="$(loomy_plan "$fam")"; name="Claude"; [[ "$fam" == "codex" ]] && name="Codex"
+    if [[ "$plan" == "api" ]]; then
+      [[ "$COMPACT" == "1" ]] && continue
+      value="$(awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$month" '
+        (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) {
+          if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART+11, RLENGTH-11) }
+        END { printf (c >= 1 ? "%.2f" : "%.4f"), c }' "$JOURNAL" 2>/dev/null || true)"
+      ui_kv "$name" "API · $(t "cost this month:") ${C_BOLD}\$${value:-0}${C_RESET}"
+    else
+      q="$(ai_quota_line "$fam")"
+      if [[ -n "$q" ]]; then ui_kv "$name" "$( [[ "$COMPACT" == "1" ]] || printf '%s · ' "$(ai_plan_label "$fam" "$plan")")$q"
+      elif [[ "$COMPACT" != "1" ]]; then ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · ${C_DIM}$(ai_quota_hint "$fam")${C_RESET}"; fi
+    fi
+  done
+}
+if [[ "$COMPACT" == "1" ]]; then
+  [[ -n "$(ai_quota_line claude)$(ai_quota_line codex)" ]] && { ui_section "$(t "PLANS")"; plan_lines; }
+else
+  ui_section "$(t "PLANS")" "$(t "quota for subscriptions, cost for the API")"
+  plan_lines
+  if (( ! PLAN_C || ! PLAN_X )) && [[ -s "$JOURNAL" ]]; then ui_info "$(t "API costs at list price, from the logged work (delegations, lead agent, sub-agents)")"; fi
+  ui_info "$(t "details: loomy stats")"
+fi
+
+# ---------------------------------------------------------------- AI files
 if [[ "$COMPACT" != "1" ]]; then
 ui_section "$(t "AI FILES")" "$(privacy_label "$(privacy_mode "$ROOT")")"
 if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then

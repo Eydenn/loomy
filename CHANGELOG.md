@@ -2,6 +2,24 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.3 — 2026-09-28
+
+### Added
+- **Real subscription quotas.** With a Claude or ChatGPT subscription (`loomy config set plan_claude|plan_codex …`), `loomy status` and `loomy watch` show the share of the plan's quota in use (5-hour and weekly windows, with their reset time) instead of a dollar value, and tokens instead of costs for each task; `loomy log` too. With the API, the real cost stays. Mixed setups (one tool on the API, the other on a subscription) are handled tool by tool.
+  - Codex: read from the `rate_limits` events Codex writes into its own session logs (end of the latest log only, cached until it changes); "limit reached" is reported.
+  - Claude Code: read from the documented `rate_limits` field Claude Code gives its status line command. `loomy init` (and `loomy init --update`) adds a Loomy status line to the project's `.claude/settings.json`, which saves the quota and then shows your own status line when you have one; a status line already set in the project is kept.
+  - No network call, no credential read (the private usage endpoint some tools query with your login token is deliberately not used).
+- `loomy watch` notifies when a quota crosses 80 %, then 95 %.
+- **`loomy stats`**: detailed statistics over the whole history or a period (`--days N`, `--since YYYY-MM-DD`): delegations and success rate, total and average durations, tokens in / from cache / out, Claude Code's own work, then by role, by model (with cache share) and by day, and the plans with this month's API value next to the plan's price.
+
+### Changed
+- The plans lines have their own section ("PLANS"), shown even before the first delegation.
+- Token counts are shown compactly (12.3k, 4.1M); weekday names follow the interface language.
+
+### Fixed
+- `loomy status` stopped with an error on a project without a log once the plans section was reached.
+- A French word left in the per-model breakdown ("appel(s)").
+
 ## 0.5.2 — 2026-09-27
 
 Security, robustness and good-practice review.

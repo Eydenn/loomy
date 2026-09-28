@@ -17,6 +17,8 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
 
 ROOT=""; N=20; FOLLOW=0; RAW=0; SINCE=""; CSV=0
 while [[ $# -gt 0 ]]; do
@@ -67,7 +69,9 @@ PHASEMAP=""; i=0
 for p in $LOOMY_PHASES "done"; do i=$(( i + 1 )); PHASEMAP="$PHASEMAP$p=$i:$(loomy_phase_label "$p")|"; done
 
 pretty() {
-  awk -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
+  # Subscription: tokens for each piece of work; API: its cost.
+  local pc=0 px=0; loomy_on_plan claude && pc=1; loomy_on_plan codex && px=1
+  awk -v pc="$pc" -v px="$px" -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
       -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
       -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
       -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \
@@ -79,17 +83,19 @@ pretty() {
     function dur(s) { return s < 60 ? s " s" : int(s / 60) " min " sprintf("%02d", s % 60) " s" }
     function cut(s, w) { return length(s) > w ? substr(s, 1, w - 1) "…" : s }
     function tool(t) { return t == "codex" ? "Codex" : "Claude Code" }
+    function tk(n) { return n >= 1e6 ? sprintf("%.1fM", n / 1e6) : (n >= 1e3 ? sprintf("%.1fk", n / 1e3) : sprintf("%d", n)) }
+    function val() { return ((field("family") == "codex" ? px : pc) + 0) ? sprintf("%7s tk", tk(num("tokens_in") + num("tokens_out"))) : sprintf("%10s", sprintf("$%.4f", num("cost_usd"))) }
     {
       t = D hm(field("ts")) Z; ty = field("type")
       if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s$%.4f%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, num("cost_usd"), Z, D, cut(field("task"), 36), Z
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s\n", t, (ok ? G "✓" Z : E "✗" Z), field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, cut(field("task"), 36), Z
       }
       else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {
-        if (field("scope") == "lead") printf "%s  %s◆%s %-10s %s%-16s%s %s%d %s%s  %s$%.4f%s\n", t, P, Z, "lead", D, field("model"), Z, D, num("messages"), T_REPLIES, Z, D, num("cost_usd"), Z
-        else printf "%s  %s◇%s %-10s %s%-16s%s %s%s%s  %s$%.4f%s\n", t, P, Z, cut(field("agent"), 10), D, field("model"), Z, D, T_SUB, Z, D, num("cost_usd"), Z
+        if (field("scope") == "lead") printf "%s  %s◆%s %-10s %s%-16s%s %s%d %s%s  %s%s%s\n", t, P, Z, "lead", D, field("model"), Z, D, num("messages"), T_REPLIES, Z, D, val(), Z
+        else printf "%s  %s◇%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, P, Z, cut(field("agent"), 10), D, field("model"), Z, D, T_SUB, Z, D, val(), Z
       }
       else if (ty == "session") printf "%s  %s %s\n", t, (field("event") == "start" ? G "●" Z " " T_OPEN : D "○ " T_CLOSED Z), D "(" tool(field("tool")) ")" Z
       else printf "%s  %s· %s%s\n", t, D, ty, Z

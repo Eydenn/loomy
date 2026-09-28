@@ -84,7 +84,7 @@ has "help: structured sections" "◇  TRACKING"
 hasnt "help: no colour outside a terminal" $'\033\\['
 hasnt "help: no more route json" "json"
 bad=""
-for c in init brief assess route status watch log doctor config delegate worktrees; do
+for c in init brief assess stats route status watch log doctor config delegate worktrees; do
   "$LOOMY" "$c" --help >"$OUT" 2>&1 </dev/null || bad="$bad $c"
 done
 if [[ -z "$bad" ]]; then ok "--help answers for every command"; else ko "--help failing:$bad"; fi
@@ -718,7 +718,7 @@ printf '{"ts":"2026-01-01T00:00:00Z","type":"delegation_start","id":"dmort","pid
 run "status with an interrupted delegation" "$LOOMY" status
 hasnt "interrupted delegation ignored" "interrompue"
 run "status with a French locale" env LANG=fr_FR.UTF-8 LC_ALL=fr_FR.UTF-8 "$LOOMY" status
-has "costs read with the decimal point" 'Delegations +[0-9]+ · cost \$0\.[0-9]*[1-9]'
+has "costs read with the decimal point" 'Delegations +[0-9]+ · \$0\.[0-9]*[1-9]'
 hasnt "no awk or printf error" "division by zero|invalid number|nombre non valable"
 run "status --watch starts and stops" sh -c "'$LOOMY' watch 1 >/dev/null 2>&1 & p=\$!; sleep 2; kill \$p; wait \$p; true"
 run "loomy log -n 3" "$LOOMY" log -n 3
@@ -820,6 +820,64 @@ file_has "assessment without Git: Rust" "$EX3/.loomy/assessment.md" "Languages: 
 file_has "assessment without Git: cargo test" "$EX3/.loomy/assessment.md" '`cargo test`'
 file_has "assessment without Git: no history" "$EX3/.loomy/assessment.md" "No Git history"
 [[ ! -f "$PROJ/.loomy/assessment.md" ]] && ok "new project: no assessment" || ko "new project assessed"
+
+section "Subscriptions, quotas and stats"
+QD="$WORK/quota"; QC="$WORK/quota-cfg"; QX="$WORK/quota-codex"
+mkdir -p "$QD/.loomy/logs" "$QC/loomy" "$QX/sessions/2026/09/28"
+printf -- '---\nname: "Quota"\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$QD/.loomy/brief.md"; printf 'phase=build\n' >"$QD/.loomy/state"
+DQ="$(date -u +%Y-%m-%d)"; NQ="$(date +%s)"
+cat >"$QD/.loomy/logs/events.jsonl" <<EOF
+{"ts":"${DQ}T08:05:00Z","type":"delegation","id":"q1","bridge":"codex","role":"executor","family":"codex","model":"gpt-6-luna","status":"ok","duration_s":95,"tokens_in":120000,"tokens_cached":80000,"tokens_out":9000,"cost_usd":0.0215,"task":"Add tests"}
+{"ts":"${DQ}T08:20:00Z","type":"delegation","id":"q2","bridge":"claude","role":"architect","family":"claude","model":"claude-opus-5-5","status":"ok","duration_s":140,"tokens_in":45000,"tokens_cached":30000,"tokens_out":6000,"cost_usd":0.31,"task":"Review design"}
+{"ts":"${DQ}T08:40:00Z","type":"delegation","id":"q3","bridge":"codex","role":"reviewer","family":"codex","model":"gpt-6-sol","status":"error","duration_s":30,"tokens_in":10000,"tokens_cached":0,"tokens_out":500,"cost_usd":0.025,"task":"Review diff"}
+{"ts":"${DQ}T09:00:00Z","type":"usage","tool":"claude","family":"claude","scope":"lead","agent":"","model":"claude-opus-5-5","messages":12,"tokens_in":300000,"tokens_cached":900000,"tokens_out":40000,"cost_usd":2.18}
+EOF
+printf '{"type":"event_msg","payload":{"rate_limits":{"limit_id":"codex","primary":{"used_percent":12.0,"window_minutes":10080,"resets_at":%s},"secondary":{"used_percent":99.0,"window_minutes":300,"resets_at":%s},"plan_type":"team","rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) $(( NQ - 60 )) >"$QX/sessions/2026/09/28/r.jsonl"
+qenv() { env XDG_CONFIG_HOME="$QC" CODEX_HOME="$QX" "$@"; }
+got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
+[[ "$got" == "10080 12 $(( NQ + 200000 ))" ]] && ok "codex quota read from its session log (expired window ignored)" || ko "codex quota: $got"
+# Claude: the status line saves the documented rate_limits field.
+run "init for the status line" "$LOOMY" init "$WORK/sl-proj" --yes --no-clipboard
+SLC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["statusLine"]["command"])' "$WORK/sl-proj/.claude/settings.json" 2>/dev/null)"
+[[ "$SLC" == *ai-statusline.sh* ]] && ok "status line installed in .claude/settings.json" || ko "status line missing"
+mkdir -p "$WORK/sl-proj/sub"
+SLIN="{\"model\":{\"display_name\":\"Opus 5.5\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42.4,\"resets_at\":$(( NQ + 3600 ))},\"seven_day\":{\"used_percentage\":86,\"resets_at\":$(( NQ + 300000 ))}}}"
+(cd "$WORK/sl-proj/sub" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
+has "status line: Loomy line with the quota" "Loomy · Opus 5.5 · 5h 42% · 7d 86%"
+file_has "status line: quota saved" "$QC/loomy/claude-limits" "^seven_day_pct=86$"
+echo 'echo MY-OWN-LINE' >"$QC/loomy/statusline-user"
+(cd "$WORK/sl-proj" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
+has "status line: the user's own status line is shown" "^MY-OWN-LINE$"
+rm -f "$QC/loomy/statusline-user"
+SLE="$WORK/sl-existing"; mkdir -p "$SLE/.claude"; printf '{"statusLine":{"type":"command","command":"echo mine"}}\n' >"$SLE/.claude/settings.json"
+run "init keeps an existing status line" "$LOOMY" init "$SLE" --yes --no-clipboard
+file_has "existing status line kept" "$SLE/.claude/settings.json" '"command": "echo mine"'
+# Subscription: quota and tokens instead of dollars.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+run "status with subscriptions" qenv "$LOOMY" status --root "$QD"
+has "status: Claude quota" "Claude Pro · 5 h 42 %.*week 86 %"
+has "status: Codex quota" "ChatGPT Business · week 12 %"
+has "status: delegations in tokens" "Delegations +3 · 190.5k tokens"
+hasnt "status: no dollar amount with subscriptions" '\$[0-9]'
+run "log with subscriptions" qenv "$LOOMY" log --root "$QD"
+has "log: tokens instead of cost" "129.0k tk"
+run "stats" qenv "$LOOMY" stats --root "$QD"
+has "stats: overview" "3 · 66 % succeeded · 1 failed"
+has "stats: by role" "architect +1 +2 min 20 s"
+has "stats: by model with cache share" "claude-opus-5-5 +1\+12r .* 72 %"
+has "stats: API value covered by the plan" "API value ≈\\\$2.54, covered by your plan"
+has "stats: month value next to the plan price" "this month: API value ≈\\\$2.49 for a \\\$20/month plan"
+fails "stats: invalid --since refused" 2 "$LOOMY" stats --root "$QD" --since yesterday
+run "stats --days" qenv "$LOOMY" stats --root "$QD" --days 7
+# API: the real cost stays.
+printf 'plan_claude=api\nplan_codex=api\n' >"$QC/loomy/config"
+run "status with the API" qenv "$LOOMY" status --root "$QD"
+has "status API: delegation cost" 'Delegations +3 · \$0.3565'
+has "status API: monthly cost" "API · cost this month: \\\$2"
+hasnt "status API: no quota" "week [0-9]+ %"
+printf '{"type":"event_msg","payload":{"rate_limits":{"primary":null,"secondary":null,"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >>"$QX/sessions/2026/09/28/r.jsonl"; touch "$QX/sessions/2026/09/28/r.jsonl"
+got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
+[[ "$got" == "reached workspace_member_credits_depleted" ]] && ok "codex quota: limit reached reported" || ko "codex reached: $got"
 
 section "Screens without leftovers"
 run "doctor for the installs listing" "$LOOMY" doctor

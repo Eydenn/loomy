@@ -508,15 +508,17 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.3.7 | **Autonomy and stop points** in generated instructions (`AGENTS.md`, `CLAUDE.md`): the agent moves on alone within a bounded task and stops before anything destructive, following Anthropic's Opus 5.5 guidance |
 | ✅&nbsp;0.3.8 | **Fast-changing models**: per-tier fallback chains in the catalog (newest first, automatic fallback for those without access), availability learned on each machine (`doctor --live`, a refused delegation), pinnable model (`loomy config set model.claude.mid …`), role balance editable from the catalog, new catalog announced; protocol in `docs/MODEL_CATALOG.md` |
 | ✅&nbsp;0.4 | **English and French interface** |
-| | Language detected automatically (`LC_ALL`, `LC_MESSAGES`, `LANG`, then the system language on macOS): French when it starts with `fr`, **English by default** otherwise or when nothing is detectable (macOS and Linux); setting `loomy config set lang fr\|en\|auto` |
-| | Every interface text goes through a dictionary, migrated screen by screen: frame and home, `watch` and `status`, `start` and `effort`, questionnaire and setup, doctor, help and messages |
+| ✅ | Language detected automatically (`LC_ALL`, `LC_MESSAGES`, `LANG`, then the system language on macOS): French when it starts with `fr`, **English by default** otherwise or when nothing is detectable (macOS and Linux); setting `loomy config set lang fr\|en\|auto` |
+| ✅ | Every interface text goes through a dictionary, migrated screen by screen: frame and home, `watch` and `status`, `start` and `effort`, questionnaire and setup, doctor, help and messages |
+| ✅ | Project document language suggested from the detected language; test covering both languages |
 | ✅&nbsp;0.4.1 | **English first**: code, help, agent documents (`START.md`, templates, roles, skills), startup brief, delegation prompts, README and changelog in English; French is a translation (`scripts/lib/i18n/fr.tsv`, `fr/`) used when French is detected |
-| | Project document language suggested from the detected language; test covering both languages |
 | ✅&nbsp;0.5 | **Adopting an existing project** |
-| | `loomy init` on an already developed, versioned project (Git, remote, branches): nothing is overwritten, everything goes through a dedicated branch and an approval |
-| | Initial assessment: languages, frameworks, structure, dependencies, tests, CI, code conventions, existing docs, Git history (activity, sensitive areas, authors), debt and risks spotted |
-| | Initial adaptation from that assessment: `PROJECT.md`, `ARCHITECTURE.md` and decisions rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's conventions (test, lint, build commands), roles, routing and effort tuned to the project's size and risk |
-| | Adoption report reviewed before any commit: what was understood, what remains to confirm, prioritized recommendations |
+| ✅ | `loomy init` on an already developed, versioned project (Git, remote, branches): nothing is overwritten, everything goes through a dedicated branch and an approval |
+| ✅ | Initial assessment (`loomy assess`): languages, frameworks, structure, dependencies, tests, CI, code conventions, existing docs, Git history (activity, sensitive areas, authors), debt and risks spotted |
+| ✅ | Initial adaptation from that assessment: `PROJECT.md`, `ARCHITECTURE.md` and decisions rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's conventions (test, lint, build commands), roles, routing and effort tuned to the project's size and risk |
+| ✅ | Adoption plan reviewed before any commit: what was understood, what remains to confirm, prioritized recommendations |
+| ✅&nbsp;0.5.1 | Screen-by-screen check of every command, in English and French |
+| ✅&nbsp;0.5.2 | **Current version** · security and robustness review ([SECURITY.md](SECURITY.md)) |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

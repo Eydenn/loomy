@@ -571,7 +571,7 @@ ui_rail_group() {
   _ui_pad "$1" $(( UI_W - 3 - ${#right} ))
   ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}${UI_PADDED}${C_RESET}${C_DIM}${right}${C_RESET}"
 }
-ui_rail_kv() { _ui_pad "$1" 15; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"; }
+ui_rail_kv() { _ui_pad "$1" 15; [[ -n "$1" && "$UI_PADDED" != *" " ]] && UI_PADDED="$UI_PADDED "; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"; }
 ui_rail() { ui_print "${C_RAIL}│${C_RESET}  $*"; }
 ui_rail_end() { ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; }
 

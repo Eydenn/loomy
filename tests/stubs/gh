@@ -9,8 +9,13 @@ case "${1:-} ${2:-}" in
   "auth token") echo "jeton-de-test" ;;
   "api user") echo "testeur" ;;
   "repo view")
-    [[ -n "${3:-}" && -d "${GH_STUB_REMOTES:-/nonexistent}/$3.git" ]] && exit 0
-    exit 1 ;;
+    d="${GH_STUB_REMOTES:-/nonexistent}/${3:-}.git"
+    [[ -n "${3:-}" && -d "$d" ]] || exit 1
+    case "$*" in
+      *isEmpty*) printf 'PRIVATE %s\n' "$(git --git-dir="$d" rev-parse -q --verify HEAD >/dev/null && echo false || echo true)" ;;
+      *--json*) echo PRIVATE ;;
+    esac
+    exit 0 ;;
   "repo create")
     name="${3:-}"; [[ "$name" == */* ]] || name="testeur/$name"
     remote=""; source_dir=""

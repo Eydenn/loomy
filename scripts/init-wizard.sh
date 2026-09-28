@@ -120,8 +120,9 @@ yaml_q() {
 HAS_GIT=0; IS_REPO=0; PARENT_REPO=""; PARENT_REMOTE=""; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
 # Existing project adopted on a dedicated branch (set by loomy init; found again when the brief is redone).
 ADOPT_BRANCH="${LOOMY_ADOPT_BRANCH:-}"; BASE_BRANCH="${LOOMY_BASE_BRANCH:-}"
-if [[ -z "$ADOPT_BRANCH" && "$(git -C "$TARGET" symbolic-ref --short -q HEAD 2>/dev/null)" == loomy/adopt ]]; then
-  ADOPT_BRANCH="loomy/adopt"; BASE_BRANCH="$(git -C "$TARGET" config --get branch.loomy/adopt.loomy-base 2>/dev/null || echo main)"
+cur_branch="$(git -C "$TARGET" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+if [[ -z "$ADOPT_BRANCH" && ( "$cur_branch" == loomy/adopt || "$cur_branch" == loomy/setup ) ]]; then
+  ADOPT_BRANCH="$cur_branch"; BASE_BRANCH="$(git -C "$TARGET" config --get "branch.$cur_branch.loomy-base" 2>/dev/null || echo main)"
 fi
 
 env_check() {
@@ -415,7 +416,9 @@ ask_all() {
       "yes|Yes|Creates the local repository now; nothing is sent online." \
       "no|No|No version control: no commit or push possible."
   fi
-  GITHUB_REPO="no"; REMOTE_NAME_NOTE=""; REPO_NAME="$SLUG"; AI_REPO_NAME=""
+  GITHUB_REPO="no"; REMOTE_NAME_NOTE=""; REPO_NAME="$SLUG"; AI_REPO_NAME=""; REMOTE_HAS_HISTORY=0
+  # Answer changed on the way back (←): a setup branch chosen for an existing repository is dropped.
+  if [[ "$ADOPT_BRANCH" == loomy/setup && -z "$(git -C "$TARGET" rev-parse -q --verify HEAD 2>/dev/null)" ]]; then ADOPT_BRANCH=""; BASE_BRANCH=""; fi
   if (( IS_REPO )) || [[ "$GIT_INIT" == "yes" ]]; then
     if [[ -n "$GIT_REMOTE" ]]; then
       # The remote repository should have the project's name: otherwise we flag it (without renaming anything).
@@ -435,12 +438,33 @@ ask_all() {
         "public|Yes, public|Visible to everyone: mind the AI files visibility, next question." \
         "no|No, later|No online repository for now; you can create it with gh repo create."
       if [[ "$GITHUB_REPO" != "no" ]]; then
-        UI_LABEL="$(t "Repository name")"
-        UI_HINT="$(t "Suggested from the project name; change it if needed (letters, digits, hyphens).")"
-        ui_input "$(t "GitHub repository name (%s/…)" "$GH_USER")" "$(ans repo_name "$SLUG")"
-        REPO_NAME="$(loomy_slug "$UI_VALUE")"
-        GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
-        REMOTE_VIS="$(printf '%s' "$GITHUB_REPO" | tr '[:lower:]' '[:upper:]')"
+        local name_def; name_def="$(ans repo_name "$SLUG")"
+        while true; do
+          UI_LABEL="$(t "Repository name")"
+          UI_HINT="$(t "Suggested from the project name; change it if needed (letters, digits, hyphens).")"
+          ui_input "$(t "GitHub repository name (%s/…)" "$GH_USER")" "$name_def"
+          REPO_NAME="$(loomy_slug "$UI_VALUE")"
+          GIT_REMOTE="origin https://github.com/$GH_USER/$REPO_NAME.git"
+          REMOTE_VIS="$(printf '%s' "$GITHUB_REPO" | tr '[:lower:]' '[:upper:]')"
+          # A repository with that name may already exist: never overwritten, the user chooses.
+          local info; info="$(gh repo view "$GH_USER/$REPO_NAME" --json visibility,isEmpty,defaultBranchRef --jq '.visibility + " " + (.isEmpty|tostring) + " " + (.defaultBranchRef.name // "main")' 2>/dev/null || true)"
+          [[ -n "$info" ]] || break
+          local ex_vis ex_empty ex_base ex_state; read -r ex_vis ex_empty ex_base <<<"$info"
+          if [[ "$ex_empty" == "true" ]]; then ex_state="$(t "empty")"; else ex_state="$(t "already has commits")"; fi
+          UI_LABEL="$(t "Existing repository")"
+          choose_coded REPO_EXISTING "$(t "The repository %s already exists (%s, %s). What now?" "$GH_USER/$REPO_NAME" "$(printf '%s' "$ex_vis" | tr '[:upper:]' '[:lower:]')" "$ex_state")" "rename" \
+            "Loomy never deletes or overwrites an existing repository." \
+            "rename|Choose another name|A new repository is created under the new name." \
+            "link|$(t "Use it as the project's remote")|$( [[ "$ex_empty" == "true" ]] && t "Linked as origin; the initial commit can be pushed to it." || t "Linked as origin: its content (specs, docs…) is brought into the folder, and the setup is done on a loomy/setup branch, to reconcile with %s through a pull request; %s stays untouched." "${ex_base:-main}" "${ex_base:-main}")" \
+            "no|No GitHub repository for now|Local only; you can link or create one later."
+          case "$REPO_EXISTING" in
+            rename) name_def="$REPO_NAME-2" ;;
+            link) GITHUB_REPO="existing"; REMOTE_VIS="$ex_vis"
+                  if [[ "$ex_empty" != "true" ]]; then REMOTE_HAS_HISTORY=1; ADOPT_BRANCH="loomy/setup"; BASE_BRANCH="${ex_base:-main}"; fi
+                  break ;;
+            *) GITHUB_REPO="no"; GIT_REMOTE=""; REMOTE_VIS=""; REPO_NAME="$SLUG"; break ;;
+          esac
+        done
       fi
     fi
     UI_LABEL="$(t "Initial commit")"
@@ -481,7 +505,7 @@ ask_all() {
       UI_HINT="$(t "Private repository that will only hold the AI files; change the name if needed.")"
       ui_input "$(t "Name of the private AI files repository")${GH_USER:+ ($GH_USER/…)}" "$(ans ai_repo_name "${AI_REPO_NAME:-$REPO_NAME-ai}")"
       AI_REPO_NAME="$(loomy_slug "$UI_VALUE")"
-      [[ "$GITHUB_REPO" == "no" ]] && break
+      [[ "$GITHUB_REPO" == "no" || "$GITHUB_REPO" == "existing" ]] && break
       # Two repositories to create: both names confirmed together.
       UI_LABEL="$(t "Two repositories")"
       UI_DESCS=("$(t "Creates %s (%s) for the project and %s (private) for the AI files." "$GH_USER/$REPO_NAME" "$( [[ "$GITHUB_REPO" == public ]] && t "public" || t "private")" "$GH_USER/$AI_REPO_NAME")" \
@@ -537,7 +561,7 @@ show_recap() {
   ui_rail_group "$(t "AI team")"
   ui_rail_kv "$(t "Mode")" "${C_BOLD}${MODE}${C_RESET} · $(t "lead %s" "${LEAD_LABEL}")"
   ui_rail_kv "$(t "Profile")" "$(no_rec "$BUDGET_LABEL")"
-  ui_rail_kv "$(t "Delegation format")" "$(no_rec "$DELEG_FORMAT_LABEL")"
+  ui_rail_kv "$(t "Delegations")" "$(no_rec "$DELEG_FORMAT_LABEL")"
   if [[ "$BUDGET" == "econome" && "$RISK" == "HIGH" ]]; then
     ui_rail_kv "" "${C_YELLOW}! $(t "HIGH risk with the Frugal profile: use high effort for security on sensitive changes")${C_RESET}"
   fi
@@ -550,7 +574,10 @@ show_recap() {
   ui_rail_group "$(t "Deliverables")"
   ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · $(t "START.md: %s" "$(no_rec "$HISTORY_LABEL")")"
   ui_rail_kv "$(t "Technical name")" "$SLUG ${C_DIM}($(t "folder, technical names"))${C_RESET}"
-  if [[ "$GITHUB_REPO" != "no" ]]; then parts="${parts:+$parts + }$(t "GitHub repository %s %s" "$GITHUB_REPO" "$GH_USER/$REPO_NAME")"; fi
+  case "$GITHUB_REPO" in
+    private|public) parts="${parts:+$parts + }$(t "GitHub repository %s %s" "$( [[ "$GITHUB_REPO" == private ]] && t "private" || t "public")" "$GH_USER/$REPO_NAME")" ;;
+    existing) parts="${parts:+$parts + }$(t "existing GitHub repository %s linked" "$GH_USER/$REPO_NAME")" ;;
+  esac
   ui_rail_kv "$(t "Git")" "${parts:-$(t "no action")}"
   if [[ -n "$ADOPT_BRANCH" ]]; then ui_rail_kv "$(t "Branch")" "$(t "%s, created from %s (untouched)" "$ADOPT_BRANCH" "$BASE_BRANCH")"; fi
   if [[ -n "$REMOTE_NAME_NOTE" ]]; then
@@ -649,6 +676,7 @@ write_brief() {
         t "- After each important step and at the end of the session, back them up: \`.loomy/scripts/ai-privacy.sh sync\`."; echo ;;
     esac
     t "- Project technical name: \`%s\`. Use it for package names, repository names and technical identifiers, so that everything has the same name." "$SLUG"; echo
+    if (( REMOTE_HAS_HISTORY )); then t "- The GitHub repository \`%s\` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history." "$GH_USER/$REPO_NAME"; echo; fi
     if [[ -n "$REMOTE_NAME_NOTE" ]]; then t "- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s)." "$REMOTE_NAME_NOTE" "$SLUG"; echo; fi
     if [[ "$REPO" == "existing" ]]; then
       t "- Existing project: read \`.loomy/assessment.md\` first, then follow the \"Existing project\" section of START.md. Don't change application code during the adoption without explicit approval."; echo
@@ -694,7 +722,10 @@ while true; do
   show_recap
   save_desc="$(t "Writes .loomy/brief.md.")"
   [[ "$GIT_INIT" == "yes" ]] && save_desc="$(t "Writes .loomy/brief.md and initialises the Git repository (main branch).")"
-  [[ "$GITHUB_REPO" != "no" ]] && save_desc="$save_desc $(t "Creates the GitHub repository %s (%s)." "$GH_USER/$REPO_NAME" "$GITHUB_REPO")"
+  case "$GITHUB_REPO" in
+    private|public) save_desc="$save_desc $(t "Creates the GitHub repository %s (%s)." "$GH_USER/$REPO_NAME" "$( [[ "$GITHUB_REPO" == private ]] && t "private" || t "public")")" ;;
+    existing) save_desc="$save_desc $(t "Links the existing GitHub repository %s as origin." "$GH_USER/$REPO_NAME")" ;;
+  esac
   [[ "$AI_FILES" == "private" ]] && save_desc="$save_desc $(t "Creates the private repository %s for the AI files." "${GH_USER:+$GH_USER/}$AI_REPO_NAME")"
   UI_LABEL="$(t "Brief")"
   choose_coded CONFIRM "Save this brief?" "save" "Nothing is written before you confirm." \
@@ -715,7 +746,12 @@ done
 # ---------------------------------------------------------------- mise en place, en direct
 steps=()
 [[ "$GIT_INIT" == "yes" ]] && steps+=("$(t "Initialising the Git repository")")
-[[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]] && steps+=("$(t "Creating the GitHub repository")")
+if [[ -n "$GH_USER" ]]; then
+  case "$GITHUB_REPO" in
+    private|public) steps+=("$(t "Creating the GitHub repository")") ;;
+    existing) steps+=("$(t "Linking the GitHub repository")") ;;
+  esac
+fi
 [[ "$REPO" == "existing" ]] && steps+=("$(t "Assessing the existing project")")
 steps+=("$(t "Saving the brief")")
 [[ "$AI_FILES" != "versioned" ]] && steps+=("$(t "Setting up AI files")")
@@ -730,7 +766,29 @@ if [[ "$GIT_INIT" == "yes" ]]; then
   st=$(( st + 1 ))
 fi
 GH_FAIL=""
-if [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
+if [[ "$GITHUB_REPO" == "existing" && -n "$GH_USER" ]]; then
+  ui_step_run $st
+  if git -C "$TARGET" remote get-url origin >/dev/null 2>&1; then
+    ui_step_done $st warn "$(t "GitHub repository not linked")" "$(t "an origin remote already exists")"; GITHUB_REPO="no"
+  elif git -C "$TARGET" remote add origin "https://github.com/$GH_USER/$REPO_NAME.git"; then
+    if (( REMOTE_HAS_HISTORY )); then
+      # Its content comes into the folder; the setup goes on a branch, the default branch stays untouched.
+      if git -C "$TARGET" fetch -q origin "$BASE_BRANCH" 2>/dev/null \
+        && git -C "$TARGET" checkout -q -B "$BASE_BRANCH" "origin/$BASE_BRANCH" 2>/dev/null \
+        && git -C "$TARGET" checkout -q -b "$ADOPT_BRANCH" 2>/dev/null; then
+        git -C "$TARGET" config "branch.$ADOPT_BRANCH.loomy-base" "$BASE_BRANCH"
+        ui_step_done $st ok "$(t "GitHub repository linked")" "$(t "content retrieved, branch %s" "$ADOPT_BRANCH")"
+      else
+        ui_step_done $st warn "$(t "GitHub repository linked")" "$(t "content not retrieved (files in the way): git pull origin %s" "$BASE_BRANCH")"
+      fi
+    else
+      ui_step_done $st ok "$(t "GitHub repository linked")" "$GH_USER/$REPO_NAME · origin"
+    fi
+  else
+    ui_step_done $st warn "$(t "GitHub repository not linked")" "git remote add failed"; GITHUB_REPO="no"
+  fi
+  st=$(( st + 1 ))
+elif [[ "$GITHUB_REPO" != "no" && -n "$GH_USER" ]]; then
   ui_step_run $st
   if gh_err="$(cd "$TARGET" && gh repo create "$REPO_NAME" "--$GITHUB_REPO" --source=. --remote=origin 2>&1 >/dev/null)"; then
     ui_step_done $st ok "$(t "GitHub repository created")" "$GH_USER/$REPO_NAME · $( [[ "$GITHUB_REPO" == "private" ]] && t "private" || t "public")"
@@ -779,7 +837,10 @@ if [[ -x "$SCRIPT_DIR/ai-status.sh" ]]; then
 fi
 ui_step_done $st ok "$(t "Session ready")" "$(t "Discovery phase")"
 ui_steps_end
-if [[ -n "$GH_FAIL" ]]; then ui_rail "   ${C_DIM}$(t "GitHub repository by hand:") gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi
+if [[ -n "$GH_FAIL" ]]; then
+  if [[ "$GH_FAIL" == *"already exists"* ]]; then ui_rail "   ${C_DIM}$(t "a repository with that name already exists: run loomy init again to choose another name or link it")${C_RESET}"
+  else ui_rail "   ${C_DIM}$(t "GitHub repository by hand:") gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi
+fi
 
 LEAD_CMD="$(ai_lead_command "$ROUTE_ENV" "$BUDGET")"
 ui_rail ""

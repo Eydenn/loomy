@@ -2,6 +2,18 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.5.6 — 2026-09-28
+
+### Added
+- **GitHub repository name already taken** (`loomy init`): the questionnaire checks the name before anything is created and says whether that repository is empty or already has commits. Loomy never deletes or overwrites it; three choices:
+  - another name (suggested: `<name>-2`);
+  - use it as the project's remote: an empty repository is simply linked as `origin`; a repository with content (specs, docs…) is fetched into the folder, and the setup goes on a `loomy/setup` branch created from its default branch, which stays untouched, to reconcile through a pull request. The agent is told to read that content first and never to force-push;
+  - no GitHub repository for now.
+
+### Fixed
+- Questionnaire summary: a label longer than its column ("Format des délégations") ran into its value; labels always keep a space, and the delegation line uses a shorter label.
+- Questionnaire summary: the GitHub repository visibility is translated ("privé", not "private").
+
 ## 0.5.5 — 2026-09-28
 
 ### Added

@@ -1402,3 +1402,24 @@ Structured	Structurées
 %s partial	%s partielle(s)
 %s blocked	%s bloquée(s)
 %s points to a Codex CLI that no longer exists (desktop app updated); Loomy uses %s	%s pointe vers une CLI Codex qui n'existe plus (app de bureau mise à jour) ; Loomy utilise %s
+already has commits	contient déjà des commits
+Existing repository	Dépôt existant
+The repository %s already exists (%s, %s). What now?	Le dépôt %s existe déjà (%s, %s). Que faire ?
+Loomy never deletes or overwrites an existing repository.	Loomy ne supprime ni n'écrase jamais un dépôt existant.
+Choose another name	Choisir un autre nom
+A new repository is created under the new name.	Un nouveau dépôt est créé sous le nouveau nom.
+Use it as the project's remote	L'utiliser comme dépôt distant du projet
+Linked as origin; the initial commit can be pushed to it.	Relié comme origin ; le commit initial pourra y être poussé.
+No GitHub repository for now	Pas de dépôt GitHub pour l'instant
+Local only; you can link or create one later.	Local uniquement ; tu pourras en relier ou en créer un plus tard.
+existing GitHub repository %s linked	dépôt GitHub existant %s relié
+Links the existing GitHub repository %s as origin.	Relie le dépôt GitHub existant %s comme origin.
+Linking the GitHub repository	Liaison du dépôt GitHub
+GitHub repository not linked	Dépôt GitHub non relié
+an origin remote already exists	un dépôt distant origin existe déjà
+GitHub repository linked	Dépôt GitHub relié
+a repository with that name already exists: run loomy init again to choose another name or link it	un dépôt de ce nom existe déjà : relance loomy init pour choisir un autre nom ou le relier
+Linked as origin: its content (specs, docs…) is brought into the folder, and the setup is done on a loomy/setup branch, to reconcile with %s through a pull request; %s stays untouched.	Relié comme origin : son contenu (specs, docs…) est récupéré dans le dossier, et la mise en place se fait sur une branche loomy/setup, à réconcilier avec %s par une pull request ; %s reste intact.
+- The GitHub repository `%s` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history.	- Le dépôt GitHub `%s` contenait déjà des fichiers (specs, docs…), maintenant dans le dossier : les lire d'abord, ce sont des données d'entrée du projet. Ne jamais forcer un push ni réécrire son historique.
+content retrieved, branch %s	contenu récupéré, branche %s
+content not retrieved (files in the way): git pull origin %s	contenu non récupéré (fichiers en conflit) : git pull origin %s

@@ -619,6 +619,36 @@ EXP
   has "13 steps" "question 13/13"
   hasnt "questionnaire: no raw variable on screen" '\$save_desc|\$\(t '
   hasnt "plans not asked again" "your Claude plan|/14"
+  # GitHub repository name already taken: never overwritten; another name (default) or the existing repository linked.
+  mkdir -p "$GH_STUB_REMOTES/testeur" && git init --bare -q -b main "$GH_STUB_REMOTES/testeur/deja-pris.git"
+  git clone -q "$GH_STUB_REMOTES/testeur/deja-pris.git" "$WORK/i3-seed" 2>/dev/null && git -C "$WORK/i3-seed" add -A 2>/dev/null; echo "# Initial specs" >"$WORK/i3-seed/SPECS.md"; git -C "$WORK/i3-seed" add SPECS.md && git -C "$WORK/i3-seed" -c user.name=t -c user.email=t@t commit -q -m seed && git -C "$WORK/i3-seed" push -q origin HEAD:main 2>/dev/null
+  W5="$WORK/deja-pris"; mkdir -p "$W5"
+  run "questionnaire, repository name already taken" wizard_expect "$W5"
+  has "existing repository detected" "already exists"
+  [[ "$(git -C "$W5" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/deja-pris-2.git" ]] && ok "taken name: another name suggested and created" || ko "taken name: remote $(git -C "$W5" config --get remote.origin.url 2>&1)"
+  [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-pris.git" rev-list --count main)" == "1" ]] && ok "existing repository left untouched" || ko "existing repository changed"
+  cat >"$WORK/lier.exp" <<EXP
+set timeout 15
+spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+for {set i 0} {\$i < 60} {incr i} {
+  expect {
+    -re {already exists \\(} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {⏎ confirm} { send "\r" }
+    eof { exit [lindex [wait] 3] }
+    timeout { exit 3 }
+  }
+}
+exit 4
+EXP
+  W6="$WORK/deja-relie"; mkdir -p "$W6"; mv "$GH_STUB_REMOTES/testeur/deja-pris.git" "$GH_STUB_REMOTES/testeur/deja-relie.git"
+  run "questionnaire, existing repository linked" env WIZ_DIR="$W6" expect "$WORK/lier.exp"
+  [[ "$(git -C "$W6" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/deja-relie.git" ]] && ok "existing repository linked as origin" || ko "link: remote $(git -C "$W6" config --get remote.origin.url 2>&1)"
+  file_has "brief: existing repository" "$W6/.loomy/brief.md" "^github_repo: existing$"
+  [[ -f "$W6/SPECS.md" ]] && ok "existing repository content brought into the folder" || ko "existing content missing"
+  [[ "$(git -C "$W6" symbolic-ref --short HEAD)" == "loomy/setup" ]] && ok "setup on the loomy/setup branch" || ko "branch: $(git -C "$W6" symbolic-ref --short HEAD)"
+  file_has "agent told to read the existing content" "$W6/.loomy/brief.md" "already had content"
+  file_has "agent told to reconcile through the branch" "$W6/.loomy/brief.md" "loomy/setup"
+  [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-relie.git" rev-list --count main)" == "1" ]] && ok "linked repository left untouched" || ko "linked repository changed"
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
 set timeout 15

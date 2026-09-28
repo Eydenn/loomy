@@ -1407,5 +1407,26 @@ _t_fr() {
     '%s partial') _T='%s partielle(s)' ;;
     '%s blocked') _T='%s bloquée(s)' ;;
     '%s points to a Codex CLI that no longer exists (desktop app updated); Loomy uses %s') _T='%s pointe vers une CLI Codex qui n'\''existe plus (app de bureau mise à jour) ; Loomy utilise %s' ;;
+    'already has commits') _T='contient déjà des commits' ;;
+    'Existing repository') _T='Dépôt existant' ;;
+    'The repository %s already exists (%s, %s). What now?') _T='Le dépôt %s existe déjà (%s, %s). Que faire ?' ;;
+    'Loomy never deletes or overwrites an existing repository.') _T='Loomy ne supprime ni n'\''écrase jamais un dépôt existant.' ;;
+    'Choose another name') _T='Choisir un autre nom' ;;
+    'A new repository is created under the new name.') _T='Un nouveau dépôt est créé sous le nouveau nom.' ;;
+    'Use it as the project'\''s remote') _T='L'\''utiliser comme dépôt distant du projet' ;;
+    'Linked as origin; the initial commit can be pushed to it.') _T='Relié comme origin ; le commit initial pourra y être poussé.' ;;
+    'No GitHub repository for now') _T='Pas de dépôt GitHub pour l'\''instant' ;;
+    'Local only; you can link or create one later.') _T='Local uniquement ; tu pourras en relier ou en créer un plus tard.' ;;
+    'existing GitHub repository %s linked') _T='dépôt GitHub existant %s relié' ;;
+    'Links the existing GitHub repository %s as origin.') _T='Relie le dépôt GitHub existant %s comme origin.' ;;
+    'Linking the GitHub repository') _T='Liaison du dépôt GitHub' ;;
+    'GitHub repository not linked') _T='Dépôt GitHub non relié' ;;
+    'an origin remote already exists') _T='un dépôt distant origin existe déjà' ;;
+    'GitHub repository linked') _T='Dépôt GitHub relié' ;;
+    'a repository with that name already exists: run loomy init again to choose another name or link it') _T='un dépôt de ce nom existe déjà : relance loomy init pour choisir un autre nom ou le relier' ;;
+    'Linked as origin: its content (specs, docs…) is brought into the folder, and the setup is done on a loomy/setup branch, to reconcile with %s through a pull request; %s stays untouched.') _T='Relié comme origin : son contenu (specs, docs…) est récupéré dans le dossier, et la mise en place se fait sur une branche loomy/setup, à réconcilier avec %s par une pull request ; %s reste intact.' ;;
+    '- The GitHub repository `%s` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history.') _T='- Le dépôt GitHub `%s` contenait déjà des fichiers (specs, docs…), maintenant dans le dossier : les lire d'\''abord, ce sont des données d'\''entrée du projet. Ne jamais forcer un push ni réécrire son historique.' ;;
+    'content retrieved, branch %s') _T='contenu récupéré, branche %s' ;;
+    'content not retrieved (files in the way): git pull origin %s') _T='contenu non récupéré (fichiers en conflit) : git pull origin %s' ;;
   esac
 }

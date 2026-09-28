@@ -1,6 +1,6 @@
 {
   "name": "loomy",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Starts and structures your projects with Codex and Claude Code: questionnaire, agent-ready repository structure, lead agent on the best model with dedicated roles, live tracking in the terminal.",
   "private": true,
   "license": "UNLICENSED",

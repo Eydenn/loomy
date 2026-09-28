@@ -578,4 +578,4 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | | Short README ("5 minutes to start"), full reference separately |
 | | Public repository and token-free Homebrew, when decided |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus) integration: Opus 5.5 effort readjusted at every step during Claude delegations, when Jev is installed |
-| 💡 | Local model through [LM Studio](https://lmstudio.ai) (to be decided): a role run on a local model, for confidential code or to spare the quotas on mechanical tasks, its work reviewed by the lead; most likely by reusing a Codex profile pointed at LM Studio rather than a third model family |
+| 💡 | Local model through [LM Studio](https://lmstudio.ai) (to be decided): a role run on a local model, for confidential code or to save on mechanical tasks (API cost, or subscription quota), its work reviewed by the lead; most likely by reusing a Codex profile pointed at LM Studio rather than a third model family |

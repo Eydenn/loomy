@@ -153,6 +153,7 @@ usage() {
   _h_group "$(t "PROJECT")"
   _h_cmd init "$(t "[folder] [options]")" "$(t "Creates or sets up a project, new or existing (offers to create the folder from the project name): questionnaire, then structure set up by the lead agent. Project already set up: resume, --update, --reset")"
   _h_cmd brief "" "$(t "Runs the current project's questionnaire again")"
+  _h_cmd audit "[--resume|--print|--yes]" "$(t "Security audit of an existing repository with Cloudflare's security-audit skill: scope, analysis, validated findings, report and fix plan (kept out of Git), fixes on a branch if you want; followed in loomy watch")"
   _h_cmd assess "[--print]" "$(t "Assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (.loomy/assessment.md)")"
   _h_cmd start "[--resume|--new|--print] [--watch]" "$(t "Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside")"
   _h_cmd effort "$(t "[<role>] [level|--reset]")" "$(t "Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max")"
@@ -216,6 +217,7 @@ case "$cmd" in
   feedback) exec bash "$S/ai-feedback.sh" "$@" ;;
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   assess) exec bash "$S/ai-assess.sh" --root "$(project_root)" "$@" ;;
+  audit) exec bash "$S/ai-audit.sh" --root "$(project_root)" "$@" ;;
   stats) exec bash "$S/ai-stats.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
   worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;

@@ -1043,6 +1043,23 @@ if [[ -n "$TMUX_BIN" ]]; then
 fi
 
 # ------------------------------------------------------------------ interface language
+section "Security audit"
+AR="$WORK/audit-repo"; mkdir -p "$AR" && git -C "$AR" init -q && echo x >"$AR/a.txt" && git -C "$AR" add -A && git -C "$AR" -c user.name=t -c user.email=t@t commit -qm i
+fails "audit: refused outside a Git repository" 1 bash -c 'cd "$1" && "$2" audit --yes --print --no-install' _ "$WORK/pas-git-$$" "$LOOMY" 2>/dev/null || true
+(cd "$AR" && "$LOOMY" audit --yes --print --no-install) >"$OUT" 2>&1
+has "audit: auditor on the security role" "claude-opus|gpt-6-astra"
+file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
+file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
+file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"
+[[ -z "$(git -C "$AR" status --porcelain)" ]] && ok "audit: nothing added to Git" || ko "audit: Git sees $(git -C "$AR" status --porcelain | tr '\n' ' ')"
+(cd "$AR" && "$LOOMY" status) >"$OUT" 2>&1
+has "audit: status shows the audit phases" "AUDIT.*step 1 of 6"
+bash "$REPO/scripts/ai-status.sh" --root "$AR" --audit set analyze >/dev/null
+file_has "audit: phase recorded" "$AR/.loomy/audit.state" "^phase=analyze$"
+(cd "$AR" && "$LOOMY" start) >"$OUT" 2>&1
+has "audit: loomy start resumes the audit" "auditor session"
+fails "audit: invalid depth" 2 "$LOOMY" audit --depth huge
+
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration
   env -u LOOMY_LANG -u LOOMY_UI_LANG -u LC_ALL -u LC_MESSAGES -u LANG XDG_CONFIG_HOME="$WORK/cfg-lang" "$@" \

@@ -10,13 +10,26 @@ if ! declare -F t >/dev/null 2>&1; then
 fi
 
 LOOMY_PHASES="brief discover interview propose approve build verify document commit retire"
+LOOMY_PHASE_COUNT=10
+LOOMY_PHASE_MODE="project"
+# Audit (loomy audit): a mission on an existing codebase, with its own phases and state (.loomy/audit.state),
+# never mixed with the project's bootstrap.
+LOOMY_AUDIT_PHASES="scope analyze validate report plan fix"
+
+# loomy_phases_mode <project|audit>: which list the helpers below work on.
+loomy_phases_mode() {
+  if [[ "$1" == "audit" ]]; then LOOMY_PHASE_MODE="audit"; LOOMY_PHASES="$LOOMY_AUDIT_PHASES"; LOOMY_PHASE_COUNT=6
+  else LOOMY_PHASE_MODE="project"; LOOMY_PHASES="brief discover interview propose approve build verify document commit retire"; LOOMY_PHASE_COUNT=10; fi
+}
 
 loomy_phase_label() {
   case "$1" in
     brief) t "Brief"; echo ;; discover) t "Discovery"; echo ;; interview) t "Interview"; echo ;;
     propose) t "Proposal"; echo ;; approve) t "Approval"; echo ;; build) t "Build"; echo ;;
     verify) t "Verification"; echo ;; document) t "Documentation"; echo ;; commit) t "Commit"; echo ;;
-    retire) t "Wrap-up"; echo ;; done) t "Done"; echo ;; "") t "Not started"; echo ;; *) echo "$1" ;;
+    retire) t "Wrap-up"; echo ;; done) t "Done"; echo ;;
+    scope) t "Scope"; echo ;; analyze) t "Analysis"; echo ;; validate) t "Validation of findings"; echo ;;
+    report) t "Report"; echo ;; plan) t "Fix plan"; echo ;; fix) t "Fixes"; echo ;; "") t "Not started"; echo ;; *) echo "$1" ;;
   esac
 }
 
@@ -33,7 +46,15 @@ loomy_phase_agent() {
     document) t "Writing PROJECT.md, ARCHITECTURE.md and the .ai/ rules."; echo ;;
     commit) t "Initial commit, if you allowed it in the questionnaire."; echo ;;
     retire) t "START.md is archived or deleted: the bootstrap is ending."; echo ;;
-    done) t "The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md."; echo ;;
+    scope) t "The auditor confirms with you what is audited, how deep, and what is out of scope."; echo ;;
+    analyze) t "The auditor runs the security-audit workflow on the code, without changing anything."; echo ;;
+    validate) t "Each finding is checked independently: proof in the code, false positives removed."; echo ;;
+    report) t "Writing the report: findings by severity, evidence (file:line), impact."; echo ;;
+    plan) t "Prioritised fixes and optimisations, with effort and risk for each."; echo ;;
+    fix) t "Approved fixes on a dedicated branch, checked and reviewed; the main branch stays untouched."; echo ;;
+    done)
+      if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "Audit finished: the report and the fix plan are in the audit folder."; echo
+      else t "The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md."; echo; fi ;;
     *) t "No phase recorded yet."; echo ;;
   esac
 }
@@ -51,15 +72,22 @@ loomy_phase_you() {
     document) t "review PROJECT.md and ARCHITECTURE.md when it points you to them."; echo ;;
     commit) t "check the proposed commit (git log, git show)."; echo ;;
     retire) t "nothing; the bootstrap is almost over."; echo ;;
-    done) t "ask the lead agent for your changes (loomy start opens its session)."; echo ;;
+    scope) t "confirm or adjust the audit scope in its session."; echo ;;
+    analyze|validate) t "nothing for now; keep the session open."; echo ;;
+    report) t "read the report when it points you to it."; echo ;;
+    plan) t "choose which fixes to apply, or stop at the report."; echo ;;
+    fix) t "review the fix branch before merging it yourself."; echo ;;
+    done)
+      if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "read the report; merge the fix branch if you are satisfied."; echo
+      else t "ask the lead agent for your changes (loomy start opens its session)."; echo; fi ;;
     *) t "loomy start to open the lead agent session."; echo ;;
   esac
 }
 
-# loomy_phase_index <phase>: rank of the phase (1 to 10), 0 when unknown, 11 when finished.
+# loomy_phase_index <phase>: rank of the phase (1 to count), 0 when unknown, count + 1 when finished.
 loomy_phase_index() {
   local p i=0
-  [[ "$1" == "done" ]] && { echo 11; return 0; }
+  [[ "$1" == "done" ]] && { echo $(( LOOMY_PHASE_COUNT + 1 )); return 0; }
   for p in $LOOMY_PHASES; do i=$(( i + 1 )); [[ "$p" == "$1" ]] && { echo "$i"; return 0; }; done
   echo 0
 }
@@ -70,7 +98,11 @@ loomy_you_now() {
   case "$1" in done) loomy_phase_you "$1"; return 0 ;; esac
   case "$2" in
     open*) loomy_phase_you "$1" ;;
-    closed*) t "reopen the lead agent session with loomy start; it will resume at this phase."; echo ;;
-    *) t "open the lead agent session with loomy start."; echo ;;
+    closed*)
+      if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "reopen the audit session with loomy audit --resume; it will resume at this phase."; echo
+      else t "reopen the lead agent session with loomy start; it will resume at this phase."; echo; fi ;;
+    *)
+      if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "open the audit session with loomy audit --resume."; echo
+      else t "open the lead agent session with loomy start."; echo; fi ;;
   esac
 }

@@ -512,7 +512,7 @@ ai_project_root() {
   if [[ -n "${LOOMY_PROJECT_ROOT:-}" && -d "$LOOMY_PROJECT_ROOT/.loomy" ]]; then echo "$LOOMY_PROJECT_ROOT"; return 0; fi
   d="$(pwd -P)"
   while [[ -n "$d" && "$d" != "/" ]]; do
-    if [[ -d "$d/.loomy" && ( -f "$d/.loomy/VERSION" || -f "$d/.loomy/brief.md" ) ]]; then echo "$d"; return 0; fi
+    if [[ -d "$d/.loomy" && ( -f "$d/.loomy/VERSION" || -f "$d/.loomy/brief.md" || -f "$d/.loomy/audit.md" ) ]]; then echo "$d"; return 0; fi
     d="$(dirname "$d")"
   done
   git rev-parse --show-toplevel 2>/dev/null || pwd

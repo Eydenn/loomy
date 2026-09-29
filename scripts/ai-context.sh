@@ -83,6 +83,10 @@ else
   t "- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>."; echo
   t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
 fi
+a_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/audit.state" 2>/dev/null | head -1 || true)"
+if [[ -n "$a_phase" && "$a_phase" != "done" ]]; then
+  t "- A security audit is in progress (loomy audit, phase %s): its mission is in .loomy/audit.md; if the user is working on it, continue it and record its phases with .loomy/scripts/ai-status.sh --audit set <phase>." "$a_phase"; echo
+fi
 t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
 J="$(ai_journal_file "$ROOT")"
 if [[ -s "$J" ]] && grep -q '"type":"delegation",' "$J" 2>/dev/null; then

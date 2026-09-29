@@ -40,6 +40,8 @@ done
 # Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
+# A repository with only an audit (loomy audit), no Loomy project: start resumes the audit.
+if [[ ! -f "$BRIEF" && -f "$ROOT/.loomy/audit.md" ]]; then exec bash "$SCRIPT_DIR/ai-audit.sh" --root "$ROOT" --resume; fi
 if [[ ! -f "$BRIEF" ]]; then
   t "No Loomy brief in %s: run loomy init first (new project) or loomy brief." "${ROOT/#$HOME/~}" >&2; echo >&2
   exit 1

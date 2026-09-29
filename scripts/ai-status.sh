@@ -2,6 +2,7 @@
 # Project and bootstrap status for Loomy. Bash 3.2 compatible.
 #   ai-status.sh                 prints the status
 #   ai-status.sh set <phase>     records the current bootstrap phase (used by the agents)
+#   ai-status.sh --audit set <phase>   records the phase of the running audit (loomy audit)
 #   ai-status.sh --watch [N]     refreshes every N seconds (1 by default); q c l s (see the footer)
 #   --compact / --full           tight view (for a narrow pane) or full view; watch picks one from the terminal size
 #   ai-status.sh --root <dir>    works on another project folder
@@ -37,6 +38,7 @@ COMPACT=""
 JOURNAL_VIEW=0
 UNTIL=""
 IN_PANE=0
+AUDIT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
@@ -46,6 +48,7 @@ while [[ $# -gt 0 ]]; do
     --until-exit) UNTIL="${2:-}"; shift ;;
     --pane) IN_PANE=1 ;;
     --full) COMPACT=0 ;;
+    --audit) AUDIT=1 ;;
     set) CMD="set"; PHASE_ARG="${2:-}"; shift ;;
     -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
@@ -63,6 +66,19 @@ fi
 ROOT="$(cd "$ROOT" && pwd)"
 STATE="$ROOT/.loomy/state"
 BRIEF="$ROOT/.loomy/brief.md"
+# Audit in progress (loomy audit): its own phases and state; shown instead of the bootstrap while it runs, and
+# kept on screen once finished when the folder has no Loomy project of its own.
+AUDIT_STATE="$ROOT/.loomy/audit.state"
+if (( ! AUDIT )) && [[ "$CMD" != "set" && -f "$AUDIT_STATE" ]]; then
+  a_phase="$(sed -n 's/^phase=//p' "$AUDIT_STATE" | head -1)"
+  [[ "$a_phase" != "done" || ! -f "$STATE" ]] && AUDIT=1
+fi
+PH_TYPE="phase"
+if (( AUDIT )); then
+  STATE="$AUDIT_STATE"; PH_TYPE="audit_phase"; loomy_phases_mode audit
+  PHASES="$LOOMY_AUDIT_PHASES done"
+fi
+N_PH="$LOOMY_PHASE_COUNT"
 
 if [[ "$CMD" == "set" ]]; then
   case " $PHASES " in
@@ -80,7 +96,7 @@ if [[ "$CMD" == "set" ]]; then
     echo "log=$now $PHASE_ARG"
   } >"$STATE.tmp"
   mv "$STATE.tmp" "$STATE"
-  ai_journal_write "$ROOT" "\"type\":\"phase\",\"phase\":\"$PHASE_ARG\""
+  ai_journal_write "$ROOT" "\"type\":\"$PH_TYPE\",\"phase\":\"$PHASE_ARG\""
   t "Phase recorded: %s (%s)" "$(loomy_phase_label "$PHASE_ARG")" "$PHASE_ARG"; echo
   exit 0
 fi
@@ -120,7 +136,7 @@ if (( WATCH )); then
   trap 'UI_PAGE_L=(); _ui_restore; exit 0' INT TERM
   printf '\033[?25l' >&2
   stty -echo </dev/tty 2>/dev/null || true
-  NAME_W="$(brief_get name 2>/dev/null || basename "$ROOT")"
+  NAME_W="$(brief_get name 2>/dev/null || true)"; NAME_W="${NAME_W:-$(basename "$ROOT")}"
   J="$(ai_journal_file "$ROOT")"
   tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
   p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
@@ -138,13 +154,15 @@ if (( WATCH )); then
     if (( ! first )); then
       if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
         hl_phase=$(( now + 8 ))
-        if [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Project ready")" "$(t "Bootstrap done: what comes next happens with the lead agent (loomy start).")"
-        else watch_notify "Phase $(loomy_phase_index "$phase")/10 · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
+        if [[ "$phase" == "done" ]] && (( AUDIT )); then watch_notify "✦ $(t "Audit done")" "$(t "The report and the fix plan are ready in the audit folder.")"
+        elif [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Project ready")" "$(t "Bootstrap done: what comes next happens with the lead agent (loomy start).")"
+        else watch_notify "Phase $(loomy_phase_index "$phase")/$N_PH · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
       fi
       if (( n_done > p_done )); then hl_deleg_n=$(( n_done - p_done )); hl_deleg_until=$(( now + 8 )); fi
       if (( n_err > p_err )); then watch_notify "$(t "Delegation failed")" "$(t "See the details in loomy watch (key l) or loomy log.")"; fi
       if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
-        watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"
+        if (( AUDIT )); then watch_notify "$(t "Audit session closed")" "$(t "Audit in progress: loomy audit --resume to resume it.")"
+        else watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"; fi
       fi
     fi
     # Subscription quota: read every 15 s; a notification when it crosses 80 %, then 95 %.
@@ -225,7 +243,7 @@ elif [[ "$COMPACT" == "1" ]]; then
     ui_print "${C_RAIL}┌${C_RESET}  ${C_BRAND}loomy${C_RESET} ${C_TITLE}$(brief_get name 2>/dev/null || true)${C_RESET}  ${C_DIM}${ROOT/#$HOME/~}${C_RESET}"
   fi
 else
-  ui_banner "$(t "Project status")" "${C_RESET}${C_TITLE}$(brief_get name 2>/dev/null || basename "$ROOT")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
+  ui_banner "$(t "Project status")" "${C_RESET}${C_TITLE}$(n="$(brief_get name 2>/dev/null || true)"; echo "${n:-$(basename "$ROOT")}")${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 fi
 # Loomy version copied into the project, compared with the installed one (unless this script is itself the project copy).
 proj_v="$(cat "$ROOT/.loomy/VERSION" 2>/dev/null || true)"; inst_v="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || true)"
@@ -256,20 +274,20 @@ CURRENT=""
 UPDATED=""
 [[ -f "$STATE" ]] && UPDATED="$(sed -n 's/^updated=//p' "$STATE" | head -1)"
 
-if [[ -z "$CURRENT" && -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then CURRENT="done"; fi
-if [[ -z "$CURRENT" && -f "$ROOT/START.md" && -f "$BRIEF" ]]; then CURRENT="brief"; fi
+if (( ! AUDIT )) && [[ -z "$CURRENT" && -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then CURRENT="done"; fi
+if (( ! AUDIT )) && [[ -z "$CURRENT" && -f "$ROOT/START.md" && -f "$BRIEF" ]]; then CURRENT="brief"; fi
 idx="$(loomy_phase_index "$CURRENT")"
 note=""
-if [[ "$CURRENT" == "done" ]]; then note="$(t "bootstrap done")"
-elif (( idx > 0 )); then note="$(t "step %s of 10" "$idx")${UPDATED:+ · $(t "since %s" "${UPDATED##* }")}"; fi
-ui_section "PHASES" "$note"
+if [[ "$CURRENT" == "done" ]]; then note="$( (( AUDIT )) && t "audit done" || t "bootstrap done")"
+elif (( idx > 0 )); then note="$(t "step %s of %s" "$idx" "$N_PH")${UPDATED:+ · $(t "since %s" "${UPDATED##* }")}"; fi
+ui_section "$( (( AUDIT )) && echo "AUDIT" || echo "PHASES")" "$note"
 if [[ -z "$CURRENT" ]]; then
   if [[ -f "$ROOT/START.md" ]]; then ui_info "$(t "START.md present but brief empty: run loomy brief")"
   else ui_info "$(t "no Loomy project here: run loomy init")"; fi
 else
   # Wide timeline: one box per phase (█ done, ▓ in progress, ░ upcoming), then ▲ and the name under the current box.
   _ui_term_size
-  cw=$(( (UI_W - 3 - 9) / 10 )); (( cw > 7 )) && cw=7; (( cw < 2 )) && cw=2
+  cw=$(( (UI_W - 3 - (N_PH - 1)) / N_PH )); (( cw > 7 )) && cw=7; (( cw < 2 )) && cw=2
   cell_done=""; cell_cur=""; cell_todo=""; i=0
   while (( i < cw )); do cell_done="${cell_done}█"; cell_cur="${cell_cur}▓"; cell_todo="${cell_todo}░"; i=$(( i + 1 )); done
   bar=""; i=0
@@ -281,9 +299,9 @@ else
     else bar="${bar}${C_DIM}${cell_todo}${C_RESET}"; fi
   done
   ui_rail "$bar"
-  label="▲ $(loomy_phase_label "$CURRENT")"; [[ "$CURRENT" == "done" ]] && label="✓ $(t "Bootstrap done")"
-  total=$(( cw * 10 + 9 )); _ui_strlen "$label"
-  off=$(( (idx > 10 ? 9 : idx - 1) * (cw + 1) )); (( off < 0 )) && off=0
+  label="▲ $(loomy_phase_label "$CURRENT")"; [[ "$CURRENT" == "done" ]] && label="✓ $( (( AUDIT )) && t "Audit done" || t "Bootstrap done")"
+  total=$(( cw * N_PH + N_PH - 1 )); _ui_strlen "$label"
+  off=$(( (idx > N_PH ? N_PH - 1 : idx - 1) * (cw + 1) )); (( off < 0 )) && off=0
   (( off + UI_LEN > total )) && off=$(( total - UI_LEN ))
   _ui_pad "" "$off"
   hl=""; [[ "${LOOMY_HL_PHASE:-0}" == "1" ]] && hl="  ${C_BOLD}${C_BRAND}✦ $(t "new phase")${C_RESET}"
@@ -293,11 +311,11 @@ else
   # Bootstrap summary (archives included): duration, delegations, cost of delegations and Claude Code until the end.
   J_DONE="$(ai_journal_file "$ROOT")"
   if [[ "$CURRENT" == "done" && -s "$J_DONE" ]]; then
-    read -r b_start b_end b_n b_cost b_tok <<<"$(awk -v pc="$PLAN_C" -v px="$PLAN_X" '
+    read -r b_start b_end b_n b_cost b_tok <<<"$(awk -v pc="$PLAN_C" -v px="$PLAN_X" -v pht="$PH_TYPE" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       function add() { if ((field("family") == "claude" ? pc : px) + 0) tk += num("tokens_in") + num("tokens_out"); else c += num("cost_usd") }
-      index($0, "\"type\":\"phase\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
+      index($0, "\"type\":\"" pht "\"") { if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
       e == "" && index($0, "\"type\":\"delegation\",") { n++; add() }
       e == "" && index($0, "\"type\":\"usage\"") { add() }
       END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT"))"
@@ -306,7 +324,7 @@ else
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
       d=$(( e_ep - s_ep )); if (( d >= 3600 )); then took="$(( d / 3600 )) h $(( d % 3600 / 60 )) min"; else took="$(( d / 60 )) min"; fi
     fi
-    ui_rail "${C_GREEN}${C_BOLD}✦ $(t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $(t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n")$( (( PLAN_C && PLAN_X )) || printf ' %s·%s $%s' "$C_DIM" "$C_RESET" "$b_cost")$( (( b_tok > 0 )) && printf ' %s·%s %s %s' "$C_DIM" "$C_RESET" "$(ai_tokens_label "$b_tok")" "$(t "tokens")")"
+    ui_rail "${C_GREEN}${C_BOLD}✦ $( (( AUDIT )) && t "Audit done" || t "Project ready")${C_RESET}${took:+ ${C_DIM}·${C_RESET} $( (( AUDIT )) && t "audit in %s" "${C_BOLD}$took${C_RESET}" || t "bootstrap in %s" "${C_BOLD}$took${C_RESET}")} ${C_DIM}·${C_RESET} $(t "%s delegation(s)" "$b_n")$( (( PLAN_C && PLAN_X )) || printf ' %s·%s $%s' "$C_DIM" "$C_RESET" "$b_cost")$( (( b_tok > 0 )) && printf ' %s·%s %s %s' "$C_DIM" "$C_RESET" "$(ai_tokens_label "$b_tok")" "$(t "tokens")")"
   fi
   [[ "$COMPACT" == "1" ]] || ui_rail "${C_DIM}$(loomy_phase_agent "$CURRENT")${C_RESET}"
   # Lead agent session: recorded by the Claude Code hooks and by loomy start (Codex).
@@ -315,10 +333,12 @@ else
   ui_rail "${C_YELLOW}➜${C_RESET} ${C_BOLD}$(t "Your turn:")${C_RESET} $you"
   case "$sess" in
     open*) ui_rail "${C_GREEN}●${C_RESET} $(t "Lead agent session open since %s" "$(printf '%s' "$sess" | cut -d'|' -f2)") ${C_DIM}($tool_name)${C_RESET}" ;;
-    closed*) ui_rail "${C_DIM}○ $(t "Lead agent session closed at %s (%s) → loomy start to resume it" "$(printf '%s' "$sess" | cut -d'|' -f2)" "$tool_name")${C_RESET}" ;;
-    *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ $(t "No lead agent session recorded → loomy start")${C_RESET}" ;;
+    closed*)
+      if (( AUDIT )); then ui_rail "${C_DIM}○ $(t "Audit session closed at %s (%s) → loomy audit --resume" "$(printf '%s' "$sess" | cut -d'|' -f2)" "$tool_name")${C_RESET}"
+      else ui_rail "${C_DIM}○ $(t "Lead agent session closed at %s (%s) → loomy start to resume it" "$(printf '%s' "$sess" | cut -d'|' -f2)" "$tool_name")${C_RESET}"; fi ;;
+    *) [[ "$CURRENT" != "done" ]] && ui_rail "${C_DIM}○ $( (( AUDIT )) && t "No audit session recorded → loomy audit --resume" || t "No lead agent session recorded → loomy start")${C_RESET}" ;;
   esac
-  if (( idx >= 1 && idx < 10 )) && [[ "$COMPACT" != "1" ]]; then
+  if (( idx >= 1 && idx < N_PH )) && [[ "$COMPACT" != "1" ]]; then
     next=""; i=0
     for p in $LOOMY_PHASES; do i=$(( i + 1 )); (( i > idx )) && next="${next:+$next → }$(loomy_phase_label "$p")"; done
     _ui_term_size; _ui_fit "$(t "next:") $next" $(( UI_W - 3 ))
@@ -487,7 +507,8 @@ else
 fi
 
 # ---------------------------------------------------------------- AI files
-if [[ "$COMPACT" != "1" ]]; then
+# (not for a repository that only has an audit: no Loomy project files there)
+if [[ "$COMPACT" != "1" && -f "$BRIEF" ]]; then
 ui_section "$(t "AI FILES")" "$(privacy_label "$(privacy_mode "$ROOT")")"
 if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then
   if ! privacy_companion_ready "$ROOT"; then ui_warn "$(t "private repository missing on this machine")" "loomy privacy restore <$(t "account/repo")>"

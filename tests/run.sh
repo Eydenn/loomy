@@ -1063,6 +1063,30 @@ file_has "audit: phase recorded" "$AR/.loomy/audit.state" "^phase=analyze$"
 (cd "$AR" && "$LOOMY" start) >"$OUT" 2>&1
 has "audit: loomy start resumes the audit" "auditor session"
 fails "audit: invalid depth" 2 "$LOOMY" audit --depth huge
+# Local writer (LM Studio): only when Codex is not available and a local server answers; text only, logged.
+if command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  LS="$WORK/lmstudio"; mkdir -p "$LS/v1" && printf '{"data":[{"id":"text-embedding-x"},{"id":"qwen/qwen3.8-27b"}]}' >"$LS/v1/models"
+  LPORT=$(( 20000 + $$ % 20000 ))
+  (cd "$LS" && exec python3 -m http.server "$LPORT" --bind 127.0.0.1) >/dev/null 2>&1 &
+  LPID=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 1 "http://127.0.0.1:$LPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; done
+  got="$(LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/ai-local-writer.sh" --check 2>&1)"
+  [[ "$got" == "qwen/qwen3.8-27b" ]] && ok "local writer: loaded chat model found, embeddings skipped" || ko "local writer check: $got"
+  fails "local writer: remote address refused" 2 env LOOMY_LOCAL_URL="http://example.com:1234" bash "$REPO/scripts/ai-local-writer.sh" --check
+  LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/ai-local-writer.sh" --root "$AR" "Draft the summary" >"$OUT" 2>&1
+  has "local writer: draft returned" "answer from the claude double"
+  grep -q '"bridge":"local".*"cost_usd":0' "$AR/.loomy/logs/events.jsonl" && ok "local writer: delegation logged at no cost" || ko "local writer: not logged"
+  mkdir -p "$WORK/only-claude" && ln -sf "$HERE/stubs/claude" "$WORK/only-claude/claude"
+  AR2="$WORK/audit-local"; mkdir -p "$AR2" && git -C "$AR2" init -q && echo x >"$AR2/a" && git -C "$AR2" add -A && git -C "$AR2" -c user.name=t -c user.email=t@t commit -qm i
+  (cd "$AR2" && env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/no-apps" PATH="$WORK/only-claude:/usr/bin:/bin" LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/bin/loomy" audit --yes --print --no-install) >"$OUT" 2>&1
+  file_has "audit without Codex: local writer used" "$AR2/.loomy/audit-prompt.txt" "ai-local-writer.sh"
+  AR3="$WORK/audit-codex"; mkdir -p "$AR3" && git -C "$AR3" init -q && echo x >"$AR3/a" && git -C "$AR3" add -A && git -C "$AR3" -c user.name=t -c user.email=t@t commit -qm i
+  (cd "$AR3" && LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" "$LOOMY" audit --yes --print --no-install) >/dev/null 2>&1
+  grep -q "delegate-to-codex.sh.* documenter" "$AR3/.loomy/audit-prompt.txt" && ! grep -q "ai-local-writer" "$AR3/.loomy/audit-prompt.txt" && ok "audit with Codex: Luna stays the writer" || ko "audit with Codex: writer not Luna"
+  kill "$LPID" 2>/dev/null; wait "$LPID" 2>/dev/null
+else
+  ok "local writer: skipped (curl or python3 missing)"
+fi
 
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration

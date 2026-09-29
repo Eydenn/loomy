@@ -2,7 +2,15 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.6.1 — 2026-09-29
+## 0.6.2 — 2026-09-29
+
+### Added
+- **First use of a local model: the audit writer's fallback.** When Codex is not available and a local model answers on LM Studio (`LOOMY_LOCAL_URL`, `http://127.0.0.1:1234` by default; `LM_API_TOKEN` when the server requires one), `loomy audit` hands the drafting of the report and fix plan to it.
+  - It goes through `scripts/ai-local-writer.sh`: Claude Code against LM Studio's Anthropic-compatible API, text only (no tools, no MCP, no plugins, empty configuration), local addresses only.
+  - The auditor saves the draft after reviewing it. The delegation is logged at no cost.
+  - Checked for real with `qwen/qwen3.8-27b` on an M3 Max: two validated findings turned into a faithful French section in 48 s. The local model never judges code; with Codex installed, GPT-6-Luna stays the writer.
+
+
 
 ### Changed
 - `loomy audit`: the explorer that maps the attack surface runs on a rigorous model (Claude Sonnet 5.5 medium, or GPT-6-Sol with a Codex auditor) instead of the fast tier (Haiku 4.5, Luna): an entry point it misses is never analysed. The whole audit team now runs on Opus 5.5, Sonnet 5.5 or GPT-6-Sol.

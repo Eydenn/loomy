@@ -1521,5 +1521,6 @@ _t_fr() {
     'explorer Sonnet 5.5 (medium)') _T='explorateur Sonnet 5.5 (medium)' ;;
     'explorer GPT-6-Sol (medium)') _T='explorateur GPT-6-Sol (medium)' ;;
     'writer GPT-6-Luna') _T='rédacteur GPT-6-Luna' ;;
+    'local writer %s') _T='rédacteur local %s' ;;
   esac
 }

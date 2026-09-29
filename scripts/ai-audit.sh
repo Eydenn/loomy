@@ -199,7 +199,13 @@ CROSS=""; ai_has_codex && CROSS="bash \"$BR/delegate-to-codex.sh\" reviewer"
 ai_has_claude || VALIDATOR="$CROSS"
 #   writer     a fast model (GPT-6-Luna) drafts the report and fix plan from validated findings only: it never
 #              produces a fact, and the auditor reviews every draft before it counts
-WRITER=""; ai_has_codex && WRITER="DELEGATE_CODEX_MODEL=$AI_MODEL_CODEX_FAST DELEGATE_CODEX_EFFORT=medium bash \"$BR/delegate-to-codex.sh\" documenter"
+#              Without Codex, a local model (LM Studio) takes this role when one answers: text only, the auditor
+#              saves the draft after review. Never used for anything that judges the code.
+WRITER=""; WRITER_LOCAL=""; LOCAL_MODEL=""
+if ai_has_codex; then WRITER="DELEGATE_CODEX_MODEL=$AI_MODEL_CODEX_FAST DELEGATE_CODEX_EFFORT=medium bash \"$BR/delegate-to-codex.sh\" documenter"
+elif ai_has_claude && LOCAL_MODEL="$(bash "$BR/ai-local-writer.sh" --check 2>/dev/null)"; then
+  WRITER="bash \"$BR/ai-local-writer.sh\" --root \"$ROOT\""; WRITER_LOCAL=1
+fi
 if (( RESUME )); then
   PROMPT="Resume the Loomy security audit of this repository where it stopped: phase \"$cur\". Reread .loomy/audit.md and the files already in $DIR, summarise where the audit stands in two sentences, then continue with the same rules: record each phase change with: $STATUS_CMD <phase>."
 else
@@ -211,7 +217,7 @@ You lead an audit team through Loomy's bridges (run them in the foreground and w
 - explorer, to map the attack surface (entry points, authentication, data flows, secrets, dependencies): $EXPLORER \"<task>\"
 - validator, Claude Sonnet 5.5 at high effort, rigorous: re-checks each finding independently from the code, without your conclusion: $VALIDATOR \"<finding, location, claimed impact>\"${CROSS:+
 - cross reviewer, the other model family, for a second opinion on Critical and High findings: $CROSS \"<finding and evidence>\"}
-${WRITER:+- writer, a fast model, to draft $DIR/REPORT.md and $DIR/FIX_PLAN.md as findings get validated (you can hand it each batch while the analysis goes on): $WRITER \"<validated findings, in structured form, and the file to update>\". Give it only validated facts; it adds no finding and changes no severity. Review each draft against the evidence before it counts.
+${WRITER:+- writer, $( [[ -n "$WRITER_LOCAL" ]] && echo "a local model ($LOCAL_MODEL, nothing leaves the machine; it returns text, you save it)" || echo "a fast model"), to draft $DIR/REPORT.md and $DIR/FIX_PLAN.md as findings get validated (you can hand it each batch while the analysis goes on): $WRITER \"<validated findings, in structured form, and the section to draft>\". Give it only validated facts; it adds no finding and changes no severity. Review each draft against the evidence before it counts.
 }For a large scope, split the analysis by area and hand areas to the validator as independent reviews; you keep the synthesis and the final severity.
 1. scope: restate the scope, depth, exclusions and deliverables; ask the user to confirm or adjust, and wait.
 2. analyze: use Cloudflare's official security-audit skill and follow its workflow (if it is not available, follow $SCRIPT_DIR/../external-skills/security-audit.md and a threat-model-first review). Read-only: change no project file.
@@ -233,6 +239,7 @@ ui_kv "$(t "Deliverables")" "$fix_l · ${DIR} ${C_DIM}($(t "kept out of Git"))${
 ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)"
 team="$(t "explorer Sonnet 5.5 (medium)")"; [[ "$TOOL" == "codex" ]] && team="$(t "explorer GPT-6-Sol (medium)")"; ai_has_claude && team="$team · $(t "validator Sonnet 5.5 (high)")"
 ai_has_codex && team="$team · $(t "cross review GPT-6-Sol") · $(t "writer GPT-6-Luna")"
+[[ -n "$WRITER_LOCAL" ]] && team="$team · $(t "local writer %s" "$LOCAL_MODEL")"
 ui_kv "$(t "Team")" "$team"
 ui_kv "Skill" "$SKILL_NOTE"
 ui_kv "$(t "Phase")" "$(loomy_phase_label "$cur") ${C_DIM}($(t "step %s of %s" "$(loomy_phase_index "$cur")" "$LOOMY_PHASE_COUNT"))${C_RESET}"

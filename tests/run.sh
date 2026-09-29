@@ -1052,6 +1052,8 @@ file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
 file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
 file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"
 file_has "audit: Sonnet 5.5 high validator in the team" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_EFFORT=high .*delegate-to-claude.sh\" reviewer"
+file_has "audit: explorer on a rigorous model, not a fast one" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_MODEL=claude-sonnet-5-5 DELEGATE_CLAUDE_EFFORT=medium"
+file_has "audit: fast writer drafts from validated findings only" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CODEX_MODEL=gpt-6-luna .*documenter"
 file_has "audit: cross review by the other family" "$AR/.loomy/audit-prompt.txt" "delegate-to-codex.sh\" reviewer"
 [[ -z "$(git -C "$AR" status --porcelain)" ]] && ok "audit: nothing added to Git" || ko "audit: Git sees $(git -C "$AR" status --porcelain | tr '\n' ' ')"
 (cd "$AR" && "$LOOMY" status) >"$OUT" 2>&1

@@ -1518,5 +1518,8 @@ _t_fr() {
     'cross review GPT-6-Sol') _T='relecture croisée GPT-6-Sol' ;;
     'Team') _T='Équipe' ;;
     'Report and fix plan') _T='Rapport et plan de corrections' ;;
+    'explorer Sonnet 5.5 (medium)') _T='explorateur Sonnet 5.5 (medium)' ;;
+    'explorer GPT-6-Sol (medium)') _T='explorateur GPT-6-Sol (medium)' ;;
+    'writer GPT-6-Luna') _T='rédacteur GPT-6-Luna' ;;
   esac
 }

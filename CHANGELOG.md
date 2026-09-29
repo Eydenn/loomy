@@ -2,6 +2,15 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.6.1 — 2026-09-29
+
+### Changed
+- `loomy audit`: the explorer that maps the attack surface runs on a rigorous model (Claude Sonnet 5.5 medium, or GPT-6-Sol with a Codex auditor) instead of the fast tier (Haiku 4.5, Luna): an entry point it misses is never analysed. The whole audit team now runs on Opus 5.5, Sonnet 5.5 or GPT-6-Sol.
+- Roadmap: a local model (LM Studio) is ruled out for security audits.
+
+### Added
+- `loomy audit`: a writer on a fast model (GPT-6-Luna, when Codex is installed) drafts `REPORT.md` and `FIX_PLAN.md` as findings get validated, while the analysis goes on. It only receives validated findings in structured form, adds no finding and changes no severity; the auditor reviews each draft against the evidence.
+
 ## 0.6.0 — 2026-09-29
 
 ### Added
@@ -10,7 +19,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
   - [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for the repository only and kept out of Git, after approval; without it the auditor follows Loomy's summary of the workflow.
   - Multi-agent team through the bridges, every delegation logged:
     - the auditor (security role: Opus 5.5, or Astra with a Codex lead);
-    - an explorer for the attack surface;
+    - an explorer for the attack surface (fast tier in 0.6.0, a rigorous model from 0.6.1);
     - Claude Sonnet 5.5 at high effort, which re-checks every finding independently (its rigour at high effort was observed in the 2026-09-29 tests);
     - the other family's reviewer for Critical and High findings.
   - Six phases, recorded in their own state (`.loomy/audit.state`) so a project's bootstrap is never touched: scope, analysis, validation of findings, report, fix plan, fixes. `loomy status` and `loomy watch` show them as an AUDIT timeline, with notifications.

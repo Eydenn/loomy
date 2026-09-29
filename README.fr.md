@@ -599,9 +599,10 @@ loomy/
 - **Méthode** : [le skill officiel security-audit de Cloudflare](https://github.com/cloudflare/security-audit-skill) (MIT), installé pour ce dépôt uniquement si tu l'acceptes.
 - **Équipe**, via les bridges de Loomy, chaque délégation journalisée :
   - l'auditeur (rôle sécurité : Opus 5.5, ou Astra avec un orchestrateur Codex) mène l'audit ;
-  - un explorateur cartographie la surface d'attaque à moindre coût ;
+  - un explorateur cartographie la surface d'attaque, sur un modèle rigoureux (Sonnet 5.5 en medium, ou GPT-6-Sol) : un point d'entrée manqué n'est jamais analysé ;
   - Claude Sonnet 5.5 en effort élevé, rigoureux, revérifie chaque constat de façon indépendante ;
-  - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés.
+  - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés ;
+  - un rédacteur rapide (GPT-6-Luna) rédige le rapport et le plan de corrections au fil des validations, à partir des seuls faits validés ; l'auditeur relit chaque brouillon.
 - **Phases**, suivies dans `loomy watch` comme un démarrage de projet : périmètre → analyse → validation des constats → rapport → plan de corrections → corrections.
 - **Rapport** : `REPORT.md` et `FIX_PLAN.md` vont dans `.loomy/audits/<date>-security/`, hors de Git, parce qu'ils peuvent décrire des failles exploitables. Tes branches ne sont jamais modifiées et rien n'est poussé.
 
@@ -650,7 +651,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.5.7 | **Tab reprend une suggestion** pour la modifier dans les champs texte (nom du projet, nom du dépôt…) ; nom de dépôt déjà pris : `<nom>-loomy` proposé |
 | ✅&nbsp;0.5.8 | **Claude Sonnet 5.5** en tête du travail courant côté Claude (Sonnet 5 en repli) ; orchestrateurs inchangés |
 | ✅&nbsp;0.5.9 | **Profil Économe : Sonnet 5.5 orchestrateur côté Claude** (`medium`), Opus gardé pour les rôles difficiles ; vérifié par un test d'orchestration réel |
-| ✅&nbsp;0.6.0 | **Version actuelle** · **Audit de sécurité** (`loomy audit`) : une mission avec ses propres phases suivies dans `loomy watch`, le skill security-audit de Cloudflare, une équipe multi-agents (auditeur, explorateur, validateur Sonnet 5.5 en effort élevé, relecture croisée), rapport et plan de corrections hors de Git, corrections sur une branche si autorisé |
+| ✅&nbsp;0.6.0 | **Audit de sécurité** (`loomy audit`) : une mission avec ses propres phases suivies dans `loomy watch`, le skill security-audit de Cloudflare, une équipe multi-agents (auditeur, explorateur, validateur Sonnet 5.5 en effort élevé, relecture croisée), rapport et plan de corrections hors de Git, corrections sur une branche si autorisé |
+| ✅&nbsp;0.6.1 | **Version actuelle** · équipe d'audit entièrement sur des modèles rigoureux (explorateur sur Sonnet 5.5 ou GPT-6-Sol) |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |
@@ -665,4 +667,4 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | | Dépôt public et Homebrew sans jeton, sur décision |
 | 💡 | **Type de projet « jeu 3D (Three.js) »**, validé par un test ([notes du test](docs/THREEJS_GAME_TEST.md), en anglais) : le questionnaire propose [threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) (MIT, Majid Manzarpour), installé pour le projet ; gameplay par Sonnet 5.5 et Luna, passe graphique par Opus avec son skill graphique AAA ; le skill directeur reste un outil de l'orchestrateur ; API payantes de génération signalées |
 | 💡 | Intégration de [Jev](https://github.com/WXK-AI/jev-opus) : effort d'Opus 5.5 réajusté à chaque étape pendant les délégations Claude, quand Jev est installé |
-| 💡 | Modèle local via [LM Studio](https://lmstudio.ai) (à déterminer) : un rôle confié à un modèle local, pour du code confidentiel ou pour économiser sur les tâches mécaniques (coût API, ou quota d'abonnement), son travail relu par l'orchestrateur ; plutôt en réutilisant un profil Codex pointé vers LM Studio qu'avec une troisième famille de modèles. Testé le 28/09/2026 avec `qwen/qwen3.8-27b` sur un M3 Max de 48 Go : faisable via Codex et Claude Code (petite tâche faite en 2 min 30 environ quand la délégation est allégée) — [notes du test](docs/LOCAL_MODEL_TEST.md) (en anglais) |
+| 💡 | Modèle local via [LM Studio](https://lmstudio.ai) (à déterminer) : un rôle confié à un modèle local, pour du code confidentiel ou pour économiser sur les tâches mécaniques (coût API, ou quota d'abonnement), son travail relu par l'orchestrateur ; plutôt en réutilisant un profil Codex pointé vers LM Studio qu'avec une troisième famille de modèles. Testé le 28/09/2026 avec `qwen/qwen3.8-27b` sur un M3 Max de 48 Go : faisable via Codex et Claude Code (petite tâche faite en 2 min 30 environ quand la délégation est allégée) — [notes du test](docs/LOCAL_MODEL_TEST.md) (en anglais) . Pas pour les audits de sécurité, qui restent sur les modèles les plus rigoureux (Opus 5.5, Sonnet 5.5, GPT-6-Sol) |

@@ -416,6 +416,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it) |
+| 🛡️&nbsp;<code>loomy&nbsp;audit</code> | security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
@@ -526,6 +527,21 @@ loomy/
 
 ---
 
+## 🛡️ Security audit
+
+`loomy audit` audits an existing Git repository, Loomy project or not. It is a mission with a report as its deliverable, not a project to build.
+- **Questions**: scope, depth (quick, standard, deep), and deliverables: report only, report and fix plan, or fixes as well on a `loomy/audit-fixes` branch.
+- **Method**: [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for this repository only when you agree.
+- **Team**, through Loomy's bridges, every delegation logged:
+  - the auditor (security role: Opus 5.5, or Astra with a Codex lead) leads;
+  - an explorer maps the attack surface cheaply;
+  - Claude Sonnet 5.5 at high effort, rigorous, re-checks every finding independently;
+  - the other model family (GPT-6-Sol) gives a second opinion on Critical and High findings.
+- **Phases**, followed in `loomy watch` like a bootstrap: scope → analysis → validation of findings → report → fix plan → fixes.
+- **Report**: `REPORT.md` and `FIX_PLAN.md` go to `.loomy/audits/<date>-security/`, kept out of Git, because they can describe exploitable weaknesses. Your branches are never touched and nothing is pushed.
+
+---
+
 ## 🔐 Security
 
 What Loomy guarantees (your project never pushed or deleted without you, existing projects untouched, catalog read as data, untrusted project files sanitised, private temporary files) and how to report a vulnerability: [SECURITY.md](SECURITY.md).
@@ -568,7 +584,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.6 | **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
 | ✅&nbsp;0.5.7 | **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
 | ✅&nbsp;0.5.8 | **Claude Sonnet 5.5** heads everyday Claude work (Sonnet 5 as fallback); lead agents unchanged |
-| ✅&nbsp;0.5.9 | **Current version** · **Thrifty profile: Sonnet 5.5 as the Claude lead agent** (`medium`), Opus kept for the hard roles; checked in a real orchestration test |
+| ✅&nbsp;0.5.9 | **Thrifty profile: Sonnet 5.5 as the Claude lead agent** (`medium`), Opus kept for the hard roles; checked in a real orchestration test |
+| ✅&nbsp;0.6.0 | **Current version** · **Security audit** (`loomy audit`): a mission with its own phases followed in `loomy watch`, Cloudflare's security-audit skill, a multi-agent team (auditor, explorer, Sonnet 5.5 high validator, cross review), report and fix plan kept out of Git, fixes on a branch when allowed |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |
@@ -581,5 +598,6 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | | Configurable color theme (`loomy config`) for terminals that don't render bold |
 | | Short README ("5 minutes to start"), full reference separately |
 | | Public repository and token-free Homebrew, when decided |
+| 💡 | **3D game project type (Three.js)**, validated by a test ([test notes](docs/THREEJS_GAME_TEST.md)): the questionnaire offers [threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) (MIT, Majid Manzarpour) installed for the project; gameplay by Sonnet 5.5 and Luna, a graphics pass by Opus with its AAA graphics skill; the director skill stays a tool of the lead agent; optional paid asset APIs flagged |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus) integration: Opus 5.5 effort readjusted at every step during Claude delegations, when Jev is installed |
 | 💡 | Local model through [LM Studio](https://lmstudio.ai) (to be decided): a role run on a local model, for confidential code or to save on mechanical tasks (API cost, or subscription quota), its work reviewed by the lead; most likely by reusing a Codex profile pointed at LM Studio rather than a third model family. Tested on 2026-09-28 with `qwen/qwen3.8-27b` on an M3 Max with 48 GB: feasible through Codex and Claude Code (small task done in about 2.5 min when the delegation runs light) — [test notes](docs/LOCAL_MODEL_TEST.md) |

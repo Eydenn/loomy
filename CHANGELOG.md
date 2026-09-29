@@ -2,7 +2,26 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.5.9 — 2026-09-29
+## 0.6.0 — 2026-09-29
+
+### Added
+- **`loomy audit`: security audit of an existing Git repository**, a mission rather than a project (no brief or bootstrap needed).
+  - Questions: scope, depth (quick, standard, deep), deliverables (report only, report and fix plan, or fixes on a `loomy/audit-fixes` branch). `--yes`, `--print`, `--resume` and flags for each answer.
+  - [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for the repository only and kept out of Git, after approval; without it the auditor follows Loomy's summary of the workflow.
+  - Multi-agent team through the bridges, every delegation logged:
+    - the auditor (security role: Opus 5.5, or Astra with a Codex lead);
+    - an explorer for the attack surface;
+    - Claude Sonnet 5.5 at high effort, which re-checks every finding independently (its rigour at high effort was observed in the 2026-09-29 tests);
+    - the other family's reviewer for Critical and High findings.
+  - Six phases, recorded in their own state (`.loomy/audit.state`) so a project's bootstrap is never touched: scope, analysis, validation of findings, report, fix plan, fixes. `loomy status` and `loomy watch` show them as an AUDIT timeline, with notifications.
+  - `REPORT.md` and `FIX_PLAN.md` in `.loomy/audits/<date>-security/`, always excluded from Git (they can describe exploitable weaknesses). Nothing is added to the repository's history, other branches are never touched, nothing is pushed.
+  - In a repository with only an audit, `loomy start` resumes it; in a Loomy project, the lead agent's resume context mentions a running audit.
+- Roadmap: a 3D game (Three.js) project type, after a conclusive test with [threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) (`docs/THREEJS_GAME_TEST.md`).
+
+### Changed
+- Phase helpers take a variable number of phases (the bootstrap's 10, an audit's 6).
+
+
 
 ### Changed
 - **Thrifty profile: a Claude lead agent runs on Sonnet 5.5 `medium`** instead of Opus 5.5 `medium`. In a real orchestration test (same task, lead agent delegating to GPT-6-Luna and checking the result, graded by a hidden test), Sonnet 5.5 `medium` got the same result for about half the lead agent's cost and faster; at `high` it was no cheaper than Opus. The architect, debugger and security roles stay on Opus 5.5, as Anthropic recommends for work needing judgment. A Codex lead agent is unchanged (Astra `medium`). Details in `docs/MODEL_CATALOG.md`.

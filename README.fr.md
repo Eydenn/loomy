@@ -476,6 +476,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
+| 🛡️&nbsp;<code>loomy&nbsp;audit</code> | audit de sécurité d'un dépôt Git existant, une mission plutôt qu'un projet (voir plus bas) : `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | statistiques détaillées : par rôle, modèle et jour, durées, tokens, coût ou quota (`--days N`, `--since AAAA-MM-JJ`) |
@@ -591,6 +592,21 @@ loomy/
 
 ---
 
+## 🛡️ Audit de sécurité
+
+`loomy audit` audite un dépôt Git existant, projet Loomy ou non. C'est une mission dont le livrable est un rapport, pas un projet à construire.
+- **Questions** : le périmètre, la profondeur (rapide, standard, approfondi) et les livrables : rapport seul, rapport et plan de corrections, ou corrections en plus sur une branche `loomy/audit-fixes`.
+- **Méthode** : [le skill officiel security-audit de Cloudflare](https://github.com/cloudflare/security-audit-skill) (MIT), installé pour ce dépôt uniquement si tu l'acceptes.
+- **Équipe**, via les bridges de Loomy, chaque délégation journalisée :
+  - l'auditeur (rôle sécurité : Opus 5.5, ou Astra avec un orchestrateur Codex) mène l'audit ;
+  - un explorateur cartographie la surface d'attaque à moindre coût ;
+  - Claude Sonnet 5.5 en effort élevé, rigoureux, revérifie chaque constat de façon indépendante ;
+  - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés.
+- **Phases**, suivies dans `loomy watch` comme un démarrage de projet : périmètre → analyse → validation des constats → rapport → plan de corrections → corrections.
+- **Rapport** : `REPORT.md` et `FIX_PLAN.md` vont dans `.loomy/audits/<date>-security/`, hors de Git, parce qu'ils peuvent décrire des failles exploitables. Tes branches ne sont jamais modifiées et rien n'est poussé.
+
+---
+
 ## 🔐 Sécurité
 
 Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existants intacts, catalogue lu comme de simples données, fichiers de projet non fiables assainis, fichiers temporaires privés) et comment signaler une faille : [SECURITY.md](SECURITY.md) (en anglais).
@@ -633,7 +649,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.5.6 | **dépôt GitHub existant** : nom déjà pris détecté dans le questionnaire ; autre nom, ou dépôt relié (son contenu récupéré, mise en place sur une branche `loomy/setup` à réconcilier par pull request), jamais écrasé |
 | ✅&nbsp;0.5.7 | **Tab reprend une suggestion** pour la modifier dans les champs texte (nom du projet, nom du dépôt…) ; nom de dépôt déjà pris : `<nom>-loomy` proposé |
 | ✅&nbsp;0.5.8 | **Claude Sonnet 5.5** en tête du travail courant côté Claude (Sonnet 5 en repli) ; orchestrateurs inchangés |
-| ✅&nbsp;0.5.9 | **Version actuelle** · **Profil Économe : Sonnet 5.5 orchestrateur côté Claude** (`medium`), Opus gardé pour les rôles difficiles ; vérifié par un test d'orchestration réel |
+| ✅&nbsp;0.5.9 | **Profil Économe : Sonnet 5.5 orchestrateur côté Claude** (`medium`), Opus gardé pour les rôles difficiles ; vérifié par un test d'orchestration réel |
+| ✅&nbsp;0.6.0 | **Version actuelle** · **Audit de sécurité** (`loomy audit`) : une mission avec ses propres phases suivies dans `loomy watch`, le skill security-audit de Cloudflare, une équipe multi-agents (auditeur, explorateur, validateur Sonnet 5.5 en effort élevé, relecture croisée), rapport et plan de corrections hors de Git, corrections sur une branche si autorisé |
 | 🔜 | **Le quotidien après le bootstrap** |
 | | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
 | | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |
@@ -646,5 +663,6 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | | Thème de couleurs réglable (`loomy config`), pour les terminaux qui n'affichent pas le gras |
 | | README court (« 5 minutes pour démarrer »), référence complète à part |
 | | Dépôt public et Homebrew sans jeton, sur décision |
+| 💡 | **Type de projet « jeu 3D (Three.js) »**, validé par un test ([notes du test](docs/THREEJS_GAME_TEST.md), en anglais) : le questionnaire propose [threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) (MIT, Majid Manzarpour), installé pour le projet ; gameplay par Sonnet 5.5 et Luna, passe graphique par Opus avec son skill graphique AAA ; le skill directeur reste un outil de l'orchestrateur ; API payantes de génération signalées |
 | 💡 | Intégration de [Jev](https://github.com/WXK-AI/jev-opus) : effort d'Opus 5.5 réajusté à chaque étape pendant les délégations Claude, quand Jev est installé |
 | 💡 | Modèle local via [LM Studio](https://lmstudio.ai) (à déterminer) : un rôle confié à un modèle local, pour du code confidentiel ou pour économiser sur les tâches mécaniques (coût API, ou quota d'abonnement), son travail relu par l'orchestrateur ; plutôt en réutilisant un profil Codex pointé vers LM Studio qu'avec une troisième famille de modèles. Testé le 28/09/2026 avec `qwen/qwen3.8-27b` sur un M3 Max de 48 Go : faisable via Codex et Claude Code (petite tâche faite en 2 min 30 environ quand la délégation est allégée) — [notes du test](docs/LOCAL_MODEL_TEST.md) (en anglais) |

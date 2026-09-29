@@ -138,7 +138,6 @@ fi
 PROFILE="$(_ai_brief_get "$ROOT/.loomy/brief.md" budget 2>/dev/null || true)"; PROFILE="${PROFILE:-equilibre}"
 ai_route security "$TOOL" "$PROFILE"
 MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
-OTHER="codex"; [[ "$TOOL" == "codex" ]] && OTHER="claude"
 tool_label="Claude Code"; [[ "$TOOL" == "codex" ]] && tool_label="Codex"
 
 # ---------------------------------------------------------------- Cloudflare security-audit skill
@@ -186,6 +185,17 @@ case "$FIXES" in
   *) fix_txt="report and fix plan; change no code (skip the fix phase)." ;;
 esac
 lang_txt="English"; [[ "$(ui_lang)" == "fr" ]] && lang_txt="French"
+# Audit team (multi-agent, through Loomy's bridges; every delegation is logged and shown in loomy watch):
+#   explorer   maps the attack surface cheaply (Haiku 4.5 or Luna)
+#   validator  Claude Sonnet 5.5 at high effort: rigorous, re-checks every finding independently
+#   cross      the other family's reviewer (GPT-6-Sol), a second opinion on Critical and High findings
+BR="$SCRIPT_DIR"
+VALIDATOR="DELEGATE_CLAUDE_EFFORT=high bash \"$BR/delegate-to-claude.sh\" reviewer"
+EXPLORER="bash \"$BR/delegate-to-$TOOL.sh\" explorer"
+[[ "$TOOL" == "claude" ]] && EXPLORER="bash \"$BR/delegate-to-claude.sh\" explorer"
+CROSS=""; ai_has_codex && CROSS="bash \"$BR/delegate-to-codex.sh\" reviewer"
+[[ "$TOOL" == "codex" ]] && CROSS="bash \"$BR/delegate-to-codex.sh\" reviewer"
+ai_has_claude || VALIDATOR="$CROSS"
 if (( RESUME )); then
   PROMPT="Resume the Loomy security audit of this repository where it stopped: phase \"$cur\". Reread .loomy/audit.md and the files already in $DIR, summarise where the audit stands in two sentences, then continue with the same rules: record each phase change with: $STATUS_CMD <phase>."
 else
@@ -193,9 +203,14 @@ else
 Mission (.loomy/audit.md): scope: $SCOPE. Depth: $depth_txt. Deliverables: $fix_txt
 Write every deliverable in $DIR (kept out of Git: it can describe exploitable weaknesses; never commit or paste it elsewhere). Write them in $lang_txt.
 Record each phase change before acting, with: $STATUS_CMD <phase>   and announce it on one line: \"Audit n/6 · Name\".
+You lead an audit team through Loomy's bridges (run them in the foreground and wait; write each task as GOAL / SCOPE / FILES / ACCEPTANCE; announce each delegation in one line before and after):
+- explorer, to map the attack surface cheaply (entry points, authentication, data flows, secrets, dependencies): $EXPLORER \"<task>\"
+- validator, Claude Sonnet 5.5 at high effort, rigorous: re-checks each finding independently from the code, without your conclusion: $VALIDATOR \"<finding, location, claimed impact>\"${CROSS:+
+- cross reviewer, the other model family, for a second opinion on Critical and High findings: $CROSS \"<finding and evidence>\"}
+For a large scope, split the analysis by area and hand areas to the validator as independent reviews; you keep the synthesis and the final severity.
 1. scope: restate the scope, depth, exclusions and deliverables; ask the user to confirm or adjust, and wait.
 2. analyze: use Cloudflare's official security-audit skill and follow its workflow (if it is not available, follow $SCRIPT_DIR/../external-skills/security-audit.md and a threat-model-first review). Read-only: change no project file.
-3. validate: confirm every finding with evidence in the code (file:line, reachable path, preconditions, realistic impact); drop false positives and keep them in a separate list. For an independent check of a serious finding you may ask the other tool: bash \"$SCRIPT_DIR/delegate-to-$OTHER.sh\" reviewer \"<finding and evidence>\".
+3. validate: confirm every finding with evidence in the code (file:line, reachable path, preconditions, realistic impact); drop false positives and keep them in a separate list. Every finding goes to the validator; Critical and High ones also to the cross reviewer when available. Keep a finding only when the evidence holds.
 4. report: write $DIR/REPORT.md: summary, scope and method, findings by severity (Critical, High, Medium, Low, Info) each with evidence, impact and recommendation, discarded false positives, limits of the audit.
 5. plan: write $DIR/FIX_PLAN.md: fixes and hardening or optimisation items, prioritised (severity, effort, risk, suggested order). Point the user to both files and ask which items to apply.
 6. fix: only when the deliverables include fixes and the user approved items: branch loomy/audit-fixes, one commit per fix with a test when possible, re-check each fixed finding, then ask for a cross review.
@@ -208,8 +223,12 @@ else CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"; AGENT_CMD=("$CODEX" -m "
 ui_section "AUDIT"
 ui_kv "$(t "Scope")" "$SCOPE"
 ui_kv "$(t "Depth")" "$DEPTH"
-ui_kv "$(t "Deliverables")" "$FIXES · ${DIR} ${C_DIM}($(t "kept out of Git"))${C_RESET}"
+case "$FIXES" in report) fix_l="$(t "Report only")" ;; branch) fix_l="$(t "Report, plan and fixes on a branch")" ;; *) fix_l="$(t "Report and fix plan")" ;; esac
+ui_kv "$(t "Deliverables")" "$fix_l · ${DIR} ${C_DIM}($(t "kept out of Git"))${C_RESET}"
 ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)"
+team="$(t "explorer")"; ai_has_claude && team="$team · $(t "validator Sonnet 5.5 (high)")"
+ai_has_codex && team="$team · $(t "cross review GPT-6-Sol")"
+ui_kv "$(t "Team")" "$team"
 ui_kv "Skill" "$SKILL_NOTE"
 ui_kv "$(t "Phase")" "$(loomy_phase_label "$cur") ${C_DIM}($(t "step %s of %s" "$(loomy_phase_index "$cur")" "$LOOMY_PHASE_COUNT"))${C_RESET}"
 

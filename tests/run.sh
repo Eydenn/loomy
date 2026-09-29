@@ -1051,6 +1051,8 @@ has "audit: auditor on the security role" "claude-opus|gpt-6-astra"
 file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
 file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
 file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"
+file_has "audit: Sonnet 5.5 high validator in the team" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_EFFORT=high .*delegate-to-claude.sh\" reviewer"
+file_has "audit: cross review by the other family" "$AR/.loomy/audit-prompt.txt" "delegate-to-codex.sh\" reviewer"
 [[ -z "$(git -C "$AR" status --porcelain)" ]] && ok "audit: nothing added to Git" || ko "audit: Git sees $(git -C "$AR" status --porcelain | tr '\n' ' ')"
 (cd "$AR" && "$LOOMY" status) >"$OUT" 2>&1
 has "audit: status shows the audit phases" "AUDIT.*step 1 of 6"

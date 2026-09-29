@@ -1513,5 +1513,10 @@ _t_fr() {
     'Phases: scope, analysis, validation of findings, report, fix plan, fixes (on a branch, only when allowed).') _T='Phases : périmètre, analyse, validation des constats, rapport, plan de corrections, corrections (sur une branche, seulement si autorisé).' ;;
     'Uses Cloudflare'\''s official security-audit skill (https://github.com/cloudflare/security-audit-skill, MIT).') _T='Utilise le skill officiel security-audit de Cloudflare (https://github.com/cloudflare/security-audit-skill, MIT).' ;;
     'The report stays out of Git (.loomy/audits/): it can describe exploitable weaknesses.') _T='Le rapport reste hors de Git (.loomy/audits/) : il peut décrire des failles exploitables.' ;;
+    'explorer') _T='explorateur' ;;
+    'validator Sonnet 5.5 (high)') _T='validateur Sonnet 5.5 (high)' ;;
+    'cross review GPT-6-Sol') _T='relecture croisée GPT-6-Sol' ;;
+    'Team') _T='Équipe' ;;
+    'Report and fix plan') _T='Rapport et plan de corrections' ;;
   esac
 }

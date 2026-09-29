@@ -2,7 +2,12 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.5.8 — 2026-09-28
+## 0.5.9 — 2026-09-29
+
+### Changed
+- **Thrifty profile: a Claude lead agent runs on Sonnet 5.5 `medium`** instead of Opus 5.5 `medium`. In a real orchestration test (same task, lead agent delegating to GPT-6-Luna and checking the result, graded by a hidden test), Sonnet 5.5 `medium` got the same result for about half the lead agent's cost and faster; at `high` it was no cheaper than Opus. The architect, debugger and security roles stay on Opus 5.5, as Anthropic recommends for work needing judgment. A Codex lead agent is unchanged (Astra `medium`). Details in `docs/MODEL_CATALOG.md`.
+
+
 
 ### Changed
 - **Claude Sonnet 5.5** (released 2026-09-28, same price as Sonnet 5) heads the Claude `mid` chain: developer, reviewer, executor and documenter on the Claude side. Sonnet 5 stays as its fallback for accounts without access, to be removed once it is no longer offered. The lead agent and the high-stakes specialists stay on Opus 5.5 at high. Catalog dated 2026-09-28 (`loomy update --catalog` for earlier versions); rationale and sources in `docs/MODEL_CATALOG.md`. Checked with `loomy doctor --live`: every model of the chains answers.

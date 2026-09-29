@@ -367,7 +367,7 @@ ask_all() {
   UI_LABEL="$(t "Profile")"
   choose_coded BUDGET "Model cost / quality profile?" "$(ans budget equilibre)" \
     "The lead agent always stays on the best model; the profile sets each role's effort and model (details: loomy route)." \
-    "econome|Thrifty|Lead agent and specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
+    "econome|Thrifty|Claude lead on Sonnet 5.5 (Codex lead on Astra), specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
     "equilibre|Balanced (recommended)|Lead agent at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio." \
     "qualite|Max quality|Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries."
   ai_env_for "$MODE" "$LEAD"

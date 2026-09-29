@@ -327,7 +327,10 @@ ai_route() {
   case "$profile" in
     econome)
       case "$role" in
-        lead|architect|security|debugger) effort="$(ai_effort_shift "$effort" -1 max)" ;;
+        # Claude lead: Sonnet 5.5 medium (same result as Opus 5.5 medium for half the cost in the 2026-09-29 test,
+        # docs/MODEL_CATALOG.md); the hard roles stay on Opus.
+        lead) if [[ "$family" == "claude" ]]; then tier="MID"; effort="medium"; else effort="$(ai_effort_shift "$effort" -1 max)"; fi ;;
+        architect|security|debugger) effort="$(ai_effort_shift "$effort" -1 max)" ;;
         reviewer|developer) [[ "$effort" == "high" || "$effort" == "xhigh" ]] && effort="$(ai_effort_shift "$effort" -1 max)" ;;
       esac ;;
     qualite)

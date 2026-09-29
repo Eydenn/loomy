@@ -145,6 +145,8 @@ run "route lead" "$LOOMY" route lead
 has "lead agent on the best model" "opus|astra"
 run "route get executor" "$LOOMY" route get executor
 if [[ "$(wc -w <"$OUT" | tr -d ' ')" == "3" ]]; then ok "route get: family model effort"; else ko "route get: unexpected format ($(cat "$OUT"))"; fi
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve lead hybrid-claude econome; a="$R_MODEL $R_EFFORT"; ai_resolve architect hybrid-claude econome; b="$R_MODEL $R_EFFORT"; ai_resolve lead hybrid-codex econome; echo "$a | $b | $R_MODEL $R_EFFORT"' _ "$REPO")"
+[[ "$got" == "claude-sonnet-5-5 medium | claude-opus-5-5 medium | gpt-6-astra medium" ]] && ok "Thrifty: Claude lead on Sonnet 5.5 medium, hard roles on Opus, Codex lead unchanged" || ko "Thrifty routing: $got"
 
 # Fallback: without Codex, a hybrid mode falls back to Claude alone.
 # Each environment puts the lead agent and the executor on the right family.

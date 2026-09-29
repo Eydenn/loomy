@@ -39,7 +39,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
    - Vendor figures: 97.8 % of Opus 5.5 on average across eight benchmarks, ahead on Terminal-Bench 4.0 (70.6 % against 66.4 %); up to 30 % fewer tokens per task (12 to 14 % in early customer tests).
    - AA: intelligence 52 at xhigh and 56 at max, against 58 for Opus 5.5 at max; but at max effort it costs $7.60 per task, far above Opus 5.5 at high ($1.82 for 53.6).
    - Consequence: it takes the head of the Claude `mid` chain (developer, reviewer, executor, documenter on the Claude side), Sonnet 5 as fallback. The lead agent and the high-stakes specialists stay on Opus 5.5 at high, which is still cheaper for the same level of reasoning. To be reviewed once independent agentic coding figures are out.
-8. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
+8. **Sonnet 5.5 medium as the Thrifty lead agent** (test of 2026-09-29, below): same result as Opus 5.5 medium for about half the lead agent's cost, and faster. Anthropic recommends Sonnet 5.5 at `medium` for well-specified agentic work and Opus 5.5 for long work needing judgment: the architect, debugger and security roles stay on Opus.
+9. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
 
 ## Resulting role matrix (Balanced profile)
 
@@ -56,10 +57,23 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | Documenter | Sonnet 5.5 low | Sol low | Sonnet 5 low | Sol low | accuracy over price (Luna is wrong too often) |
 
 Profiles:
-- `econome` lowers the lead agent and specialists' effort by one notch.
+- `econome` puts a Claude lead agent on Sonnet 5.5 `medium` (a Codex lead stays on Astra, one notch lower) and lowers the specialists' effort by one notch.
 - `qualite` raises it by one notch (the full Codex debugger moves to Astra xhigh), puts reviews on the best model and moves the executor to Sol or Sonnet high.
 
 Run `ai-route.sh --profile <profile> all` to see the exact matrices.
+
+## Lead agent test: Opus 5.5 or Sonnet 5.5 (2026-09-29)
+
+Same small orchestration task in three copies of a hybrid Loomy project (Claude lead, structured delegations): fix two bugs and add a function in a Python module, with tests. The lead agent delegates to the executor (GPT-6-Luna max) through `delegate-to-codex.sh`, then checks the result itself. A hidden test (4 checks), never shown to the agents, grades the result.
+
+| Lead agent | Time | Turns | Lead agent cost | Executor cost | Hidden test |
+|---|---|---|---|---|---|
+| Opus 5.5 medium (Thrifty until 0.5.8) | 2 min 14 | 6 | $0.23 | $0.005 | 4/4 |
+| Sonnet 5.5 high | 2 min 04 | 10 | $0.26 | $0.004 | 4/4 (one extra edge case fixed) |
+| **Sonnet 5.5 medium** | **1 min 48** | 6 | **$0.12** | $0.005 | 4/4 |
+
+Costs are Loomy's estimates at list price, cache writes included. Claude Code 2.1.283 does not know Sonnet 5.5 yet and reported $0.48 for the `high` run.
+Takeaways: at `high`, Sonnet 5.5 spends more turns and tokens and ends up no cheaper than Opus 5.5 at `medium`; at `medium` it halves the cost with the same result. One small task is not a benchmark: to be confirmed on longer work.
 
 ## Limits
 - **Recent data:** the models came out on 2026-09-22.
@@ -128,4 +142,5 @@ To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gp
 - [Claude Sonnet 5.5 at unchanged Sonnet 5 pricing (Unite.AI)](https://www.unite.ai/anthropic-releases-claude-sonnet-5-5-at-unchanged-sonnet-5-pricing/)
 - [Claude Sonnet 5.5 by effort level (Artificial Analysis)](https://artificialanalysis.ai/models/releases/claude-sonnet-5-5)
 - [Claude Sonnet 5.5 against Opus 5.5, cost per task (Roo)](https://roo.beehiiv.com/p/claude-sonnet-5-5-cost-benchmarks)
+- [Building with Claude Sonnet 5.5 (Anthropic)](https://claude.dev/blog/building-with-claude-sonnet-5-5/)
 - Codex local model catalog (`~/.codex/models_cache.json`), and real tests with `ai-doctor.sh --live` on 2026-09-23.

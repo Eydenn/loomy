@@ -316,7 +316,7 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 <sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
 
 **Budget profiles.** The lead agent always stays on the top model; only role efforts and models change:
-- **Thrifty:** lead agent and specialists at `medium`, execution on fast models;
+- **Thrifty:** Claude lead on Sonnet 5.5 `medium` (Codex lead on Astra `medium`), specialists at `medium`, execution on fast models;
 - **Balanced (default):** the matrix above;
 - **Max quality:** lead agent and specialists at `xhigh`, reviews on the top model, execution on Sol or Sonnet `high`.
 
@@ -567,7 +567,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.5 | **structured delegations** (optional, chosen in the questionnaire): tasks and results as fixed fields, checked by the bridges, outcomes in status, log and stats; Codex CLI found again after a ChatGPT app update |
 | ✅&nbsp;0.5.6 | **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
 | ✅&nbsp;0.5.7 | **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
-| ✅&nbsp;0.5.8 | **Current version** · **Claude Sonnet 5.5** heads everyday Claude work (Sonnet 5 as fallback); lead agents unchanged |
+| ✅&nbsp;0.5.8 | **Claude Sonnet 5.5** heads everyday Claude work (Sonnet 5 as fallback); lead agents unchanged |
+| ✅&nbsp;0.5.9 | **Current version** · **Thrifty profile: Sonnet 5.5 as the Claude lead agent** (`medium`), Opus kept for the hard roles; checked in a real orchestration test |
 | 🔜 | **Day-to-day work after bootstrap** |
 | | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
 | | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |

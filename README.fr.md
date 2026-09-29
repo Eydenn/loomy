@@ -123,7 +123,7 @@ flowchart LR
 ```
 
 1. **Diagnostic.** Vérifie les versions des CLI, trouve Codex même caché dans l'app ChatGPT, contrôle les modèles disponibles, et propose les corrections.
-2. **Questionnaire.** Treize questions en français, groupées par thème, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une quatorzième demande tes forfaits Claude et ChatGPT. ← revient à la question précédente ; dans un champ texte, Tab reprend la suggestion pour la modifier (nom du projet, nom du dépôt…).
+2. **Questionnaire.** Treize questions en français, groupées par thème, chacune avec la conséquence de chaque choix : type de projet, stade, risque, mode IA, outil principal, budget, autorisations Git. La première fois, une quatorzième demande tes forfaits Claude et ChatGPT. Pour un nouveau projet, un modèle (application SaaS, landing page, API REST, CLI, modèles d'e-mails) pré-remplit les réponses et donne à l'orchestrateur une structure de départ. ← revient à la question précédente ; dans un champ texte, Tab reprend la suggestion pour la modifier (nom du projet, nom du dépôt…).
 3. **Routage.** Transforme le brief et les outils installés en une matrice rôle → modèle → effort, avec repli automatique si une CLI manque.
 4. **Orchestrateur.** La session principale suit `START.md` :
 
@@ -177,11 +177,19 @@ Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou repren
 
 ### 3. Ensuite : le développement au quotidien
 
-Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md` et `CLAUDE.md`. Pour chaque évolution :
+Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md` et `CLAUDE.md`.
 
-1. `loomy start`, puis décris ta demande : une fonctionnalité, un bug, un refactor ;
-2. l'orchestrateur propose, puis délègue l'exécution, la revue ou la sécurité au rôle adapté ;
-3. tu suis avec `loomy watch`, tu relis le diff, tu valides le commit.
+- **`loomy task "…"`** : une tâche nommée (une fonctionnalité, un bug, un refactor).
+  - Ses phases sont plan → validation → construction → vérification → commit, suivies dans `loomy watch` avec la durée, les délégations et le coût.
+  - L'orchestrateur tient le plan et une liste d'avancement dans `.loomy/tasks/<n>-<nom>.md` : une longue tâche se reprend avec `loomy task --resume`.
+  - `.loomy/TASKS.md` liste toutes les tâches, et `loomy task` seul affiche la liste.
+- **`loomy review`** : une relecture croisée à la demande de la branche en cours, ou des modifications non commitées. En mode hybride, elle est faite par l'autre famille de modèles, en lecture seule, et enregistrée dans `.loomy/reviews/`.
+- **`loomy report`** : les chiffres du projet (démarrage, tâches, délégations par rôle et par modèle, tokens, coût).
+  - `--md` l'écrit en Markdown dans `docs/reports/`, à garder dans le dépôt.
+  - `--all` compare tous les projets Loomy de la machine.
+- **`loomy models`** : les chaînes de modèles utilisées et les nouveaux modèles à évaluer. Tu peux placer un nouveau modèle en tête de sa chaîne avec deux replis au plus, passer en mode économe (`--thrifty on` : les replis d'abord), ou le suggérer sur GitHub (`--issue`, un ticket par modèle, sans doublon).
+
+`loomy start` ouvre toujours une session libre.
 
 > [!TIP]
 > **Recommandations.** Une demande claire par session, avec le résultat attendu. Demande une proposition avant tout changement large. Relis chaque diff avant de committer. Pour les sujets sensibles (authentification, paiements, données personnelles), demande explicitement une revue du rôle sécurité.
@@ -476,6 +484,10 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;rôle&gt;&nbsp;"…"</code> | confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur) |
+| ✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> | une tâche nommée pour l'orchestrateur : plan, validation, construction, vérification, commit, suivie dans `watch` ; sans argument, la liste ; `--resume`, `--print` |
+| 🔍&nbsp;<code>loomy&nbsp;review</code> | relecture croisée à la demande de la branche en cours (`[base]`) ou des modifications non commitées (`--working`, `--staged`), en lecture seule, enregistrée dans `.loomy/reviews/` |
+| 🧾&nbsp;<code>loomy&nbsp;report</code> | chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` en Markdown dans `docs/reports/` ; `--all` tous les projets |
+| 🧬&nbsp;<code>loomy&nbsp;models</code> | chaînes de modèles et nouveaux modèles à évaluer ; tête de chaîne avec deux replis (cette machine), `--thrifty on\|off`, `--issue` (suggestion GitHub) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | audit de sécurité d'un dépôt Git existant, une mission plutôt qu'un projet (voir plus bas) : `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
@@ -653,13 +665,13 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.5.9 | **Profil Économe : Sonnet 5.5 orchestrateur côté Claude** (`medium`), Opus gardé pour les rôles difficiles ; vérifié par un test d'orchestration réel |
 | ✅&nbsp;0.6.0 | **Audit de sécurité** (`loomy audit`) : une mission avec ses propres phases suivies dans `loomy watch`, le skill security-audit de Cloudflare, une équipe multi-agents (auditeur, explorateur, validateur Sonnet 5.5 en effort élevé, relecture croisée), rapport et plan de corrections hors de Git, corrections sur une branche si autorisé |
 | ✅&nbsp;0.6.1 | équipe d'audit entièrement sur des modèles rigoureux (explorateur sur Sonnet 5.5 ou GPT-6-Sol) |
-| ✅&nbsp;0.6.2 | **Version actuelle** · premier usage d'un modèle local : le rédacteur de l'audit passe sur LM Studio quand Codex n'est pas disponible (texte seul, rien ne sort de la machine) |
-| 🔜 | **Le quotidien après le bootstrap** |
-| | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; fichier d'avancement (`TASKS.md`) tenu par l'agent pendant les tâches longues |
-| | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), propose de les placer en tête de chaîne avec jusqu'à deux replis (ex. Opus 6 → Opus 5.5 → Opus 5), et un mode économe qui préfère les replis ; ouvre sur GitHub un ticket de suggestion par nouveau modèle (étiquette `modèles`, sans doublon : ticket existant retrouvé et complété plutôt que recréé), pour évaluation avant publication du catalogue |
-| | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |
-| | Modèles de projet (web, API, CLI, e-mails…) qui pré-remplissent le brief et la structure |
-| | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, page HTML à partager |
+| ✅&nbsp;0.6.2 | premier usage d'un modèle local : le rédacteur de l'audit passe sur LM Studio quand Codex n'est pas disponible (texte seul, rien ne sort de la machine) |
+| ✅&nbsp;0.7.0 | **Version actuelle** · **Le quotidien après le bootstrap** |
+| ✅ | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; un fichier d'avancement par tâche (`.loomy/tasks/`, index dans `.loomy/TASKS.md`) tenu par l'agent pendant les tâches longues |
+| ✅ | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), en place un en tête de sa chaîne avec deux replis au plus, un mode économe qui préfère les replis ; un ticket GitHub de suggestion par nouveau modèle (étiquette `models`, sans doublon) |
+| ✅ | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |
+| ✅ | Modèles de projet (application SaaS, landing page, API REST, CLI, modèles d'e-mails) qui pré-remplissent le brief et donnent une structure de départ |
+| ✅ | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, fichier Markdown à garder dans le dépôt |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

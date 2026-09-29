@@ -414,4 +414,5 @@ if (( RUN_WIZARD )); then ui_warn "$(t "Non-interactive terminal")" "$(t "questi
 ui_section "$(t "NEXT STEP")"
 ui_rail "${C_BRAND}1${C_RESET}  $(t "Fill in the project brief:") ${C_BOLD}${brief_cmd}${C_RESET}"
 ui_rail "${C_BRAND}2${C_RESET}  $(t "Start the lead agent:") ${C_BOLD}loomy start${C_RESET}"
+loomy_project_register "$TARGET" 2>/dev/null || true
 ui_end "$(t "START.md, .loomy/ and one .gitignore line added; nothing else is changed")"

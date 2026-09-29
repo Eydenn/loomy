@@ -83,6 +83,10 @@ else
   t "- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>."; echo
   t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
 fi
+k_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/task.state" 2>/dev/null | head -1 || true)"
+if [[ -n "$k_phase" && "$k_phase" != "done" ]]; then
+  t "- Current task #%s (%s), phase %s: plan and progress in %s. Continue it and record its phases with .loomy/scripts/ai-status.sh --task set <phase>." "$(sed -n 's/^id=//p' "$ROOT/.loomy/task.state" | head -1)" "$(sed -n 's/^title=//p' "$ROOT/.loomy/task.state" | head -1)" "$k_phase" "$(sed -n 's/^file=//p' "$ROOT/.loomy/task.state" | head -1)"; echo
+fi
 a_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/audit.state" 2>/dev/null | head -1 || true)"
 if [[ -n "$a_phase" && "$a_phase" != "done" ]]; then
   t "- A security audit is in progress (loomy audit, phase %s): its mission is in .loomy/audit.md; if the user is working on it, continue it and record its phases with .loomy/scripts/ai-status.sh --audit set <phase>." "$a_phase"; echo

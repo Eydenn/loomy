@@ -15,10 +15,13 @@ LOOMY_PHASE_MODE="project"
 # Audit (loomy audit): a mission on an existing codebase, with its own phases and state (.loomy/audit.state),
 # never mixed with the project's bootstrap.
 LOOMY_AUDIT_PHASES="scope analyze validate report plan fix"
+# Task (loomy task): a named piece of work after the bootstrap, its own state (.loomy/task.state).
+LOOMY_TASK_PHASES="plan approve build verify commit"
 
 # loomy_phases_mode <project|audit>: which list the helpers below work on.
 loomy_phases_mode() {
   if [[ "$1" == "audit" ]]; then LOOMY_PHASE_MODE="audit"; LOOMY_PHASES="$LOOMY_AUDIT_PHASES"; LOOMY_PHASE_COUNT=6
+  elif [[ "$1" == "task" ]]; then LOOMY_PHASE_MODE="task"; LOOMY_PHASES="$LOOMY_TASK_PHASES"; LOOMY_PHASE_COUNT=5
   else LOOMY_PHASE_MODE="project"; LOOMY_PHASES="brief discover interview propose approve build verify document commit retire"; LOOMY_PHASE_COUNT=10; fi
 }
 
@@ -29,12 +32,25 @@ loomy_phase_label() {
     verify) t "Verification"; echo ;; document) t "Documentation"; echo ;; commit) t "Commit"; echo ;;
     retire) t "Wrap-up"; echo ;; done) t "Done"; echo ;;
     scope) t "Scope"; echo ;; analyze) t "Analysis"; echo ;; validate) t "Validation of findings"; echo ;;
-    report) t "Report"; echo ;; plan) t "Fix plan"; echo ;; fix) t "Fixes"; echo ;; "") t "Not started"; echo ;; *) echo "$1" ;;
+    report) t "Report"; echo ;; fix) t "Fixes"; echo ;;
+    plan) if [[ "$LOOMY_PHASE_MODE" == "task" ]]; then t "Plan"; echo; else t "Fix plan"; echo; fi ;; "") t "Not started"; echo ;; *) echo "$1" ;;
   esac
 }
 
 # loomy_phase_agent <phase> : ce que fait l'orchestrateur pendant cette phase.
 loomy_phase_agent() {
+  if [[ "$LOOMY_PHASE_MODE" == "task" ]]; then
+    case "$1" in
+      plan) t "The lead agent reads the code involved and writes the plan in the task file."; echo ;;
+      approve) t "The lead agent waits for your go-ahead on the plan."; echo ;;
+      build) t "The lead agent does the task and delegates to the roles; the progress is ticked in the task file."; echo ;;
+      verify) t "Tests and a cross review of the changes (loomy review)."; echo ;;
+      commit) t "Commit of the task, once you agree."; echo ;;
+      done) t "Task finished: duration, delegations and cost below."; echo ;;
+      *) t "No phase recorded yet."; echo ;;
+    esac
+    return 0
+  fi
   case "$1" in
     brief) t "The questionnaire is filled in; the lead agent hasn't started yet."; echo ;;
     discover) t "The lead agent reads the brief and explores the project folder."; echo ;;
@@ -61,6 +77,18 @@ loomy_phase_agent() {
 
 # loomy_phase_you <phase>: what the user must do (shown as "Your turn: …").
 loomy_phase_you() {
+  if [[ "$LOOMY_PHASE_MODE" == "task" ]]; then
+    case "$1" in
+      plan) t "nothing for now; keep the session open."; echo ;;
+      approve) t "approve the plan or ask for changes in its session."; echo ;;
+      build) t "follow the delegations here; the agent will ask you if a choice comes up."; echo ;;
+      verify) t "look at the review findings it reports."; echo ;;
+      commit) t "check the proposed commit (git log, git show)."; echo ;;
+      done) t "start the next one with loomy task \"…\"."; echo ;;
+      *) t "open the task session with loomy task --resume."; echo ;;
+    esac
+    return 0
+  fi
   case "$1" in
     ""|brief) t "start the lead agent with loomy start."; echo ;;
     discover) t "nothing for now; keep the session open."; echo ;;
@@ -100,9 +128,11 @@ loomy_you_now() {
     open*) loomy_phase_you "$1" ;;
     closed*)
       if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "reopen the audit session with loomy audit --resume; it will resume at this phase."; echo
+      elif [[ "$LOOMY_PHASE_MODE" == "task" ]]; then t "reopen the task session with loomy task --resume; it will resume at this phase."; echo
       else t "reopen the lead agent session with loomy start; it will resume at this phase."; echo; fi ;;
     *)
       if [[ "$LOOMY_PHASE_MODE" == "audit" ]]; then t "open the audit session with loomy audit --resume."; echo
+      elif [[ "$LOOMY_PHASE_MODE" == "task" ]]; then t "open the task session with loomy task --resume."; echo
       else t "open the lead agent session with loomy start."; echo; fi ;;
   esac
 }

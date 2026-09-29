@@ -153,6 +153,10 @@ usage() {
   _h_group "$(t "PROJECT")"
   _h_cmd init "$(t "[folder] [options]")" "$(t "Creates or sets up a project, new or existing (offers to create the folder from the project name): questionnaire, then structure set up by the lead agent. Project already set up: resume, --update, --reset")"
   _h_cmd brief "" "$(t "Runs the current project's questionnaire again")"
+  _h_cmd task "[\"…\"|--resume]" "$(t "A named task for the lead agent after the bootstrap: plan, approval, build, verification, commit, followed in loomy watch; without argument, the list of tasks")"
+  _h_cmd review "[base|--staged|--working]" "$(t "On-demand cross review of the current branch or of uncommitted changes, by the other model family in hybrid mode (read-only, saved in .loomy/reviews/)")"
+  _h_cmd models "[--issue|--thrifty on|off]" "$(t "Model chains in use and new models to evaluate (Codex list, vendor APIs with a key, published catalog); put one at the head of its chain, suggest it on GitHub, or prefer fallbacks (low-cost mode)")"
+  _h_cmd report "[--all] [--md [dir]]" "$(t "Project report: bootstrap, tasks, delegations by role and model, tokens and cost; --all compares every project on this machine; --md writes it as Markdown in the repository (docs/reports/)")"
   _h_cmd audit "[--resume|--print|--yes]" "$(t "Security audit of an existing repository with Cloudflare's security-audit skill: scope, analysis, validated findings, report and fix plan (kept out of Git), fixes on a branch if you want; followed in loomy watch")"
   _h_cmd assess "[--print]" "$(t "Assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (.loomy/assessment.md)")"
   _h_cmd start "[--resume|--new|--print] [--watch]" "$(t "Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside")"
@@ -218,6 +222,10 @@ case "$cmd" in
   status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
   assess) exec bash "$S/ai-assess.sh" --root "$(project_root)" "$@" ;;
   audit) exec bash "$S/ai-audit.sh" --root "$(project_root)" "$@" ;;
+  task|tasks) exec bash "$S/ai-task.sh" --root "$(project_root)" "$@" ;;
+  review) exec bash "$S/ai-review.sh" --root "$(project_root)" "$@" ;;
+  report) exec bash "$S/ai-report.sh" --root "$(project_root)" "$@" ;;
+  models) exec bash "$S/ai-models.sh" "$@" ;;
   stats) exec bash "$S/ai-stats.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
   worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;
@@ -253,9 +261,12 @@ case "$cmd" in
           delegation_format) [[ "$val" =~ ^(auto|structured|free)$ ]] || { t "delegation_format: structured, free or auto (the project's choice)" >&2; echo >&2; exit 2; } ;;
           lang) [[ "$val" =~ ^(auto|fr|en)$ ]] || { t "lang: auto, fr or en" >&2; echo >&2; exit 2; } ;;
           screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { t "screen: auto, alt or clear" >&2; echo >&2; exit 2; } ;;
+          chain.claude.top|chain.claude.mid|chain.claude.fast|chain.codex.top|chain.codex.mid|chain.codex.fast)
+            [[ "$val" == "auto" || "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(,\ ?[A-Za-z0-9][A-Za-z0-9._-]*){0,2}$ ]] || { t "%s: up to three model ids separated by commas (newest first), or auto" "$key" >&2; echo >&2; exit 2; } ;;
+          models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

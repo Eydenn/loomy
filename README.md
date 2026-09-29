@@ -125,7 +125,7 @@ flowchart LR
 ```
 
 1. **Check.** Verifies CLI versions, finds Codex even when it is bundled inside the ChatGPT app, checks model availability, and offers fixes.
-2. **Questionnaire.** Thirteen questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a fourteenth asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
+2. **Questionnaire.** Thirteen questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a fourteenth asks for your Claude and ChatGPT subscriptions. For a new project, a template (SaaS web app, landing page, REST API, CLI, email templates) prefills the answers and gives the lead agent a starting structure. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
 3. **Routing.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing.
 4. **Lead agent.** The main session follows `START.md`:
 
@@ -161,7 +161,19 @@ The simplest: **`loomy`** in the project folder, then "Ouvrir ou reprendre la se
 
 ### 3. Then: day-to-day development
 
-After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` and `CLAUDE.md`. For each change: `loomy start`, describe the request, let it propose and delegate, follow with `loomy watch`, review the diff, approve the commit. One clear request per session; ask for a proposal before any large change; ask for a security review on sensitive topics.
+After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` and `CLAUDE.md`.
+
+- **`loomy task "…"`**: a named task (a feature, a bug, a refactor).
+  - Its phases are plan → approval → build → verification → commit, followed in `loomy watch` with duration, delegations and cost.
+  - The lead agent keeps the plan and a progress checklist in `.loomy/tasks/<n>-<name>.md`, so a long task can be resumed with `loomy task --resume`.
+  - `.loomy/TASKS.md` lists every task, and `loomy task` alone shows the list.
+- **`loomy review`**: an on-demand cross review of the current branch, or of the uncommitted changes. In hybrid mode it is done by the other model family, read-only, and saved in `.loomy/reviews/`.
+- **`loomy report`**: the project's figures (bootstrap, tasks, delegations by role and model, tokens, cost).
+  - `--md` writes it as Markdown in `docs/reports/`, to keep in the repository.
+  - `--all` compares every Loomy project on the machine.
+- **`loomy models`**: the model chains in use and the new models to evaluate. You can put a new model at the head of its chain with up to two fallbacks, switch to low-cost mode (`--thrifty on`: the fallbacks first), or suggest it on GitHub (`--issue`, one issue per model, no duplicates).
+
+`loomy start` still opens a free session. One clear request per session; ask for a proposal before any large change; ask for a security review on sensitive topics.
 
 ### 4. Update, resume or reset
 
@@ -416,6 +428,10 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it) |
+| ✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> | a named task for the lead agent: plan, approval, build, verification, commit, followed in `watch`; without argument, the list; `--resume`, `--print` |
+| 🔍&nbsp;<code>loomy&nbsp;review</code> | on-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/` |
+| 🧾&nbsp;<code>loomy&nbsp;report</code> | project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project |
+| 🧬&nbsp;<code>loomy&nbsp;models</code> | model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on\|off`, `--issue` (GitHub suggestion) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
@@ -588,13 +604,13 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.5.9 | **Thrifty profile: Sonnet 5.5 as the Claude lead agent** (`medium`), Opus kept for the hard roles; checked in a real orchestration test |
 | ✅&nbsp;0.6.0 | **Security audit** (`loomy audit`): a mission with its own phases followed in `loomy watch`, Cloudflare's security-audit skill, a multi-agent team (auditor, explorer, Sonnet 5.5 high validator, cross review), report and fix plan kept out of Git, fixes on a branch when allowed |
 | ✅&nbsp;0.6.1 | audit team entirely on rigorous models (explorer on Sonnet 5.5 or GPT-6-Sol) |
-| ✅&nbsp;0.6.2 | **Current version** · first local model use: the audit writer falls back to LM Studio when Codex is not available (text only, nothing leaves the machine) |
-| 🔜 | **Day-to-day work after bootstrap** |
-| | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file (`TASKS.md`) kept by the agent during long tasks |
-| | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), offers to put them at the head of a chain with up to two fallbacks (e.g. Opus 6 → Opus 5.5 → Opus 5), and a low-cost mode that prefers fallbacks; opens a GitHub suggestion issue per new model (`models` label, no duplicates: an existing issue is found and updated instead of recreated), for evaluation before the catalog is published |
-| | `loomy review`: on-demand cross review of the current branch or diff |
-| | Project templates (web, API, CLI, emails…) that prefill the brief and structure |
-| | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, shareable HTML page |
+| ✅&nbsp;0.6.2 | first local model use: the audit writer falls back to LM Studio when Codex is not available (text only, nothing leaves the machine) |
+| ✅&nbsp;0.7.0 | **Current version** · **Day-to-day work after bootstrap** |
+| ✅ | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file per task (`.loomy/tasks/`, index in `.loomy/TASKS.md`) kept by the agent during long tasks |
+| ✅ | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), puts one at the head of its chain with up to two fallbacks, a low-cost mode that prefers fallbacks; a GitHub suggestion issue per new model (`models` label, no duplicates) |
+| ✅ | `loomy review`: on-demand cross review of the current branch or diff |
+| ✅ | Project templates (SaaS web app, landing page, REST API, CLI, email templates) that prefill the brief and give a starting structure |
+| ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

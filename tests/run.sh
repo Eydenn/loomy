@@ -1088,6 +1088,67 @@ else
   ok "local writer: skipped (curl or python3 missing)"
 fi
 
+section "Day-to-day work"
+DW="$WORK/dayto"; "$LOOMY" init "$DW" --yes --no-clipboard >/dev/null 2>&1
+git -C "$DW" add -A >/dev/null 2>&1; git -C "$DW" -c user.name=t -c user.email=t@t commit -qm init >/dev/null 2>&1
+bash "$REPO/scripts/ai-status.sh" --root "$DW" set "done" >/dev/null
+# loomy task
+(cd "$DW" && "$LOOMY" task "Add a settings page" --print) >"$OUT" 2>&1
+has "task: created and prepared" "#1 · Add a settings page"
+file_has "task: state" "$DW/.loomy/task.state" "^phase=plan$"
+file_has "task: index" "$DW/.loomy/TASKS.md" "#1 Add a settings page"
+file_has "task: prompt with its phases" "$DW/.loomy/task-prompt.txt" "--task set"
+(cd "$DW" && "$LOOMY" status) >"$OUT" 2>&1
+has "task: status shows the task" "TASK.*step 1 of 5"
+bash "$REPO/scripts/ai-status.sh" --root "$DW" --task set build >/dev/null
+grep -q '^status: build' "$DW"/.loomy/tasks/001-*.md && ok "task: file follows the phase" || ko "task: file status not updated"
+file_has "task: title kept in the state" "$DW/.loomy/task.state" "^title=Add a settings page$"
+bash "$REPO/scripts/ai-status.sh" --root "$DW" --task set "done" >/dev/null
+(cd "$DW" && "$LOOMY" status) >"$OUT" 2>&1
+has "task: summary once done" "Task done"
+(cd "$DW" && "$LOOMY" task) >"$OUT" 2>&1
+has "task: list" "#1  Add a settings page"
+# loomy review
+git -C "$DW" checkout -q -b feature && echo "change" >"$DW/new.txt" && git -C "$DW" add new.txt && git -C "$DW" -c user.name=t -c user.email=t@t commit -qm change
+(cd "$DW" && "$LOOMY" review --print) >"$OUT" 2>&1
+has "review: branch against its base" "branch feature against main"
+(cd "$DW" && "$LOOMY" review --tool claude) >"$OUT" 2>&1
+has "review: reviewer answer shown" "answer from the claude double"
+ls "$DW"/.loomy/reviews/*.md >/dev/null 2>&1 && ok "review: saved" || ko "review: not saved"
+git -C "$DW" checkout -q main
+(cd "$DW" && "$LOOMY" review) >"$OUT" 2>&1
+has "review: nothing to review" "Nothing to review"
+# loomy report
+(cd "$DW" && "$LOOMY" report --md) >"$OUT" 2>&1
+has "report: delegations" "DELEGATIONS"
+ls "$DW"/docs/reports/report-*.md >/dev/null 2>&1 && ok "report: Markdown file in docs/reports/" || ko "report: no Markdown file"
+grep -q "$HOME" "$DW"/docs/reports/report-*.md && ko "report: local path leaked in the file" || ok "report: no local path in the file"
+file_has "report: Markdown tables" "$(ls "$DW"/docs/reports/report-*.md | head -1)" "^\| Tokens \|"
+(cd "$DW" && "$LOOMY" report --md reports) >/dev/null 2>&1
+ls "$DW"/reports/report-*.md >/dev/null 2>&1 && ok "report: Markdown file in a chosen folder" || ko "report: chosen folder ignored"
+"$LOOMY" report --all >"$OUT" 2>&1
+has "report --all: projects listed" "dayto"
+# loomy models
+"$LOOMY" models >"$OUT" 2>&1
+has "models: chains shown" "claude.mid"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+"$LOOMY" config set chain.claude.mid "claude-sonnet-9, claude-sonnet-5-5" >/dev/null
+got2="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got2" == "claude-sonnet-9" ]] && ok "models: local chain applied" || ko "models: local chain ($got2)"
+"$LOOMY" models --thrifty on >/dev/null
+got3="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got3" == "claude-sonnet-5-5" ]] && ok "models: low-cost mode prefers the fallback" || ko "models: low-cost mode ($got3)"
+"$LOOMY" models --thrifty off >/dev/null; "$LOOMY" config set chain.claude.mid auto >/dev/null
+fails "models: invalid chain refused" 2 "$LOOMY" config set chain.claude.mid "a, b, c, d"
+got4="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got4" == "$got" ]] && ok "models: back to the catalog" || ko "models: not restored ($got4)"
+# Project templates
+printf -- '---\nname: "API test"\ngoal: "an api"\nrepo: new\ntemplate: api\n---\n' >"$WORK/tpl-answers.md"
+"$LOOMY" init "$WORK/tpl-api" --answers "$WORK/tpl-answers.md" --yes --no-clipboard >/dev/null 2>&1
+file_has "template: API prefills the type" "$WORK/tpl-api/.loomy/brief.md" "^type: api$"
+file_has "template: recorded" "$WORK/tpl-api/.loomy/brief.md" "^template: api$"
+file_has "template: starting structure for the agent" "$WORK/tpl-api/.loomy/brief.md" "OpenAPI contract first"
+
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration
   env -u LOOMY_LANG -u LOOMY_UI_LANG -u LC_ALL -u LC_MESSAGES -u LANG XDG_CONFIG_HOME="$WORK/cfg-lang" "$@" \

@@ -200,6 +200,27 @@ ask_all() {
     "Guides discovery (detected automatically, to confirm)." \
     "new|New project|The agent proposes the stack and structure from scratch." \
     "existing|Existing project to standardise|The agent first analyses what exists and only proposes standardisation changes, without breaking the architecture."
+  TEMPLATE="none"
+  if [[ "$REPO" == "new" ]]; then
+    UI_LABEL="$(t "Template")"
+    choose_coded TEMPLATE "Start from a project template?" "$(ans template none)" \
+      "Prefills the next answers (you can change each one) and gives the lead agent a starting structure." \
+      "none|No template|Every question from scratch." \
+      "saas|SaaS web app|Web front end and back end, user accounts, deployment on Vercel or Netlify." \
+      "landing|Landing page / showcase site|Static or almost static site, no accounts, fast to ship." \
+      "api|REST API with a database|OpenAPI contract, SQL database, validation and integration tests." \
+      "cli|Command-line tool|Node.js CLI published on npm, stable options and help." \
+      "emails|Email templates|Responsive, tested HTML emails (MJML or React Email), with previews and a send test."
+    # Defaults of the next questions, only where nothing was answered yet.
+    tpl_default() { local v="A_$1"; [[ -z "${!v:-}" ]] && printf -v "$v" '%s' "$2"; return 0; }
+    case "$TEMPLATE" in
+      saas) tpl_default type web; tpl_default detail1 vercel; tpl_default detail2 yes; tpl_default stage mvp ;;
+      landing) tpl_default type web; tpl_default detail1 vercel; tpl_default detail2 no; tpl_default stage prototype ;;
+      api) tpl_default type api; tpl_default detail1 rest; tpl_default detail2 sql; tpl_default stage mvp ;;
+      cli) tpl_default type cli; tpl_default detail1 node; tpl_default detail2 registry; tpl_default stage mvp ;;
+      emails) tpl_default type other; tpl_default detail1 "$(t "Email templates (MJML or React Email)")"; tpl_default stage mvp ;;
+    esac
+  fi
 
   ui_step 4 $TOTAL
   UI_LABEL="$(t "Type")"
@@ -608,6 +629,7 @@ write_brief() {
     echo "goal: $(yaml_q "$GOAL")"
     echo "repo: $REPO"
     echo "type: $TYPE"
+    echo "template: ${TEMPLATE:-none}"
     echo "detail1: $(yaml_q "$DETAIL1")"
     echo "detail2: $(yaml_q "$DETAIL2")"
     echo "details: $(yaml_q "$DETAILS")"
@@ -675,6 +697,13 @@ write_brief() {
         t "- AI files in a separate private repository: never version them in the project repository (never git add -f)."; echo
         t "- After each important step and at the end of the session, back them up: \`.loomy/scripts/ai-privacy.sh sync\`."; echo ;;
     esac
+    case "${TEMPLATE:-none}" in
+      saas) t "- Template SaaS web app: propose a front end with server routes, authentication, a database with migrations, a settings page and an end-to-end test of sign-up and sign-in."; echo ;;
+      landing) t "- Template landing page: propose a static site (sections, contact form or call to action, SEO metadata, accessibility checks, Lighthouse above 90)."; echo ;;
+      api) t "- Template REST API: propose an OpenAPI contract first, input validation, SQL migrations, structured errors, integration tests against a test database."; echo ;;
+      cli) t "- Template command-line tool: propose a Node.js CLI with subcommands, --help and --version, clear exit codes, tests of each command, npm packaging."; echo ;;
+      emails) t "- Template email templates: propose MJML or React Email, a shared layout, previews in the browser, checks on the main email clients (dark mode, images off) and a send test."; echo ;;
+    esac
     t "- Project technical name: \`%s\`. Use it for package names, repository names and technical identifiers, so that everything has the same name." "$SLUG"; echo
     if (( REMOTE_HAS_HISTORY )); then t "- The GitHub repository \`%s\` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history." "$GH_USER/$REPO_NAME"; echo; fi
     if [[ -n "$REMOTE_NAME_NOTE" ]]; then t "- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s)." "$REMOTE_NAME_NOTE" "$SLUG"; echo; fi
@@ -736,7 +765,7 @@ while true; do
     save) break ;;
     cancel) ui_rail_end "$(t "Cancelled: no file written.")"; exit 1 ;;
     again)
-      A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"
+      A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"; A_template="${TEMPLATE:-none}"
       A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
       A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_delegation_format="$DELEG_FORMAT"; A_doc_language="$DOCLANG"
       A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES"; A_github_repo="$GITHUB_REPO"; A_repo_name="$REPO_NAME"; A_ai_repo_name="$AI_REPO_NAME" ;;

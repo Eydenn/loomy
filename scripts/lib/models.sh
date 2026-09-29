@@ -70,6 +70,21 @@ _ai_catalog_load() {
   done <"$f"
 }
 _ai_catalog_load "$(ai_catalog_file)"
+# Chain set on this machine (loomy models, or loomy config set chain.<family>.<tier> "new, fallback, fallback"):
+# replaces the catalog's chain for that tier. Up to three model ids.
+_ai_local_chains() {
+  local f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" line k v
+  [[ -f "$f" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^chain\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._,\ -]*)$ ]]; then
+      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
+      v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' | cut -d' ' -f1-3)"
+      [[ " $v" == *" -"* || -z "$v" ]] && continue
+      eval "AI_CHAIN_${k}=\"\$v\""
+    fi
+  done <"$f"
+}
+_ai_local_chains
 
 # Model availability on this machine (~/.config/loomy/models.state, "model=ok|ko"): written by
 # loomy doctor --live and by the bridges when a model is refused. Codex: its local model list is authoritative.
@@ -88,10 +103,19 @@ ai_model_usable() {
 }
 # ai_model_pick <family> <tier>: first available model of the chain (the chain's first when none is).
 ai_model_pick() {
-  local chain m fam="$1" k
+  local chain m fam="$1" k skip=0
   k="$(printf '%s' "${1}_${2}" | tr 'a-z' 'A-Z')"
   eval "chain=\"\${AI_CHAIN_${k}:-}\""
-  for m in $chain; do ai_model_usable "$m" "$fam" && { echo "$m"; return 0; }; done
+  # Thrifty model mode (loomy models --thrifty on): the first available fallback rather than the newest model.
+  if grep -qx 'models_mode=thrifty' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null; then
+    local n=0; for m in $chain; do ai_model_usable "$m" "$fam" && n=$(( n + 1 )); done
+    (( n >= 2 )) && skip=1
+  fi
+  for m in $chain; do
+    ai_model_usable "$m" "$fam" || continue
+    (( skip )) && { skip=0; continue; }
+    echo "$m"; return 0
+  done
   echo "${chain%% *}"
 }
 # ai_model_next <family> <model>: next fallback in its chain (empty when there is none), for the bridges.

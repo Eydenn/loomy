@@ -2,7 +2,35 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.6.2 — 2026-09-29
+## 0.7.0 — 2026-09-29
+
+Day-to-day work after the bootstrap.
+
+### Added
+- **`loomy task "…"`**: a named task for the lead agent.
+  - Phases: plan → approval → build → verification (tests, then `loomy review`) → commit. They are recorded in `.loomy/task.state` and never mixed with the bootstrap.
+  - `loomy status` and `loomy watch` show a TASK timeline and, once done, its duration, delegations and cost.
+  - The lead agent keeps the plan, a progress checklist and the result in `.loomy/tasks/<n>-<name>.md`. `.loomy/TASKS.md` indexes every task.
+  - `loomy task` alone lists the tasks; `--resume` reopens the session at the task's phase; `--print` shows the command. The resume context of a Claude session mentions the current task.
+- **`loomy review`**: an on-demand cross review of the current branch against its base (or a given base), of uncommitted changes (`--working`) or of staged ones (`--staged`).
+  - In hybrid mode it is done by the other model family; `--tool` chooses. It is read-only and structured (blocking, important, minor, each with file:line and a fix).
+  - It is saved in `.loomy/reviews/` and logged. Loomy's own files are left out of the diff.
+- **`loomy report`**: bootstrap, tasks, delegations by role and model, working time, tokens and estimated cost, from the project log.
+  - `--md [dir]` writes it as Markdown in `docs/reports/`, to keep in the repository.
+  - `--all` compares every Loomy project on the machine; projects are recorded in `~/.config/loomy/projects` when Loomy is used in them.
+- **`loomy models`**: the chains in use (✓ available, ✗ refused) and new models to evaluate. The sources are Codex's model list, the Anthropic and OpenAI APIs when a key is set, and the published catalog; older generations and technical entries are ignored.
+  - In a terminal, it offers to put a new model at the head of its chain with up to two fallbacks, on this machine only (`loomy config set chain.<tool>.<tier> "a, b, c"`).
+  - `--thrifty on|off` prefers the first available fallback (low-cost mode, `models_mode`).
+  - `--issue` opens one GitHub suggestion issue per model (label `models`) after approval; an existing issue gets a comment instead of a duplicate.
+- **Project templates** in the questionnaire, for a new project: SaaS web app, landing page, REST API, command-line tool, email templates.
+  - A template prefills the next answers, and each one can still be changed.
+  - It is recorded in the brief (`template:`) and gives the lead agent a starting structure.
+
+### Changed
+- Phases now come in three kinds (bootstrap, audit, task), each with its own state, labels and summary in `loomy status` and `loomy watch`.
+- `loomy status`: a phase change keeps the other keys of the state file (a task's id and title).
+
+
 
 ### Added
 - **First use of a local model: the audit writer's fallback.** When Codex is not available and a local model answers on LM Studio (`LOOMY_LOCAL_URL`, `http://127.0.0.1:1234` by default; `LM_API_TOKEN` when the server requires one), `loomy audit` hands the drafting of the report and fix plan to it.

@@ -82,3 +82,11 @@ loomy_plan_monthly() {
   [[ -n "$p" ]] && { echo "$p"; return 0; }
   ai_plan_price "$(loomy_plan "$1")"
 }
+
+# loomy_project_register <root>: remembers a Loomy project on this machine, for loomy report --all (one path per line).
+loomy_project_register() {
+  local f; f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/projects"
+  [[ -n "${1:-}" && -d "$1/.loomy" ]] || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
+  grep -qxF "$1" "$f" 2>/dev/null || printf '%s\n' "$1" >>"$f" 2>/dev/null || true
+}

@@ -1517,3 +1517,176 @@ explorer Sonnet 5.5 (medium)	explorateur Sonnet 5.5 (medium)
 explorer GPT-6-Sol (medium)	explorateur GPT-6-Sol (medium)
 writer GPT-6-Luna	rédacteur GPT-6-Luna
 local writer %s	rédacteur local %s
+A named task for the lead agent after the bootstrap: plan, approval, build, verification, commit, followed in loomy watch; without argument, the list of tasks	Une tâche nommée pour l'orchestrateur après le démarrage : plan, validation, construction, vérification, commit, suivie dans loomy watch ; sans argument, la liste des tâches
+On-demand cross review of the current branch or of uncommitted changes, by the other model family in hybrid mode (read-only, saved in .loomy/reviews/)	Relecture croisée à la demande de la branche en cours ou des modifications non commitées, par l'autre famille de modèles en mode hybride (lecture seule, enregistrée dans .loomy/reviews/)
+Model chains in use and new models to evaluate (Codex list, vendor APIs with a key, published catalog); put one at the head of its chain, suggest it on GitHub, or prefer fallbacks (low-cost mode)	Chaînes de modèles utilisées et nouveaux modèles à évaluer (liste Codex, API des éditeurs avec une clé, catalogue publié) ; en placer un en tête de sa chaîne, le suggérer sur GitHub, ou préférer les replis (mode économe)
+Project report: bootstrap, tasks, delegations by role and model, tokens and cost; --all compares every project on this machine; --html writes a page to share	Bilan du projet : démarrage, tâches, délégations par rôle et par modèle, tokens et coût ; --all compare tous les projets de cette machine ; --html écrit une page à partager
+%s: up to three model ids separated by commas (newest first), or auto	%s : jusqu'à trois identifiants de modèle séparés par des virgules (le plus récent d'abord), ou auto
+models_mode: latest or thrifty	models_mode : latest ou thrifty
+- Current task #%s (%s), phase %s: plan and progress in %s. Continue it and record its phases with .loomy/scripts/ai-status.sh --task set <phase>.	- Tâche en cours #%s (%s), phase %s : plan et avancement dans %s. La poursuivre et enregistrer ses phases avec .loomy/scripts/ai-status.sh --task set <phase>.
+Unknown argument: %s (loomy models --help)	Argument inconnu : %s (loomy models --help)
+Low-cost model mode on: the first available fallback of each chain is used.	Mode économe activé : le premier repli disponible de chaque chaîne est utilisé.
+Low-cost model mode off: the newest available model of each chain is used.	Mode économe désactivé : le modèle disponible le plus récent de chaque chaîne est utilisé.
+--thrifty: on or off	--thrifty : on ou off
+Codex model list	liste des modèles Codex
+catalog of %s	catalogue du %s
+low-cost mode	mode économe
+CHAINS	CHAÎNES
+newest first; the first available one is used	le plus récent d'abord ; le premier disponible est utilisé
+NEW MODELS	NOUVEAUX MODÈLES
+a newer catalog is published (%s): loomy update --catalog	un catalogue plus récent est publié (%s) : loomy update --catalog
+none spotted (Codex model list%s)	aucun repéré (liste des modèles Codex%s)
+vendor APIs	API des éditeurs
+with ANTHROPIC_API_KEY or OPENAI_API_KEY set, the vendors' model lists are checked too	avec ANTHROPIC_API_KEY ou OPENAI_API_KEY définie, les listes de modèles des éditeurs sont aussi consultées
+low-cost mode: loomy models --thrifty on	mode économe : loomy models --thrifty on
+tier %s	niveau %s
+This machine only: %s. The previous models stay as fallbacks.	Cette machine uniquement : %s. Les modèles précédents restent en repli.
+Keeps the catalog's chain.	Garde la chaîne du catalogue.
+Try %s at the head of %s?	Essayer %s en tête de %s ?
+Yes, put it first	Oui, le mettre en premier
+chain %s: %s	chaîne %s : %s
+gh not found	gh introuvable
+loomy doctor --fix installs it	loomy doctor --fix l'installe
+confirmation needed	confirmation nécessaire
+One issue per model on %s (label models); an existing one gets a comment instead.	Un ticket par modèle sur %s (étiquette models) ; un ticket existant reçoit un commentaire à la place.
+Send %s suggestion(s) to GitHub?	Envoyer %s suggestion(s) sur GitHub ?
+Yes, send	Oui, envoyer
+nothing sent	rien n'a été envoyé
+issue #%s updated: %s	ticket #%s complété : %s
+issue not updated: %s	ticket non complété : %s
+issue created: %s	ticket créé : %s
+issue not created: %s	ticket non créé : %s
+suggest them on GitHub: loomy models --issue · low-cost mode: loomy models --thrifty on	les suggérer sur GitHub : loomy models --issue · mode économe : loomy models --thrifty on
+Unknown argument: %s (loomy report --help)	Argument inconnu : %s (loomy report --help)
+No Loomy project here: loomy report --all for every project, or loomy init.	Aucun projet Loomy ici : loomy report --all pour tous les projets, ou loomy init.
+No project recorded yet: they are recorded when you use loomy in them.	Aucun projet enregistré : ils le sont dès que tu utilises loomy dedans.
+%s project(s)	%s projet(s)
+PROJECTS	PROJETS
+set up	en place
+%s task(s)	%s tâche(s)
+last activity %s	dernière activité %s
+Total	Total
+list price, estimate	prix public, estimation
+in %s	en %s
+Activity	Activité
+Tasks	Tâches
+%s, %s done	%s, %s terminée(s)
+Reviews	Relectures
+Audits	Audits
+DELEGATIONS	DÉLÉGATIONS
+working time %s	temps de travail %s
+By role	Par rôle
+By model	Par modèle
+USAGE	CONSOMMATION
+Cost	Coût
+list price, estimate; with a subscription, the quota is what counts: loomy stats	prix public, estimation ; avec un abonnement, c'est le quota qui compte : loomy stats
+LATEST TASKS	DERNIÈRES TÂCHES
+Loomy projects	Projets Loomy
+Loomy report	Bilan Loomy
+Last activity	Dernière activité
+Cost (estimate)	Coût (estimation)
+Working time	Temps de travail
+Reviews · audits	Relectures · audits
+Role	Rôle
+Model	Modèle
+Task	Tâche
+Costs are estimates at list price; with a subscription, the quota is what counts. Generated by Loomy.	Les coûts sont des estimations au prix public ; avec un abonnement, c'est le quota qui compte. Généré par Loomy.
+HTML page: %s	Page HTML : %s
+details by day: loomy stats	détail par jour : loomy stats
+Unknown argument: %s (loomy review --help)	Argument inconnu : %s (loomy review --help)
+loomy review works in a Git repository.	loomy review fonctionne dans un dépôt Git.
+Unknown base: %s	Base inconnue : %s
+branch %s against %s	branche %s par rapport à %s
+staged changes	modifications indexées
+uncommitted changes	modifications non commitées
+Nothing to review: %s is empty.	Rien à relire : %s est vide.
+Cross review	Relecture croisée
+Changes	Modifications
+read-only	lecture seule
+run without --print to start the review	relance sans --print pour lancer la relecture
+review in progress, followed in loomy watch…	relecture en cours, suivie dans loomy watch…
+Saved in %s	Enregistré dans %s
+The review failed (code %s): see loomy log.	La relecture a échoué (code %s) : voir loomy log.
+Task done	Tâche terminée
+task done	tâche terminée
+task in %s	tâche en %s
+Duration, delegations and cost in loomy watch.	Durée, délégations et coût dans loomy watch.
+In progress: %s to resume it.	En cours : %s pour reprendre.
+Session closed at %s (%s) → %s	Session fermée à %s (%s) → %s
+No session recorded → %s	Aucune session enregistrée → %s
+Unknown argument: %s (loomy task --help)	Argument inconnu : %s (loomy task --help)
+TASKS	TÂCHES
+no task yet: loomy task "what to do"	aucune tâche pour l'instant : loomy task "ce qu'il faut faire"
+new task: loomy task "…" · resume: loomy task --resume	nouvelle tâche : loomy task "…" · reprendre : loomy task --resume
+The current task stays unfinished in the list; the new one becomes the current task.	La tâche en cours reste inachevée dans la liste ; la nouvelle devient la tâche en cours.
+Task #%s is not finished (%s). Start the new one anyway?	La tâche #%s n'est pas terminée (%s). Lancer la nouvelle quand même ?
+Yes, start it	Oui, la lancer
+No task to resume here: loomy task "what to do".	Aucune tâche à reprendre ici : loomy task "ce qu'il faut faire".
+TASK	TÂCHE
+File	Fichier
+Open the lead agent session in this folder:	Ouvre la session de l'orchestrateur dans ce dossier :
+Template	Modèle
+Email templates (MJML or React Email)	Modèles d'e-mails (MJML ou React Email)
+- Template SaaS web app: propose a front end with server routes, authentication, a database with migrations, a settings page and an end-to-end test of sign-up and sign-in.	- Modèle SaaS web : proposer un front avec routes serveur, authentification, base de données avec migrations, page de paramètres et test de bout en bout de l'inscription et de la connexion.
+- Template landing page: propose a static site (sections, contact form or call to action, SEO metadata, accessibility checks, Lighthouse above 90).	- Modèle landing page : proposer un site statique (sections, formulaire de contact ou appel à l'action, métadonnées SEO, contrôles d'accessibilité, Lighthouse au-dessus de 90).
+- Template REST API: propose an OpenAPI contract first, input validation, SQL migrations, structured errors, integration tests against a test database.	- Modèle API REST : proposer d'abord un contrat OpenAPI, la validation des entrées, des migrations SQL, des erreurs structurées et des tests d'intégration sur une base de test.
+- Template command-line tool: propose a Node.js CLI with subcommands, --help and --version, clear exit codes, tests of each command, npm packaging.	- Modèle outil en ligne de commande : proposer une CLI Node.js avec sous-commandes, --help et --version, codes de sortie clairs, tests de chaque commande et paquet npm.
+- Template email templates: propose MJML or React Email, a shared layout, previews in the browser, checks on the main email clients (dark mode, images off) and a send test.	- Modèle e-mails : proposer MJML ou React Email, une mise en page commune, des aperçus dans le navigateur, des vérifications sur les principaux clients mail (mode sombre, images désactivées) et un test d'envoi.
+Plan	Plan
+The lead agent reads the code involved and writes the plan in the task file.	L'orchestrateur lit le code concerné et écrit le plan dans le fichier de la tâche.
+The lead agent waits for your go-ahead on the plan.	L'orchestrateur attend ton feu vert sur le plan.
+The lead agent does the task and delegates to the roles; the progress is ticked in the task file.	L'orchestrateur réalise la tâche et délègue aux rôles ; l'avancement est coché dans le fichier de la tâche.
+Tests and a cross review of the changes (loomy review).	Tests et relecture croisée des modifications (loomy review).
+Commit of the task, once you agree.	Commit de la tâche, une fois que tu es d'accord.
+Task finished: duration, delegations and cost below.	Tâche terminée : durée, délégations et coût ci-dessous.
+approve the plan or ask for changes in its session.	valide le plan ou demande des changements dans sa session.
+start the next one with loomy task "…".	lance la suivante avec loomy task "…".
+open the task session with loomy task --resume.	ouvre la session de la tâche avec loomy task --resume.
+reopen the task session with loomy task --resume; it will resume at this phase.	rouvre la session de la tâche avec loomy task --resume ; elle reprendra à cette phase.
+Start from a project template?	Partir d'un modèle de projet ?
+Prefills the next answers (you can change each one) and gives the lead agent a starting structure.	Pré-remplit les réponses suivantes (chacune reste modifiable) et donne à l'orchestrateur une structure de départ.
+No template	Aucun modèle
+Every question from scratch.	Toutes les questions depuis zéro.
+SaaS web app	Application web SaaS
+Web front end and back end, user accounts, deployment on Vercel or Netlify.	Front et back web, comptes utilisateurs, déploiement sur Vercel ou Netlify.
+Landing page / showcase site	Landing page / site vitrine
+Static or almost static site, no accounts, fast to ship.	Site statique ou presque, sans comptes, rapide à livrer.
+REST API with a database	API REST avec base de données
+OpenAPI contract, SQL database, validation and integration tests.	Contrat OpenAPI, base SQL, validation et tests d'intégration.
+Command-line tool	Outil en ligne de commande
+Node.js CLI published on npm, stable options and help.	CLI Node.js publiée sur npm, options stables et aide.
+Email templates	Modèles d'e-mails
+Responsive, tested HTML emails (MJML or React Email), with previews and a send test.	E-mails HTML adaptatifs et testés (MJML ou React Email), avec aperçus et test d'envoi.
+A named task handed to the lead agent after the bootstrap, followed in loomy watch. Bash 3.2 compatible.	Une tâche nommée confiée à l'orchestrateur après le démarrage, suivie dans loomy watch. Compatible Bash 3.2.
+  loomy task "<what to do>"     creates the task and opens the lead agent session on it	  loomy task "<ce qu'il faut faire>"  crée la tâche et ouvre la session de l'orchestrateur dessus
+  loomy task                    lists the tasks (the current one first)	  loomy task                    liste les tâches (la tâche en cours d'abord)
+  loomy task --resume           reopens the session on the current task, at its phase	  loomy task --resume           rouvre la session sur la tâche en cours, à sa phase
+  loomy task --print            prepares the task and shows the command instead of opening the session	  loomy task --print            prépare la tâche et affiche la commande au lieu d'ouvrir la session
+Phases: plan, approval, build, verification (tests and loomy review), commit. The lead agent keeps the plan and	Phases : plan, validation, construction, vérification (tests et loomy review), commit. L'orchestrateur tient le plan et
+a progress checklist in .loomy/tasks/<n>-<name>.md; .loomy/TASKS.md lists every task.	une liste d'avancement dans .loomy/tasks/<n>-<nom>.md ; .loomy/TASKS.md liste toutes les tâches.
+On-demand cross review of the current branch or of uncommitted changes. Bash 3.2 compatible.	Relecture croisée à la demande de la branche en cours ou des modifications non commitées. Compatible Bash 3.2.
+  loomy review                  the current branch against its base (main, or the remote's default branch);	  loomy review                  la branche en cours par rapport à sa base (main, ou la branche par défaut du dépôt distant) ;
+                                uncommitted changes when the branch has no commit of its own	                                les modifications non commitées quand la branche n'a pas de commit propre
+  loomy review <base>           against another base (branch, tag or commit)	  loomy review <base>           par rapport à une autre base (branche, tag ou commit)
+  loomy review --staged         staged changes only        loomy review --working   all uncommitted changes	  loomy review --staged         modifications indexées seulement        loomy review --working   toutes les modifications non commitées
+  loomy review --tool claude|codex   reviewer's tool (by default the other family in hybrid mode)	  loomy review --tool claude|codex   outil du relecteur (par défaut, l'autre famille en mode hybride)
+  loomy review --print          shows what would be reviewed and by whom, without calling a model	  loomy review --print          montre ce qui serait relu et par qui, sans appeler de modèle
+The reviewer is read-only; its findings are saved in .loomy/reviews/ and logged like any delegation.	Le relecteur est en lecture seule ; ses constats sont enregistrés dans .loomy/reviews/ et journalisés comme toute délégation.
+Project report: bootstrap, tasks, delegations by role and model, time, tokens and cost. Bash 3.2 compatible.	Bilan du projet : démarrage, tâches, délégations par rôle et par modèle, temps, tokens et coût. Compatible Bash 3.2.
+  loomy report              this project, in the terminal	  loomy report              ce projet, dans le terminal
+  loomy report --all        every Loomy project on this machine, side by side	  loomy report --all        tous les projets Loomy de cette machine, côte à côte
+  loomy report --html       also writes a self-contained HTML page to share (.loomy/reports/, or the config folder with --all)	  loomy report --html       écrit aussi une page HTML autonome à partager (.loomy/reports/, ou le dossier de config avec --all)
+Figures come from the project log (.loomy/logs); costs are estimates at list price, tokens are exact.	Les chiffres viennent du journal du projet (.loomy/logs) ; les coûts sont des estimations au prix public, les tokens sont exacts.
+The page holds the project name, task titles and figures: no code, no prompt, no path outside the project name.	La page contient le nom du projet, les titres des tâches et des chiffres : ni code, ni prompt, ni chemin en dehors du nom du projet.
+Models: the chains in use, and new models to evaluate. Bash 3.2 compatible.	Modèles : les chaînes utilisées, et les nouveaux modèles à évaluer. Compatible Bash 3.2.
+  loomy models                  chains per tool and tier (✓ available, ✗ refused), then the new models spotted in	  loomy models                  chaînes par outil et par niveau (✓ disponible, ✗ refusé), puis les nouveaux modèles repérés dans
+                                Codex's model list, the vendors' APIs when a key is set, and the published catalog;	                                la liste des modèles de Codex, les API des éditeurs quand une clé est définie, et le catalogue publié ;
+                                in a terminal, offers to put a new model at the head of its chain (two fallbacks kept)	                                dans un terminal, propose de placer un nouveau modèle en tête de sa chaîne (deux replis conservés)
+  loomy models --thrifty on|off prefer the first available fallback over the newest model (low-cost mode)	  loomy models --thrifty on|off préférer le premier repli disponible au modèle le plus récent (mode économe)
+  loomy models --issue          opens (or updates) a GitHub suggestion issue per new model, after your approval	  loomy models --issue          ouvre (ou complète) un ticket de suggestion GitHub par nouveau modèle, après ton accord
+A chain chosen here only applies to this machine (loomy config chain.<tool>.<tier>); the catalog is unchanged.	Une chaîne choisie ici ne s'applique qu'à cette machine (loomy config chain.<outil>.<niveau>) ; le catalogue ne change pas.
+Project report: bootstrap, tasks, delegations by role and model, tokens and cost; --all compares every project on this machine; --md writes it as Markdown in the repository (docs/reports/)	Bilan du projet : démarrage, tâches, délégations par rôle et par modèle, tokens et coût ; --all compare tous les projets de cette machine ; --md l'écrit en Markdown dans le dépôt (docs/reports/)
+Error: cannot create %s	Erreur : impossible de créer %s
+Markdown report: %s	Rapport Markdown : %s
+  loomy report --md [dir]   also writes it as Markdown, to keep in the repository (docs/reports/ by default)	  loomy report --md [dossier]  l'écrit aussi en Markdown, à garder dans le dépôt (docs/reports/ par défaut)
+The file holds the project name, task titles and figures: no code, no prompt, no local path.	Le fichier contient le nom du projet, les titres des tâches et des chiffres : ni code, ni prompt, ni chemin local.

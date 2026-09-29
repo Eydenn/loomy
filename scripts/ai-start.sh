@@ -47,6 +47,7 @@ if [[ ! -f "$BRIEF" ]]; then
   exit 1
 fi
 
+loomy_project_register "$ROOT"
 # ---------------------------------------------------------------- project and lead agent
 ai_detect_env "$ROOT"
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"

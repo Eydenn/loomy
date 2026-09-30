@@ -956,7 +956,7 @@ _t_fr() {
     'The lead agent always stays on the best model; the profile sets each role'\''s effort and model (details: loomy route).') _T='L'\''orchestrateur reste toujours sur le meilleur modèle ; le profil règle les efforts et le modèle de chaque rôle (détail : loomy route).' ;;
     'Claude lead on Sonnet 5.5 (Codex lead on Astra), specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks.') _T='Orchestrateur Claude sur Sonnet 5.5 (Codex sur Astra), spécialistes en effort medium, exécution sur les modèles rapides. Coût minimal, quelques reprises de plus sur les tâches difficiles.' ;;
     'Balanced (recommended)') _T='Équilibré (recommandé)' ;;
-    'Lead agent at high; execution on GPT-6-Luna max or Sonnet 5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.') _T='Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.' ;;
+    'Lead agent at high; execution on GPT-6-Luna max or Sonnet 5.5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio.') _T='Orchestrateur en high ; exécution sur GPT-6-Luna max ou Sonnet 5.5 ; architecture, sécurité et debug difficile sur Opus 5.5 high. Meilleur rapport qualité/coût.' ;;
     'Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries.') _T='Orchestrateur et spécialistes en xhigh, revues sur le modèle de pointe, exécution sur Sol ou Sonnet high. Coût nettement plus élevé, moins de reprises.' ;;
     'Project documentation language?') _T='Langue de la documentation du projet ?' ;;
     'Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English.') _T='Langue des fichiers générés (PROJECT.md, ADR…). Le code et ses identifiants restent en anglais.' ;;
@@ -1514,13 +1514,8 @@ _t_fr() {
     'Uses Cloudflare'\''s official security-audit skill (https://github.com/cloudflare/security-audit-skill, MIT).') _T='Utilise le skill officiel security-audit de Cloudflare (https://github.com/cloudflare/security-audit-skill, MIT).' ;;
     'The report stays out of Git (.loomy/audits/): it can describe exploitable weaknesses.') _T='Le rapport reste hors de Git (.loomy/audits/) : il peut décrire des failles exploitables.' ;;
     'explorer') _T='explorateur' ;;
-    'validator Sonnet 5.5 (high)') _T='validateur Sonnet 5.5 (high)' ;;
-    'cross review GPT-6-Sol') _T='relecture croisée GPT-6-Sol' ;;
     'Team') _T='Équipe' ;;
     'Report and fix plan') _T='Rapport et plan de corrections' ;;
-    'explorer Sonnet 5.5 (medium)') _T='explorateur Sonnet 5.5 (medium)' ;;
-    'explorer GPT-6-Sol (medium)') _T='explorateur GPT-6-Sol (medium)' ;;
-    'writer GPT-6-Luna') _T='rédacteur GPT-6-Luna' ;;
     'local writer %s') _T='rédacteur local %s' ;;
     'A named task for the lead agent after the bootstrap: plan, approval, build, verification, commit, followed in loomy watch; without argument, the list of tasks') _T='Une tâche nommée pour l'\''orchestrateur après le démarrage : plan, validation, construction, vérification, commit, suivie dans loomy watch ; sans argument, la liste des tâches' ;;
     'On-demand cross review of the current branch or of uncommitted changes, by the other model family in hybrid mode (read-only, saved in .loomy/reviews/)') _T='Relecture croisée à la demande de la branche en cours ou des modifications non commitées, par l'\''autre famille de modèles en mode hybride (lecture seule, enregistrée dans .loomy/reviews/)' ;;
@@ -1695,5 +1690,9 @@ _t_fr() {
     'Markdown report: %s') _T='Rapport Markdown : %s' ;;
     '  loomy report --md [dir]   also writes it as Markdown, to keep in the repository (docs/reports/ by default)') _T='  loomy report --md [dossier]  l'\''écrit aussi en Markdown, à garder dans le dépôt (docs/reports/ par défaut)' ;;
     'The file holds the project name, task titles and figures: no code, no prompt, no local path.') _T='Le fichier contient le nom du projet, les titres des tâches et des chiffres : ni code, ni prompt, ni chemin local.' ;;
+    'explorer %s (medium)') _T='explorateur %s (medium)' ;;
+    'validator %s (high)') _T='validateur %s (high)' ;;
+    'cross review %s') _T='relecture croisée %s' ;;
+    'writer %s') _T='rédacteur %s' ;;
   esac
 }

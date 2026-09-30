@@ -341,7 +341,7 @@ flowchart TB
   L --> AR["🏛️ Architecte<br/>Opus 5.5 · high"]:::deep
   L --> DB["🐞 Débogueur<br/>Opus 5.5 · high"]:::deep
   L --> SE["🔒 Sécurité<br/>Opus 5.5 · high"]:::deep
-  L --> RV["🔍 Relecteur<br/>GPT-6-Sol · high ⇄"]:::std
+  L --> RV["🔍 Relecteur<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
   L --> DV["🛠️ Développeur<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Exécutant<br/>GPT-6-Luna · max ⇄"]:::fast
   L --> XP["🔎 Explorateur<br/>Haiku 4.5 · low"]:::fast
@@ -360,13 +360,13 @@ flowchart TB
 |---|---|---|---|---|
 | 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
 | 🏛️&nbsp;Architecte | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔒&nbsp;Sécurité | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol · high | Sol · high ⇄ | Sonnet 5.5 · high ⇄ |
-| 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol · high | Sonnet 5.5 · medium | Sol · high |
+| 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
 | ⚙️&nbsp;Exécutant | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorateur | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol · low | Sonnet 5.5 · low | Sol · low |
+| 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
 
@@ -666,12 +666,13 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.6.0 | **Audit de sécurité** (`loomy audit`) : une mission avec ses propres phases suivies dans `loomy watch`, le skill security-audit de Cloudflare, une équipe multi-agents (auditeur, explorateur, validateur Sonnet 5.5 en effort élevé, relecture croisée), rapport et plan de corrections hors de Git, corrections sur une branche si autorisé |
 | ✅&nbsp;0.6.1 | équipe d'audit entièrement sur des modèles rigoureux (explorateur sur Sonnet 5.5 ou GPT-6-Sol) |
 | ✅&nbsp;0.6.2 | premier usage d'un modèle local : le rédacteur de l'audit passe sur LM Studio quand Codex n'est pas disponible (texte seul, rien ne sort de la machine) |
-| ✅&nbsp;0.7.0 | **Version actuelle** · **Le quotidien après le bootstrap** |
+| ✅&nbsp;0.7.0 | **Le quotidien après le bootstrap** |
 | ✅ | `loomy task "…"` : une tâche nommée, confiée à l'orchestrateur, suivie dans `watch` (phases, coût, durée), jusqu'à la validation et au commit ; un fichier d'avancement par tâche (`.loomy/tasks/`, index dans `.loomy/TASKS.md`) tenu par l'agent pendant les tâches longues |
 | ✅ | `loomy models` : repère les nouveaux modèles à évaluer (liste des modèles de Codex, API des éditeurs si une clé est configurée, catalogue publié), en place un en tête de sa chaîne avec deux replis au plus, un mode économe qui préfère les replis ; un ticket GitHub de suggestion par nouveau modèle (étiquette `models`, sans doublon) |
 | ✅ | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |
 | ✅ | Modèles de projet (application SaaS, landing page, API REST, CLI, modèles d'e-mails) qui pré-remplissent le brief et donnent une structure de départ |
 | ✅ | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, fichier Markdown à garder dans le dépôt |
+| ✅&nbsp;0.7.1 | **Version actuelle** · **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

@@ -317,13 +317,13 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 |---|---|---|---|---|
 | 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
 | 🏛️&nbsp;Architect | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞&nbsp;Debugger | Opus 5.5 · high | Sol · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Debugger | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔒&nbsp;Security | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol · high | Sol · high ⇄ | Sonnet 5.5 · high ⇄ |
-| 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol · high | Sonnet 5.5 · medium | Sol · high |
+| 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
 | ⚙️&nbsp;Executor | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
-| 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol · low | Sonnet 5.5 · low | Sol · low |
+| 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
 
 <sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
 
@@ -605,12 +605,13 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.6.0 | **Security audit** (`loomy audit`): a mission with its own phases followed in `loomy watch`, Cloudflare's security-audit skill, a multi-agent team (auditor, explorer, Sonnet 5.5 high validator, cross review), report and fix plan kept out of Git, fixes on a branch when allowed |
 | ✅&nbsp;0.6.1 | audit team entirely on rigorous models (explorer on Sonnet 5.5 or GPT-6-Sol) |
 | ✅&nbsp;0.6.2 | first local model use: the audit writer falls back to LM Studio when Codex is not available (text only, nothing leaves the machine) |
-| ✅&nbsp;0.7.0 | **Current version** · **Day-to-day work after bootstrap** |
+| ✅&nbsp;0.7.0 | **Day-to-day work after bootstrap** |
 | ✅ | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file per task (`.loomy/tasks/`, index in `.loomy/TASKS.md`) kept by the agent during long tasks |
 | ✅ | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), puts one at the head of its chain with up to two fallbacks, a low-cost mode that prefers fallbacks; a GitHub suggestion issue per new model (`models` label, no duplicates) |
 | ✅ | `loomy review`: on-demand cross review of the current branch or diff |
 | ✅ | Project templates (SaaS web app, landing page, REST API, CLI, email templates) that prefill the brief and give a starting structure |
 | ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
+| ✅&nbsp;0.7.1 | **Current version** · **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

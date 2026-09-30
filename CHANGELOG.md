@@ -2,7 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.7.0 — 2026-09-29
+## 0.7.1 — 2026-09-30
+
+### Changed
+- **GPT-6.1 Sol** (released 2026-09-29, same price as GPT-6 Sol, cache reads at $0.10) heads the Codex `mid` chain: developer, reviewer and debugger on the Codex side, the audit's cross review. GPT-6 Sol stays as its fallback. Vendor figures: DeepSWE 75.2% for about $1.50 per task, against 74.8% for about $7.70 with Astra. Astra stays at the top tier until a real orchestration test says otherwise. Catalog dated 2026-09-30 (`loomy update --catalog` for earlier versions). Spotted by `loomy models` in Codex's model list and checked with a real Codex call.
+- `loomy audit`: the team labels name the models from the catalog instead of fixed names.
+- Questionnaire: the Balanced profile's description names Sonnet 5.5.
+
+
 
 Day-to-day work after the bootstrap.
 

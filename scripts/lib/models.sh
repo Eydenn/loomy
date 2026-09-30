@@ -29,7 +29,7 @@ if [[ ${#_ui_probe} != 1 ]]; then
 fi
 unset _ui_probe _l _locs
 
-AI_CATALOG_DATE="2026-09-28"
+AI_CATALOG_DATE="2026-09-30"
 AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # downloaded catalog prices: "model=input output cache;…"
 AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
@@ -40,7 +40,7 @@ AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic c
 AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5 claude-sonnet-5" # everyday work (Sonnet 5 as fallback)
 AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
 AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # frontier reasoning, computer use
-AI_CHAIN_CODEX_MID="gpt-6-sol"                       # workhorse, workflows
+AI_CHAIN_CODEX_MID="gpt-6.1-sol gpt-6-sol"           # workhorse, workflows (GPT-6 Sol as fallback)
 AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 
 # Downloaded catalog (loomy update --catalog): used when newer than the one shipped with Loomy.
@@ -169,6 +169,7 @@ ai_price() {
     claude-sonnet-5*) echo "2 10 0.20" ;;
     claude-haiku-4-5*) echo "1 5 0.10" ;;
     gpt-6-astra*) echo "10 50 1.00" ;;
+    gpt-6.1-sol*) echo "2 10 0.10" ;;
     gpt-6-sol*) echo "2 10 0.20" ;;
     gpt-6-luna*) echo "0.10 0.50 0.01" ;;
     *) echo "" ;;

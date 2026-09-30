@@ -187,9 +187,9 @@ esac
 lang_txt="English"; [[ "$(ui_lang)" == "fr" ]] && lang_txt="French"
 # Audit team (multi-agent, through Loomy's bridges; every delegation is logged and shown in loomy watch):
 #   explorer   maps the attack surface: a missed entry point is never analysed, so a rigorous model
-#              (Sonnet 5.5 medium, or GPT-6-Sol with a Codex auditor), never a fast or local one
+#              (Codex mid tier: Sonnet 5.5 medium, or GPT-6.1 Sol with a Codex auditor), never a fast or local one
 #   validator  Claude Sonnet 5.5 at high effort: rigorous, re-checks every finding independently
-#   cross      the other family's reviewer (GPT-6-Sol), a second opinion on Critical and High findings
+#   cross      the other family's reviewer (GPT-6.1 Sol), a second opinion on Critical and High findings
 BR="$SCRIPT_DIR"
 VALIDATOR="DELEGATE_CLAUDE_EFFORT=high bash \"$BR/delegate-to-claude.sh\" reviewer"
 EXPLORER="DELEGATE_CLAUDE_MODEL=$AI_MODEL_CLAUDE_MID DELEGATE_CLAUDE_EFFORT=medium bash \"$BR/delegate-to-claude.sh\" explorer"
@@ -237,8 +237,8 @@ ui_kv "$(t "Depth")" "$DEPTH"
 case "$FIXES" in report) fix_l="$(t "Report only")" ;; branch) fix_l="$(t "Report, plan and fixes on a branch")" ;; *) fix_l="$(t "Report and fix plan")" ;; esac
 ui_kv "$(t "Deliverables")" "$fix_l · ${DIR} ${C_DIM}($(t "kept out of Git"))${C_RESET}"
 ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)"
-team="$(t "explorer Sonnet 5.5 (medium)")"; [[ "$TOOL" == "codex" ]] && team="$(t "explorer GPT-6-Sol (medium)")"; ai_has_claude && team="$team · $(t "validator Sonnet 5.5 (high)")"
-ai_has_codex && team="$team · $(t "cross review GPT-6-Sol") · $(t "writer GPT-6-Luna")"
+team="$(t "explorer %s (medium)" "$AI_MODEL_CLAUDE_MID")"; [[ "$TOOL" == "codex" ]] && team="$(t "explorer %s (medium)" "$AI_MODEL_CODEX_MID")"; ai_has_claude && team="$team · $(t "validator %s (high)" "$AI_MODEL_CLAUDE_MID")"
+ai_has_codex && team="$team · $(t "cross review %s" "$AI_MODEL_CODEX_MID") · $(t "writer %s" "$AI_MODEL_CODEX_FAST")"
 [[ -n "$WRITER_LOCAL" ]] && team="$team · $(t "local writer %s" "$LOCAL_MODEL")"
 ui_kv "$(t "Team")" "$team"
 ui_kv "Skill" "$SKILL_NOTE"

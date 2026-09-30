@@ -2,7 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.7.3 — 2026-09-30
+## 0.7.4 — 2026-09-30
+
+### Added
+- **Anticipated support for announced models**: `upcoming.<tool>.<tier>=<model>` in the catalog, starting with Claude Haiku 5.5 (`claude-haiku-5-5`, fast tier).
+  - Probed at most once a day, in the background, with one tiny call.
+  - As soon as it answers on the machine, it heads its chain with Haiku 4.5 as fallback, and a one-line notice appears at the next launch.
+  - Listed by `loomy models` (ANNOUNCED) and tested by `loomy doctor --live`. Never used before it answers, so sub-agents never get an unknown model.
+  - Provisional price: Haiku 4.5's. Checked for real: `claude-haiku-5-5` is not available yet, and the probe says so cleanly.
+- Roadmap: once Haiku 5.5 is out, its role will be adjusted from measured figures.
+
+
 
 ### Added
 - **Kept up to date by itself.** At launch (`loomy`, `start`, `init`, `task`, `audit`, `review`), Loomy checks without slowing anything down whether a newer Loomy is published (cached daily, in the background) and whether Claude Code or Codex is too old for the routed models or doesn't start.

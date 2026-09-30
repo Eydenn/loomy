@@ -3,6 +3,7 @@
 #   STUB_SLEEP=N              waits N seconds before answering
 #   STUB_BROKEN_VERSION=1     "claude --version" fails
 #   STUB_LOG=file             records each call (tab-separated arguments)
+#   STUB_UNKNOWN_MODELS="…"   refuses those model ids (a model not released yet)
 set -u
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
 case "${1:-}" in
@@ -12,6 +13,10 @@ case "${1:-}" in
   update) echo "Claude Code is up to date."; exit 0 ;;
 esac
 [[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
+# STUB_UNKNOWN_MODELS="a b": those model ids are refused, like a model not released yet.
+for m in ${STUB_UNKNOWN_MODELS:-}; do
+  case " $* " in *" --model $m "*) printf '{"type":"result","subtype":"error","is_error":true,"result":"model not found: %s"}\n' "$m"; exit 1 ;; esac
+done
 text="answer from the claude double"
 case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields (newlines escaped for the JSON output).

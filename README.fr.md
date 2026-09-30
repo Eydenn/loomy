@@ -693,7 +693,9 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅ | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, fichier Markdown à garder dans le dépôt |
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
 | ✅&nbsp;0.7.2 | **GPT-6.1 Sol pour tous les rôles Codex** sauf l'exécution ; Astra en repli, ou forcé avec `loomy config set model.codex.top gpt-6-astra` |
-| ✅&nbsp;0.7.3 | **Version actuelle** · **tenu à jour tout seul** : une question au lancement met à jour Loomy, Claude Code et Codex ; une réparation qui insiste, jusqu'à la réinstallation propre |
+| ✅&nbsp;0.7.3 | **tenu à jour tout seul** : une question au lancement met à jour Loomy, Claude Code et Codex ; une réparation qui insiste, jusqu'à la réinstallation propre |
+| ✅&nbsp;0.7.4 | **Version actuelle** · **prise en charge anticipée des modèles annoncés** : Claude Haiku 5.5 est testé chaque jour et passe en tête de la chaîne rapide dès qu'il répond sur ton compte (Haiku 4.5 en repli) |
+| 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

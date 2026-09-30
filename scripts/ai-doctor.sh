@@ -255,6 +255,8 @@ if (( LIVE )); then
   keys=""
   for m in $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST; do keys="$keys claude:$m"; done
   for m in $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST; do keys="$keys codex:$m"; done
+  # Announced models not in a chain yet: tested too (a success puts them at the head of their chain).
+  for e in $AI_UPCOMING; do case "$keys " in *":${e##*:} "*) ;; *) keys="$keys ${e%%:*}:${e##*:}" ;; esac; done
   for key in $keys; do
     fam="${key%%:*}"; model="${key#*:}"
     if [[ "$fam" == "claude" ]]; then

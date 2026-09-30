@@ -42,6 +42,9 @@ AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
 AI_CHAIN_CODEX_TOP="gpt-6.1-sol gpt-6-astra"         # GPT-6.1 Sol first (close to Astra for a fifth of the cost); Astra as fallback, or pinned: loomy config set model.codex.top gpt-6-astra
 AI_CHAIN_CODEX_MID="gpt-6.1-sol gpt-6-sol"           # workhorse, workflows (GPT-6 Sol as fallback)
 AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
+# Announced models (not out yet): probed at most once a day; as soon as one answers on this machine, it heads its
+# chain, the current model staying as its fallback. "family:tier:model" entries; the catalog can replace them.
+AI_UPCOMING="claude:fast:claude-haiku-5-5"
 
 # Downloaded catalog (loomy update --catalog): used when newer than the one shipped with Loomy.
 # Read line by line, never executed. Recognised lines (see catalog/models.conf and docs/MODEL_CATALOG.md):
@@ -50,7 +53,7 @@ AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 #   route.<claude|codex>.<role>=<TOP|MID|FAST> <effort>
 ai_catalog_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/catalog.conf"; }
 _ai_catalog_load() {
-  local f="$1" line k v d
+  local f="$1" line k v d up_new=""
   [[ -f "$f" ]] || return 0
   d="$(sed -n 's/^date=\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)$/\1/p' "$f" | head -1)"
   [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
@@ -62,12 +65,16 @@ _ai_catalog_load() {
       # Every model id starts with a letter or digit (never an option for the CLIs).
       [[ " $v" == *" -"* ]] && continue
       [[ -n "$v" ]] && eval "AI_CHAIN_${k}=\"\$v\""
+    elif [[ "$line" =~ ^upcoming\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._-]*)$ ]]; then
+      up_new="${up_new:+$up_new }${BASH_REMATCH[1]}:${BASH_REMATCH[2]}:${BASH_REMATCH[3]}"
     elif [[ "$line" =~ ^price\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
       AI_PRICES_EXTRA="${AI_PRICES_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
     elif [[ "$line" =~ ^route\.(claude|codex)\.([a-z]+)=(TOP|MID|FAST)\ (low|medium|high|xhigh|max)$ ]]; then
       AI_ROUTE_EXTRA="${AI_ROUTE_EXTRA}${BASH_REMATCH[1]}:${BASH_REMATCH[2]}=${BASH_REMATCH[3]} ${BASH_REMATCH[4]};"
     fi
   done <"$f"
+  # A newer catalog lists the announced models itself (none when it has no upcoming line).
+  AI_UPCOMING="$up_new"
 }
 _ai_catalog_load "$(ai_catalog_file)"
 # Chain set on this machine (loomy models, or loomy config set chain.<family>.<tier> "new, fallback, fallback"):
@@ -85,6 +92,20 @@ _ai_local_chains() {
   done <"$f"
 }
 _ai_local_chains
+# Announced model that answered on this machine (models.state): it heads its chain.
+_ai_upcoming_promote() {
+  local e fam tier m k chain st
+  st="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/models.state"
+  for e in $AI_UPCOMING; do
+    fam="${e%%:*}"; tier="${e#*:}"; tier="${tier%%:*}"; m="${e##*:}"
+    grep -qx "$m=ok" "$st" 2>/dev/null || continue
+    k="$(printf '%s' "${fam}_${tier}" | tr 'a-z' 'A-Z')"
+    eval "chain=\"\${AI_CHAIN_${k}:-}\""
+    case " $chain " in *" $m "*) continue ;; esac
+    eval "AI_CHAIN_${k}=\"\$m \$chain\""
+  done
+}
+_ai_upcoming_promote
 
 # Model availability on this machine (~/.config/loomy/models.state, "model=ok|ko"): written by
 # loomy doctor --live and by the bridges when a model is refused. Codex: its local model list is authoritative.
@@ -168,6 +189,7 @@ ai_price() {
     claude-opus-5-5*) echo "4 20 0.20" ;;
     claude-sonnet-5*) echo "2 10 0.20" ;;
     claude-haiku-4-5*) echo "1 5 0.10" ;;
+    claude-haiku-5-5*) echo "1 5 0.10" ;;   # provisional (Haiku 4.5's price) until the real one is published
     gpt-6-astra*) echo "10 50 1.00" ;;
     gpt-6.1-sol*) echo "2 10 0.10" ;;
     gpt-6-sol*) echo "2 10 0.20" ;;
@@ -555,4 +577,36 @@ loomy_slug() {
   [[ -n "$s" ]] || s="$1"
   s="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[-.]+//; s/[-.]+$//')"
   echo "${s:-my-project}"
+}
+
+# ai_model_probe <claude|codex> <model>: one tiny real call ("OK"), without tools; true when the model answers.
+ai_model_probe() {
+  local out tmpf
+  if [[ "$1" == "claude" ]]; then
+    out="$(cd "${TMPDIR:-/tmp}" && claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$2" --effort low --tools "" --strict-mcp-config 2>&1 </dev/null || true)"
+    grep -q '"is_error":false' <<<"$out"
+  else
+    tmpf="$(mktemp)"
+    "$(ai_codex_bin 2>/dev/null || echo codex)" exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
+      -o "$tmpf" "Reply exactly: OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; local rc=$?
+    rm -f "$tmpf"; return $rc
+  fi
+}
+# ai_upcoming_probe_daily: probes the announced models not available yet, at most once a day, in the background.
+# A model that answers is marked ok (models.state) and heads its chain from the next command on.
+ai_upcoming_probe_daily() {
+  local f today e fam m
+  [[ -n "$AI_UPCOMING" ]] || return 0
+  f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/upcoming.checked"; today="$(date +%Y-%m-%d)"
+  [[ "$(cat "$f" 2>/dev/null)" == "$today" ]] && return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null && echo "$today" >"$f" 2>/dev/null || return 0
+  (
+    for e in $AI_UPCOMING; do
+      fam="${e%%:*}"; m="${e##*:}"
+      grep -qx "$m=ok" "$(ai_models_state_file)" 2>/dev/null && continue
+      if [[ "$fam" == "claude" ]]; then ai_has_claude || continue; else ai_has_codex || continue; fi
+      if ai_model_probe "$fam" "$m"; then ai_model_mark "$m" ok; echo "$m" >>"${f%/*}/upcoming.new"; fi
+    done
+  ) >/dev/null 2>&1 &
+  return 0
 }

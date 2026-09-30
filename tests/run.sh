@@ -1198,6 +1198,19 @@ rm -f "$DW/.loomy/scripts/ai-task.sh"
 got="$(LOOMY_NO_AUTOUPDATE=1 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/upkeep.sh"; loomy_upkeep; echo "rc=$?"' _ "$REPO")"
 [[ "$got" == "rc=0" ]] && ok "upkeep: off with LOOMY_NO_AUTOUPDATE" || ko "upkeep off: $got"
 
+section "Announced models"
+UP_CFG="$WORK/upcoming-cfg"; mkdir -p "$UP_CFG/loomy"
+upq() { XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CHAIN_CLAUDE_FAST | $AI_MODEL_CLAUDE_FAST"' _ "$REPO"; }
+[[ "$(upq)" == "claude-haiku-4-5 | claude-haiku-4-5" ]] && ok "announced: Haiku 5.5 not used before it answers" || ko "announced before: $(upq)"
+XDG_CONFIG_HOME="$UP_CFG" "$LOOMY" models >"$OUT" 2>&1
+has "announced: listed by loomy models" "claude-haiku-5-5.*not available yet"
+hasnt "announced: not suggested as a new model" "✦ claude-haiku-5-5"
+XDG_CONFIG_HOME="$UP_CFG" STUB_UNKNOWN_MODELS="claude-haiku-5-5" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-5-5' _ "$REPO" && ko "announced: refused model seen as available" || ok "announced: a refused model stays out"
+XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-5-5 && ai_model_mark claude-haiku-5-5 ok' _ "$REPO"
+[[ "$(upq)" == "claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-5-5" ]] && ok "announced: once it answers, it heads its chain with Haiku 4.5 as fallback" || ko "announced after: $(upq)"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_UPCOMING"' _ "$REPO")"
+[[ "claude:fast:$(sed -n 's/^upcoming\.claude\.fast=//p' "$REPO/catalog/models.conf")" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: $got"
+
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration
   env -u LOOMY_LANG -u LOOMY_UI_LANG -u LC_ALL -u LC_MESSAGES -u LANG XDG_CONFIG_HOME="$WORK/cfg-lang" "$@" \

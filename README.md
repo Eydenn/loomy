@@ -632,7 +632,9 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
 | ✅&nbsp;0.7.2 | **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
-| ✅&nbsp;0.7.3 | **Current version** · **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
+| ✅&nbsp;0.7.3 | **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
+| ✅&nbsp;0.7.4 | **Current version** · **anticipated support for announced models**: Claude Haiku 5.5 is probed daily and heads the fast chain as soon as it answers on your account (Haiku 4.5 as fallback) |
+| 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

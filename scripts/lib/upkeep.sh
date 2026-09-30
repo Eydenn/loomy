@@ -45,6 +45,13 @@ loomy_upkeep() {
   cat_new="$(bash "$LOOMY_HOME/scripts/ai-catalog-check.sh" 2>/dev/null || true)"
   [[ -n "$cat_new" ]] && "$LOOMY_HOME/bin/loomy" update --catalog >/dev/null 2>&1 || true
   ui_is_interactive || return 0
+  # Announced models (Haiku 5.5…): probed in the background once a day; one line when one has just become available.
+  ai_upcoming_probe_daily
+  local newf="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/upcoming.new" m
+  if [[ -s "$newf" ]]; then
+    while IFS= read -r m; do [[ -n "$m" ]] && ui_ok "$(t "%s now answers on your account" "$m")" "$(t "it heads its chain; the previous model stays as fallback")"; done <"$newf"
+    rm -f "$newf"
+  fi
   snooze="$(loomy_config_get auto_update_snooze 2>/dev/null || true)"
   [[ "$snooze" == "$today" ]] && return 0
   remote="$(_up_remote_loomy)"

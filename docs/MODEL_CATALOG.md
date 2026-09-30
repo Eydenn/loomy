@@ -120,6 +120,20 @@ A model recorded as unavailable stays so until the next `loomy doctor --live` (a
 
 Effort is set separately, per project and per role: `loomy effort`.
 
+### Announced models (anticipated support)
+
+A model announced but not out yet goes in the catalog as `upcoming.<tool>.<tier>=<model>`, for example `upcoming.claude.fast=claude-haiku-5-5`.
+- Loomy probes it at most once a day, in the background, with one tiny call.
+- As soon as it answers on a machine, it heads its chain there, the current model staying as its fallback. A one-line notice is shown at the next launch.
+- `loomy models` lists the announced models; `loomy doctor --live` tests them too.
+- Its routing (which roles beyond its tier) is decided once real figures are out, with the usual protocol below.
+
+Currently announced: **Claude Haiku 5.5** (confirmed by Anthropic on 2026-09-22 for "the coming weeks"; early reports say fast and cheap). Provisional price: Haiku 4.5's, until the real one is published. Roles to review once it is out:
+- the full-Claude executor, today Sonnet 5.5 medium;
+- the Claude documenter;
+- the audit writer when Codex is missing, today a local model;
+- a comparison with GPT-6-Luna as the hybrid executor.
+
 ### Protocol when a new model comes out
 
 1. **Add the model at the head of its chain**, without removing the old one (fallback for those without access): `model.claude.mid=claude-sonnet-5-5, claude-sonnet-5`.

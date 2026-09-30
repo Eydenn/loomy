@@ -47,6 +47,7 @@ is_candidate() {
     *embed*|*audio*|*realtime*|*image*|*tts*|*whisper*|*transcribe*|*search*|*moderation*|*review*|*reserve*|*instant*|*mini-2*|*-latest) return 1 ;;
   esac
   [[ "$KNOWN" == *" $1 "* ]] && return 1
+  case " $AI_UPCOMING " in *":$1 "*) return 1 ;; esac
   return 0
 }
 # tier_of <model>: top, mid or fast, from the naming conventions of each vendor.
@@ -113,6 +114,14 @@ for fam in claude codex; do
     ui_rail "${C_DIM}${UI_PADDED}${C_RESET}$line"
   done
 done
+if [[ -n "$AI_UPCOMING" ]]; then
+  ui_section "$(t "ANNOUNCED")" "$(t "tested once a day; used as soon as they answer")"
+  for e in $AI_UPCOMING; do
+    m="${e##*:}"; tier="${e#*:}"; tier="${tier%%:*}"
+    if grep -qx "$m=ok" "$(ai_models_state_file)" 2>/dev/null; then ui_rail "${C_GREEN}✓${C_RESET} $m  ${C_DIM}$(t "available · heads %s" "${e%%:*}.$tier")${C_RESET}"
+    else ui_rail "${C_DIM}○ $m  $(t "not available yet · will head %s" "${e%%:*}.$tier")${C_RESET}"; fi
+  done
+fi
 ui_section "$(t "NEW MODELS")"
 if [[ -n "$newcat" ]]; then ui_rail "${C_YELLOW}!${C_RESET} $(t "a newer catalog is published (%s): loomy update --catalog" "$newcat")"; fi
 if (( ! ${#CANDS[@]} )); then

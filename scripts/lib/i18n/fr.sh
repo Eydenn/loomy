@@ -1733,5 +1733,11 @@ _t_fr() {
     '%s ready') _T='%s prêt' ;;
     'Loomy not updated') _T='Loomy non mis à jour' ;;
     '      auto_update (no: loomy no longer offers to update Loomy, Claude Code and Codex at launch),') _T='      auto_update (no : loomy ne propose plus de mettre à jour Loomy, Claude Code et Codex au lancement),' ;;
+    '%s now answers on your account') _T='%s répond maintenant sur ton compte' ;;
+    'it heads its chain; the previous model stays as fallback') _T='il passe en tête de sa chaîne ; le modèle précédent reste en repli' ;;
+    'ANNOUNCED') _T='ANNONCÉS' ;;
+    'tested once a day; used as soon as they answer') _T='testés une fois par jour ; utilisés dès qu'\''ils répondent' ;;
+    'available · heads %s') _T='disponible · en tête de %s' ;;
+    'not available yet · will head %s') _T='pas encore disponible · passera en tête de %s' ;;
   esac
 }

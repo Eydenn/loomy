@@ -21,6 +21,7 @@ export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 export LOOMY_HOME="$REPO"
 # No network check of the published catalog during tests.
 export LOOMY_CATALOG_CHECK=0
+export LOOMY_NO_AUTOUPDATE=1
 # English interface for these tests (the language tests set it themselves).
 export LOOMY_LANG=en
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
@@ -1148,6 +1149,54 @@ printf -- '---\nname: "API test"\ngoal: "an api"\nrepo: new\ntemplate: api\n---\
 file_has "template: API prefills the type" "$WORK/tpl-api/.loomy/brief.md" "^type: api$"
 file_has "template: recorded" "$WORK/tpl-api/.loomy/brief.md" "^template: api$"
 file_has "template: starting structure for the agent" "$WORK/tpl-api/.loomy/brief.md" "OpenAPI contract first"
+
+section "Automatic repair and upkeep"
+# Fake installs: an npm copy of claude (method detected from its path), a fake npm and a fake official installer.
+RP="$WORK/repair"; rm -rf "$RP"; mkdir -p "$RP/prefix/lib/node_modules/@anthropic-ai/claude-code" "$RP/prefix/bin" "$RP/tools" "$RP/home/.local/bin"
+fake_claude() {   # fake_claude <file> <version file>
+  printf '#!/bin/bash\ncase "$1" in --version) echo "$(cat %q) (Claude Code)" ;; update) [ -f %q ] && echo 2.1.400 > %q ;; esac\n' "$2" "$RP/update.ok" "$2" >"$1"; chmod +x "$1"
+}
+cat >"$RP/tools/npm" <<NPM
+#!/bin/bash
+echo "npm \$*" >>"$RP/calls"
+case "\$*" in
+  *"install -g"*"claude-code@latest"*) [ -f "$RP/npm.ok" ] && echo 2.1.400 >"$RP/npm.ver" ;;
+  *"uninstall -g"*"claude-code"*) rm -f "$RP/prefix/bin/claude" ;;
+esac
+exit 0
+NPM
+chmod +x "$RP/tools/npm"
+printf '#!/bin/bash\necho installer >>%q\nmkdir -p "$HOME/.local/bin"; echo 2.1.500 > %q\n' "$RP/calls" "$RP/native.ver" >"$RP/installer.sh"
+repair_try() {   # repair_try: runs the Claude repair in the fake world; prints the final state
+  HOME="$RP/home" PATH="$RP/prefix/bin:$RP/extra:$RP/tools:/usr/bin:/bin" LOOMY_REPAIR_YES=1 XDG_CONFIG_HOME="$RP/cfg" \
+    LOOMY_CLAUDE_INSTALLER="bash $RP/installer.sh && cp $RP/native-claude \"\$HOME/.local/bin/claude\"" \
+    bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; ai_repair_tool claude >/dev/null 2>&1; ai_tool_state claude' _ "$REPO"
+}
+reset_world() { rm -f "$RP"/*.ok "$RP/calls" "$RP/home/.local/bin/claude"; rm -rf "$RP/extra"; echo 2.1.100 >"$RP/npm.ver"
+  fake_claude "$RP/prefix/lib/node_modules/@anthropic-ai/claude-code/cli.js" "$RP/npm.ver"; ln -sf ../lib/node_modules/@anthropic-ai/claude-code/cli.js "$RP/prefix/bin/claude"
+  fake_claude "$RP/native-claude" "$RP/native.ver"; }
+reset_world
+got="$(HOME="$RP/home" PATH="$RP/prefix/bin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; ai_tool_state claude; ai_tool_method claude "$(command -v claude)"' _ "$REPO" | tr '\n' ' ')"
+[[ "$got" == "old 2.1.100 "*" npm " ]] && ok "repair: old npm copy detected" || ko "repair: detection ($got)"
+touch "$RP/npm.ok"
+got="$(repair_try)"
+[[ "$got" == ok\ 2.1.400* ]] && ok "repair: step 1, npm update in the install's own prefix" || ko "repair step 1: $got"
+grep -q "install -g --prefix .*/repair/prefix @anthropic-ai/claude-code@latest" "$RP/calls" && ok "repair: npm called with the install's prefix" || ko "repair: npm call ($(cat "$RP/calls"))"
+reset_world
+mkdir -p "$RP/extra"; fake_claude "$RP/extra/claude" "$RP/good.ver"; echo 2.1.450 >"$RP/good.ver"
+got="$(repair_try)"
+[[ "$got" == ok\ 2.1.450* ]] && ok "repair: old copy shadowing a recent one removed" || ko "repair shadow: $got"
+reset_world
+got="$(repair_try)"
+[[ "$got" == ok\ 2.1.500* ]] && ok "repair: clean reinstall with the official installer when all else fails" || ko "repair clean reinstall: $got ($(tr '\n' ';' <"$RP/calls"))"
+grep -q "uninstall -g" "$RP/calls" && grep -q installer "$RP/calls" && ok "repair: old copy removed before the reinstall" || ko "repair: order ($(tr '\n' ';' <"$RP/calls"))"
+[[ -d "$RP/home/.claude" ]] && ko "repair: settings folder touched" || ok "repair: settings never touched"
+# Upkeep: off in scripts and with LOOMY_NO_AUTOUPDATE; missing relays added to an older project.
+rm -f "$DW/.loomy/scripts/ai-task.sh"
+(cd "$DW" && "$LOOMY" task) >/dev/null 2>&1
+[[ -x "$DW/.loomy/scripts/ai-task.sh" ]] && ok "upkeep: missing relay added to the project" || ko "upkeep: relay not added"
+got="$(LOOMY_NO_AUTOUPDATE=1 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/upkeep.sh"; loomy_upkeep; echo "rc=$?"' _ "$REPO")"
+[[ "$got" == "rc=0" ]] && ok "upkeep: off with LOOMY_NO_AUTOUPDATE" || ko "upkeep off: $got"
 
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration

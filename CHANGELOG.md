@@ -2,7 +2,20 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.7.2 — 2026-09-30
+## 0.7.3 — 2026-09-30
+
+### Added
+- **Kept up to date by itself.** At launch (`loomy`, `start`, `init`, `task`, `audit`, `review`), Loomy checks without slowing anything down whether a newer Loomy is published (cached daily, in the background) and whether Claude Code or Codex is too old for the routed models or doesn't start.
+  - When something is needed: one question, then everything is done in one go. Loomy runs the command again after updating itself.
+  - The model catalog is updated silently.
+  - "Later" snoozes the question until tomorrow; `loomy config set auto_update no` turns it off; `LOOMY_NO_AUTOUPDATE=1` skips it for one command.
+- **Repair that insists** (`scripts/lib/repair.sh`), used by `loomy doctor --fix` and by the question at launch. It finds every copy of `claude` or `codex` in the PATH and its install method (official installer, npm with its own prefix, Homebrew, desktop app).
+  - Steps, each checked before the next: update in place, reinstall with the same method, removal of an older copy shadowing a recent one, then a clean reinstall (every removable copy, then the official installer).
+  - `~/.claude` and `~/.codex` are never touched. Each step is logged in `~/.config/loomy/logs/repair-<tool>.log`.
+- `loomy doctor` lists the copies of `claude` in the PATH when there are several (method and version of each): the usual reason why "the update changed nothing".
+- Projects created with an older Loomy get the relays of new commands (`.loomy/scripts/`) automatically, without `loomy init --update`.
+
+
 
 ### Changed
 - **GPT-6.1 Sol also takes Codex's top tier**: lead agent, architect and security on the Codex side (and the debugger at `xhigh` in Max quality). Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Every Codex role except execution (GPT-6-Luna) now runs on GPT-6.1 Sol.

@@ -1689,3 +1689,42 @@ explorer %s (medium)	explorateur %s (medium)
 validator %s (high)	validateur %s (high)
 cross review %s	relecture croisée %s
 writer %s	rédacteur %s
+%s copies of claude in the PATH, the first one runs: %s	%s copies de claude dans le PATH, c'est la première qui est lancée : %s
+repaired	réparé
+installed; run claude once to log in	installé ; lance claude une fois pour te connecter
+older than the validated version (%s)	plus ancien que la version validée (%s)
+installed; run codex once to log in	installé ; lance codex une fois pour te connecter
+repair: loomy doctor --fix	réparation : loomy doctor --fix
+not installed	non installé
+version %s, %s needed	version %s, %s nécessaire
+does not start	ne démarre pas
+In order, each step checked: update, reinstall, removal of an old copy, clean reinstall with the official installer. Your settings, logins and conversations are kept.	Dans l'ordre, chaque étape vérifiée : mise à jour, réinstallation, suppression d'une ancienne copie, réinstallation propre avec l'installateur officiel. Tes réglages, connexions et conversations sont conservés.
+Repair %s (%s)?	Réparer %s (%s) ?
+Yes, repair it	Oui, réparer
+%s: update with npm	%s : mise à jour avec npm
+%s: update with Homebrew	%s : mise à jour avec Homebrew
+%s: point to the Codex CLI shipped with the updated app	%s : pointer vers la CLI Codex livrée avec l'app à jour
+%s: built-in update	%s : mise à jour intégrée
+%s: reinstall with npm	%s : réinstallation avec npm
+%s: reinstall with Homebrew	%s : réinstallation avec Homebrew
+%s: reinstall with the official installer	%s : réinstallation avec l'installateur officiel
+%s: remove the old copy %s (a recent one is in %s)	%s : suppression de l'ancienne copie %s (une copie récente est dans %s)
+%s: clean reinstall (removal, then official installer)	%s : réinstallation propre (suppression, puis installateur officiel)
+%s: install with the official installer	%s : installation avec l'installateur officiel
+%s: install with npm	%s : installation avec npm
+%s: install with Homebrew	%s : installation avec Homebrew
+%s could not be repaired automatically	%s n'a pas pu être réparé automatiquement
+details: %s	détails : %s
+copies found: %s	copies trouvées : %s
+Loomy %s → %s	Loomy %s → %s
+%s %s too old for the routed models (%s needed)	%s %s trop ancien pour les modèles routés (%s nécessaire)
+%s does not start	%s ne démarre pas
+Done now, in one go (each step checked; settings and conversations kept), then the command goes on.	Fait maintenant, en une fois (chaque étape vérifiée ; réglages et conversations conservés), puis la commande continue.
+Asked again tomorrow.	Redemandé demain.
+No more automatic updates (loomy config set auto_update yes to turn them back on).	Plus de mises à jour automatiques (loomy config set auto_update yes pour les réactiver).
+Updates needed: %s. Update now?	Mises à jour nécessaires : %s. Mettre à jour maintenant ?
+Yes, update (recommended)	Oui, mettre à jour (recommandé)
+Never ask	Ne plus demander
+%s ready	%s prêt
+Loomy not updated	Loomy non mis à jour
+      auto_update (no: loomy no longer offers to update Loomy, Claude Code and Codex at launch),	      auto_update (no : loomy ne propose plus de mettre à jour Loomy, Claude Code et Codex au lancement),

@@ -175,6 +175,24 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 
 `loomy start` still opens a free session. One clear request per session; ask for a proposal before any large change; ask for a security review on sensitive topics.
 
+### Kept up to date by itself
+
+- **At launch.** `loomy`, `loomy start`, `loomy init`, `loomy task`, `loomy audit` and `loomy review` check the following, without slowing anything down (remote versions are cached once a day):
+  - is there a newer Loomy?
+  - is Claude Code or Codex too old for the routed models, or does it not start?
+- **One question.** If something is needed, one question, then everything is done in one go and the command goes on. Loomy restarts itself after updating.
+- **The model catalog** is updated silently.
+- **Older projects** get the relays of new commands automatically.
+- **Turning it off:** `loomy config set auto_update no`.
+
+**Repair that insists.** `loomy doctor --fix` (and the question at launch) bring Claude Code and Codex to a working version, whatever the install method (official installer, npm, Homebrew, desktop app). Steps are tried in order, each one checked before going on:
+1. update in place, with the install's own method;
+2. reinstall with that method;
+3. removal of an older copy that hides a recent one in the PATH (the classic "the update changed nothing");
+4. clean reinstall: every removable copy, then the official installer.
+
+Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. Each step is logged in `~/.config/loomy/logs/repair-<tool>.log`. `loomy doctor` lists every copy found in the PATH, with its method and version.
+
 ### 4. Update, resume or reset
 
 | Need | Command |
@@ -613,7 +631,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅ | Project templates (SaaS web app, landing page, REST API, CLI, email templates) that prefill the brief and give a starting structure |
 | ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
-| ✅&nbsp;0.7.2 | **Current version** · **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
+| ✅&nbsp;0.7.2 | **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
+| ✅&nbsp;0.7.3 | **Current version** · **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

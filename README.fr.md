@@ -194,6 +194,24 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 > [!TIP]
 > **Recommandations.** Une demande claire par session, avec le résultat attendu. Demande une proposition avant tout changement large. Relis chaque diff avant de committer. Pour les sujets sensibles (authentification, paiements, données personnelles), demande explicitement une revue du rôle sécurité.
 
+### Tenu à jour tout seul
+
+- **Au lancement.** `loomy`, `loomy start`, `loomy init`, `loomy task`, `loomy audit` et `loomy review` vérifient ce qui suit, sans rien ralentir (les versions en ligne sont mises en cache une fois par jour) :
+  - existe-t-il un Loomy plus récent ?
+  - Claude Code ou Codex est-il trop ancien pour les modèles routés, ou ne démarre-t-il plus ?
+- **Une seule question.** S'il faut agir, une seule question, puis tout est fait d'un coup et la commande continue. Loomy se relance après sa propre mise à jour.
+- **Le catalogue de modèles** se met à jour sans rien demander.
+- **Les anciens projets** reçoivent automatiquement les relais des nouvelles commandes.
+- **Pour désactiver :** `loomy config set auto_update no`.
+
+**Une réparation qui insiste.** `loomy doctor --fix` (et la question au lancement) amènent Claude Code et Codex à une version qui fonctionne, quelle que soit la méthode d'installation (installateur officiel, npm, Homebrew, app de bureau). Les étapes sont essayées dans l'ordre, chacune vérifiée avant de passer à la suivante :
+1. mise à jour sur place, avec la méthode de l'installation ;
+2. réinstallation avec cette méthode ;
+3. suppression d'une ancienne copie qui en cache une récente dans le PATH (le classique « la mise à jour n'a rien changé ») ;
+4. réinstallation propre : toutes les copies supprimables, puis l'installateur officiel.
+
+Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jamais touchés. Chaque étape est journalisée dans `~/.config/loomy/logs/repair-<outil>.log`. `loomy doctor` liste toutes les copies trouvées dans le PATH, avec leur méthode et leur version.
+
 ### 4. Mettre à jour, reprendre ou réinitialiser
 
 | Besoin | Commande |
@@ -674,7 +692,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅ | Modèles de projet (application SaaS, landing page, API REST, CLI, modèles d'e-mails) qui pré-remplissent le brief et donnent une structure de départ |
 | ✅ | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, fichier Markdown à garder dans le dépôt |
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
-| ✅&nbsp;0.7.2 | **Version actuelle** · **GPT-6.1 Sol pour tous les rôles Codex** sauf l'exécution ; Astra en repli, ou forcé avec `loomy config set model.codex.top gpt-6-astra` |
+| ✅&nbsp;0.7.2 | **GPT-6.1 Sol pour tous les rôles Codex** sauf l'exécution ; Astra en repli, ou forcé avec `loomy config set model.codex.top gpt-6-astra` |
+| ✅&nbsp;0.7.3 | **Version actuelle** · **tenu à jour tout seul** : une question au lancement met à jour Loomy, Claude Code et Codex ; une réparation qui insiste, jusqu'à la réinstallation propre |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

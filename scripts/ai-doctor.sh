@@ -13,6 +13,8 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
+# shellcheck source=lib/repair.sh
+source "$SCRIPT_DIR/lib/repair.sh"
 
 usage() {
   i18n_lines >&2 <<'EOF'
@@ -101,17 +103,24 @@ ui_section "$(t "AI CLIS")" "$(t "at least one required; ideal: both, for hybrid
 HAS_C=0; HAS_X=0
 if ai_has_claude; then
   ui_wait "$(t "Checking Claude Code")"; v="$(ai_claude_version)"; ui_wait_end
+  # Several copies in the PATH: the first one runs, whatever the others are (a frequent cause of "the update changed nothing").
+  n_c="$(ai_tool_paths claude | wc -l | tr -d ' ')"
+  if (( n_c > 1 )); then
+    ui_info "$(t "%s copies of claude in the PATH, the first one runs: %s" "$n_c" "$(ai_tool_paths claude | while IFS= read -r p; do printf '%s (%s, %s) ' "${p/#$HOME/~}" "$(ai_tool_method claude "$p")" "$(ai_tool_version_of "$p")"; done)")"
+  fi
   if ai_version_ge "${v:-0.0.0}" "$AI_MIN_CLAUDE_VERSION"; then
     HAS_C=1; ui_ok "claude $v" "Claude Code · $(command -v claude | sed "s|^$HOME|~|")"
   else
     ui_warn "claude $v" "$(t "too old for %s (≥ %s)" "$AI_MODEL_CLAUDE_TOP" "$AI_MIN_CLAUDE_VERSION")"
-    HAS_C=1; offer_fix "$(t "Update Claude Code?")" claude update || missing_ideal "$(t "Claude Code up to date")"
+    HAS_C=1
+    if (( FIX )) && ai_repair_tool claude; then ui_ok "claude $(ai_tool_state claude | cut -d' ' -f2)" "$(t "repaired")"
+    else (( FIX )) || ui_info "$(t "fix: %s" "loomy doctor --fix")"; missing_ideal "$(t "Claude Code up to date")"; fi
   fi
 else
   ui_warn "claude" "$(t "Claude Code missing: %s lead agent and hybrid mode unavailable" "$AI_MODEL_CLAUDE_TOP")"
   install_hint "curl -fsSL https://claude.ai/install.sh | bash" "brew install --cask claude-code" "claude  ($(t "log in on first launch"))"
-  if (( FIX )) && offer_fix "$(t "Install Claude Code now (official installer)?")" sh -c 'curl -fsSL https://claude.ai/install.sh | bash'; then
-    ui_info "$(t "open a new terminal, run claude to log in, then run loomy doctor again")"
+  if (( FIX )) && ai_repair_tool claude; then
+    ui_ok "claude $(ai_tool_state claude | cut -d' ' -f2)" "$(t "installed; run claude once to log in")"
   else
     missing_ideal "Claude Code"
   fi
@@ -137,8 +146,9 @@ if [[ -n "$CODEX_BIN" ]]; then
   fi
   HAS_X=1
   if [[ -n "$v" ]] && ! ai_version_ge "$v" "$AI_MIN_CODEX_VERSION"; then
-    ui_warn "codex $v" "$(t "older than the validated version (%s) — update the ChatGPT/Codex app" "$AI_MIN_CODEX_VERSION")"
-    missing_ideal "$(t "Codex up to date")"
+    ui_warn "codex $v" "$(t "older than the validated version (%s)" "$AI_MIN_CODEX_VERSION")"
+    if (( FIX )) && ai_repair_tool codex; then ui_ok "codex $(ai_tool_state codex | cut -d' ' -f2)" "$(t "repaired")"
+    else (( FIX )) || ui_info "$(t "fix: %s" "loomy doctor --fix")"; missing_ideal "$(t "Codex up to date")"; fi
   fi
   if [[ ! -f "$HOME/.codex/auth.json" ]]; then
     ui_warn "codex" "$(t "not logged in — run: codex login")"; missing_ideal "$(t "Codex logged in")"
@@ -155,8 +165,8 @@ if [[ -n "$CODEX_BIN" ]]; then
 else
   ui_warn "codex" "$(t "Codex CLI missing: %s executor and hybrid mode unavailable" "$AI_MODEL_CODEX_FAST")"
   install_hint "curl -fsSL https://chatgpt.com/codex/install.sh | sh" "brew install --cask codex  ·  npm install -g @openai/codex" "codex  ($(t "log in on first launch"))"
-  if (( FIX )) && offer_fix "$(t "Install the Codex CLI now (official installer)?")" sh -c 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'; then
-    ui_info "$(t "open a new terminal, run codex to log in, then run loomy doctor again")"
+  if (( FIX )) && ai_repair_tool codex; then
+    ui_ok "codex $(ai_tool_state codex | cut -d' ' -f2)" "$(t "installed; run codex once to log in")"
   else
     missing_ideal "Codex CLI"
   fi

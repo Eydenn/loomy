@@ -2,7 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.7.1 — 2026-09-30
+## 0.7.2 — 2026-09-30
+
+### Changed
+- **GPT-6.1 Sol also takes Codex's top tier**: lead agent, architect and security on the Codex side (and the debugger at `xhigh` in Max quality). Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Every Codex role except execution (GPT-6-Luna) now runs on GPT-6.1 Sol.
+- Astra stays as the top tier's fallback. To force it on a machine: `loomy config set model.codex.top gpt-6-astra` (`auto` to go back to the catalog).
+- Questionnaire texts, README tables and `docs/MODEL_CATALOG.md` updated.
+
+
 
 ### Changed
 - **GPT-6.1 Sol** (released 2026-09-29, same price as GPT-6 Sol, cache reads at $0.10) heads the Codex `mid` chain: developer, reviewer and debugger on the Codex side, the audit's cross review. GPT-6 Sol stays as its fallback. Vendor figures: DeepSWE 75.2% for about $1.50 per task, against 74.8% for about $7.70 with Astra. Astra stays at the top tier until a real orchestration test says otherwise. Catalog dated 2026-09-30 (`loomy update --catalog` for earlier versions). Spotted by `loomy models` in Codex's model list and checked with a real Codex call.

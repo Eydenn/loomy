@@ -129,7 +129,7 @@ fi
 SCOPE="$(brief_a scope)"; DEPTH="$(brief_a depth)"; FIXES="$(brief_a fixes)"; DIR="$(brief_a report_dir)"
 
 # ---------------------------------------------------------------- auditor: tool, model
-# The security role: Opus 5.5 on the Claude side, Astra on the Codex side (effort from the project's profile).
+# The security role: Opus 5.5 on the Claude side, GPT-6.1 Sol on the Codex side (effort from the project's profile).
 if [[ -z "$TOOL" ]]; then
   TOOL="$(_ai_brief_get "$ROOT/.loomy/brief.md" ai_lead 2>/dev/null || true)"
   case "$TOOL" in claude) ai_has_claude || TOOL="" ;; codex) ai_has_codex || TOOL="" ;; *) TOOL="" ;; esac

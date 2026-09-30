@@ -315,10 +315,10 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 
 | Role | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybrid, Claude lead | 🟣 Hybrid, Codex lead |
 |---|---|---|---|---|
-| 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
-| 🏛️&nbsp;Architect | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Sol 6.1 · high | **Opus 5.5 · high** | Sol 6.1 · high |
+| 🏛️&nbsp;Architect | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🐞&nbsp;Debugger | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒&nbsp;Security | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Security | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
 | 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
 | ⚙️&nbsp;Executor | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
@@ -328,7 +328,7 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 <sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
 
 **Budget profiles.** The lead agent always stays on the top model; only role efforts and models change:
-- **Thrifty:** Claude lead on Sonnet 5.5 `medium` (Codex lead on Astra `medium`), specialists at `medium`, execution on fast models;
+- **Thrifty:** Claude lead on Sonnet 5.5 `medium` (Codex lead on Sol 6.1 `medium`), specialists at `medium`, execution on fast models;
 - **Balanced (default):** the matrix above;
 - **Max quality:** lead agent and specialists at `xhigh`, reviews on the top model, execution on Sol or Sonnet `high`.
 
@@ -359,9 +359,10 @@ This is a text protocol that works with Claude and Codex as they are. Exchanging
 | Model | 💵 Price ($ per million tokens, in / out) | Cost per AA task | AA Coding Agent Index | Terminal-Bench 4.0 | 🏷️ Role |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
-| GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | developer, reviewer (Codex) |
-| GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | lead agent when Codex only |
-| Claude&nbsp;Sonnet&nbsp;5 | 2 / 10 | — | — | — | developer, reviewer (Claude) |
+| GPT&#8209;6.1&#8209;Sol | 2 / 10 | about $1.50 per DeepSWE task | — | DeepSWE 75.2 % (vendor) | every Codex role except execution, from 0.7.2 |
+| GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | fallback for GPT-6.1 Sol |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | fallback at the top tier, or forced: `loomy config set model.codex.top gpt-6-astra` |
+| Claude&nbsp;Sonnet&nbsp;5.5 | 2 / 10 | $0.41 → $7.60 | — | 70.6 % (vendor) | developer, reviewer (Claude), Thrifty lead agent |
 | Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | $0.55 → $5.98 | not published | **59.6 %** | 🏆 lead agent and specialists |
 | Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | $7.63 | 62 | 55.8 % | ❌ superseded by Opus 5.5 |
 
@@ -370,7 +371,7 @@ This is a text protocol that works with Claude and Codex as they are. Exchanging
   - It scores 66.6 % on bounded fixes for $0.22, against $2.74 for Sol.
   - On long autonomous terminal work it drops to 13 %.
   - So it executes precise tickets under the lead agent, nothing more.
-- 🐎 **GPT-6-Sol is the Codex workhorse.** It matches Opus 5.5 medium on workflow automation for about 40 % of the cost.
+- 🐎 **GPT-6.1 Sol runs the Codex side.** It matches Astra on DeepSWE (75.2 % against 74.8 %) for about a fifth of the cost, and Astra was found less reliable lately in real use: Astra stays as its fallback, and can be forced with `loomy config set model.codex.top gpt-6-astra` (`auto` to go back).
 
 ---
 
@@ -549,7 +550,7 @@ loomy/
 - **Questions**: scope, depth (quick, standard, deep), and deliverables: report only, report and fix plan, or fixes as well on a `loomy/audit-fixes` branch.
 - **Method**: [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for this repository only when you agree.
 - **Team**, through Loomy's bridges, every delegation logged:
-  - the auditor (security role: Opus 5.5, or Astra with a Codex lead) leads;
+  - the auditor (security role: Opus 5.5, or GPT-6.1 Sol with a Codex lead) leads;
   - an explorer maps the attack surface, on a rigorous model (Sonnet 5.5 medium, or GPT-6-Sol): a missed entry point is never analysed;
   - Claude Sonnet 5.5 at high effort, rigorous, re-checks every finding independently;
   - the other model family (GPT-6-Sol) gives a second opinion on Critical and High findings;
@@ -611,7 +612,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅ | `loomy review`: on-demand cross review of the current branch or diff |
 | ✅ | Project templates (SaaS web app, landing page, REST API, CLI, email templates) that prefill the brief and give a starting structure |
 | ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
-| ✅&nbsp;0.7.1 | **Current version** · **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
+| ✅&nbsp;0.7.1 | **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
+| ✅&nbsp;0.7.2 | **Current version** · **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

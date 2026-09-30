@@ -39,7 +39,7 @@ AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic coding, office work
 AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5 claude-sonnet-5" # everyday work (Sonnet 5 as fallback)
 AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
-AI_CHAIN_CODEX_TOP="gpt-6-astra"                     # frontier reasoning, computer use
+AI_CHAIN_CODEX_TOP="gpt-6.1-sol gpt-6-astra"         # GPT-6.1 Sol first (close to Astra for a fifth of the cost); Astra as fallback, or pinned: loomy config set model.codex.top gpt-6-astra
 AI_CHAIN_CODEX_MID="gpt-6.1-sol gpt-6-sol"           # workhorse, workflows (GPT-6 Sol as fallback)
 AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 

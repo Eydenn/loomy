@@ -146,13 +146,13 @@ has "lead agent on the best model" "opus|astra"
 run "route get executor" "$LOOMY" route get executor
 if [[ "$(wc -w <"$OUT" | tr -d ' ')" == "3" ]]; then ok "route get: family model effort"; else ko "route get: unexpected format ($(cat "$OUT"))"; fi
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve lead hybrid-claude econome; a="$R_MODEL $R_EFFORT"; ai_resolve architect hybrid-claude econome; b="$R_MODEL $R_EFFORT"; ai_resolve lead hybrid-codex econome; echo "$a | $b | $R_MODEL $R_EFFORT"' _ "$REPO")"
-[[ "$got" == "claude-sonnet-5-5 medium | claude-opus-5-5 medium | gpt-6-astra medium" ]] && ok "Thrifty: Claude lead on Sonnet 5.5 medium, hard roles on Opus, Codex lead unchanged" || ko "Thrifty routing: $got"
+[[ "$got" == "claude-sonnet-5-5 medium | claude-opus-5-5 medium | gpt-6.1-sol medium" ]] && ok "Thrifty: Claude lead on Sonnet 5.5 medium, hard roles on Opus, Codex lead unchanged" || ko "Thrifty routing: $got"
 
 # Fallback: without Codex, a hybrid mode falls back to Claude alone.
 # Each environment puts the lead agent and the executor on the right family.
 lead_of() { "$LOOMY" route --root "$P" --env "$1" get lead 2>/dev/null | cut -d' ' -f2; }
 exec_of() { "$LOOMY" route --root "$P" --env "$1" get executor 2>/dev/null | cut -d' ' -f1; }
-if [[ "$(lead_of claude)" == claude-opus* && "$(lead_of codex)" == gpt-6-astra && "$(lead_of hybrid-claude)" == claude-opus* && "$(lead_of hybrid-codex)" == gpt-6-astra ]]
+if [[ "$(lead_of claude)" == claude-opus* && "$(lead_of codex)" == gpt-6.1-sol && "$(lead_of hybrid-claude)" == claude-opus* && "$(lead_of hybrid-codex)" == gpt-6.1-sol ]]
 then ok "lead agent: Opus on Claude, Astra on Codex"; else ko "lead agent misrouted ($(lead_of claude) / $(lead_of codex) / $(lead_of hybrid-claude) / $(lead_of hybrid-codex))"; fi
 if [[ "$(exec_of claude)" == claude && "$(exec_of codex)" == codex && "$(exec_of hybrid-claude)" == codex ]]
 then ok "executor: Luna in hybrid Claude lead"; else ko "executor misrouted"; fi
@@ -228,7 +228,7 @@ rm -rf "$HOME/.claude/projects"
 PX="$WORK/projet-codex"; mkdir -p "$PX/.loomy" && printf -- '---\nname: X\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n' >"$PX/.loomy/brief.md" && touch "$PX/START.md"
 : >"$L"
 (cd "$PX" && STUB_LOG="$L" "$LOOMY" start --new) >"$OUT" 2>&1
-if grep -q $'^codex\t-m\tgpt-6-astra\t-c\tmodel_reasoning_effort=' "$L"; then ok "start --new runs codex when Codex leads"; else ko "start codex ($(cat "$L"))"; fi
+if grep -q $'^codex\t-m\tgpt-6.1-sol\t-c\tmodel_reasoning_effort=' "$L"; then ok "start --new runs codex when Codex leads"; else ko "start codex ($(cat "$L"))"; fi
 fails "start without brief refused" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
 mkdir -p "$WORK/route-vide-$$"
 fails "start without brief refused" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
@@ -956,7 +956,7 @@ has "failover to Codex: announced" "Claude quota at 97 % .*reviewer handed to Co
 grep -q '^codex' "$FL" && ! grep -q '^claude' "$FL" && grep -q 'read-only' "$FL" && ok "failover to Codex: read-only role stays read-only" || ko "failover to codex: $(cut -c1-80 "$FL")"
 run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD" --print
 has "start: lead agent session on the other tool" "Claude Code quota at 97 %: this session runs on Codex"
-has "start: Codex command for the lead agent" "codex -m gpt-6-astra"
+has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
 rm -f "$QC/loomy/claude-limits"
 
 section "Codex CLI discovery"
@@ -1047,7 +1047,7 @@ section "Security audit"
 AR="$WORK/audit-repo"; mkdir -p "$AR" && git -C "$AR" init -q && echo x >"$AR/a.txt" && git -C "$AR" add -A && git -C "$AR" -c user.name=t -c user.email=t@t commit -qm i
 fails "audit: refused outside a Git repository" 1 bash -c 'cd "$1" && "$2" audit --yes --print --no-install' _ "$WORK/pas-git-$$" "$LOOMY" 2>/dev/null || true
 (cd "$AR" && "$LOOMY" audit --yes --print --no-install) >"$OUT" 2>&1
-has "audit: auditor on the security role" "claude-opus|gpt-6-astra"
+has "audit: auditor on the security role" "claude-opus|gpt-6.1-sol"
 file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
 file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
 file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"

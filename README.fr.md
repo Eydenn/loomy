@@ -358,10 +358,10 @@ flowchart TB
 
 | Rôle | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybride, lead Claude | 🟣 Hybride, lead Codex |
 |---|---|---|---|---|
-| 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Astra · high | **Opus 5.5 · high** | Astra · high |
-| 🏛️&nbsp;Architecte | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Sol 6.1 · high | **Opus 5.5 · high** | Sol 6.1 · high |
+| 🏛️&nbsp;Architecte | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒&nbsp;Sécurité | Opus 5.5 · high | Astra · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Sécurité | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
 | 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
 | ⚙️&nbsp;Exécutant | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
@@ -372,7 +372,7 @@ flowchart TB
 
 | Profil | Effet |
 |---|---|
-| 💚&nbsp;Économe | orchestrateur Claude sur Sonnet 5.5 `medium` (Codex sur Astra `medium`), spécialistes en `medium`, exécution sur les modèles rapides |
+| 💚&nbsp;Économe | orchestrateur Claude sur Sonnet 5.5 `medium` (Codex sur Sol 6.1 `medium`), spécialistes en `medium`, exécution sur les modèles rapides |
 | 💛&nbsp;Équilibré&nbsp;*(défaut)* | la matrice ci-dessus |
 | ❤️&nbsp;Qualité&nbsp;max | orchestrateur et spécialistes en `xhigh`, revues sur le modèle de pointe, exécution sur Sol ou Sonnet `high` |
 
@@ -412,7 +412,8 @@ C'est un protocole texte, qui fonctionne avec Claude et Codex tels quels. L'éch
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
 | GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | développeur, relecteur (Codex) |
-| GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | orchestrateur en full Codex |
+| GPT&#8209;6.1&#8209;Sol | 2 / 10 | environ 1,50 $ par tâche DeepSWE | — | DeepSWE 75,2 % (éditeur) | tous les rôles Codex sauf l'exécution, depuis la 0.7.2 |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | repli au niveau top, ou forcé : `loomy config set model.codex.top gpt-6-astra` |
 | Claude&nbsp;Sonnet&nbsp;5 | 2 / 10 | — | — | — | développeur, relecteur (Claude) |
 | Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | 0,55 → 5,98 $ | non publié | **59,6 %** | 🏆 orchestrateur et spécialistes |
 | Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | 7,63 $ | 62 | 55,8 % | ❌ remplacé par Opus 5.5 |
@@ -422,7 +423,7 @@ C'est un protocole texte, qui fonctionne avec Claude et Codex tels quels. L'éch
   - Il fait 66,6 % sur des corrections bornées pour 0,22 $, contre 2,74 $ pour Sol.
   - Sur le travail long et autonome en terminal, il tombe à 13 %.
   - Il exécute donc des tickets précis sous l'orchestrateur, jamais plus.
-- 🐎 **GPT-6-Sol, cheval de trait de Codex.** Il égale Opus 5.5 medium sur l'automatisation de workflows pour environ 40 % du coût.
+- 🐎 **GPT-6.1 Sol tient tout le côté Codex.** Il égale Astra sur DeepSWE (75,2 % contre 74,8 %) pour environ un cinquième du coût, et Astra s'est montré moins fiable ces derniers temps en usage réel : Astra reste son repli, et peut être forcé avec `loomy config set model.codex.top gpt-6-astra` (`auto` pour revenir).
 
 ---
 
@@ -610,7 +611,7 @@ loomy/
 - **Questions** : le périmètre, la profondeur (rapide, standard, approfondi) et les livrables : rapport seul, rapport et plan de corrections, ou corrections en plus sur une branche `loomy/audit-fixes`.
 - **Méthode** : [le skill officiel security-audit de Cloudflare](https://github.com/cloudflare/security-audit-skill) (MIT), installé pour ce dépôt uniquement si tu l'acceptes.
 - **Équipe**, via les bridges de Loomy, chaque délégation journalisée :
-  - l'auditeur (rôle sécurité : Opus 5.5, ou Astra avec un orchestrateur Codex) mène l'audit ;
+  - l'auditeur (rôle sécurité : Opus 5.5, ou GPT-6.1 Sol avec un orchestrateur Codex) mène l'audit ;
   - un explorateur cartographie la surface d'attaque, sur un modèle rigoureux (Sonnet 5.5 en medium, ou GPT-6-Sol) : un point d'entrée manqué n'est jamais analysé ;
   - Claude Sonnet 5.5 en effort élevé, rigoureux, revérifie chaque constat de façon indépendante ;
   - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés ;
@@ -672,7 +673,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅ | `loomy review` : revue croisée à la demande sur la branche ou le diff en cours |
 | ✅ | Modèles de projet (application SaaS, landing page, API REST, CLI, modèles d'e-mails) qui pré-remplissent le brief et donnent une structure de départ |
 | ✅ | `loomy report` : bilan d'un projet (tâches, coûts, délégations), comparaison entre projets, fichier Markdown à garder dans le dépôt |
-| ✅&nbsp;0.7.1 | **Version actuelle** · **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
+| ✅&nbsp;0.7.1 | **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
+| ✅&nbsp;0.7.2 | **Version actuelle** · **GPT-6.1 Sol pour tous les rôles Codex** sauf l'exécution ; Astra en repli, ou forcé avec `loomy config set model.codex.top gpt-6-astra` |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

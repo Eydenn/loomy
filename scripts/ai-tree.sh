@@ -40,15 +40,7 @@ color_of() { case "$1" in TOP) printf '%s' "$C_MAGENTA" ;; FAST) printf '%s' "$C
 
 # ---------------------------------------------------------------- state per role, from the log
 # Per role: running (a delegation started whose process is alive), or the last finished one.
-STATES="$( [[ -s "$J" ]] && awk '
-  function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
-  function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-  /"type":"delegation_start"/ { id = field("id"); srole[id] = field("role"); sts[id] = field("ts"); spid[id] = num("pid"); stask[id] = substr(field("task"), 1, 50); order[++n] = id }
-  /"type":"delegation",/ { id = field("id"); fin[id] = 1; r = field("role")
-    last[r] = field("ts") "|" field("status") "|" num("duration_s") "|" (num("tokens_in") + num("tokens_out")) "|" field("outcome") "|" field("model"); cnt[r]++ }
-  END {
-    for (i = 1; i <= n; i++) { id = order[i]; if (!(id in fin)) print "RUN|" srole[id] "|" spid[id] "|" sts[id] "|" stask[id] }
-    for (r in last) print "LAST|" r "|" last[r] "|" cnt[r] }' "$J")"
+# (computed below only for the list rendering; the diagram reads the log in its own single pass)
 
 # ---------------------------------------------------------------- lead and advisor
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
@@ -66,12 +58,7 @@ for mf in audit task; do
   if [[ -n "$p" && "$p" != "done" ]]; then loomy_phases_mode "$mf"; phase="$p"; MISSION="$mf"; break; fi
 done
 
-# Advisor consultations (count, last one).
 a_n=0; a_last=""; a_tok=0
-if [[ -s "$J" ]]; then
-  read -r a_n a_tok a_last <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-    /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
-fi
 # role_state <role>: "run|<elapsed s>|<task>", "last|<status>|<outcome>|<duration>" or "idle".
 role_state() {
   local run last pid ts task lts lst ldur loc
@@ -103,22 +90,127 @@ TREE_SMALL=0; [[ "${TREE_MODE:-auto}" != "list" ]] && (( ! DIAGRAM )) && TREE_SM
 if (( DIAGRAM )); then
   # shellcheck source=lib/canvas.sh
   source "$SCRIPT_DIR/lib/canvas.sh"
+  # Interface texts translated once per frame (no subshell per label).
+  tv TR_0 "LOOMY AGENT TREE"
+  tv TR_1 "LEADS"
+  tv TR_2 "ON CALL"
+  tv TR_3 "lead"
+  tv TR_4 "routing"
+  tv TR_5 "roles"
+  tv TR_6 "by profile"
+  tv TR_7 "advisor"
+  tv TR_8 "main session"
+  tv TR_9 "plans + decides"
+  tv TR_10 "session open"
+  tv TR_11 "session closed"
+  tv TR_12 "delegations"
+  tv TR_13 "top"
+  tv TR_14 "standard"
+  tv TR_15 "fast"
+  tv TR_16 "delegate to roles"
+  tv TR_17 "effort by profile"
+  tv TR_18 "back to the lead agent"
+  tv TR_19 "review + verify"
+  tv TR_20 "on call"
+  tv TR_21 "before a plan"
+  tv TR_22 "reads the whole"
+  tv TR_23 "session, every"
+  tv TR_24 "tool call and"
+  tv TR_25 "every result"
+  tv TR_26 "calls"
+  tv TR_27 "tokens read"
+  tv TR_28 "last"
+  tv TR_29 "silent on every"
+  tv TR_30 "routine turn"
+  tv TR_31 "error repeats"
+  tv TR_32 "never writes"
+  tv TR_33 "code itself; the"
+  tv TR_34 "lead agent applies"
+  tv TR_35 "the advice."
+  tv TR_36 "before done"
+  tv TR_37 "session log"
+  tv TR_38 "log empty for now"
+  tv TR_39 "live: loomy watch, then t"
+  # Redrawn every second: helpers that write into variables instead of starting subprocesses.
+  _tz="$(date +%z)"; TZOFF=$(( (10#${_tz:1:2} * 3600 + 10#${_tz:3:2} * 60) * ${_tz:0:1}1 ))
+  ts2ep() {   # ISO UTC timestamp → EP (epoch), by calendar arithmetic
+    local y=$(( 10#${1:0:4} )) m=$(( 10#${1:5:2} )) d=$(( 10#${1:8:2} )) H=$(( 10#${1:11:2} )) M=$(( 10#${1:14:2} )) S=$(( 10#${1:17:2} ))
+    (( m <= 2 )) && { y=$(( y - 1 )); m=$(( m + 12 )); }
+    EP=$(( (365 * y + y / 4 - y / 100 + y / 400 + (153 * (m - 3) + 2) / 5 + d - 719469) * 86400 + H * 3600 + M * 60 + S ))
+  }
+  hms() { local x; ts2ep "$1"; x=$(( (EP + TZOFF) % 86400 )); printf -v HMS '%02d:%02d:%02d' $(( x / 3600 )) $(( x % 3600 / 60 )) $(( x % 60 )); }
+  toklbl() { local n="${1%.*}"; n="${n:-0}"; if (( n >= 1000000 )); then printf -v TOK '%d.%dM' $(( n / 1000000 )) $(( n % 1000000 / 100000 )); elif (( n >= 1000 )); then printf -v TOK '%d.%dk' $(( n / 1000 )) $(( n % 1000 / 100 )); else TOK="$n"; fi; }
+  # One pass over the log: running and last delegation per role, delegations per tier, advisor consultations.
+  RS_ROLE=(); RS_KIND=(); RS_A=(); RS_B=(); RS_C=(); RS_D=(); n_tot=0; T_TOP=0; T_MID=0; T_FAST=0
+  if [[ -s "$J" ]]; then
+    while IFS='|' read -r kind a b c d e; do
+      case "$kind" in
+        RUN|LAST) RS_ROLE+=("$a"); RS_KIND+=("$kind"); RS_A+=("$b"); RS_B+=("$c"); RS_C+=("$d"); RS_D+=("$e") ;;
+        TOT) n_tot="$a"; T_TOP="$b"; T_MID="$c"; T_FAST="$d" ;;
+        ADV) a_n="$a"; a_tok="$b"; a_last="$c" ;;
+      esac
+    done < <(awk -v ta=" $AI_MODEL_CLAUDE_TOP $AI_MODEL_CODEX_TOP " -v tb=" $AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_MID " -v tc=" $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_FAST " '
+      function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+      function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
+      /"type":"delegation_start"/ { id = field("id"); srole[id] = field("role"); sts[id] = field("ts"); spid[id] = num("pid"); stask[id] = substr(field("task"), 1, 50); order[++n] = id }
+      /"type":"delegation",/ { id = field("id"); fin[id] = 1; r = field("role"); m = " " field("model") " "
+        last[r] = field("status") "|" field("outcome") "|" num("duration_s") "|" field("ts"); tot++
+        if (index(ta, m)) t1++; else if (index(tb, m)) t2++; else if (index(tc, m)) t3++ }
+      /"type":"advisor"/ { an += num("calls"); at += num("tokens_in"); al = field("ts") }
+      END {
+        for (i = 1; i <= n; i++) { id = order[i]; if (!(id in fin)) print "RUN|" srole[id] "|" spid[id] "|" sts[id] "|" stask[id] "|" }
+        for (r in last) print "LAST|" r "|" last[r]
+        print "TOT|" tot + 0 "|" t1 + 0 "|" t2 + 0 "|" t3 + 0 "||"
+        print "ADV|" an + 0 "|" at + 0 "|" al "|||" }' "$J")
+  fi
+  # role_state_fast <role>: RS_K (run, last or idle) and its fields, without subprocess.
+  role_state_fast() {
+    local i n=${#RS_ROLE[@]}
+    RS_K="idle"
+    for (( i = n - 1; i >= 0; i-- )); do
+      [[ "${RS_ROLE[i]}" == "$1" ]] || continue
+      if [[ "${RS_KIND[i]}" == "RUN" ]]; then
+        if [[ -n "${RS_A[i]}" && "${RS_A[i]}" != "0" ]] && kill -0 "${RS_A[i]}" 2>/dev/null; then
+          ts2ep "${RS_B[i]}"; RS_EL=$(( now_s - EP )); RS_K="run"; return 0
+        fi
+      elif [[ "$RS_K" == "idle" ]]; then
+        RS_K="last"; RS_ST="${RS_A[i]}"; RS_OC="${RS_B[i]}"; RS_DUR="${RS_C[i]}"
+      fi
+    done
+  }
   (( W > 140 )) && W=140
   K_LEAD="$C_YELLOW"; K_ROUTE="$C_GREEN"; K_ROLE="$C_CYAN"; K_ADV="$C_MAGENTA"; K_DIM="$C_DIM"; K_TXT=""; K_B="$C_BOLD"
-  bars() { case "$1" in low) echo "▮▯▯▯" ;; medium) echo "▮▮▯▯" ;; high) echo "▮▮▮▯" ;; *) echo "▮▮▮▮" ;; esac; }
-  eff_short() { case "$1" in medium) echo "med" ;; *) echo "$1" ;; esac; }
+  bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; *) BARS="▮▮▮▮" ;; esac; }
+  eff_short() { case "$1" in medium) EFS="med" ;; *) EFS="$1" ;; esac; }
+  color_tier() { case "$1" in TOP) CT="$C_MAGENTA" ;; FAST) CT="$C_GREEN" ;; *) CT="$C_CYAN" ;; esac; }
   action_of() {
     case "$1" in
-      architect) t "designs the plan" ;; debugger) t "finds the cause" ;; security) t "checks the risks" ;;
-      reviewer) t "reviews the diff" ;; developer) t "edits + runs tests" ;; executor) t "runs bounded tasks" ;;
-      explorer) t "reads the code" ;; documenter) t "writes the docs" ;; *) echo "$1" ;;
+      architect) tv ACT "designs the plan" ;; debugger) tv ACT "finds the cause" ;; security) tv ACT "checks the risks" ;;
+      reviewer) tv ACT "reviews the diff" ;; developer) tv ACT "edits + runs tests" ;; executor) tv ACT "runs bounded tasks" ;;
+      explorer) tv ACT "reads the code" ;; documenter) tv ACT "writes the docs" ;; *) ACT="$1" ;;
     esac
   }
+  role_lbl() {
+    case "$1" in
+      architect) tv RL "Architect" ;; debugger) tv RL "Debugger" ;; security) tv RL "Security" ;; reviewer) tv RL "Reviewer" ;;
+      developer) tv RL "Developer" ;; executor) tv RL "Executor" ;; explorer) tv RL "Explorer" ;; documenter) tv RL "Documenter" ;; *) RL="$1" ;;
+    esac
+    # First letter in lower case, as in the boxes.
+    local f="${RL:0:1}" up="ABCDEFGHIJKLMNOPQRSTUVWXYZ" lo="abcdefghijklmnopqrstuvwxyz" i
+    case "$f" in [A-Z]) i="${up%%"$f"*}"; RL="${lo:${#i}:1}${RL:1}" ;; É) RL="é${RL:1}" ;; esac
+  }
+  NROLES=0; for r in $AI_ROLES; do [[ "$r" == lead ]] || NROLES=$(( NROLES + 1 )); done
   # Roles shown as boxes: running ones first, then the most recently used, then the usual workers.
   pick=""
-  for r in $(printf '%s\n' "$STATES" | awk -F'|' '$1 == "RUN" { print $2 }') \
-           $(printf '%s\n' "$STATES" | awk -F'|' '$1 == "LAST" { print $3 "|" $2 }' | sort -r | cut -d'|' -f2) \
-           developer reviewer executor explorer architect; do
+  run_roles=""; last_roles=""; n_run=0
+  for (( i = 0; i < ${#RS_ROLE[@]}; i++ )); do
+    if [[ "${RS_KIND[i]}" == RUN ]]; then
+      if [[ -n "${RS_A[i]}" && "${RS_A[i]}" != 0 ]] && kill -0 "${RS_A[i]}" 2>/dev/null; then run_roles="$run_roles ${RS_ROLE[i]}"; n_run=$(( n_run + 1 )); fi
+    else last_roles="$last_roles ${RS_D[i]}|${RS_ROLE[i]}"; fi
+  done
+  # Most recent first (one sort for the whole frame).
+  [[ -n "$last_roles" ]] && last_roles="$(printf '%s\n' $last_roles | sort -r | cut -d'|' -f2)"
+  for r in $run_roles $last_roles developer reviewer executor explorer architect; do
     case " $pick " in *" $r "*) continue ;; esac
     case " $AI_ROLES " in *" $r "*) [[ "$r" != "lead" ]] && pick="$pick $r" ;; esac
   done
@@ -136,12 +228,13 @@ if (( DIAGRAM )); then
   case "$ADV" in opus) adv_model="$AI_MODEL_CLAUDE_TOP" ;; sonnet) adv_model="$AI_MODEL_CLAUDE_MID" ;; fable) adv_model="claude-fable-5-1" ;; *) adv_model="$ADV" ;; esac
   nice_model() { printf '%s' "$1" | sed 's/^claude-//; s/-\([0-9]\)-\([0-9]\)$/ \1.\2/; s/^gpt-/GPT-/' | tr 'a-z' 'A-Z'; }
   adv_up="$(nice_model "$adv_model")"
-  title="$(t "LOOMY AGENT TREE")  ·  $(nice_model "$L_MODEL") $(t "LEADS")${ADV:+  ·  $adv_up $(t "ON CALL")}"
+  NM_LEAD="$(nice_model "$L_MODEL")"
+  title="${TR_0}  ·  $NM_LEAD ${TR_1}${ADV:+  ·  $adv_up ${TR_2}}"
   # A blank row above the title, then the title and its rule.
   cv_center 0 1 "$W" "$K_B" "$title"
   cv_hline 2 $(( W - 3 )) 2 "$K_DIM"
-  litems=("$K_LEAD|$(t "lead") · $L_EFFORT" "$K_ROUTE|$(t "routing") · $(ai_profile_label "$AI_PROFILE")" "$K_ROLE|$(t "roles") · $(t "by profile")")
-  [[ -n "$ADV" ]] && litems+=("$K_ADV|$(t "advisor") · $ADV")
+  litems=("$K_LEAD|${TR_3} · $L_EFFORT" "$K_ROUTE|${TR_4} · $(ai_profile_label "$AI_PROFILE")" "$K_ROLE|${TR_5} · ${TR_6}")
+  [[ -n "$ADV" ]] && litems+=("$K_ADV|${TR_7} · $ADV")
   ltot=0; for it in "${litems[@]}"; do lt="${it#*|}"; ltot=$(( ltot + ${#lt} + 5 )); done
   lp=$(( (W - ltot) / 2 ))
   for it in "${litems[@]}"; do lt="${it#*|}"; cv_put "$lp" 4 "${it%%|*}" "■"; cv_put $(( lp + 2 )) 4 "$K_DIM" "$lt"; lp=$(( lp + ${#lt} + 5 )); done
@@ -152,38 +245,37 @@ if (( DIAGRAM )); then
   mcx=$CC
   lk="$K_LEAD"; [[ "$sess" == open* ]] && (( TICK % 2 )) && lk="${C_BOLD}${C_YELLOW}"
   cv_box "$MX" "$MY" "$MW" 6 "$lk"
-  cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$(nice_model "$L_MODEL") · $(t "main session")"
-  cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "$(t "plans + decides")"
-  cv_center "$MX" $(( MY + 3 )) "$MW" "$K_TXT" "effort $(bars "$L_EFFORT") $L_EFFORT"
-  cv_center "$MX" $(( MY + 4 )) "$MW" "$( [[ "$sess" == open* ]] && echo "$C_GREEN" || echo "$K_DIM")" "$( [[ "$sess" == open* ]] && echo "● $(t "session open")" || echo "○ $(t "session closed")")${phase:+ · $(loomy_phase_label "$phase")}"
+  cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$NM_LEAD · ${TR_8}"
+  cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "${TR_9}"
+  bars "$L_EFFORT"; cv_center "$MX" $(( MY + 3 )) "$MW" "$K_TXT" "effort $BARS $L_EFFORT"
+  PH_LBL=""; [[ -n "$phase" ]] && PH_LBL="$(loomy_phase_label "$phase")"
+  if [[ "$sess" == open* ]]; then sk="$C_GREEN"; st_txt="● ${TR_10}"; else sk="$K_DIM"; st_txt="○ ${TR_11}"; fi
+  cv_center "$MX" $(( MY + 4 )) "$MW" "$sk" "$st_txt${PH_LBL:+ · $PH_LBL}"
   # Connector lead → routing, with a travelling dot.
   cv_vline "$mcx" $(( MY + 6 )) $(( MY + 7 )) "$K_DIM"
   cv_put "$mcx" $(( MY + 6 + TICK % 2 )) "$K_LEAD" "●"
   # Routing layer: delegations per tier (Loomy's routing, where the video has Jev).
   RW=56; RX=$(( CC - RW / 2 )); RY=$(( MY + 8 ))
   cv_box "$RX" "$RY" "$RW" 6 "$K_ROUTE"
-  cv_put $(( RX + 2 )) $(( RY + 1 )) "${C_BOLD}${C_GREEN}" "LOOMY · $(t "routing")"
-  n_tot="$(grep -c '"type":"delegation",' "$J" 2>/dev/null | head -1)"; n_tot="${n_tot:-0}"
-  cv_right $(( RX + RW - 3 )) $(( RY + 1 )) "$K_TXT" "$(t "delegations") $n_tot"
+  cv_put $(( RX + 2 )) $(( RY + 1 )) "${C_BOLD}${C_GREEN}" "LOOMY · ${TR_4}"
+  cv_right $(( RX + RW - 3 )) $(( RY + 1 )) "$K_TXT" "${TR_12} $n_tot"
   ry=$(( RY + 2 ))
   for tier in TOP MID FAST; do
-    cnt="$( [[ -s "$J" ]] && awk -v tier="$tier" -v a="$AI_MODEL_CLAUDE_TOP $AI_MODEL_CODEX_TOP" -v b="$AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_MID" -v c="$AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_FAST" '
-      /"type":"delegation",/ { m = ""; if (match($0, /"model":"[^"]*"/)) m = substr($0, RSTART + 9, RLENGTH - 10)
-        s = (tier == "TOP" ? a : (tier == "MID" ? b : c)); if (index(" " s " ", " " m " ")) n++ } END { print n + 0 }' "$J" || echo 0)"
-    if [[ "$tier" == TOP ]]; then lbl="$(t "top")"; elif [[ "$tier" == MID ]]; then lbl="$(t "standard")"; else lbl="$(t "fast")"; fi
+    cnt=0; case "$tier" in TOP) cnt="$T_TOP" ;; MID) cnt="$T_MID" ;; *) cnt="$T_FAST" ;; esac
+    if [[ "$tier" == TOP ]]; then lbl="${TR_13}"; elif [[ "$tier" == MID ]]; then lbl="${TR_14}"; else lbl="${TR_15}"; fi
     fill=0; (( n_tot > 0 )) && fill=$(( cnt * 10 / n_tot ))
     bar=""; for (( q = 0; q < 10; q++ )); do if (( q < fill )); then bar="${bar}█"; else bar="${bar}░"; fi; done
     cv_put $(( RX + 2 )) "$ry" "$K_TXT" "$lbl"
     cv_put $(( RX + 13 )) "$ry" "$K_ROUTE" "$bar"
     cv_put $(( RX + 25 )) "$ry" "$K_TXT" "$cnt"
-    mods="$(eval "echo \"\$AI_MODEL_CLAUDE_${tier} · \$AI_MODEL_CODEX_${tier}\"" | sed 's/claude-//; s/gpt-//g')"
+    v1="AI_MODEL_CLAUDE_${tier}"; v2="AI_MODEL_CODEX_${tier}"; m1="${!v1}"; m2="${!v2}"; mods="${m1#claude-} · ${m2#gpt-}"
     cv_right $(( RX + RW - 3 )) "$ry" "$K_DIM" "$mods"
     ry=$(( ry + 1 ))
   done
   # Delegate to roles: label, split with nodes, arrows.
   cv_vline "$mcx" $(( RY + 6 )) $(( RY + 7 )) "$K_DIM"; cv_put "$mcx" $(( RY + 7 )) "$K_DIM" "●"
   SY=$(( RY + 9 ))
-  cv_center "$CX" "$SY" "$CWID" "$K_TXT" "$(t "delegate to roles") · $(t "effort by profile")"
+  cv_center "$CX" "$SY" "$CWID" "$K_TXT" "${TR_16} · ${TR_17}"
   # Role boxes spread symmetrically around the axis (an even step keeps every centre on a whole column).
   GAP=$(( (CWID - NB * BW) / (NB + 1) )); (( GAP < 2 )) && GAP=2; (( GAP % 2 )) && GAP=$(( GAP - 1 ))
   STEP=$(( BW + GAP ))
@@ -196,31 +288,32 @@ if (( DIAGRAM )); then
     c=$(( bx[b] + BW / 2 )); r="${SHOWN[b]}"
     cv_put "$c" $(( SY + 2 )) "$K_DIM" "●"; cv_put "$c" $(( SY + 3 )) "$K_DIM" "▼"
     ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
-    st="$(role_state "$r")"
+    role_state_fast "$r"
     bk="$K_ROLE"; stl=""; stk="$K_DIM"
-    case "$st" in
-      run*) IFS='|' read -r _ el _ <<<"$st"; (( el < 0 )) && el=0
-            bk="$( (( TICK % 2 )) && echo "${C_BOLD}${C_CYAN}" || echo "$C_CYAN")"
-            stl="${UI_SPIN[$(( TICK % 4 ))]} $(t "running") $(( el / 60 )):$(printf '%02d' $(( el % 60 )))"; stk="$C_YELLOW"
+    case "$RS_K" in
+      run) el="$RS_EL"; (( el < 0 )) && el=0
+            if (( TICK % 2 )); then bk="${C_BOLD}${C_CYAN}"; else bk="$C_CYAN"; fi
+            w_run=""; tv w_run "running"; printf -v stl '%s %s %d:%02d' "${UI_SPIN[$(( TICK % 4 ))]}" "$w_run" $(( el / 60 )) $(( el % 60 )); stk="$C_YELLOW"
             # The dot travels down the arrow of a working role.
             cv_put "$c" $(( SY + 2 + TICK % 2 )) "$C_YELLOW" "●" ;;
-      last*) IFS='|' read -r _ lst loc ldur _ <<<"$st"
-            if [[ "$lst" != "ok" ]]; then stl="✗ $(t "failed")"; stk="$C_RED"
-            elif [[ "$loc" == "partial" ]]; then stl="◐ $(t "partial")"; stk="$C_YELLOW"
-            elif [[ "$loc" == "blocked" ]]; then stl="■ $(t "blocked")"; stk="$C_YELLOW"
-            else d0="${ldur%.*}"; stl="✓ $(t "done") $(( ${d0:-0} / 60 )):$(printf '%02d' $(( ${d0:-0} % 60 )))"; stk="$C_GREEN"; fi ;;
-      *) stl="· $(t "idle")" ;;
+      last) d0="${RS_DUR%.*}"; d0="${d0:-0}"
+            if [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
+            elif [[ "$RS_OC" == "partial" ]]; then tv w "partial"; stl="◐ $w"; stk="$C_YELLOW"
+            elif [[ "$RS_OC" == "blocked" ]]; then tv w "blocked"; stl="■ $w"; stk="$C_YELLOW"
+            else tv w "done"; printf -v stl '✓ %s %d:%02d' "$w" $(( d0 / 60 )) $(( d0 % 60 )); stk="$C_GREEN"; fi ;;
+      *) tv w "idle"; stl="· $w" ;;
     esac
     cv_box "${bx[b]}" "$BY" "$BW" 9 "$bk"
-    cv_center "${bx[b]}" $(( BY + 2 )) "$BW" "${C_BOLD}" "$(ai_role_label "$r" | tr 'A-Z' 'a-z')"
-    cv_center "${bx[b]}" $(( BY + 3 )) "$BW" "$(color_of "$R_TIER")" "$R_MODEL"
-    cv_center "${bx[b]}" $(( BY + 4 )) "$BW" "$K_DIM" "effort $(bars "$R_EFFORT") $(eff_short "$R_EFFORT")"
-    cv_center "${bx[b]}" $(( BY + 5 )) "$BW" "$K_TXT" "$(action_of "$r")"
+    role_lbl "$r"; color_tier "$R_TIER"; bars "$R_EFFORT"; eff_short "$R_EFFORT"; action_of "$r"
+    cv_center "${bx[b]}" $(( BY + 2 )) "$BW" "${C_BOLD}" "$RL"
+    cv_center "${bx[b]}" $(( BY + 3 )) "$BW" "$CT" "$R_MODEL"
+    cv_center "${bx[b]}" $(( BY + 4 )) "$BW" "$K_DIM" "effort $BARS $EFS"
+    cv_center "${bx[b]}" $(( BY + 5 )) "$BW" "$K_TXT" "$ACT"
     cv_center "${bx[b]}" $(( BY + 6 )) "$BW" "$stk" "$stl"
     cv_vline "$c" $(( BY + 9 )) $(( BY + 10 )) "$K_DIM"
   done
-  others=$(( $(printf '%s\n' $AI_ROLES | grep -vc '^lead$') - NB ))
-  (( others > 0 )) && cv_right $(( W - 1 )) $(( BY + 10 )) "$K_DIM" "+$others $(t "roles") · loomy route"
+  others=$(( NROLES - NB ))
+  (( others > 0 )) && cv_right $(( W - 1 )) $(( BY + 10 )) "$K_DIM" "+$others ${TR_5} · loomy route"
   # Merge back to the lead agent.
   MGY=$(( BY + 11 ))
   cv_hline "$first_c" "$last_c" "$MGY" "$K_DIM"
@@ -229,19 +322,19 @@ if (( DIAGRAM )); then
   cv_vline "$mcx" $(( MGY + 1 )) $(( MGY + 1 )) "$K_DIM"; cv_put "$mcx" $(( MGY + 2 )) "$K_DIM" "▼"
   BKY=$(( MGY + 3 )); BKW=38; BKX=$(( CC - BKW / 2 ))
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
-  cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "$(t "back to the lead agent") · $L_EFFORT"
-  cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$(t "review + verify")${phase:+ · $(loomy_phase_label "$phase")}"
+  cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
+  cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "${TR_19}${PH_LBL:+ · $PH_LBL}"
   # Advisor column, linked to the lead box, the roles and the final check.
   if [[ -n "$ADV" ]]; then
     AH=$(( BKY + 4 - MY ))
     cv_box 0 "$MY" "$ADV_W" "$AH" "$K_ADV"
     cv_center 0 $(( MY + 1 )) "$ADV_W" "${C_BOLD}${C_MAGENTA}" "$adv_up"
-    cv_center 0 $(( MY + 2 )) "$ADV_W" "$K_ADV" "$(t "advisor") · $(t "on call")"
+    cv_center 0 $(( MY + 2 )) "$ADV_W" "$K_ADV" "${TR_7} · ${TR_20}"
     # The moment the advisor is most likely called now, from the phase and the last results.
     act="plan"
     case "$phase" in verify|commit|document|retire|validate|report|done) act="done" ;; esac
-    printf '%s\n' "$STATES" | awk -F'|' '$1 == "LAST" && ($4 != "ok" || $7 == "partial" || $7 == "blocked")' | grep -q . && act="error"
-    recent=0; [[ -n "$a_last" ]] && (( now_s - $(ai_ts_epoch "$a_last" || echo 0) < 90 )) && recent=1
+    for (( i = 0; i < ${#RS_ROLE[@]}; i++ )); do [[ "${RS_KIND[i]}" == LAST ]] && { [[ "${RS_A[i]}" != ok || "${RS_B[i]}" == partial || "${RS_B[i]}" == blocked ]]; } && act="error"; done
+    recent=0; if [[ -n "$a_last" ]]; then ts2ep "$a_last"; (( now_s - EP < 90 )) && recent=1; fi
     trig() {   # trig <code> <y> <label> <target x>
       local mk="◇" k="$K_DIM"
       [[ "$act" == "$1" ]] && { mk="◆"; k="${C_BOLD}${C_MAGENTA}"; }
@@ -249,50 +342,54 @@ if (( DIAGRAM )); then
       cv_hline "$ADV_W" $(( $4 - 2 )) "$2" "$K_DIM" "╌"; cv_put $(( $4 - 1 )) "$2" "$K_DIM" "▶"
       if [[ "$act" == "$1" ]] && (( recent )); then cv_put $(( ADV_W + (TICK * 3) % ( $4 - ADV_W - 2 ) )) "$2" "$C_MAGENTA" "●"; fi
     }
-    trig plan $(( MY + 3 )) "$(t "before a plan")" "$MX"
-    cv_put 4 $(( MY + 6 )) "$K_DIM" "$(t "reads the whole")"; cv_put 4 $(( MY + 7 )) "$K_DIM" "$(t "session, every")"
-    cv_put 4 $(( MY + 8 )) "$K_DIM" "$(t "tool call and")"; cv_put 4 $(( MY + 9 )) "$K_DIM" "$(t "every result")"
-    cv_put 4 $(( MY + 12 )) "$K_TXT" "$(t "calls")"; cv_right $(( ADV_W - 4 )) $(( MY + 12 )) "$K_B" "$a_n"
-    cv_put 4 $(( MY + 13 )) "$K_TXT" "$(t "tokens read")"; cv_right $(( ADV_W - 4 )) $(( MY + 13 )) "$K_B" "$(ai_tokens_label "$a_tok")"
-    [[ -n "$a_last" ]] && { cv_put 4 $(( MY + 14 )) "$K_TXT" "$(t "last")"; cv_right $(( ADV_W - 4 )) $(( MY + 14 )) "$K_B" "$(hm "$a_last" | cut -c1-5)"; }
-    cv_put 4 $(( MY + 17 )) "$K_DIM" "$(t "silent on every")"; cv_put 4 $(( MY + 18 )) "$K_DIM" "$(t "routine turn")"
-    trig error $(( BY + 4 )) "$(t "error repeats")" "${bx[0]}"
-    cv_put 4 $(( BY + 7 )) "$K_DIM" "$(t "never writes")"; cv_put 4 $(( BY + 8 )) "$K_DIM" "$(t "code itself; the")"
-    cv_put 4 $(( BY + 9 )) "$K_DIM" "$(t "lead agent applies")"; cv_put 4 $(( BY + 10 )) "$K_DIM" "$(t "the advice.")"
-    trig "done" $(( BKY + 1 )) "$(t "before done")" "$BKX"
+    trig plan $(( MY + 3 )) "${TR_21}" "$MX"
+    cv_put 4 $(( MY + 6 )) "$K_DIM" "${TR_22}"; cv_put 4 $(( MY + 7 )) "$K_DIM" "${TR_23}"
+    cv_put 4 $(( MY + 8 )) "$K_DIM" "${TR_24}"; cv_put 4 $(( MY + 9 )) "$K_DIM" "${TR_25}"
+    cv_put 4 $(( MY + 12 )) "$K_TXT" "${TR_26}"; cv_right $(( ADV_W - 4 )) $(( MY + 12 )) "$K_B" "$a_n"
+    toklbl "$a_tok"
+    cv_put 4 $(( MY + 13 )) "$K_TXT" "${TR_27}"; cv_right $(( ADV_W - 4 )) $(( MY + 13 )) "$K_B" "$TOK"
+    [[ -n "$a_last" ]] && hms "$a_last" && { cv_put 4 $(( MY + 14 )) "$K_TXT" "${TR_28}"; cv_right $(( ADV_W - 4 )) $(( MY + 14 )) "$K_B" "${HMS:0:5}"; }
+    cv_put 4 $(( MY + 17 )) "$K_DIM" "${TR_29}"; cv_put 4 $(( MY + 18 )) "$K_DIM" "${TR_30}"
+    trig error $(( BY + 4 )) "${TR_31}" "${bx[0]}"
+    cv_put 4 $(( BY + 7 )) "$K_DIM" "${TR_32}"; cv_put 4 $(( BY + 8 )) "$K_DIM" "${TR_33}"
+    cv_put 4 $(( BY + 9 )) "$K_DIM" "${TR_34}"; cv_put 4 $(( BY + 10 )) "$K_DIM" "${TR_35}"
+    trig "done" $(( BKY + 1 )) "${TR_36}" "$BKX"
   fi
   # Session log box.
   LY=$(( BKY + 5 ))
-  cv_box 0 "$LY" "$W" $(( LOGN + 2 )) "$K_DIM" "$(t "session log")"
+  cv_box 0 "$LY" "$W" $(( LOGN + 2 )) "$K_DIM" "${TR_37}"
   ly=$(( LY + 1 ))
   if rows="$(ai_session_log_rows "$ROOT" "$LOGN")"; then
     while IFS='|' read -r ts who what extra; do
-      e="$(ai_ts_epoch "$ts")"; tm="${ts:11:8}"; [[ -n "$e" ]] && tm="$(hm "$ts")"
+      tm="${ts:11:8}"; e=""
+      if [[ "$ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]; then hms "$ts"; tm="$HMS"; e="$EP"; fi
       case "$who" in advisor) wk="${C_BOLD}${C_MAGENTA}" ;; phase|session|lead) wk="${C_BOLD}${C_YELLOW}" ;; executor|explorer) wk="${C_BOLD}${C_GREEN}" ;; *) wk="${C_BOLD}${C_CYAN}" ;; esac
       if [[ "$who" == "phase" ]]; then [[ -n "$extra" ]] && loomy_phases_mode "$extra"; what="$(loomy_phase_label "$what")"; loomy_phases_mode project; extra=""
-      else what="$(t "$what")"; fi
+      else tv what "$what"; fi
       left="${extra#* · }"; right="${extra%% · *}"; [[ "$left" == "$extra" ]] && left=""
       new=0; [[ -n "$e" ]] && (( now_s - e < 6 )) && new=1
       cv_put 2 "$ly" "$K_DIM" "$tm"
       cv_put 12 "$ly" "$wk" "$who"
-      cv_put 24 "$ly" "$( (( new )) && echo "$C_BOLD")" "$what${left:+ · $left}"
+      nb=""; (( new )) && nb="$C_BOLD"
+      cv_put 24 "$ly" "$nb" "$what${left:+ · $left}"
       cv_right $(( W - 3 )) "$ly" "$K_DIM" "$right"
       (( new )) && cv_put 1 "$ly" "$C_YELLOW" "▸"
       ly=$(( ly + 1 ))
     done <<<"$rows"
   else
-    cv_put 2 "$ly" "$K_DIM" "$(t "log empty for now")"
+    cv_put 2 "$ly" "$K_DIM" "${TR_38}"
   fi
   # Command line and status bar.
   PY=$(( LY + LOGN + 3 ))
   tilde="~"
-  cv_put 0 "$PY" "$C_GREEN" "$tilde/$(basename "$ROOT") \$"
-  pname="$(basename "$ROOT")"
-  cv_put $(( ${#pname} + 5 )) "$PY" "$K_TXT" "loomy watch$( (( TICK % 2 )) && echo " █")"
-  n_run="$(printf '%s\n' "$STATES" | awk -F'|' '$1 == "RUN"' | while IFS='|' read -r _ _ pid _; do [[ -n "$pid" && "$pid" != 0 ]] && kill -0 "$pid" 2>/dev/null && echo x; done | grep -c x || true)"
+  pname="${ROOT##*/}"
+  cv_put 0 "$PY" "$C_GREEN" "$tilde/$pname \$"
+  cur=""; (( TICK % 2 )) && cur=" █"
+  cv_put $(( ${#pname} + 5 )) "$PY" "$K_TXT" "loomy watch$cur"
   # Status bar: label, then its value in brackets, coloured like its part of the diagram.
   sx=0
-  for seg in "effort|$L_EFFORT|$K_LEAD" "$(t "roles")|${n_run}/$(printf '%s\n' $AI_ROLES | grep -vc '^lead$')|$K_ROLE" "$(t "advisor")|$( [[ -n "$ADV" ]] && { (( recent )) && t "advising" || t "on call"; } || echo off)|$K_ADV" "$(t "delegations")|$n_tot|$K_ROUTE"; do
+  adv_state="off"; if [[ -n "$ADV" ]]; then if (( recent )); then tv adv_state "advising"; else tv adv_state "on call"; fi; fi
+  for seg in "effort|$L_EFFORT|$K_LEAD" "${TR_5}|${n_run}/${NROLES}|$K_ROLE" "${TR_7}|${adv_state}|$K_ADV" "${TR_12}|$n_tot|$K_ROUTE"; do
     IFS='|' read -r sl sv sk <<<"$seg"
     cv_put "$sx" $(( PY + 1 )) "$K_TXT" "$sl ["; sx=$(( sx + ${#sl} + 2 ))
     cv_put "$sx" $(( PY + 1 )) "${C_BOLD}$sk" "$sv"; sx=$(( sx + ${#sv} ))
@@ -300,11 +397,26 @@ if (( DIAGRAM )); then
   done
   CV_H=$(( PY + 2 ))
   cv_junctions
-  cv_print "$(printf '%s  ' "${C_RAIL}│${C_RESET}")"
-  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "$(t "live: loomy watch, then t")"
+  printf -v cvp '%s  ' "${C_RAIL}│${C_RESET}"
+  cv_print "$cvp"
+  [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${TR_39}"
   exit 0
 fi
 
+# ---------------------------------------------------------------- list rendering
+STATES="$( [[ -s "$J" ]] && awk '
+  function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+  function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
+  /"type":"delegation_start"/ { id = field("id"); srole[id] = field("role"); sts[id] = field("ts"); spid[id] = num("pid"); stask[id] = substr(field("task"), 1, 50); order[++n] = id }
+  /"type":"delegation",/ { id = field("id"); fin[id] = 1; r = field("role")
+    last[r] = field("ts") "|" field("status") "|" num("duration_s") "|" (num("tokens_in") + num("tokens_out")) "|" field("outcome") "|" field("model"); cnt[r]++ }
+  END {
+    for (i = 1; i <= n; i++) { id = order[i]; if (!(id in fin)) print "RUN|" srole[id] "|" spid[id] "|" sts[id] "|" stask[id] }
+    for (r in last) print "LAST|" r "|" last[r] "|" cnt[r] }' "$J")"
+if [[ -s "$J" ]]; then
+  read -r a_n a_tok a_last <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
+    /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
+fi
 ui_section "$(t "AGENT TREE")" "$(ai_env_label "$AI_ENV") · $(t "%s profile" "$(ai_profile_label "$AI_PROFILE")")"
 (( TREE_SMALL )) && ui_rail "${C_DIM}$(t "diagram view: enlarge the window to %s × %s (now %s × %s), or key v" "$TREE_NEED_COLS" "$TREE_NEED_ROWS" "$UI_COLS" "$UI_ROWS")${C_RESET}"
 ui_rail ""

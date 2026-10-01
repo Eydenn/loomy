@@ -654,7 +654,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.8.0 | **advisor and agent tree**: Opus advises the Thrifty Sonnet lead (Claude Code's advisor, measured consultations); `loomy tree` and key `t` of `watch` show the lead, its advisor and every role live |
 | ✅&nbsp;0.8.1 | **session log that scrolls** in `loomy watch` and the agent tree: one coloured, aligned line per event, arrivals scrolling in one by one, the newest highlighted |
 | ✅&nbsp;0.8.2 | **agent tree as a diagram** (boxes, links, routing layer, advisor column, framed session log, animated); `tree_view auto\|diagram\|list`, key `v`, the window grows when needed |
-| ✅&nbsp;0.8.3 | **Current version** · agent tree diagram: room above the title |
+| ✅&nbsp;0.8.3 | agent tree diagram: room above the title |
+| ✅&nbsp;0.8.4 | **Current version** · agent tree diagram twice as fast (about 0.5 s per frame) |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

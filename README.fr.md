@@ -715,7 +715,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.8.0 | **conseiller et arbre des agents** : Opus conseille l'orchestrateur Sonnet en Économe (le conseiller de Claude Code, consultations mesurées) ; `loomy tree` et la touche `t` de `watch` montrent l'orchestrateur, son conseiller et chaque rôle en direct |
 | ✅&nbsp;0.8.1 | **journal de session qui défile** dans `loomy watch` et l'arbre des agents : une ligne colorée et alignée par événement, les arrivées défilent une à une, la plus récente mise en évidence |
 | ✅&nbsp;0.8.2 | **arbre des agents en diagramme** (boîtes, liaisons, couche de routage, colonne du conseiller, journal encadré, animé) ; `tree_view auto\|diagram\|list`, touche `v`, la fenêtre s'agrandit si besoin |
-| ✅&nbsp;0.8.3 | **Version actuelle** · diagramme de l'arbre des agents : de l'espace au-dessus du titre |
+| ✅&nbsp;0.8.3 | diagramme de l'arbre des agents : de l'espace au-dessus du titre |
+| ✅&nbsp;0.8.4 | **Version actuelle** · diagramme de l'arbre des agents deux fois plus rapide (environ 0,5 s par image) |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |

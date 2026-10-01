@@ -2,7 +2,16 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.8.3 — 2026-10-01
+## 0.8.4 — 2026-10-01
+
+### Changed
+- **Agent tree diagram twice as fast** (about 0.5 s per frame instead of 1.1 s, measured at 133 × 64), so `loomy watch` keeps up with its one-second refresh. The picture is unchanged.
+  - The canvas keeps each row as a string with a parallel string of colour codes: drawing replaces whole pieces of a row, and printing walks colour runs instead of cells.
+  - One pass over the log gives the state of every role, the delegations per model tier and the advisor's consultations; the list view's own reads only run when the list is shown.
+  - Local times are computed by calendar arithmetic instead of calling `date` for every log line.
+  - Labels are translated once per frame (`tv`, which writes into a variable), and the small helpers write into variables instead of starting a subshell each.
+
+
 
 ### Changed
 - Agent tree diagram: a blank row above the title, so it no longer sticks to the live tracking header.

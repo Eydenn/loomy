@@ -43,6 +43,14 @@ t() {
   if (( $# )); then printf -- "$s" "$@"; else printf '%s' "$s"; fi
 }
 
+# tv <variable> <sentence> [arguments]: like t, into a variable, without a subshell (for screens drawn every second).
+tv() {
+  local __tv_n="$1" __tv_s="$2"; shift 2
+  if [[ "$LOOMY_UI_LANG" == "fr" ]]; then _t_fr "$__tv_s"; [[ -n "$_T" ]] && __tv_s="$_T"; fi
+  # shellcheck disable=SC2059
+  if (( $# )); then printf -v "$__tv_n" -- "$__tv_s" "$@"; else printf -v "$__tv_n" '%s' "$__tv_s"; fi
+}
+
 # ui_lang: interface language (en or fr).
 ui_lang() { echo "$LOOMY_UI_LANG"; }
 

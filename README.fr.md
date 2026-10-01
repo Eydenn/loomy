@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.8.3-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.8.4-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)

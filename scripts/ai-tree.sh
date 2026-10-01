@@ -15,6 +15,8 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
+# shellcheck source=lib/sessionlog.sh
+source "$SCRIPT_DIR/lib/sessionlog.sh"
 
 ROOT=""
 while [[ $# -gt 0 ]]; do
@@ -121,18 +123,10 @@ done
 # ---------------------------------------------------------------- session log
 ui_rail ""
 ui_rail "${C_DIM}── $(t "session log") ──${C_RESET}"
-if [[ -s "$J" ]]; then
-  tail -n 200 "$J" | awk '
-    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
-    function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-    /"type":"delegation_start"/ { print field("ts") "|" field("role") "|start · " field("model") "|" substr(field("task"), 1, 44); next }
-    /"type":"delegation",/ { d = num("duration_s") + 0; print field("ts") "|" field("role") "|" (field("status") == "ok" ? "done" : "failed") " · " (d >= 60 ? int(d / 60) " min " d % 60 " s" : d " s") "|" field("outcome"); next }
-    /"type":"advisor"/ { print field("ts") "|advisor|" num("calls") " consultation(s) · " field("model") "|"; next }
-    /"type":"(phase|task_phase|audit_phase)"/ { print field("ts") "|phase|" field("phase") "|"; next }
-    /"type":"session"/ { print field("ts") "|session|" field("event") " · " field("tool") "|" }' | tail -6 |
-  while IFS='|' read -r ts who what extra; do
-    ui_rail "${C_DIM}$(hm "$ts")${C_RESET}  $(printf '%-11s' "$who") $what ${C_DIM}${extra}${C_RESET}"
-  done
+_ui_term_size
+sl_n=$(( UI_ROWS - n_roles - 26 )); (( sl_n < 3 )) && sl_n=3; (( sl_n > 12 )) && sl_n=12
+if sl="$(ai_session_log "$ROOT" "$sl_n")"; then
+  while IFS= read -r l; do ui_rail "$l"; done <<<"$sl"
 else
   ui_info "$(t "log empty for now")"
 fi

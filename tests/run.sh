@@ -1238,6 +1238,15 @@ has "tree: every role with its model" "Executor.*gpt-6-luna"
 has "tree: session log and status line" "session log"
 bash "$REPO/scripts/ai-status.sh" --root "$DW" --tree >"$OUT" 2>&1
 has "tree: shown by the status view (key t of watch)" "AGENT TREE"
+# Session log in watch: events arriving together scroll in one per refresh, the newest highlighted.
+slq() { LOOMY_WATCH_ID="t$$" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/sessionlog.sh"; ai_session_log "$2" 1' _ "$REPO" "$DW"; }
+rm -f "${TMPDIR:-/tmp}/loomy-watch-t$$.seen"; slq >/dev/null
+nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '{"ts":"%s","type":"delegation_start","id":"s1","pid":1,"role":"explorer","model":"m1","task":"first"}\n{"ts":"%s","type":"delegation","id":"s1","role":"explorer","model":"m1","status":"ok","duration_s":5}\n' "$nowz" "$nowz" >>"$DW/.loomy/logs/events.jsonl"
+a1="$(slq)"; a2="$(slq)"
+[[ "$a1" == *"start"*"first"* && "$a2" == *"done"* ]] && ok "session log: arrivals scroll in one per refresh" || ko "session log scroll: [$a1] [$a2]"
+[[ "$a2" == "▸"* ]] && ok "session log: newest line highlighted" || ko "session log highlight: $a2"
+rm -f "${TMPDIR:-/tmp}/loomy-watch-t$$.seen"
 
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration

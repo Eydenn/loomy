@@ -1762,3 +1762,13 @@ live: loomy watch, then t	en direct : loomy watch, puis t
 Agent tree: the lead agent, its advisor and every routed role with its model, effort and live state, then the session	Arbre des agents : l'orchestrateur, son conseiller et chaque rôle routé avec son modèle, son effort et son état en direct, puis le journal
 log and a status line. Shown by loomy watch (key t); loomy tree prints it once. Bash 3.2 compatible.	de session et une ligne d'état. Affiché par loomy watch (touche t) ; loomy tree l'affiche une fois. Compatible Bash 3.2.
   loomy tree [--root <dir>]	  loomy tree [--root <dossier>]
+SESSION LOG	JOURNAL DE SESSION
+live, newest at the bottom	en direct, le plus récent en bas
+start	démarre
+partial	partiel
+blocked	bloqué
+consulted	consulté
+replied	a répondu
+end	fin
+task	tâche
+audit	audit

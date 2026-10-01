@@ -1767,5 +1767,15 @@ _t_fr() {
     'Agent tree: the lead agent, its advisor and every routed role with its model, effort and live state, then the session') _T='Arbre des agents : l'\''orchestrateur, son conseiller et chaque rôle routé avec son modèle, son effort et son état en direct, puis le journal' ;;
     'log and a status line. Shown by loomy watch (key t); loomy tree prints it once. Bash 3.2 compatible.') _T='de session et une ligne d'\''état. Affiché par loomy watch (touche t) ; loomy tree l'\''affiche une fois. Compatible Bash 3.2.' ;;
     '  loomy tree [--root <dir>]') _T='  loomy tree [--root <dossier>]' ;;
+    'SESSION LOG') _T='JOURNAL DE SESSION' ;;
+    'live, newest at the bottom') _T='en direct, le plus récent en bas' ;;
+    'start') _T='démarre' ;;
+    'partial') _T='partiel' ;;
+    'blocked') _T='bloqué' ;;
+    'consulted') _T='consulté' ;;
+    'replied') _T='a répondu' ;;
+    'end') _T='fin' ;;
+    'task') _T='tâche' ;;
+    'audit') _T='audit' ;;
   esac
 }

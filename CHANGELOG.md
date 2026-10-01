@@ -2,7 +2,16 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.8.0 — 2026-10-01
+## 0.8.1 — 2026-10-01
+
+### Added
+- **Session log that scrolls** in `loomy watch`, on the main screen (SESSION LOG section) and in the agent tree (key `t`).
+  - One aligned line per event: time, actor, action and detail. The actors are role starts and ends (done, partial, blocked, failed, with duration and model), advisor consultations, phases of the bootstrap, a task or an audit, sessions and lead agent replies.
+  - Each actor has its colour.
+  - Events that arrive together scroll in one per refresh instead of jumping, and the newest line is highlighted (▸, bold) for a few seconds.
+  - Its height fits the terminal.
+
+
 
 ### Added
 - **Advisor for the Claude lead agent** (Claude Code's advisor tool: a stronger model the session consults before a plan, when an error repeats and before declaring a task done; it reads the whole session).

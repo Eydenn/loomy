@@ -24,6 +24,8 @@ PLAN_C=0; loomy_on_plan claude && PLAN_C=1
 PLAN_X=0; loomy_on_plan codex && PLAN_X=1
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/sessionlog.sh
+source "$SCRIPT_DIR/lib/sessionlog.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
 
@@ -221,7 +223,7 @@ if (( WATCH )); then
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
     extra=(); [[ "$view" == "log" ]] && extra=(--journal); [[ "$view" == "tree" ]] && extra=(--tree)
-    frame="$(LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+    frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
     # even in a terminal that ignores turning off automatic wrap.
@@ -550,6 +552,14 @@ plan_lines() {
     fi
   done
 }
+# Session log, scrolling in loomy watch (one new line per refresh, the newest highlighted).
+if [[ -n "${LOOMY_WATCH_ID:-}" ]]; then
+  sl_n=7; [[ "$COMPACT" == "1" ]] && sl_n=4
+  if sl="$(ai_session_log "$ROOT" "$sl_n")"; then
+    ui_section "$(t "SESSION LOG")" "$(t "live, newest at the bottom")"
+    while IFS= read -r l; do ui_rail "$l"; done <<<"$sl"
+  fi
+fi
 if [[ "$COMPACT" == "1" ]]; then
   [[ -n "$(ai_quota_line claude)$(ai_quota_line codex)" ]] && { ui_section "$(t "PLANS")"; plan_lines; }
 else

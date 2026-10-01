@@ -260,7 +260,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | Command | View |
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
 | <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch` |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
@@ -651,7 +651,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.7.2 | **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
 | ✅&nbsp;0.7.3 | **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
 | ✅&nbsp;0.7.4 | **anticipated support for announced models**: Claude Haiku 5.5 is probed daily and heads the fast chain as soon as it answers on your account (Haiku 4.5 as fallback) |
-| ✅&nbsp;0.8.0 | **Current version** · **advisor and agent tree**: Opus advises the Thrifty Sonnet lead (Claude Code's advisor, measured consultations); `loomy tree` and key `t` of `watch` show the lead, its advisor and every role live |
+| ✅&nbsp;0.8.0 | **advisor and agent tree**: Opus advises the Thrifty Sonnet lead (Claude Code's advisor, measured consultations); `loomy tree` and key `t` of `watch` show the lead, its advisor and every role live |
+| ✅&nbsp;0.8.1 | **Current version** · **session log that scrolls** in `loomy watch` and the agent tree: one coloured, aligned line per event, arrivals scrolling in one by one, the newest highlighted |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

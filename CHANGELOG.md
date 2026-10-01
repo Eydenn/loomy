@@ -2,7 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.8.2 — 2026-10-01
+## 0.8.3 — 2026-10-01
+
+### Changed
+- Agent tree diagram: a blank row above the title, so it no longer sticks to the live tracking header.
+- Agent tree diagram: links aligned. The lead, routing and back boxes share one vertical axis, and the role boxes are spread symmetrically around it, so every vertical link lands exactly on its node; links join the box borders and splits they reach with proper joints (┬ ┴).
+- Agent tree diagram: no arithmetic error when the project has no log yet (the delegation counter read "0" twice).
+
+
 
 ### Changed
 - **The agent tree is drawn as a diagram**, structured like an agent-tree dashboard.
@@ -16,7 +23,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - Built on a small character canvas (`scripts/lib/canvas.sh`: text, boxes, lines) in plain Bash.
 
 ### Added
-- `loomy config set tree_view auto|diagram|list`. `auto` (default) shows the diagram when the window holds it (124 × 56; 63 rows in `watch`) and otherwise the previous list, with a hint.
+- `loomy config set tree_view auto|diagram|list`. `auto` (default) shows the diagram when the window holds it (124 × 57; 64 rows in `watch`) and otherwise the previous list, with a hint.
 - Key `v` in `loomy watch` switches between diagram and list.
 - In the agent tree of `loomy watch`, a window too small for the diagram is asked once to grow (Terminal.app, iTerm2; not tmux). `loomy config set watch_resize no` turns that off.
 

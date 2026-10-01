@@ -1247,8 +1247,25 @@ has "tree diagram: roles side by side" "│ .*executor.*│ .*│"
 has "tree diagram: back to the lead agent" "back to the lead agent"
 has "tree diagram: framed session log" "┤ session log ├"
 hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
+# Links aligned: every ▼ has its link right above it, in the same column (checked character by character).
+if command -v python3 >/dev/null 2>&1; then
+  NO_COLOR=1 COLUMNS=133 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null 2>/dev/null >"$OUT"
+  python3 -c '
+import sys
+L = open(sys.argv[1], encoding="utf-8").read().split("\n")
+bad = [(i, x) for i in range(1, len(L)) for x, c in enumerate(L[i]) if c == "▼" and (x >= len(L[i - 1]) or L[i - 1][x] not in "●│┬")]
+# A vertical link must meet a horizontal line on a node, never beside it.
+bad += [(i, x) for i in range(len(L) - 1) for x, c in enumerate(L[i]) if c == "│" and x < len(L[i + 1]) and L[i + 1][x] == "─"]
+bad += [(i, x) for i in range(1, len(L)) for x, c in enumerate(L[i]) if c == "│" and x < len(L[i - 1]) and L[i - 1][x] == "─"]
+
+n = sum(l.count("▼") for l in L)
+print(bad[:5], n) if bad or n == 0 else None
+sys.exit(1 if bad or n == 0 else 0)' "$OUT" >"$WORK/align.txt" && ok "tree diagram: links aligned" || ko "tree diagram: misaligned link ($(cat "$WORK/align.txt"))"
+else
+  ok "tree diagram: links aligned (skipped, python3 missing)"
+fi
 COLUMNS=132 LINES=40 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
-has "tree auto: list when the window is too small, with a hint" "enlarge the window to 124 × 56"
+has "tree auto: list when the window is too small, with a hint" "enlarge the window to 124 × 57"
 hasnt "tree auto: no diagram in a small window" "LOOMY AGENT TREE"
 COLUMNS=132 LINES=40 LOOMY_TREE=diagram bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 has "tree: diagram forced (tree_view diagram)" "LOOMY AGENT TREE"

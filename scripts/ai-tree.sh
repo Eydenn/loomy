@@ -92,7 +92,7 @@ W=$(( UI_COLS - 7 ))
 # Rendering: diagram (boxes and links) or list. tree_view auto (default): the diagram when the window can hold it,
 # otherwise the list. LOOMY_TREE (set by key v of loomy watch) overrides for one session.
 TREE_MODE="${LOOMY_TREE:-$(sed -n 's/^tree_view=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null | tail -1)}"
-TREE_NEED_COLS=124; TREE_NEED_ROWS=56; [[ -n "${LOOMY_NO_HEADER:-}" ]] && TREE_NEED_ROWS=63
+TREE_NEED_COLS=124; TREE_NEED_ROWS=57; [[ -n "${LOOMY_NO_HEADER:-}" ]] && TREE_NEED_ROWS=64
 DIAGRAM=0
 case "${TREE_MODE:-auto}" in
   diagram) (( W >= 96 )) && DIAGRAM=1 ;;
@@ -128,8 +128,8 @@ if (( DIAGRAM )); then
   read -r -a SHOWN <<<"$pick"; SHOWN=("${SHOWN[@]:0:$NB}")
   NB=${#SHOWN[@]}
   _ui_term_size
-  LOGN=$(( UI_ROWS - 52 )); (( LOGN < 4 )) && LOGN=4; (( LOGN > 8 )) && LOGN=8
-  H=$(( 56 + LOGN ))
+  LOGN=$(( UI_ROWS - 53 )); (( LOGN < 4 )) && LOGN=4; (( LOGN > 8 )) && LOGN=8
+  H=$(( 57 + LOGN ))
   cv_init "$W" "$H"
   # Title, rule, legend.
   # Advisor alias → the model it stands for (opus → Opus 5.5).
@@ -137,16 +137,19 @@ if (( DIAGRAM )); then
   nice_model() { printf '%s' "$1" | sed 's/^claude-//; s/-\([0-9]\)-\([0-9]\)$/ \1.\2/; s/^gpt-/GPT-/' | tr 'a-z' 'A-Z'; }
   adv_up="$(nice_model "$adv_model")"
   title="$(t "LOOMY AGENT TREE")  ·  $(nice_model "$L_MODEL") $(t "LEADS")${ADV:+  ·  $adv_up $(t "ON CALL")}"
-  cv_center 0 0 "$W" "$K_B" "$title"
-  cv_hline 2 $(( W - 3 )) 1 "$K_DIM"
+  # A blank row above the title, then the title and its rule.
+  cv_center 0 1 "$W" "$K_B" "$title"
+  cv_hline 2 $(( W - 3 )) 2 "$K_DIM"
   litems=("$K_LEAD|$(t "lead") · $L_EFFORT" "$K_ROUTE|$(t "routing") · $(ai_profile_label "$AI_PROFILE")" "$K_ROLE|$(t "roles") · $(t "by profile")")
   [[ -n "$ADV" ]] && litems+=("$K_ADV|$(t "advisor") · $ADV")
   ltot=0; for it in "${litems[@]}"; do lt="${it#*|}"; ltot=$(( ltot + ${#lt} + 5 )); done
   lp=$(( (W - ltot) / 2 ))
-  for it in "${litems[@]}"; do lt="${it#*|}"; cv_put "$lp" 3 "${it%%|*}" "■"; cv_put $(( lp + 2 )) 3 "$K_DIM" "$lt"; lp=$(( lp + ${#lt} + 5 )); done
+  for it in "${litems[@]}"; do lt="${it#*|}"; cv_put "$lp" 4 "${it%%|*}" "■"; cv_put $(( lp + 2 )) 4 "$K_DIM" "$lt"; lp=$(( lp + ${#lt} + 5 )); done
   # Lead agent box.
-  MW=38; MX=$(( CX + (CWID - MW) / 2 )); MY=5
-  mcx=$(( MX + MW / 2 ))
+  # One vertical axis for the lead, routing and back boxes and the links between them: every box is centred on it.
+  CC=$(( CX + CWID / 2 ))
+  MW=38; MX=$(( CC - MW / 2 )); MY=6
+  mcx=$CC
   lk="$K_LEAD"; [[ "$sess" == open* ]] && (( TICK % 2 )) && lk="${C_BOLD}${C_YELLOW}"
   cv_box "$MX" "$MY" "$MW" 6 "$lk"
   cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$(nice_model "$L_MODEL") · $(t "main session")"
@@ -157,10 +160,10 @@ if (( DIAGRAM )); then
   cv_vline "$mcx" $(( MY + 6 )) $(( MY + 7 )) "$K_DIM"
   cv_put "$mcx" $(( MY + 6 + TICK % 2 )) "$K_LEAD" "●"
   # Routing layer: delegations per tier (Loomy's routing, where the video has Jev).
-  RW=56; RX=$(( CX + (CWID - RW) / 2 )); RY=$(( MY + 8 ))
+  RW=56; RX=$(( CC - RW / 2 )); RY=$(( MY + 8 ))
   cv_box "$RX" "$RY" "$RW" 6 "$K_ROUTE"
   cv_put $(( RX + 2 )) $(( RY + 1 )) "${C_BOLD}${C_GREEN}" "LOOMY · $(t "routing")"
-  n_tot="$( [[ -s "$J" ]] && grep -c '"type":"delegation",' "$J" || echo 0)"
+  n_tot="$(grep -c '"type":"delegation",' "$J" 2>/dev/null | head -1)"; n_tot="${n_tot:-0}"
   cv_right $(( RX + RW - 3 )) $(( RY + 1 )) "$K_TXT" "$(t "delegations") $n_tot"
   ry=$(( RY + 2 ))
   for tier in TOP MID FAST; do
@@ -181,11 +184,13 @@ if (( DIAGRAM )); then
   cv_vline "$mcx" $(( RY + 6 )) $(( RY + 7 )) "$K_DIM"; cv_put "$mcx" $(( RY + 7 )) "$K_DIM" "●"
   SY=$(( RY + 9 ))
   cv_center "$CX" "$SY" "$CWID" "$K_TXT" "$(t "delegate to roles") · $(t "effort by profile")"
-  GAP=$(( (CWID - NB * BW) / (NB + 1) )); (( GAP < 1 )) && GAP=1
-  bx=(); for (( b = 0; b < NB; b++ )); do bx[b]=$(( CX + GAP + b * (BW + GAP) )); done
+  # Role boxes spread symmetrically around the axis (an even step keeps every centre on a whole column).
+  GAP=$(( (CWID - NB * BW) / (NB + 1) )); (( GAP < 2 )) && GAP=2; (( GAP % 2 )) && GAP=$(( GAP - 1 ))
+  STEP=$(( BW + GAP ))
+  bx=(); for (( b = 0; b < NB; b++ )); do bx[b]=$(( CC + (2 * b - (NB - 1)) * STEP / 2 - BW / 2 )); done
   first_c=$(( bx[0] + BW / 2 )); last_c=$(( bx[NB - 1] + BW / 2 ))
   cv_hline "$first_c" "$last_c" $(( SY + 2 )) "$K_DIM"
-  cv_put "$mcx" $(( SY + 2 )) "$K_DIM" "┴"; cv_put "$mcx" $(( SY + 1 )) "$K_DIM" "│"
+  cv_vline "$mcx" $(( SY + 1 )) $(( SY + 1 )) "$K_DIM"
   BY=$(( SY + 4 ))
   for (( b = 0; b < NB; b++ )); do
     c=$(( bx[b] + BW / 2 )); r="${SHOWN[b]}"
@@ -220,9 +225,9 @@ if (( DIAGRAM )); then
   MGY=$(( BY + 11 ))
   cv_hline "$first_c" "$last_c" "$MGY" "$K_DIM"
   for (( b = 0; b < NB; b++ )); do cv_put $(( bx[b] + BW / 2 )) "$MGY" "$K_DIM" "●"; done
-  cv_put "$mcx" "$MGY" "$K_DIM" "┬"
-  cv_put "$mcx" $(( MGY + 2 )) "$K_DIM" "▼"; cv_put "$mcx" $(( MGY + 1 )) "$K_DIM" "│"
-  BKY=$(( MGY + 3 )); BKW=38; BKX=$(( CX + (CWID - BKW) / 2 ))
+  :
+  cv_vline "$mcx" $(( MGY + 1 )) $(( MGY + 1 )) "$K_DIM"; cv_put "$mcx" $(( MGY + 2 )) "$K_DIM" "▼"
+  BKY=$(( MGY + 3 )); BKW=38; BKX=$(( CC - BKW / 2 ))
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
   cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "$(t "back to the lead agent") · $L_EFFORT"
   cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$(t "review + verify")${phase:+ · $(loomy_phase_label "$phase")}"
@@ -294,6 +299,7 @@ if (( DIAGRAM )); then
     cv_put "$sx" $(( PY + 1 )) "$K_TXT" "]"; sx=$(( sx + 3 ))
   done
   CV_H=$(( PY + 2 ))
+  cv_junctions
   cv_print "$(printf '%s  ' "${C_RAIL}│${C_RESET}")"
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "$(t "live: loomy watch, then t")"
   exit 0

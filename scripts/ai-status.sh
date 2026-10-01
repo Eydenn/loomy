@@ -228,8 +228,8 @@ if (( WATCH )); then
     # not tmux), unless loomy config set watch_resize no.
     if [[ "$view" == "tree" ]] && (( ! tried_resize )) && [[ -z "${TMUX:-}" && "${tree_mode:-auto}" != "list" ]] \
        && [[ "$(loomy_config_get watch_resize 2>/dev/null || true)" != "no" ]] \
-       && { [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" || "${TERM_PROGRAM:-}" == "iTerm.app" ]]; } && (( UI_ROWS < 63 || UI_COLS < 124 )); then
-      tried_resize=1; printf '\033[8;%d;%dt' "$(( UI_ROWS < 63 ? 63 : UI_ROWS ))" "$(( UI_COLS < 128 ? 128 : UI_COLS ))" >/dev/tty 2>/dev/null || true
+       && { [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" || "${TERM_PROGRAM:-}" == "iTerm.app" ]]; } && (( UI_ROWS < 64 || UI_COLS < 124 )); then
+      tried_resize=1; printf '\033[8;%d;%dt' "$(( UI_ROWS < 64 ? 64 : UI_ROWS ))" "$(( UI_COLS < 128 ? 128 : UI_COLS ))" >/dev/tty 2>/dev/null || true
       sleep 0.3; _ui_term_size
     fi
     frame="$(LOOMY_TREE="${tree_mode:-${LOOMY_TREE:-}}" LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \

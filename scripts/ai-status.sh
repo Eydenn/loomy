@@ -172,7 +172,7 @@ if (( WATCH )); then
   stty -echo </dev/tty 2>/dev/null || true
   NAME_W="$(brief_get name 2>/dev/null || true)"; NAME_W="${NAME_W:-$(basename "$ROOT")}"
   J="$(ai_journal_file "$ROOT")"
-  tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0
+  tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; tried_resize=0; tree_mode=""
   p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
@@ -219,11 +219,20 @@ if (( WATCH )); then
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
     keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "log" ]] && t "status" || t "log") · t $( [[ "$view" == "tree" ]] && t "status" || t "tree")"
+    [[ "$view" == "tree" ]] && keys="$keys · v $( [[ "${tree_mode:-}" == "list" ]] && t "diagram" || t "list")"
     [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
     extra=(); [[ "$view" == "log" ]] && extra=(--journal); [[ "$view" == "tree" ]] && extra=(--tree)
-    frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+    # Agent tree in a window too small for the diagram: one request to the terminal to grow (Terminal.app, iTerm2;
+    # not tmux), unless loomy config set watch_resize no.
+    if [[ "$view" == "tree" ]] && (( ! tried_resize )) && [[ -z "${TMUX:-}" && "${tree_mode:-auto}" != "list" ]] \
+       && [[ "$(loomy_config_get watch_resize 2>/dev/null || true)" != "no" ]] \
+       && { [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" || "${TERM_PROGRAM:-}" == "iTerm.app" ]]; } && (( UI_ROWS < 63 || UI_COLS < 124 )); then
+      tried_resize=1; printf '\033[8;%d;%dt' "$(( UI_ROWS < 63 ? 63 : UI_ROWS ))" "$(( UI_COLS < 128 ? 128 : UI_COLS ))" >/dev/tty 2>/dev/null || true
+      sleep 0.3; _ui_term_size
+    fi
+    frame="$(LOOMY_TREE="${tree_mode:-${LOOMY_TREE:-}}" LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
     # even in a terminal that ignores turning off automatic wrap.
@@ -255,6 +264,7 @@ if (( WATCH )); then
       c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
       l|L) if [[ "$view" == "log" ]]; then view="status"; else view="log"; fi ;;
       t|T) if [[ "$view" == "tree" ]]; then view="status"; else view="tree"; fi ;;
+      v|V) [[ "$view" == "tree" ]] && { if [[ "${tree_mode:-}" == "list" ]]; then tree_mode="diagram"; else tree_mode="list"; fi; } ;;
       s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
     esac
     # Tracking opened by loomy start --watch: it closes with the agent session.

@@ -1238,6 +1238,23 @@ has "tree: every role with its model" "Executor.*gpt-6-luna"
 has "tree: session log and status line" "session log"
 bash "$REPO/scripts/ai-status.sh" --root "$DW" --tree >"$OUT" 2>&1
 has "tree: shown by the status view (key t of watch)" "AGENT TREE"
+# Wide terminal: the tree is drawn as a diagram (boxes, links, routing layer, framed session log).
+COLUMNS=132 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+has "tree diagram: title" "LOOMY AGENT TREE"
+has "tree diagram: lead agent box" "┌──.*┐"
+has "tree diagram: routing layer" "LOOMY · routing"
+has "tree diagram: roles side by side" "│ .*executor.*│ .*│"
+has "tree diagram: back to the lead agent" "back to the lead agent"
+has "tree diagram: framed session log" "┤ session log ├"
+hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
+COLUMNS=132 LINES=40 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+has "tree auto: list when the window is too small, with a hint" "enlarge the window to 124 × 56"
+hasnt "tree auto: no diagram in a small window" "LOOMY AGENT TREE"
+COLUMNS=132 LINES=40 LOOMY_TREE=diagram bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+has "tree: diagram forced (tree_view diagram)" "LOOMY AGENT TREE"
+COLUMNS=132 LINES=64 LOOMY_TREE=list bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+hasnt "tree: list forced (tree_view list)" "LOOMY AGENT TREE"
+fails "tree_view: invalid value refused" 2 "$LOOMY" config set tree_view boxes
 # Session log in watch: events arriving together scroll in one per refresh, the newest highlighted.
 slq() { LOOMY_WATCH_ID="t$$" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/sessionlog.sh"; ai_session_log "$2" 1' _ "$REPO" "$DW"; }
 rm -f "${TMPDIR:-/tmp}/loomy-watch-t$$.seen"; slq >/dev/null

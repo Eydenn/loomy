@@ -1772,3 +1772,46 @@ replied	a répondu
 end	fin
 task	tâche
 audit	audit
+designs the plan	conçoit le plan
+finds the cause	trouve la cause
+checks the risks	vérifie les risques
+reviews the diff	relit le diff
+edits + runs tests	modifie + teste
+runs bounded tasks	tâches cadrées
+reads the code	lit le code
+writes the docs	rédige la doc
+LOOMY AGENT TREE	ARBRE DES AGENTS LOOMY
+LEADS	ORCHESTRE
+ON CALL	DE GARDE
+lead	orchestrateur
+routing	routage
+by profile	selon le profil
+plans + decides	planifie + décide
+delegate to roles	délègue aux rôles
+effort by profile	effort selon le profil
+back to the lead agent	retour à l'orchestrateur
+review + verify	relit + vérifie
+on call	de garde
+before a plan	avant un plan
+reads the whole	lit toute la
+session, every	session, chaque
+tool call and	appel d'outil et
+every result	chaque résultat
+calls	appels
+tokens read	tokens lus
+last	dernier
+silent on every	muet sur les
+routine turn	tours ordinaires
+error repeats	erreur répétée
+never writes	n'écrit jamais
+code itself; the	de code ; c'est
+lead agent applies	l'orchestrateur qui
+the advice.	applique le conseil.
+before done	avant de finir
+advising	conseille
+diagram view: enlarge the window to %s × %s (now %s × %s), or key v	vue diagramme : agrandis la fenêtre à %s × %s (actuellement %s × %s), ou touche v
+diagram	diagramme
+list	liste
+tree_view: auto, diagram or list	tree_view : auto, diagram ou list
+      tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),	      tree_view (auto : le diagramme quand la fenêtre le contient, sinon la liste ; diagram ou list pour forcer l'un des deux),
+      watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),	      watch_resize (no : loomy watch ne demande plus au terminal de s'agrandir pour le diagramme),

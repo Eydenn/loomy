@@ -2,7 +2,25 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.8.1 — 2026-10-01
+## 0.8.2 — 2026-10-01
+
+### Changed
+- **The agent tree is drawn as a diagram**, structured like an agent-tree dashboard.
+  - A title and a colour legend at the top.
+  - The lead agent box (model, plans + decides, effort bars, session, phase).
+  - A Loomy routing layer (delegations per model tier, with bars and the models of each tier).
+  - "delegate to roles": a split into role boxes side by side (name, model, effort bars, what it does, live state), then a merge back to a "back to the lead agent · review + verify" box.
+  - The advisor in a side column (model, on call, calls, tokens read, last consultation), with dashed links to the lead box, the roles and the final check. The likely trigger is highlighted (before a plan, error repeats, before done).
+  - A framed session log with the detail aligned on the right, a command line and a coloured status bar.
+  - Animated: dots travel along the links, a working role pulses with a spinner and a timer, and the advisor link carries a dot after a consultation.
+- Built on a small character canvas (`scripts/lib/canvas.sh`: text, boxes, lines) in plain Bash.
+
+### Added
+- `loomy config set tree_view auto|diagram|list`. `auto` (default) shows the diagram when the window holds it (124 × 56; 63 rows in `watch`) and otherwise the previous list, with a hint.
+- Key `v` in `loomy watch` switches between diagram and list.
+- In the agent tree of `loomy watch`, a window too small for the diagram is asked once to grow (Terminal.app, iTerm2; not tmux). `loomy config set watch_resize no` turns that off.
+
+
 
 ### Added
 - **Session log that scrolls** in `loomy watch`, on the main screen (SESSION LOG section) and in the agent tree (key `t`).

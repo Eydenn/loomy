@@ -145,6 +145,10 @@ case "$CMD" in
       color="$C_CYAN"; [[ "$R_TIER" == "TOP" ]] && color="$C_MAGENTA"; [[ "$R_TIER" == "FAST" ]] && color="$C_GREEN"
       if [[ "$r" == "lead" ]]; then label="${C_BRAND}${label}${C_RESET}"; else label="${C_BOLD}${label}${C_RESET}"; fi
       ui_rail "${label}${color}${model}${C_RESET}${effort}${C_DIM}${R_VIA}${C_RESET}"
+      if [[ "$r" == "lead" && "$R_FAMILY" == "claude" ]]; then
+        adv="$(ai_advisor_for "$R_MODEL" "$AI_PROFILE")"
+        if [[ -n "$adv" ]]; then _ui_pad "  $(t "advisor")" 22; ui_rail "${C_DIM}${UI_PADDED}${C_RESET}${C_MAGENTA}$adv${C_RESET} ${C_DIM}$(t "consulted before a plan, when an error repeats, before done (loomy config set advisor)")${C_RESET}"; fi
+      fi
     done
     ui_rail ""
     ui_rail "${C_DIM}$(t "colors:")${C_RESET} ${C_MAGENTA}$(t "top")${C_RESET} ${C_DIM}·${C_RESET} ${C_CYAN}$(t "standard")${C_RESET} ${C_DIM}·${C_RESET} ${C_GREEN}$(t "fast")${C_RESET}"

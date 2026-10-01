@@ -51,8 +51,8 @@ if (( CSV )); then
   N=1000000000 events | awk '
     function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/,/, " ", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
-    index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"") {
-      ty = field("type"); role = (ty == "usage" ? (field("scope") == "lead" ? "lead" : "subagent") : field("role"))
+    index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"") || index($0, "\"type\":\"advisor\"") {
+      ty = field("type"); role = (ty == "usage" ? (field("scope") == "lead" ? "lead" : "subagent") : (ty == "advisor" ? "advisor" : field("role")))
       printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n", field("ts"), ty, role, field("agent"), field("family"), field("model"), (ty == "usage" ? "ok" : field("status")), num("duration_s"), num("messages"), num("tokens_in"), num("tokens_cached"), num("tokens_out"), num("cost_usd"), field("cost_source") }'
   exit 0
 fi

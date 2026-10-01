@@ -80,8 +80,10 @@ HAS_SESSION=0
 if [[ "$TOOL" == "claude" ]]; then
   enc="$(printf '%s' "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')"
   if ls "$HOME/.claude/projects/$enc/"*.jsonl >/dev/null 2>&1; then HAS_SESSION=1; fi
-  NEW_CMD=(claude --model "$MODEL" --effort "$EFFORT" "$PROMPT")
-  RESUME_CMD=(claude --continue --model "$MODEL" --effort "$EFFORT")
+  ADVISOR="$(ai_advisor_for "$MODEL" "$AI_PROFILE")"
+  ADV_ARGS=(); [[ -n "$ADVISOR" ]] && ADV_ARGS=(--advisor "$ADVISOR")
+  NEW_CMD=(claude --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"} "$PROMPT")
+  RESUME_CMD=(claude --continue --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"})
   CLI_OK=0; ai_has_claude && CLI_OK=1
   INSTALL="curl -fsSL https://claude.ai/install.sh | bash"
 else
@@ -93,14 +95,14 @@ else
   INSTALL="curl -fsSL https://chatgpt.com/codex/install.sh | sh"
 fi
 tool_label="Claude Code"; [[ "$TOOL" == "codex" ]] && tool_label="Codex"
-short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $MODEL --effort $EFFORT"; else echo "codex${1:+ $1} -m $MODEL -c model_reasoning_effort=$EFFORT"; fi; }
+short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $MODEL --effort $EFFORT${ADVISOR:+ --advisor $ADVISOR}"; else echo "codex${1:+ $1} -m $MODEL -c model_reasoning_effort=$EFFORT"; fi; }
 
 # ---------------------------------------------------------------- affichage
 ui_clear
 ui_banner "$(t "Start or resume")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
 ui_section "SESSION"
 ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
-ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label"
+ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
 if [[ -n "$SWITCHED_FROM" ]]; then
   from_label="Claude Code"; [[ "$SWITCHED_FROM" == "codex" ]] && from_label="Codex"
   ui_warn "$(t "%s quota at %s: this session runs on %s" "$from_label" "$SWITCH_STATE" "$tool_label")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$from_label")"

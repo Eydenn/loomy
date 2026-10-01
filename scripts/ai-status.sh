@@ -36,6 +36,7 @@ WATCH=0
 INTERVAL=1
 COMPACT=""
 JOURNAL_VIEW=0
+TREE_VIEW=0
 UNTIL=""
 IN_PANE=0
 AUDIT=0
@@ -46,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --watch|-w) WATCH=1; if [[ "${2:-}" =~ ^[0-9]+$ ]]; then INTERVAL="$2"; shift; fi ;;
     --compact) COMPACT=1 ;;
     --journal) JOURNAL_VIEW=1 ;;
+    --tree) TREE_VIEW=1 ;;
     --until-exit) UNTIL="${2:-}"; shift ;;
     --pane) IN_PANE=1 ;;
     --full) COMPACT=0 ;;
@@ -214,11 +216,11 @@ if (( WATCH )); then
     # ---- image
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "log" ]] && t "status" || t "log")"
+    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "log" ]] && t "status" || t "log") · t $( [[ "$view" == "tree" ]] && t "status" || t "tree")"
     [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
     hl_p=0; (( now < hl_phase )) && hl_p=1
-    extra=(); [[ "$view" == "log" ]] && extra=(--journal)
+    extra=(); [[ "$view" == "log" ]] && extra=(--journal); [[ "$view" == "tree" ]] && extra=(--tree)
     frame="$(LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
       "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
     # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
@@ -250,6 +252,7 @@ if (( WATCH )); then
       q|Q) break ;;
       c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
       l|L) if [[ "$view" == "log" ]]; then view="status"; else view="log"; fi ;;
+      t|T) if [[ "$view" == "tree" ]]; then view="status"; else view="tree"; fi ;;
       s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/ai-start.sh" --root "$ROOT"; } ;;
     esac
     # Tracking opened by loomy start --watch: it closes with the agent session.
@@ -284,6 +287,9 @@ if [[ -d "$ROOT/.loomy/scripts/lib" ]]; then
 elif [[ -n "$proj_v" && -n "$inst_v" ]] && ! ai_version_ge "$inst_v" "$proj_v"; then
   ui_warn "$(t "Loomy %s installed, older than this project (%s)" "$inst_v" "$proj_v")" "loomy update"
 fi
+
+# ---------------------------------------------------------------- agent tree (key t of loomy watch)
+if (( TREE_VIEW )); then exec bash "$SCRIPT_DIR/ai-tree.sh" --root "$ROOT"; fi
 
 # ---------------------------------------------------------------- vue journal (touche l de loomy watch)
 if (( JOURNAL_VIEW )); then
@@ -354,7 +360,7 @@ else
       index($0, "\"type\":\"" pht "\"") { if (pht != "phase" && index($0, "\"phase\":\"" first "\"")) { s = field("ts"); e = ""; n = 0; c = 0; tk = 0 }
         if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
       e == "" && index($0, "\"type\":\"delegation\",") { n++; add() }
-      e == "" && index($0, "\"type\":\"usage\"") { add() }
+      e == "" && (index($0, "\"type\":\"usage\"") || index($0, "\"type\":\"advisor\"")) { add() }
       END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT"))"
     s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
@@ -443,6 +449,16 @@ if [[ -s "$JOURNAL" ]]; then
     else u_lv="$(t "cost %s" "\$${u_lc}")"; u_sv="$(t "cost %s" "\$${u_sc}")"; fi
     ui_kv "$(t "Lead agent")" "$(t "%s reply(ies)" "${C_BOLD}${u_ln}${C_RESET}") · ${C_BOLD}${u_lv}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
     (( u_sn > 0 )) && ui_kv "$(t "Sub-agents")" "${C_BOLD}${u_sn}${C_RESET} · ${C_BOLD}${u_sv}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
+    # Advisor (Claude Code's advisor tool): consultations of the stronger model by the lead agent.
+    if grep -q '"type":"advisor"' "$JOURNAL"; then
+      read -r a_n a_c a_t a_m <<<"$(awk '
+        function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
+        index($0, "\"type\":\"advisor\"") { n += num("calls"); c += num("cost_usd"); tk += num("tokens_in") + num("tokens_out")
+          if (match($0, /"model":"[^"]*"/)) m = substr($0, RSTART + 9, RLENGTH - 10) }
+        END { printf "%d %.4f %d %s\n", n, c, tk, (m == "" ? "-" : m) }' "$JOURNAL")"
+      if (( PLAN_C )); then a_v="$(ai_tokens_label "$a_t") $(t "tokens")"; else a_v="$(t "cost %s" "\$${a_c}")"; fi
+      ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "${C_BOLD}${a_n}${C_RESET}") · $a_m · ${C_BOLD}${a_v}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
+    fi
   fi
   if ! grep -q '"type":"delegation",' "$JOURNAL"; then
     ui_info "$(t "no finished delegation yet")"

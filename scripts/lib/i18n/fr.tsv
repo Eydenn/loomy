@@ -1734,3 +1734,31 @@ ANNOUNCED	ANNONCÉS
 tested once a day; used as soon as they answer	testés une fois par jour ; utilisés dès qu'ils répondent
 available · heads %s	disponible · en tête de %s
 not available yet · will head %s	pas encore disponible · passera en tête de %s
+Live tracking (keys: q, c view, l log, t agent tree, s session)	Suivi en direct (touches : q, c vue, l journal, t arbre des agents, s session)
+Agent tree: the lead agent, its advisor and every role with its model, effort and state, then the session log	Arbre des agents : l'orchestrateur, son conseiller et chaque rôle avec son modèle, son effort et son état, puis le journal de session
+      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),	      advisor (auto : Opus conseille l'orchestrateur Sonnet en Économe et l'orchestrateur Opus en Qualité max ; off, opus, sonnet ou fable),
+advisor: auto, off, opus, sonnet or fable	advisor : auto, off, opus, sonnet ou fable
+advisor %s	conseiller %s
+stays off: %s set (it blocks the feature flags the advisor needs)	reste désactivé : %s est définie (elle bloque les fonctions expérimentales dont le conseiller a besoin)
+for the %s lead agent (loomy config set advisor off to turn it off)	pour l'orchestrateur %s (loomy config set advisor off pour le désactiver)
+Advisor	Conseiller
+%s consultation(s)	%s consultation(s)
+advisor	conseiller
+consulted before a plan, when an error repeats, before done (loomy config set advisor)	consulté avant un plan, quand une erreur se répète, avant de terminer (loomy config set advisor)
+tree	arbre
+session open	session ouverte
+session closed	session fermée
+no session	aucune session
+AGENT TREE	ARBRE DES AGENTS
+LEAD AGENT	ORCHESTRATEUR
+last %s	dernière %s
+before a plan, when an error repeats, before done	avant un plan, quand une erreur se répète, avant de terminer
+done %s	terminé %s
+idle	au repos
+session log	journal de session
+roles	rôles
+delegations	délégations
+live: loomy watch, then t	en direct : loomy watch, puis t
+Agent tree: the lead agent, its advisor and every routed role with its model, effort and live state, then the session	Arbre des agents : l'orchestrateur, son conseiller et chaque rôle routé avec son modèle, son effort et son état en direct, puis le journal
+log and a status line. Shown by loomy watch (key t); loomy tree prints it once. Bash 3.2 compatible.	de session et une ligne d'état. Affiché par loomy watch (touche t) ; loomy tree l'affiche une fois. Compatible Bash 3.2.
+  loomy tree [--root <dir>]	  loomy tree [--root <dossier>]

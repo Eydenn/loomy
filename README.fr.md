@@ -279,7 +279,8 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 | Commande | Vue |
 |---|---|
 | <code>loomy&nbsp;status</code> | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi chaque seconde (ou toutes les N secondes) : délégation en cours avec toupie, chrono et avancement estimé, nouveautés mises en évidence, notification (macOS) et bip à chaque phase, échec ou fin de bootstrap. Touches : `q` quitter, `c` vue resserrée ou complète, `l` journal, `s` ouvrir la session. Vue resserrée d'office dans un petit terminal |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi chaque seconde (ou toutes les N secondes) : délégation en cours avec toupie, chrono et avancement estimé, nouveautés mises en évidence, notification (macOS) et bip à chaque phase, échec ou fin de bootstrap. Touches : `q` quitter, `c` vue resserrée ou complète, `l` journal, `t` arbre des agents, `s` ouvrir la session. Vue resserrée d'office dans un petit terminal |
+| <code>loomy&nbsp;tree</code> | 🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. Aussi touche `t` de `loomy watch` |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 La session de l'orchestrateur et le suivi en direct côte à côte (ou l'un au-dessus de l'autre si le terminal est étroit), via tmux ou iTerm2 ; le suivi se ferme avec la session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal lisible, à l'heure locale, éventuellement en continu (`--raw` : JSON brut) ; `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts |
 
@@ -405,6 +406,22 @@ flowchart TB
 > Choisis **Claude Code comme outil principal** pour avoir Opus 5.5 en orchestrateur. C'est le choix par défaut du questionnaire.
 
 ---
+
+### 🧭 Le conseiller
+
+Claude Code peut donner à la session un **conseiller** plus fort ([documentation Claude Code](https://code.claude.com/docs/en/advisor)). Le conseiller lit toute la session et est consulté aux moments clés : avant un plan, quand une erreur se répète, avant de déclarer une tâche terminée. Loomy lance l'orchestrateur Claude avec lui selon le profil :
+
+| Profil | Orchestrateur | Conseiller |
+|---|---|---|
+| Économe | Sonnet 5.5 medium | **Opus 5.5** : du jugement aux moments clés sans payer Opus à chaque tour |
+| Équilibré | Opus 5.5 high | aucun (en option) |
+| Qualité max | Opus 5.5 | **un second Opus**, pour une vérification indépendante |
+
+- **Réglage :** `loomy config set advisor auto|off|opus|sonnet|fable`. Fable demande un accès Fable et se facture en crédits d'usage sur certains forfaits.
+- **Associations :** seules celles que Claude Code accepte sont utilisées ; un orchestrateur Codex n'a jamais de conseiller.
+- **Mesuré :** chaque consultation est journalisée avec son modèle, ses tokens et son coût, et apparaît dans `status`, `report` et l'arbre des agents. Une consultation lit toute la session, environ 35 000 tokens dans notre test.
+- **Vérifications :** `loomy doctor` prévient quand une variable (`DISABLE_TELEMETRY`…) empêche le conseiller de fonctionner.
+- **Nécessite Claude Code 2.1.286 ou plus récent** ; Loomy le met à jour au lancement.
 
 ### 🧾 Délégations structurées
 
@@ -694,7 +711,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** en tête du travail courant côté Codex (GPT-6 Sol en repli) |
 | ✅&nbsp;0.7.2 | **GPT-6.1 Sol pour tous les rôles Codex** sauf l'exécution ; Astra en repli, ou forcé avec `loomy config set model.codex.top gpt-6-astra` |
 | ✅&nbsp;0.7.3 | **tenu à jour tout seul** : une question au lancement met à jour Loomy, Claude Code et Codex ; une réparation qui insiste, jusqu'à la réinstallation propre |
-| ✅&nbsp;0.7.4 | **Version actuelle** · **prise en charge anticipée des modèles annoncés** : Claude Haiku 5.5 est testé chaque jour et passe en tête de la chaîne rapide dès qu'il répond sur ton compte (Haiku 4.5 en repli) |
+| ✅&nbsp;0.7.4 | **prise en charge anticipée des modèles annoncés** : Claude Haiku 5.5 est testé chaque jour et passe en tête de la chaîne rapide dès qu'il répond sur ton compte (Haiku 4.5 en repli) |
+| ✅&nbsp;0.8.0 | **Version actuelle** · **conseiller et arbre des agents** : Opus conseille l'orchestrateur Sonnet en Économe (le conseiller de Claude Code, consultations mesurées) ; `loomy tree` et la touche `t` de `watch` montrent l'orchestrateur, son conseiller et chaque rôle en direct |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |

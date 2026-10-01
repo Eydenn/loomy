@@ -167,7 +167,8 @@ usage() {
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"
   _h_group "$(t "TRACKING")"
   _h_cmd status "" "$(t "Project status: phases, running delegations, activity, costs, Git")"
-  _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l log, s session)")"
+  _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l log, t agent tree, s session)")"
+  _h_cmd tree "" "$(t "Agent tree: the lead agent, its advisor and every role with its model, effort and state, then the session log")"
   _h_cmd stats "[--days N|--since D]" "$(t "Detailed statistics: delegations by role, model and day, durations, tokens, cost (or quota with a subscription)")"
   _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
@@ -192,6 +193,7 @@ sub_help() {
             t "      start_watch (yes: loomy start also opens live tracking next to the session),"; echo
             t "      notify (no: loomy watch no longer notifies phase changes, failures and end of bootstrap),"; echo
             t "      auto_update (no: loomy no longer offers to update Loomy, Claude Code and Codex at launch),"; echo
+            t "      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),"; echo
             t "      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),"; echo
             t "      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),"; echo
             t "      lang (fr or en: interface language; auto: system language, English by default)."; echo
@@ -258,6 +260,7 @@ case "$cmd" in
     esac ;;
 
   watch) exec bash "$S/ai-status.sh" --root "$(project_root)" --watch "$@" ;;
+  tree) exec bash "$S/ai-tree.sh" --root "$(project_root)" "$@" ;;
 
   log|logs)
     case "${1:-}" in -h|--help) sub_help log; exit 0 ;; esac
@@ -282,10 +285,11 @@ case "$cmd" in
           screen) [[ "$val" =~ ^(auto|alt|clear)$ ]] || { t "screen: auto, alt or clear" >&2; echo >&2; exit 2; } ;;
           chain.claude.top|chain.claude.mid|chain.claude.fast|chain.codex.top|chain.codex.mid|chain.codex.fast)
             [[ "$val" == "auto" || "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(,\ ?[A-Za-z0-9][A-Za-z0-9._-]*){0,2}$ ]] || { t "%s: up to three model ids separated by commas (newest first), or auto" "$key" >&2; echo >&2; exit 2; } ;;
+          advisor) [[ "$val" =~ ^(auto|off|opus|sonnet|fable)$ ]] || { t "advisor: auto, off, opus, sonnet or fable" >&2; echo >&2; exit 2; } ;;
           models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, auto_update, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, auto_update, advisor, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

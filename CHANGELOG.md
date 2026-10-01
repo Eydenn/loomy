@@ -2,7 +2,26 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.7.4 — 2026-09-30
+## 0.8.0 — 2026-10-01
+
+### Added
+- **Advisor for the Claude lead agent** (Claude Code's advisor tool: a stronger model the session consults before a plan, when an error repeats and before declaring a task done; it reads the whole session).
+  - Loomy starts the lead agent with `--advisor` according to the profile: Opus advises the Sonnet 5.5 lead in Thrifty (the pairing Anthropic recommends), a second Opus in Max quality, none by default in Balanced.
+  - `loomy config set advisor auto|off|opus|sonnet|fable`. Only pairings Claude Code accepts are used, and a Codex lead never gets one.
+  - Applied to `loomy start`, `loomy task` and the `loomy audit` auditor; shown by `loomy route` and in the launch screens.
+  - Each consultation is measured from the session transcript (`advisor_message` iterations) and logged as an `advisor` event with its model, tokens and cost. It shows in `loomy status` (Advisor line), `loomy report`, `loomy log` and the bootstrap summary.
+  - `loomy doctor` warns when `DISABLE_TELEMETRY` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` keeps the advisor off.
+  - Checked for real: Sonnet 5.5 with an Opus advisor, one consultation of about 35k tokens.
+- **Agent tree** (`loomy tree`, key `t` of `loomy watch`):
+  - the lead agent with its model, effort, session and phase;
+  - its advisor with the number of consultations and the last one (it glows for a few seconds after a consultation);
+  - every routed role with its model and effort, and its live state (running with a pulse travelling along its branch, a spinner and a timer; then done, duration, tokens, number of runs; or idle);
+  - the session log (starts, ends, phases, advisor, sessions) and a status line.
+
+### Changed
+- Minimum Claude Code version: 2.1.286, the first one that knows Sonnet 5.5 and accepts its advisor pairing (2.1.283 refused it). Loomy's upkeep offers the update at launch.
+
+
 
 ### Added
 - **Anticipated support for announced models**: `upcoming.<tool>.<tier>=<model>` in the catalog, starting with Claude Haiku 5.5 (`claude-haiku-5-5`, fast tier).

@@ -227,6 +227,16 @@ done
 
 # ---------------------------------------------------------------- routage
 ai_detect_env "$ROOT"
+# Advisor (Claude Code's advisor tool): it needs feature-flag fetching, which some variables turn off silently.
+if (( HAS_C )); then
+  ai_resolve lead "$AI_ENV" "$AI_PROFILE"
+  adv="$(ai_advisor_for "$R_MODEL" "$AI_PROFILE")"
+  if [[ -n "$adv" ]]; then
+    blk=""; for vname in DISABLE_TELEMETRY CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC; do [[ -n "${!vname:-}" ]] && blk="${blk:+$blk, }$vname"; done
+    if [[ -n "$blk" ]]; then ui_warn "$(t "advisor %s" "$adv")" "$(t "stays off: %s set (it blocks the feature flags the advisor needs)" "$blk")"
+    else ui_ok "$(t "advisor %s" "$adv")" "$(t "for the %s lead agent (loomy config set advisor off to turn it off)" "$R_MODEL")"; fi
+  fi
+fi
 ui_section "$(t "CATALOG")" "$(t "models and prices")"
 cat_ep="$(ai_ts_epoch "${AI_CATALOG_DATE}T00:00:00Z")"; age=""
 [[ -n "$cat_ep" ]] && age=$(( ( $(date +%s) - cat_ep ) / 86400 ))

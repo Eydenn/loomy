@@ -173,7 +173,7 @@ for _f in claude codex; do
 done
 unset _f _t _k _cur
 
-AI_MIN_CLAUDE_VERSION="2.1.280"  # first Claude Code version accepting claude-opus-5-5
+AI_MIN_CLAUDE_VERSION="2.1.286"  # first Claude Code version knowing claude-sonnet-5-5 (and its advisor pairing)
 AI_MIN_CODEX_VERSION="0.155.0"   # Codex CLI version checked with the gpt-6-* models
 
 # Public prices in $ per million tokens: "input output cache-read" (checked on 2026-09-23).
@@ -433,11 +433,33 @@ ai_resolve() {
 }
 
 # Launch command of the main session (lead agent).
+# ai_advisor_for <main Claude model> <profile>: advisor model alias for a Claude Code session ("" = none).
+# Claude Code's advisor tool: a stronger model the session consults at key moments (before a plan, when an error
+# repeats, before declaring a task done); it reads the whole session. Setting: loomy config set advisor
+# auto|off|opus|sonnet|fable. auto: Thrifty → Opus advises the Sonnet lead; Max quality → a second Opus; Balanced → none.
+# Only pairings Claude Code accepts are returned (an Opus session never gets a Sonnet advisor; Haiku never advises).
+ai_advisor_for() {
+  local main="$1" profile="$2" a
+  [[ "$main" == claude-* ]] || return 0
+  [[ "${CLAUDE_CODE_DISABLE_ADVISOR_TOOL:-}" == "1" ]] && return 0
+  a="$(sed -n 's/^advisor=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null | tail -1)"
+  case "${a:-auto}" in
+    off|no|none) return 0 ;;
+    opus|sonnet|fable) ;;
+    *) case "$profile" in econome) a="opus" ;; qualite) a="opus" ;; *) return 0 ;; esac ;;
+  esac
+  case "$main:$a" in
+    *opus*:sonnet|*fable*:opus|*fable*:sonnet) return 0 ;;
+  esac
+  echo "$a"
+}
+
 ai_lead_command() {
-  local env="$1" profile="$2"
+  local env="$1" profile="$2" adv
   ai_resolve lead "$env" "$profile"
   if [[ "$R_FAMILY" == "claude" ]]; then
-    echo "claude --model $R_MODEL --effort $R_EFFORT"
+    adv="$(ai_advisor_for "$R_MODEL" "$profile")"
+    echo "claude --model $R_MODEL --effort $R_EFFORT${adv:+ --advisor $adv}"
   else
     echo "codex -m $R_MODEL -c model_reasoning_effort=$R_EFFORT"
   fi

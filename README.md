@@ -260,7 +260,8 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | Command | View |
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. Keys: `q` quit, `c` compact or full view, `l` journal, `s` open the session. Compact view in a small terminal |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
+| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch` |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
@@ -353,6 +354,22 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 **Fallbacks.** If the mode asks for both tools and one CLI is missing, routing falls back to the full matrix of the available tool. If the lead tool is missing, the other one leads.
 
 ---
+
+### 🧭 The advisor
+
+Claude Code can give the session a stronger **advisor** ([Claude Code docs](https://code.claude.com/docs/en/advisor)). The advisor reads the whole session and is consulted at key moments: before a plan, when an error repeats, before declaring a task done. Loomy starts the Claude lead agent with it according to the profile:
+
+| Profile | Lead agent | Advisor |
+|---|---|---|
+| Thrifty | Sonnet 5.5 medium | **Opus 5.5**: judgment at the key moments without paying Opus at every turn |
+| Balanced | Opus 5.5 high | none (optional) |
+| Max quality | Opus 5.5 | **a second Opus**, for an independent check |
+
+- **Setting:** `loomy config set advisor auto|off|opus|sonnet|fable`. Fable needs Fable access and bills to usage credits on some plans.
+- **Pairings:** only the ones Claude Code accepts are used; a Codex lead never gets an advisor.
+- **Measured:** each consultation is logged with its model, tokens and cost, and shows in `status`, `report` and the agent tree. A consultation reads the whole session, about 35k tokens in our test.
+- **Checks:** `loomy doctor` warns when a variable (`DISABLE_TELEMETRY`…) keeps the advisor off.
+- **Requires Claude Code 2.1.286 or later**; Loomy brings it up to date at launch.
 
 ### 🧾 Structured delegations
 
@@ -633,7 +650,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.7.1 | **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
 | ✅&nbsp;0.7.2 | **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
 | ✅&nbsp;0.7.3 | **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
-| ✅&nbsp;0.7.4 | **Current version** · **anticipated support for announced models**: Claude Haiku 5.5 is probed daily and heads the fast chain as soon as it answers on your account (Haiku 4.5 as fallback) |
+| ✅&nbsp;0.7.4 | **anticipated support for announced models**: Claude Haiku 5.5 is probed daily and heads the fast chain as soon as it answers on your account (Haiku 4.5 as fallback) |
+| ✅&nbsp;0.8.0 | **Current version** · **advisor and agent tree**: Opus advises the Thrifty Sonnet lead (Claude Code's advisor, measured consultations); `loomy tree` and key `t` of `watch` show the lead, its advisor and every role live |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

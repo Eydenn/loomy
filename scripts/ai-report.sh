@@ -55,11 +55,12 @@ metrics() {
       role[field("role")]++; model[field("model")]++; dur += num("duration_s")
       cost += num("cost_usd"); tok += num("tokens_in") + num("tokens_out") }
     index($0, "\"type\":\"usage\"") { cost += num("cost_usd"); tok += num("tokens_in") + num("tokens_out"); model[field("model")] += 0 }
+    index($0, "\"type\":\"advisor\"") { cost += num("cost_usd"); tok += num("tokens_in") + num("tokens_out"); adv += num("calls") }
     END {
       roles = ""; for (k in role) if (k != "") roles = roles (roles == "" ? "" : ",") k ":" role[k]
       models = ""; for (k in model) if (k != "" && model[k] > 0) models = models (models == "" ? "" : ",") k ":" model[k]
-      printf "name=%s\tphase=%s\tfirst=%s\tlast=%s\tbs=%s\tbe=%s\tn=%d\terr=%d\tdur=%d\tcost=%.2f\ttok=%d\ttasks=%d\ttdone=%d\taudits=%d\treviews=%d\troles=%s\tmodels=%s\n", \
-        name, phase, first, last, bs, be, n, err, dur, cost, tok, tasks, tdone, audits, reviews, roles, models }'
+      printf "name=%s\tphase=%s\tfirst=%s\tlast=%s\tbs=%s\tbe=%s\tn=%d\terr=%d\tdur=%d\tcost=%.2f\ttok=%d\ttasks=%d\ttdone=%d\taudits=%d\treviews=%d\troles=%s\tmodels=%s\tadv=%d\n", \
+        name, phase, first, last, bs, be, n, err, dur, cost, tok, tasks, tdone, audits, reviews, roles, models, adv }'
 }
 kv() { printf '%s\n' "$1" | tr '\t' '\n' | sed -n "s/^$2=//p" | head -1; }
 dur_label() { local d="${1:-0}"; if (( d >= 3600 )); then printf '%d h %02d min' $(( d / 3600 )) $(( d % 3600 / 60 )); elif (( d >= 60 )); then printf '%d min' $(( d / 60 )); else printf '%d s' "$d"; fi; }
@@ -105,6 +106,7 @@ else
   ui_section "$(t "DELEGATIONS")"
   ui_kv "$(t "Total")" "$(kv "$m" n) · $(t "%s failed" "$(kv "$m" err)") · $(t "working time %s" "$(dur_label "$(kv "$m" dur)")")"
   ui_kv "$(t "By role")" "$(kv "$m" roles | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
+  (( $(kv "$m" adv) > 0 )) && ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "$(kv "$m" adv)")"
   ui_kv "$(t "By model")" "$(kv "$m" models | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
   ui_section "$(t "USAGE")"
   ui_kv "Tokens" "$(ai_tokens_label "$(kv "$m" tok)")"
@@ -151,6 +153,7 @@ if (( MD )); then
       echo "| Tokens | $(ai_tokens_label "$(kv "$m" tok)") |"
       echo "| $(t "Cost (estimate)") | \$$(kv "$m" cost) |"
       echo "| $(t "Reviews · audits") | $(kv "$m" reviews) · $(kv "$m" audits) |"
+      (( $(kv "$m" adv) > 0 )) && echo "| $(t "Advisor") | $(t "%s consultation(s)" "$(kv "$m" adv)") |"
       echo
       for dim in roles models; do
         [[ -n "$(kv "$m" "$dim")" ]] || continue

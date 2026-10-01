@@ -228,7 +228,9 @@ ${WRITER:+- writer, $( [[ -n "$WRITER_LOCAL" ]] && echo "a local model ($LOCAL_M
 Finish with: $STATUS_CMD done, and a five-line summary (findings by severity, where the files are, what the user should do next)."
 fi
 
-if [[ "$TOOL" == "claude" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" "$PROMPT")
+ADVISOR=""; [[ "$TOOL" == "claude" ]] && ADVISOR="$(ai_advisor_for "$MODEL" "$PROFILE")"
+if [[ "$TOOL" == "claude" && -n "$ADVISOR" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" --advisor "$ADVISOR" "$PROMPT")
+elif [[ "$TOOL" == "claude" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" "$PROMPT")
 else CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"; AGENT_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT"); fi
 
 ui_section "AUDIT"
@@ -236,7 +238,7 @@ ui_kv "$(t "Scope")" "$SCOPE"
 ui_kv "$(t "Depth")" "$DEPTH"
 case "$FIXES" in report) fix_l="$(t "Report only")" ;; branch) fix_l="$(t "Report, plan and fixes on a branch")" ;; *) fix_l="$(t "Report and fix plan")" ;; esac
 ui_kv "$(t "Deliverables")" "$fix_l · ${DIR} ${C_DIM}($(t "kept out of Git"))${C_RESET}"
-ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)"
+ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
 team="$(t "explorer %s (medium)" "$AI_MODEL_CLAUDE_MID")"; [[ "$TOOL" == "codex" ]] && team="$(t "explorer %s (medium)" "$AI_MODEL_CODEX_MID")"; ai_has_claude && team="$team · $(t "validator %s (high)" "$AI_MODEL_CLAUDE_MID")"
 ai_has_codex && team="$team · $(t "cross review %s" "$AI_MODEL_CODEX_MID") · $(t "writer %s" "$AI_MODEL_CODEX_FAST")"
 [[ -n "$WRITER_LOCAL" ]] && team="$team · $(t "local writer %s" "$LOCAL_MODEL")"

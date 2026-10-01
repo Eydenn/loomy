@@ -1211,6 +1211,34 @@ XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_p
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_UPCOMING"' _ "$REPO")"
 [[ "claude:fast:$(sed -n 's/^upcoming\.claude\.fast=//p' "$REPO/catalog/models.conf")" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: $got"
 
+section "Advisor and agent tree"
+AC="$WORK/adv-cfg"; mkdir -p "$AC/loomy"
+advq() { XDG_CONFIG_HOME="$AC" bash -c 'source "$1/scripts/lib/models.sh"; ai_advisor_for "$2" "$3"' _ "$REPO" "$1" "$2"; }
+[[ "$(advq claude-sonnet-5-5 econome)" == "opus" ]] && ok "advisor: Opus advises the Thrifty Sonnet lead" || ko "advisor econome: $(advq claude-sonnet-5-5 econome)"
+[[ -z "$(advq claude-opus-5-5 equilibre)" ]] && ok "advisor: none by default in Balanced" || ko "advisor balanced: $(advq claude-opus-5-5 equilibre)"
+[[ "$(advq claude-opus-5-5 qualite)" == "opus" ]] && ok "advisor: a second Opus in Max quality" || ko "advisor quality"
+[[ -z "$(advq gpt-6.1-sol econome)" ]] && ok "advisor: never for a Codex lead" || ko "advisor codex"
+printf 'advisor=sonnet\n' >"$AC/loomy/config"
+[[ -z "$(advq claude-opus-5-5 equilibre)" && "$(advq claude-sonnet-5-5 equilibre)" == "sonnet" ]] && ok "advisor: pairing Claude Code refuses (Sonnet advising Opus) left out" || ko "advisor pairing"
+printf 'advisor=off\n' >"$AC/loomy/config"
+[[ -z "$(advq claude-sonnet-5-5 econome)" ]] && ok "advisor: off when set off" || ko "advisor off"
+rm -f "$AC/loomy/config"
+got="$(XDG_CONFIG_HOME="$AC" bash -c 'source "$1/scripts/lib/models.sh"; ai_lead_command hybrid-claude econome' _ "$REPO")"
+[[ "$got" == *"--advisor opus" ]] && ok "advisor: on the lead agent command" || ko "advisor command: $got"
+fails "advisor: invalid setting refused" 2 "$LOOMY" config set advisor maybe
+# Advisor consultations measured from the session transcript (advisor_message iterations).
+AJ="$WORK/adv-proj"; mkdir -p "$AJ/.loomy/logs"
+printf '%s\n' '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-5-5","usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":50,"iterations":[{"input_tokens":2,"output_tokens":26,"type":"message"},{"input_tokens":35648,"output_tokens":476,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5-5"}]}}}' >"$AJ/t.jsonl"
+bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$2/t.jsonl" lead' _ "$REPO" "$AJ"
+grep -q '"type":"advisor".*"model":"claude-opus-5-5","calls":1,"tokens_in":35648' "$AJ/.loomy/logs/events.jsonl" && ok "advisor: consultation logged with its model and tokens" || ko "advisor log: $(cat "$AJ/.loomy/logs/events.jsonl")"
+# Agent tree
+(cd "$DW" && "$LOOMY" tree) >"$OUT" 2>&1
+has "tree: lead agent" "LEAD AGENT"
+has "tree: every role with its model" "Executor.*gpt-6-luna"
+has "tree: session log and status line" "session log"
+bash "$REPO/scripts/ai-status.sh" --root "$DW" --tree >"$OUT" 2>&1
+has "tree: shown by the status view (key t of watch)" "AGENT TREE"
+
 section "Interface language"
 lang_of() {   # lang_of <environment variables…>: detected language, without LOOMY_LANG or configuration
   env -u LOOMY_LANG -u LOOMY_UI_LANG -u LC_ALL -u LC_MESSAGES -u LANG XDG_CONFIG_HOME="$WORK/cfg-lang" "$@" \

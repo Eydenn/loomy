@@ -130,7 +130,9 @@ Record each phase change before acting, with: $SET <phase>   and announce it on 
 5. commit: propose the commit (message, files) and commit only once the user agrees; never push unless asked.
 Finish with: $SET done, write the Result section (what changed, checks, open points), and give a three-line summary."
 fi
-if [[ "$TOOL" == "claude" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" "$PROMPT")
+ADVISOR=""; [[ "$TOOL" == "claude" ]] && ADVISOR="$(ai_advisor_for "$MODEL" "$AI_PROFILE")"
+if [[ "$TOOL" == "claude" && -n "$ADVISOR" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" --advisor "$ADVISOR" "$PROMPT")
+elif [[ "$TOOL" == "claude" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" "$PROMPT")
 else CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"; AGENT_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT"); fi
 
 ui_clear
@@ -138,7 +140,7 @@ ui_banner "$(t "Task")" "${C_RESET}${C_TITLE}$(_ai_brief_get "$BRIEF" name)${C_R
 ui_section "$(t "TASK")"
 ui_kv "Task" "#$ID · ${C_BOLD}$TITLE${C_RESET}"
 ui_kv "$(t "File")" "$REL"
-ui_kv "$(t "Lead agent")" "$tool_label · $MODEL ($EFFORT)"
+ui_kv "$(t "Lead agent")" "$tool_label · $MODEL ($EFFORT)${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
 ui_kv "$(t "Phase")" "$(loomy_phase_label "$cur_phase") ${C_DIM}($(t "step %s of %s" "$(loomy_phase_index "$cur_phase")" "$LOOMY_PHASE_COUNT"))${C_RESET}"
 if (( PRINT )) || ! ui_is_interactive; then
   printf '%s\n' "$PROMPT" >"$ROOT/.loomy/task-prompt.txt"

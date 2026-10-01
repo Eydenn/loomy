@@ -79,8 +79,25 @@ ai_usage_record() {
       cw = num("cache_creation_input_tokens"); w5 = num("ephemeral_5m_input_tokens"); w1 = num("ephemeral_1h_input_tokens")
       if (w5 + w1 == 0) w1 = cw
       i[m] += num("input_tokens"); f[m] += w5; h[m] += w1; r[m] += num("cache_read_input_tokens"); o[m] += num("output_tokens"); c[m]++
+      # Advisor consultations (the Claude Code advisor tool): one advisor_message iteration each, with its own model.
+      rest = $0
+      while (match(rest, /\{"input_tokens":[0-9]+,"output_tokens":[0-9]+[^{}]*(\{[^{}]*\}[^{}]*)*"type":"advisor_message","model":"[^"]+"\}/)) {
+        it = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+        am = it; sub(/.*"model":"/, "", am); sub(/".*/, "", am)
+        ai_ = it; sub(/^\{"input_tokens":/, "", ai_); sub(/,.*/, "", ai_)
+        ao = it; sub(/^\{"input_tokens":[0-9]+,"output_tokens":/, "", ao); sub(/,.*/, "", ao)
+        an[am]++; ain[am] += ai_; aout[am] += ao
+      }
     }
-    END { for (m in c) print m, i[m], f[m], h[m], r[m], o[m], c[m] }' | while read -r model tin tw5 tw1 tcr tout n; do
+    END { for (m in c) print m, i[m], f[m], h[m], r[m], o[m], c[m]
+          for (m in an) print "ADVISOR", m, ain[m], aout[m], an[m] }' | while read -r model tin tw5 tw1 tcr tout n; do
+      if [[ "$model" == "ADVISOR" ]]; then
+        # here: tin = advisor model, tw5 = input tokens, tw1 = output tokens, tcr = consultations
+        price="$(ai_price "$tin")"; cost=""
+        [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tw5" -v o="$tw1" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + o * q[2]) / 1000000 }')"
+        ai_journal_write "$root" "\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"model\":\"$tin\",\"calls\":$tcr,\"tokens_in\":$tw5,\"tokens_cached\":0,\"tokens_out\":$tw1,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
+        continue
+      fi
       price="$(ai_price "$model")"; cost=""; tcw=$(( tw5 + tw1 ))
       [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tin" -v f="$tw5" -v h="$tw1" -v r="$tcr" -v o="$tout" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + f * q[1] * 1.25 + h * q[1] * 2 + r * q[3] + o * q[2]) / 1000000 }')"
       ai_journal_write "$root" "\"type\":\"usage\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"agent\":$(ai_json_str "$agent"),\"model\":\"$model\",\"messages\":$n,\"tokens_in\":$(( tin + tcw )),\"tokens_cached\":$tcr,\"tokens_out\":$tout,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""

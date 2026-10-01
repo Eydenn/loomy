@@ -1739,5 +1739,33 @@ _t_fr() {
     'tested once a day; used as soon as they answer') _T='testés une fois par jour ; utilisés dès qu'\''ils répondent' ;;
     'available · heads %s') _T='disponible · en tête de %s' ;;
     'not available yet · will head %s') _T='pas encore disponible · passera en tête de %s' ;;
+    'Live tracking (keys: q, c view, l log, t agent tree, s session)') _T='Suivi en direct (touches : q, c vue, l journal, t arbre des agents, s session)' ;;
+    'Agent tree: the lead agent, its advisor and every role with its model, effort and state, then the session log') _T='Arbre des agents : l'\''orchestrateur, son conseiller et chaque rôle avec son modèle, son effort et son état, puis le journal de session' ;;
+    '      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),') _T='      advisor (auto : Opus conseille l'\''orchestrateur Sonnet en Économe et l'\''orchestrateur Opus en Qualité max ; off, opus, sonnet ou fable),' ;;
+    'advisor: auto, off, opus, sonnet or fable') _T='advisor : auto, off, opus, sonnet ou fable' ;;
+    'advisor %s') _T='conseiller %s' ;;
+    'stays off: %s set (it blocks the feature flags the advisor needs)') _T='reste désactivé : %s est définie (elle bloque les fonctions expérimentales dont le conseiller a besoin)' ;;
+    'for the %s lead agent (loomy config set advisor off to turn it off)') _T='pour l'\''orchestrateur %s (loomy config set advisor off pour le désactiver)' ;;
+    'Advisor') _T='Conseiller' ;;
+    '%s consultation(s)') _T='%s consultation(s)' ;;
+    'advisor') _T='conseiller' ;;
+    'consulted before a plan, when an error repeats, before done (loomy config set advisor)') _T='consulté avant un plan, quand une erreur se répète, avant de terminer (loomy config set advisor)' ;;
+    'tree') _T='arbre' ;;
+    'session open') _T='session ouverte' ;;
+    'session closed') _T='session fermée' ;;
+    'no session') _T='aucune session' ;;
+    'AGENT TREE') _T='ARBRE DES AGENTS' ;;
+    'LEAD AGENT') _T='ORCHESTRATEUR' ;;
+    'last %s') _T='dernière %s' ;;
+    'before a plan, when an error repeats, before done') _T='avant un plan, quand une erreur se répète, avant de terminer' ;;
+    'done %s') _T='terminé %s' ;;
+    'idle') _T='au repos' ;;
+    'session log') _T='journal de session' ;;
+    'roles') _T='rôles' ;;
+    'delegations') _T='délégations' ;;
+    'live: loomy watch, then t') _T='en direct : loomy watch, puis t' ;;
+    'Agent tree: the lead agent, its advisor and every routed role with its model, effort and live state, then the session') _T='Arbre des agents : l'\''orchestrateur, son conseiller et chaque rôle routé avec son modèle, son effort et son état en direct, puis le journal' ;;
+    'log and a status line. Shown by loomy watch (key t); loomy tree prints it once. Bash 3.2 compatible.') _T='de session et une ligne d'\''état. Affiché par loomy watch (touche t) ; loomy tree l'\''affiche une fois. Compatible Bash 3.2.' ;;
+    '  loomy tree [--root <dir>]') _T='  loomy tree [--root <dossier>]' ;;
   esac
 }

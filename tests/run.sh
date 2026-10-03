@@ -1311,6 +1311,29 @@ file_has "English START.md by default" "$PROJ/START.md" "TEMPORARY BOOTSTRAP"
 run "compiled dictionary up to date" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/fr.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/fr.sh; r=$?; cp "$tmp" scripts/lib/i18n/fr.sh; rm -f "$tmp"; exit $r' _ "$REPO"
 run "every interface sentence is translated" bash -c '[[ -z "$(bash "$1/tools/i18n-missing.sh")" ]]' _ "$REPO"
 
+# ------------------------------------------------------------------ setup safeguards
+section "Lead-aware delegation, project doctor, routing reminder"
+SG="$WORK/garde"
+run "init for the safeguards (Claude lead, ORCHESTRATED)" "$LOOMY" init "$SG" --yes --no-clipboard
+# 1. The delegation advice depends on the lead: delegate-to-claude.sh is a Codex lead's bridge.
+bash "$REPO/scripts/ai-context.sh" --root "$SG" >"$OUT" 2>&1
+has "context, Claude lead: native subagents" "native subagents \(\.claude/agents/<role>\.md, Agent tool"
+has "context, Claude lead: only Codex goes through a bridge" "only Codex roles go through \.loomy/scripts/delegate-to-codex\.sh"
+hasnt "context, Claude lead: no advice to use delegate-to-claude.sh" "delegate-to-claude\.sh and delegate-to-codex\.sh"
+(cd "$SG" && bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+has "bridge called by a Claude lead: warning on stderr" "lead agent is Claude Code.*\.claude/agents/explorer\.md"
+(cd "$SG" && LOOMY_BRIDGE_OK=1 bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+hasnt "bridge, LOOMY_BRIDGE_OK (audit): no warning" "lead agent is Claude Code"
+SGX="$WORK/garde-codex"; "$LOOMY" init "$SGX" --yes --no-clipboard >/dev/null 2>&1
+sed -i.bak 's/^ai_lead: claude/ai_lead: codex/' "$SGX/.loomy/brief.md"
+bash "$REPO/scripts/ai-context.sh" --root "$SGX" >"$OUT" 2>&1
+has "context, Codex lead: delegate-to-claude.sh kept" "delegate-to-claude\.sh and delegate-to-codex\.sh"
+(cd "$SGX" && bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+hasnt "bridge called by a Codex lead: no warning" "lead agent is Claude Code"
+for f in START.md fr/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRATION.md skills/project-bootstrap/references/orchestration.md fr/skills/project-bootstrap/references/orchestration.md; do
+  grep -qE 'native subagents|sous-agents natifs' "$REPO/$f" && ok "doc advice by lead: $f" || ko "doc advice by lead: $f still gives the Codex-lead advice only"
+done
+
 # ------------------------------------------------------------------ install.sh
 section "install.sh"
 PREFIX="$WORK/prefix"

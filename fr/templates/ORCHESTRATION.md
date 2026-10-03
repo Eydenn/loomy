@@ -14,6 +14,8 @@ Ne délègue pas les modifications triviales, les recherches simples dont l'orch
 Les deux bridges lisent le modèle et l'effort de chaque rôle dans le moteur de routage (`ai-route.sh`).
 
 ### Codex → Claude : `delegate-to-claude.sh` (lecture seule)
+Pour un lead Codex uniquement. Un lead Claude exécute ses rôles Claude comme sous-agents natifs (`.claude/agents/<rôle>.md`, outil Agent, au premier plan) : le `claude -p` sans interface du bridge refuse toute commande shell non pré-approuvée, un rôle qui doit lancer des mesures ou des scripts n'y fonctionnerait pas.
+
 ```bash
 .loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<tâche>"
 ```

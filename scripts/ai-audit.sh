@@ -191,8 +191,8 @@ lang_txt="English"; [[ "$(ui_lang)" == "fr" ]] && lang_txt="French"
 #   validator  Claude Sonnet 5.5 at high effort: rigorous, re-checks every finding independently
 #   cross      the other family's reviewer (GPT-6.1 Sol), a second opinion on Critical and High findings
 BR="$SCRIPT_DIR"
-VALIDATOR="DELEGATE_CLAUDE_EFFORT=high bash \"$BR/delegate-to-claude.sh\" reviewer"
-EXPLORER="DELEGATE_CLAUDE_MODEL=$AI_MODEL_CLAUDE_MID DELEGATE_CLAUDE_EFFORT=medium bash \"$BR/delegate-to-claude.sh\" explorer"
+VALIDATOR="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_EFFORT=high bash \"$BR/delegate-to-claude.sh\" reviewer"
+EXPLORER="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_MODEL=$AI_MODEL_CLAUDE_MID DELEGATE_CLAUDE_EFFORT=medium bash \"$BR/delegate-to-claude.sh\" explorer"
 [[ "$TOOL" == "codex" ]] && EXPLORER="DELEGATE_CODEX_MODEL=$AI_MODEL_CODEX_MID DELEGATE_CODEX_EFFORT=medium bash \"$BR/delegate-to-codex.sh\" explorer"
 CROSS=""; ai_has_codex && CROSS="bash \"$BR/delegate-to-codex.sh\" reviewer"
 [[ "$TOOL" == "codex" ]] && CROSS="bash \"$BR/delegate-to-codex.sh\" reviewer"

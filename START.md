@@ -287,7 +287,7 @@ When hybrid mode is chosen:
 5. Don't create `.ai/HANDOFF.md` until an actual handoff is in progress.
 6. For parallel work, use isolated branches or worktrees; never let both tools modify the same working tree at the same time.
 7. When parallel implementation isn't needed, prefer one tool implementing and the other reviewing, for a high-value cross check.
-8. Delegation between models goes through `.loomy/scripts/delegate-to-claude.sh` (read-only Claude specialist) and `.loomy/scripts/delegate-to-codex.sh` (Codex executor, developer, reviewer…), following the routing of `ai-route.sh`. The lead agent validates each result before acting. Always run these scripts **in the foreground** and wait for them to finish: a delegation started in the background is interrupted if the session closes.
+8. Delegation between models follows the routing of `ai-route.sh`. With a Codex lead, Claude roles go through `.loomy/scripts/delegate-to-claude.sh` (read-only Claude specialist). With a Claude lead, Claude roles are the native subagents of `.claude/agents/` (Agent tool): don't use `delegate-to-claude.sh`, its headless `claude -p` refuses any shell command that isn't pre-approved. Codex roles (executor, developer, reviewer…) go through `.loomy/scripts/delegate-to-codex.sh`. The lead agent validates each result before acting. Always run these scripts **in the foreground** and wait for them to finish: a delegation started in the background is interrupted if the session closes.
 9. Don't use cross-model calls for trivial tasks or to have every decision confirmed automatically.
 
 ### Model routing setup

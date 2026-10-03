@@ -2,6 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased
+
+### Fixed
+- **The delegation advice depends on the lead agent.** The session context always said "delegations: delegate-to-claude.sh and delegate-to-codex.sh", but `delegate-to-claude.sh` is the bridge of a Codex lead: it runs `claude -p` headless, where any shell command that isn't pre-approved is refused (an explorer role started that way could not run a single measurement script).
+  - With a Claude lead, the context now says that Claude roles are the native subagents of `.claude/agents/` (Agent tool, in the foreground) and that only Codex roles go through `delegate-to-codex.sh`. A Codex lead keeps `delegate-to-claude.sh`.
+  - Same correction in `START.md`, the orchestration template and the bootstrap skill reference (English and French).
+  - `delegate-to-claude.sh` warns on stderr when the project's lead is Claude (it still runs: audits, which set `LOOMY_BRIDGE_OK`, and the quota failover come through it legitimately).
+
 ## 0.8.4 — 2026-10-01
 
 ### Changed

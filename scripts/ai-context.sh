@@ -10,6 +10,8 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
@@ -91,7 +93,13 @@ a_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/audit.state" 2>/dev/null | head -
 if [[ -n "$a_phase" && "$a_phase" != "done" ]]; then
   t "- A security audit is in progress (loomy audit, phase %s): its mission is in .loomy/audit.md; if the user is working on it, continue it and record its phases with .loomy/scripts/ai-status.sh --audit set <phase>." "$a_phase"; echo
 fi
-t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
+# The advice depends on the lead: delegate-to-claude.sh is the bridge of a Codex lead (claude -p, headless: a shell
+# command that isn't pre-approved is refused). A Claude lead runs its Claude roles as native subagents instead.
+if [[ "$(brief ai_lead)" == "claude" ]]; then
+  t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: Claude roles are your native subagents (.claude/agents/<role>.md, Agent tool, in the foreground), not delegate-to-claude.sh (a headless claude -p refuses every shell command that isn't pre-approved); only Codex roles go through .loomy/scripts/delegate-to-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
+else
+  t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
+fi
 J="$(ai_journal_file "$ROOT")"
 if [[ -s "$J" ]] && grep -q '"type":"delegation",' "$J" 2>/dev/null; then
   last="$(grep '"type":"delegation",' "$J" | tail -3 | sed -n 's/.*"role":"\([^"]*\)".*"model":"\([^"]*\)".*"status":"\([^"]*\)".*/\1 (\2, \3)/p' | paste -sd ',' - | sed 's/,/, /g')"

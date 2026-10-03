@@ -47,7 +47,7 @@ Le relecteur inspecte le diff réel et signale des défauts et risques concrets,
 - Utilise de courts fichiers de relais plutôt que de rejouer des conversations passées.
 
 ## Orchestration entre modèles
-La session principale est l'orchestrateur. Elle délègue des rôles d'une famille de modèles à l'autre via `scripts/delegate-to-claude.sh` (Claude, lecture seule) et `scripts/delegate-to-codex.sh` (Codex, écriture ou lecture seule selon le rôle), selon le routage de `scripts/ai-route.sh`.
+La session principale est l'orchestrateur. Elle délègue des rôles d'une famille de modèles à l'autre selon le routage de `scripts/ai-route.sh` : un lead Codex joint Claude via `scripts/delegate-to-claude.sh` (lecture seule) ; un lead Claude exécute ses rôles Claude comme sous-agents natifs (`.claude/agents/`, outil Agent) et joint Codex via `scripts/delegate-to-codex.sh` (écriture ou lecture seule selon le rôle).
 
 Utilise ces appels pour une relecture indépendante, une critique d'architecture, un débogage difficile, un second avis sécurité ou une recherche ciblée. L'orchestrateur reste responsable de la vérification des constats et de l'intégration finale.
 

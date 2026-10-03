@@ -32,6 +32,14 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 127
 fi
 
+# This bridge is the one of a Codex lead. A Claude lead has native subagents (.claude/agents/), which keep its
+# permissions and can run commands; here, claude -p is headless and refuses any shell command that isn't pre-approved.
+# A warning only: audits and the quota failover legitimately come through here (LOOMY_BRIDGE_OK, LOOMY_FAILOVER_FROM).
+if [[ -z "${LOOMY_BRIDGE_OK:-}" && -z "${LOOMY_FAILOVER_FROM:-}" ]] \
+   && [[ "$(_ai_brief_get "$(ai_project_root)/.loomy/brief.md" ai_lead)" == "claude" ]]; then
+  t "delegate-to-claude: this project's lead agent is Claude Code. Use the subagent .claude/agents/%s.md (Agent tool, in the foreground) instead: this bridge runs claude -p, where shell commands that aren't pre-approved are refused." "$ROLE" >&2; echo >&2
+fi
+
 case "$ROLE" in
   reviewer)
     ROLE_GUIDANCE="$(t "Act as a senior, independent code reviewer. Inspect the repository or the diff the task is about. Only report concrete defects: regressions, missing tests, dangerous assumptions or needless complexity. Don't modify any file. Give concise findings, ranked by severity, with file references and evidence.")" ;;

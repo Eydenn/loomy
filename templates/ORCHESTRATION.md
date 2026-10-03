@@ -14,6 +14,8 @@ Don't delegate trivial changes, simple searches the lead agent already has the c
 Both bridges read each role's model and effort from the routing engine (`ai-route.sh`).
 
 ### Codex → Claude: `delegate-to-claude.sh` (read-only)
+For a Codex lead only. A Claude lead runs its Claude roles as native subagents (`.claude/agents/<role>.md`, Agent tool, in the foreground): the bridge's headless `claude -p` refuses any shell command that isn't pre-approved, so a role that must run measurements or scripts can't work through it.
+
 ```bash
 .loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<task>"
 ```

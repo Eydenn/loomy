@@ -27,7 +27,7 @@ Quand les deux outils sont utilisés, le dépôt et l'historique Git sont l'éta
 Utilise l'un des cinq modes :
 - SOLO : un seul outil porte la tâche.
 - REVIEW : l'un implémente, l'autre relit de façon indépendante le diff ou le commit réel.
-- HANDOFF : l'un crée un point de contrôle propre et un `.ai/HANDOFF.md` concis ; l'autre vérifie l'état et reprend.
+- HANDOFF : l'un crée un point de contrôle propre et un `.loomy/docs/HANDOFF.md` concis ; l'autre vérifie l'état et reprend.
 - PARALLEL : branches ou worktrees séparés avec des périmètres disjoints, suivis d'une vérification après intégration.
 - ORCHESTRATED : l'orchestrateur délègue des rôles à l'autre modèle (voir « Orchestration entre modèles » ci-dessous).
 

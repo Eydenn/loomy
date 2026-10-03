@@ -71,7 +71,7 @@ elif [[ -f "$ROOT/START.md" ]]; then
   PROMPT="$(t "Resume this project's setup by following START.md, where it stopped: phase \"%s\". First run .loomy/scripts/ai-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on." "$(loomy_phase_label "$PHASE")")"
   KIND="$(t "resuming at phase %s" "$(loomy_phase_label "$PHASE")")"
 else
-  PROMPT="$(t "Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .ai/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.")"
+  PROMPT="$(t "Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .loomy/docs/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.")"
   KIND="$(t "everyday work (bootstrap done)")"
 fi
 

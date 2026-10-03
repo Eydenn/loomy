@@ -3,7 +3,7 @@
 ## Goal
 Orchestration contract between models for this repository.
 
-The main session is the **lead agent**. It owns the task end to end. It delegates a role to the other model family when `.ai/AI_MODEL_ROUTING.md` sends it there; otherwise it hands it to its own subagents or does the work itself.
+The main session is the **lead agent**. It owns the task end to end. It delegates a role to the other model family when `.loomy/docs/AI_MODEL_ROUTING.md` sends it there; otherwise it hands it to its own subagents or does the work itself.
 
 ## Default policy
 Only delegate when clearly useful: a cheaper model able to do the work reliably, a specialist who will decide better, an independent review, or context isolation.

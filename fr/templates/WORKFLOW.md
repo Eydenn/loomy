@@ -13,7 +13,7 @@ Ne laisse jamais Codex et Claude modifier les mêmes fichiers en même temps dan
 ## Source de vérité commune
 Par ordre de priorité :
 1. l'instruction actuelle de l'utilisateur ;
-2. les instructions du dépôt (`AGENTS.md`, `CLAUDE.md`, ce fichier, `.ai/AI_ORCHESTRATION.md`) ;
+2. les instructions du dépôt (`AGENTS.md`, `CLAUDE.md`, ce fichier, `.loomy/docs/AI_ORCHESTRATION.md`) ;
 3. le code, la configuration et les schémas exécutables ;
 4. les tests ;
 5. `PROJECT.md` et `ARCHITECTURE.md` ;
@@ -34,7 +34,7 @@ Le relecteur cherche des défauts concrets : régressions, cas limites oubliés,
 Il ne réimplémente pas, sauf demande.
 
 ### HANDOFF
-L'agent A s'arrête à un point de contrôle propre et rédige `.ai/HANDOFF.md`.
+L'agent A s'arrête à un point de contrôle propre et rédige `.loomy/docs/HANDOFF.md`.
 L'agent B vérifie l'état du dépôt et reprend.
 Supprime ou mets à jour les passages de relais périmés.
 
@@ -44,7 +44,7 @@ Chaque agent vérifie et committe son chantier avant l'intégration.
 Relance les critères de qualité du projet après l'intégration.
 
 ### ORCHESTRATED
-L'orchestrateur sollicite l'autre modèle comme spécialiste, selon `.ai/AI_ORCHESTRATION.md`.
+L'orchestrateur sollicite l'autre modèle comme spécialiste, selon `.loomy/docs/AI_ORCHESTRATION.md`.
 Usage habituel : relecture, architecture, débogage, second avis sécurité, recherche ciblée.
 Le spécialiste rend ses constats ; l'orchestrateur vérifie, décide et intègre.
 
@@ -88,7 +88,7 @@ N'utilise sous-agents ou appels entre modèles que si leur valeur dépasse le co
 - Préfère des fichiers d'état ou de relais concis à la relecture de conversations.
 - Garde les fichiers d'instructions racine courts.
 - Préfère un appel ciblé à un autre modèle plutôt que des allers-retours répétés.
-- Choisis le modèle et l'effort les moins chers qui font la tâche de façon fiable (`.ai/AI_MODEL_ROUTING.md`) ; monte en gamme sur preuve, pas par défaut.
+- Choisis le modèle et l'effort les moins chers qui font la tâche de façon fiable (`.loomy/docs/AI_MODEL_ROUTING.md`) ; monte en gamme sur preuve, pas par défaut.
 
 ## Vérification
 Aucun agent n'annonce un succès sans avoir lancé les vérifications pertinentes.

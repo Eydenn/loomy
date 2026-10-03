@@ -27,7 +27,7 @@ When both tools are used, the repository and the Git history are the shared stat
 Use one of five modes:
 - SOLO: a single tool owns the task.
 - REVIEW: one implements, the other independently reviews the actual diff or commit.
-- HANDOFF: one creates a clean checkpoint and a concise `.ai/HANDOFF.md`; the other checks the state and takes over.
+- HANDOFF: one creates a clean checkpoint and a concise `.loomy/docs/HANDOFF.md`; the other checks the state and takes over.
 - PARALLEL: separate branches or worktrees with disjoint scopes, followed by a verification after integration.
 - ORCHESTRATED: the lead agent delegates roles to the other model (see "Cross-model orchestration" below).
 

@@ -15,7 +15,7 @@ Usage: ai-route.sh [options] [command]
 Commands:
   (none)                Shows the role → model / effort / tool matrix for this project
   get <role>            One "family model effort" line (for scripts)
-  markdown              Matrix as Markdown (for .ai/AI_MODEL_ROUTING.md)
+  markdown              Matrix as Markdown (for .loomy/docs/AI_MODEL_ROUTING.md)
   all                   Matrix of the 4 environments side by side (Markdown)
   claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)
   codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)

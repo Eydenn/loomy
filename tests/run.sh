@@ -491,14 +491,14 @@ section "AI files visibility (loomy privacy)"
 PV="$WORK/prive"; mkdir -p "$PV"
 run "project for loomy privacy" "$LOOMY" init "$PV" --yes --no-clipboard
 file_has "brief: ai_files versioned by default" "$PV/.loomy/brief.md" "^ai_files: versioned$"
-mkdir -p "$PV/.ai" && echo "# agents" >"$PV/AGENTS.md" && echo "rules" >"$PV/.ai/AI_WORKFLOW.md" && echo "code" >"$PV/app.txt"
+mkdir -p "$PV/.loomy/docs" && echo "# agents" >"$PV/AGENTS.md" && echo "rules" >"$PV/.loomy/docs/AI_WORKFLOW.md" && echo "code" >"$PV/app.txt"
 git -C "$PV" add -A && git -C "$PV" commit -qm "with AI files"
 run "privacy local" "$LOOMY" privacy --root "$PV" local
 file_has "local: mode recorded in the brief" "$PV/.loomy/brief.md" "^ai_files: local$"
 file_has "local: exclusion set in .git/info/exclude" "$PV/.git/info/exclude" "^/AGENTS.md$"
 has "local: files already tracked flagged" "Still tracked by the project repository"
 has "local: command to stop tracking them" "git rm -r --cached"
-git -C "$PV" rm -r -q --cached -- .loomy START.md AGENTS.md .ai .claude >/dev/null && git -C "$PV" commit -qm "AI files out of the repository"
+git -C "$PV" rm -r -q --cached -- .loomy START.md AGENTS.md .claude >/dev/null && git -C "$PV" commit -qm "AI files out of the repository"
 [[ -z "$(git -C "$PV" status --porcelain)" ]] && ok "local: AI files no longer show in git status" || ko "local: AI files still visible ($(git -C "$PV" status --porcelain | head -3 | tr '\n' ' '))"
 [[ -f "$PV/AGENTS.md" && -f "$PV/.loomy/brief.md" ]] && ok "local: files kept on disk" || ko "local: files lost"
 if git -C "$PV" check-ignore -q .gitignore; then ko ".gitignore excluded by mistake"; else ok "the rest of the project stays versioned"; fi
@@ -521,7 +521,7 @@ M2="$WORK/machine2"; git clone -q "$PV" "$M2"
 [[ ! -e "$M2/AGENTS.md" ]] && ok "clone: AI files absent from the project repository" || ko "clone: AI files present"
 echo "different local version" >"$M2/AGENTS.md"
 run "privacy restore" "$LOOMY" privacy --root "$M2" restore "$BARE"
-[[ -f "$M2/AGENTS.md" && -f "$M2/.loomy/brief.md" && -f "$M2/.ai/AI_WORKFLOW.md" ]] && ok "restore: AI files recovered" || ko "restore: files missing"
+[[ -f "$M2/AGENTS.md" && -f "$M2/.loomy/brief.md" && -f "$M2/.loomy/docs/AI_WORKFLOW.md" ]] && ok "restore: AI files recovered" || ko "restore: files missing"
 has "restore: different local files set aside" "set aside"
 file_has "restore: exclusion set on the new machine" "$M2/.git/info/exclude" "^/AGENTS.md$"
 [[ -z "$(git -C "$M2" status --porcelain)" ]] && ok "restore: project repository clean" || ko "restore: project repository modified"
@@ -1247,6 +1247,12 @@ has "tree diagram: roles side by side" "│ .*executor.*│ .*│"
 has "tree diagram: back to the lead agent" "back to the lead agent"
 has "tree diagram: framed session log" "┤ session log ├"
 hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
+has "tree diagram: roles without a box listed beside the final check" "other roles · loomy route"
+has "tree diagram: listed role with its model" "· (architect|debugger|security|documenter) +claude-"
+hasnt "tree diagram: no bare role count when there is room" "\+[0-9]+ roles · loomy route"
+COLUMNS=216 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+has "tree diagram, wide: every role as a box" "│ +documenter +│"
+hasnt "tree diagram, wide: nothing left over" "other roles"
 # Links aligned: every ▼ has its link right above it, in the same column (checked character by character).
 if command -v python3 >/dev/null 2>&1; then
   NO_COLOR=1 COLUMNS=133 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null 2>/dev/null >"$OUT"
@@ -1334,20 +1340,28 @@ for f in START.md fr/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRAT
   grep -qE 'native subagents|sous-agents natifs' "$REPO/$f" && ok "doc advice by lead: $f" || ko "doc advice by lead: $f still gives the Codex-lead advice only"
 done
 
-# 2. doctor: a project whose bootstrap is unfinished is not "ideal".
+# 2. doctor: a project whose bootstrap is unfinished is not "ideal". The pieces Loomy owns are removed (the partial
+# setup seen on a real project: no docs, no subagents, no orchestration rule).
+rm -rf "$SG/.loomy/docs" "$SG/.claude/agents"
+printf '# SG\n\nRules written by the agent, without the orchestration rule.\n' >"$SG/CLAUDE.md"
 run "doctor on an unfinished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
 has "doctor: PROJECT section" "PROJECT"
 has "doctor: bootstrap unfinished" "bootstrap unfinished.*START\.md still pending"
-has "doctor: .ai/ missing" "\.ai/ folder missing"
+has "doctor: .loomy/docs/ missing" "\.loomy/docs/ folder missing"
 has "doctor: subagents missing, with the fix" "subagents missing in \.claude/agents/.*architect"
 has "doctor: subagent fix command" "fix: \.loomy/scripts/ai-route\.sh claude-agents"
 hasnt "doctor: not ideal with a gap" "Ideal setup"
 has "doctor: gaps listed in the summary" "for the ideal: .*bootstrap finished"
+has "doctor: orchestration rule missing" "orchestration rule missing"
+run "doctor --fix completes the project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG" --fix
+has "doctor --fix: project completed" "project completed"
+[[ -f "$SG/.loomy/docs/AI_MODEL_ROUTING.md" && -f "$SG/.claude/agents/architect.md" ]] && grep -q 'loomy:orchestration:start' "$SG/CLAUDE.md" \
+  && ok "doctor --fix: docs, subagents and rule back" || ko "doctor --fix: project not completed"
 # The bootstrap finishes: no more gap, except the hook added since (the project's settings.json is rebuilt on update).
-bash "$REPO/scripts/ai-status.sh" --root "$SG" set "done" >/dev/null; rm -f "$SG/START.md"; mkdir -p "$SG/.ai"
+bash "$REPO/scripts/ai-status.sh" --root "$SG" set "done" >/dev/null; rm -f "$SG/START.md"; mkdir -p "$SG/.loomy/docs"
 bash "$REPO/scripts/ai-route.sh" --root "$SG" claude-agents >/dev/null 2>&1
 run "doctor on a finished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
-hasnt "doctor: no bootstrap gap once finished" "bootstrap unfinished|\.ai/ folder missing|subagents missing"
+hasnt "doctor: no bootstrap gap once finished" "bootstrap unfinished|\.loomy/docs/ folder missing|subagents missing"
 has "doctor: subagents present" "Claude subagents"
 has "doctor: hooks present" "Claude Code hooks"
 python3 - "$SG/.claude/settings.json" <<'PY' 2>/dev/null
@@ -1380,6 +1394,13 @@ hasnt "start context: no more 'waits for your go-ahead'" "waits for your go-ahea
 # 3. UserPromptSubmit: light routing reminder, ORCHESTRATED projects only.
 PH="bash $REPO/scripts/ai-context.sh --hook prompt"
 echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
+has "prompt hook: unfinished setup said first" '"additionalContext":"\[Loomy\] The Loomy setup of this project is not finished.*ORCHESTRATED mode'
+sed -i.bak 's/^ai_mode: ORCHESTRATED/ai_mode: SOLO/' "$SA/.loomy/brief.md"
+echo '{}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
+has "prompt hook: unfinished setup said in SOLO mode too" "setup of this project is not finished"
+sed -i.bak 's/^ai_mode: SOLO/ai_mode: ORCHESTRATED/' "$SA/.loomy/brief.md"
+mv "$SA/START.md" "$SA/START.keep"; rm -f "$SGX/START.md"
+echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
 has "prompt hook: reminder as additionalContext" '"hookEventName":"UserPromptSubmit","additionalContext":"\[Loomy\] ORCHESTRATED mode: you are the orchestrator'
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert 'ai-route.sh' in d['hookSpecificOutput']['additionalContext']" "$OUT" 2>/dev/null \
   && ok "prompt hook: valid JSON" || ko "prompt hook: invalid JSON: $(cat "$OUT")"
@@ -1397,6 +1418,34 @@ echo '{}' | CLAUDE_PROJECT_DIR="$SGX" $PH >"$OUT" 2>&1
 # Light: every prompt pays for it (about 20 ms measured; 10 runs under 3 s leaves a wide margin).
 t0=$SECONDS; for _ in 1 2 3 4 5 6 7 8 9 10; do echo '{}' | CLAUDE_PROJECT_DIR="$SG" $PH >/dev/null 2>&1; done
 (( SECONDS - t0 < 3 )) && ok "prompt hook: light (10 runs in $(( SECONDS - t0 )) s)" || ko "prompt hook: too slow ($(( SECONDS - t0 )) s for 10 runs)"
+# Project integrity: init leaves a complete setup; a .ai/ project (before 0.9) is migrated; the repair is idempotent.
+SI="$WORK/integrite"; "$LOOMY" init "$SI" --yes --no-clipboard >/dev/null 2>&1
+[[ -f "$SI/.loomy/docs/AI_WORKFLOW.md" && -f "$SI/.loomy/docs/AI_ORCHESTRATION.md" && -f "$SI/.loomy/docs/AI_MODEL_ROUTING.md" ]] \
+  && ok "init: routing documents created by Loomy" || ko "init: routing documents missing"
+[[ -f "$SI/.claude/agents/architect.md" ]] && ok "init: role subagents created by Loomy" || ko "init: subagents missing"
+for f in templates/CLAUDE.md templates/AGENTS.md fr/templates/CLAUDE.md fr/templates/AGENTS.md; do
+  grep -q 'loomy:orchestration:start' "$REPO/$f" && ok "template carries the orchestration rule: $f" || ko "orchestration rule missing from $f"
+done
+# The agent writes CLAUDE.md without the rule (what happened on a real project): the next start puts it back.
+printf '# SI\n\nProject rules.\n' >"$SI/CLAUDE.md"
+bash "$REPO/scripts/ai-context.sh" --root "$SI" >/dev/null 2>&1
+grep -q 'Every request in this project' "$SI/CLAUDE.md" && ok "repair: orchestration rule added to CLAUDE.md" || ko "repair: orchestration rule not added"
+[[ "$(sed -n 1p "$SI/CLAUDE.md")" == "# SI" ]] && grep -q 'Project rules.' "$SI/CLAUDE.md" && ok "repair: the agent's text kept" || ko "repair: CLAUDE.md damaged"
+[[ ! -e "$SI/.ai" ]] && ok "init: no .ai/ folder" || ko "init: .ai/ still created"
+mv "$SI/.loomy/docs" "$SI/.ai"; echo "See .ai/AI_WORKFLOW.md and docs/.ai/x." >>"$SI/CLAUDE.md"
+echo "custom" >"$SI/.claude/agents/explorer.md"
+bash "$REPO/scripts/ai-context.sh" --root "$SI" >"$OUT" 2>&1
+[[ -d "$SI/.loomy/docs" && ! -e "$SI/.ai" ]] && ok "migration: .ai/ moved to .loomy/docs/" || ko "migration: .ai/ not moved"
+grep -q 'See .loomy/docs/AI_WORKFLOW.md and docs/.ai/x.' "$SI/CLAUDE.md" && ok "migration: references updated, other paths kept" || ko "migration: references: $(grep 'See ' "$SI/CLAUDE.md")"
+has "migration: said in the start context" "Loomy has just completed this project's setup files: .*\.ai/ → \.loomy/docs/"
+[[ "$(cat "$SI/.claude/agents/explorer.md")" == custom ]] && ok "repair: customised subagent kept" || ko "repair: subagent overwritten"
+cp "$SI/CLAUDE.md" "$WORK/claude-avant.md"
+bash "$REPO/scripts/ai-context.sh" --root "$SI" >"$OUT" 2>&1
+cmp -s "$SI/CLAUDE.md" "$WORK/claude-avant.md" && ok "repair: idempotent" || ko "repair: CLAUDE.md changed on a second run"
+hasnt "repair: nothing to say the second time" "Loomy has just completed"
+[[ "$(grep -c 'loomy:orchestration:start' "$SI/CLAUDE.md")" == 1 ]] && ok "repair: a single managed block" || ko "repair: block duplicated"
+LOOMY_NO_REPAIR=1 bash "$REPO/scripts/ai-context.sh" --root "$SI" >/dev/null 2>&1; ok "repair: LOOMY_NO_REPAIR accepted"
+
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
 SU="$WORK/garde-update"; mkdir -p "$SU/.claude"

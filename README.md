@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.8.4-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.9.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -206,7 +206,7 @@ Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. 
 
 ## 🔒 AI files: versioned, local or private
 
-The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository.
+The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository.
 
 The questionnaire also offers to **create the project's GitHub repository**, private or public, with a name taken from the project name that you confirm or edit. In separate private repository mode, the AI files repository name (`<repo>-ai`) is confirmed too, both together. An existing repository with a different name is flagged, with the rename command; Loomy never renames anything itself.
 
@@ -261,7 +261,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
-| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
+| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; every role gets a box in a wide window, the others are listed beside the final check), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
@@ -488,7 +488,7 @@ Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo
 |---|---|---|
 | 🧍&nbsp;**SOLO** | a single tool does everything | small projects, tight budget |
 | 👀&nbsp;**REVIEW** | one implements, the other reviews the diff | substantial changes |
-| 🔁&nbsp;**HANDOFF** | clean checkpoint + `.ai/HANDOFF.md`, the other takes over | switching tools midway |
+| 🔁&nbsp;**HANDOFF** | clean checkpoint + `.loomy/docs/HANDOFF.md`, the other takes over | switching tools midway |
 | 🌳&nbsp;**PARALLEL** | two worktrees, disjoint scopes | truly independent work |
 | 🎯&nbsp;**ORCHESTRATED** | the lead agent delegates each role to the best model of both families | **recommended** when both tools are installed |
 
@@ -505,7 +505,7 @@ my-project/
 ├── CLAUDE.md                  # Claude Code entry point (short)
 ├── PROJECT.md                 # product intent, scope, constraints
 ├── ARCHITECTURE.md            # when useful
-├── .ai/
+├── .loomy/docs/
 │   ├── AI_WORKFLOW.md         # shared collaboration contract
 │   ├── AI_ORCHESTRATION.md    # cross-model delegation rules
 │   ├── AI_MODEL_ROUTING.md    # role → model → effort matrix
@@ -537,7 +537,10 @@ For contributors: interface strings are written in English in the code (`t "Engl
 
 - **Existing project.** Run `loomy init` in the repository. Loomy switches to a dedicated `loomy/adopt` branch (the current one stays untouched, uncommitted work stays as it is), writes an assessment without AI (`.loomy/assessment.md`: stack, real commands, tests, CI, conventions, Git history, sensitive areas, debt), and the lead agent proposes an adoption plan: `PROJECT.md` and `ARCHITECTURE.md` rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's commands, roles sized to its risk. Nothing existing is overwritten, no application code changes without your approval, and merging back goes through a pull request you accept.
 - **Security audit.** It runs on demand, with the official Cloudflare skill. Install it with `.loomy/scripts/install-security-audit.sh --global`, then ask for a full audit without code changes.
-- **End of the bootstrap.** `START.md` is archived in `.ai/bootstrap/` or deleted, as you chose. It has no authority afterwards.
+- **End of the bootstrap.** `START.md` is archived in `.loomy/docs/bootstrap/` or deleted, as you chose. It has no authority afterwards.
+- **A setup never stays half done.** What Loomy can set up without the agent (the routing, workflow and orchestration documents, the role subagents, the orchestration rule in `AGENTS.md` and `CLAUDE.md`) is created at `loomy init`, then checked again by every `loomy` command and at the start of every Claude Code session: whatever is missing is completed, existing files are never overwritten. While `START.md` is still there, every message reminds the lead agent to finish the setup first. `loomy doctor` reports the gaps, `--fix` completes them.
+- **Every request goes through the lead agent.** The orchestration rule (a block kept up to date by Loomy between its markers) tells the lead agent that every request, the user's feedback and fixes included, is routed: the cheapest role that does it reliably, its own model kept for planning, decisions and review.
+- **Older projects.** Projects set up before 0.9 kept their documents in `.ai/`: Loomy moves them to `.loomy/docs/` (with `git mv` when they are versioned) and updates the references.
 
 </details>
 
@@ -655,7 +658,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.8.1 | **session log that scrolls** in `loomy watch` and the agent tree: one coloured, aligned line per event, arrivals scrolling in one by one, the newest highlighted |
 | ✅&nbsp;0.8.2 | **agent tree as a diagram** (boxes, links, routing layer, advisor column, framed session log, animated); `tree_view auto\|diagram\|list`, key `v`, the window grows when needed |
 | ✅&nbsp;0.8.3 | agent tree diagram: room above the title |
-| ✅&nbsp;0.8.4 | **Current version** · agent tree diagram twice as fast (about 0.5 s per frame) |
+| ✅&nbsp;0.8.4 | agent tree diagram twice as fast (about 0.5 s per frame) |
+| ✅&nbsp;0.9.0 | **Current version** · **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

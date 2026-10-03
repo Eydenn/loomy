@@ -268,17 +268,17 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
   if [[ -n "$p_phase" && "$p_phase" != "done" ]] || (( p_pending )); then p_unfinished=1; fi
   if (( p_unfinished )); then
     ui_warn "$(t "bootstrap unfinished")" "$(t "START.md still pending (phase: %s%s)" "${p_phase:-?}" "${p_since:+, $(t "since %s" "$p_since")}")"
-    ui_info "$(t "fix: %s" "loomy start")  ($(t "or archive START.md in .ai/bootstrap/ if the setup is in fact complete"))"
+    ui_info "$(t "fix: %s" "loomy start")  ($(t "or archive START.md in .loomy/docs/bootstrap/ if the setup is in fact complete"))"
     missing_ideal "$(t "bootstrap finished")"; p_gaps=$(( p_gaps + 1 ))
   else
     ui_ok "$(t "bootstrap finished")" "$(t "START.md archived")"
   fi
-  if [[ ! -d "$ROOT/.ai" ]]; then
-    ui_warn "$(t ".ai/ folder missing")" "$(t "created by the bootstrap: routing, workflow and orchestration rules")"
+  if [[ ! -d "$ROOT/.loomy/docs" && ! -d "$ROOT/.ai" ]]; then
+    ui_warn "$(t ".loomy/docs/ folder missing")" "$(t "created by the bootstrap: routing, workflow and orchestration rules")"
     ui_info "$(t "fix: %s" "loomy start")"
-    missing_ideal ".ai/"; p_gaps=$(( p_gaps + 1 ))
+    missing_ideal ".loomy/docs/"; p_gaps=$(( p_gaps + 1 ))
   else
-    ui_ok ".ai/" "$(t "present")"
+    ui_ok ".loomy/docs/" "$(t "present")"
   fi
   p_lead="${AI_LEAD:-${AI_ENV#hybrid-}}"
   if [[ "$p_lead" == "claude" ]]; then
@@ -316,6 +316,18 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     else
       ui_ok "$(t "Codex hooks")" "$(t "in .codex/hooks.json")"
     fi
+  fi
+  # Orchestration rule where the agents read it (managed block, kept by Loomy).
+  if [[ -f "$ROOT/AGENTS.md" || -f "$ROOT/CLAUDE.md" ]]; then
+    if grep -qs '<!-- loomy:orchestration:start' "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ui_ok "$(t "orchestration rule")" "AGENTS.md / CLAUDE.md"
+    else ui_warn "$(t "orchestration rule missing")" "AGENTS.md / CLAUDE.md"; missing_ideal "$(t "orchestration rule")"; p_gaps=$(( p_gaps + 1 )); fi
+  fi
+  # --fix: what Loomy owns is completed right away (routing documents, role subagents, orchestration rule).
+  if (( FIX && p_gaps )); then
+    # shellcheck source=lib/project.sh
+    source "$SCRIPT_DIR/lib/project.sh"
+    loomy_project_repair "$ROOT" 2>/dev/null || true
+    if (( ${#LP_DONE[@]} )); then ui_ok "$(t "project completed")" "$(printf '%s · ' "${LP_DONE[@]}" | sed 's/ · $//')"; fi
   fi
 fi
 

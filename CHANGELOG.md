@@ -2,15 +2,26 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## Unreleased
+## 0.9.0 — 2026-10-03
 
 ### Fixed
+- **A Loomy setup can no longer stay half done.** On a real project, the bootstrap stopped at the approval phase: `START.md` stayed pending, no routing documents, no subagents, no delegation rule, and the lead agent went on working alone. The pieces Loomy can set up without the agent are now created and checked by Loomy itself (`scripts/lib/project.sh`):
+  - the routing, workflow and orchestration documents (`.loomy/docs/AI_*.md`, the routing matrix resolved for the project), and for a Claude lead the role subagents of `.claude/agents/`;
+  - created at `loomy init` (a new "Routing and role subagents" step), then checked again by every `loomy` command and at the start of every Claude Code session; only what is missing is created, a customised file is never overwritten, and the lead agent is told in one line what was completed;
+  - while `START.md` is still there, the `UserPromptSubmit` hook says at every message, whatever the mode, that the setup must be finished first, and the session context puts it first;
+  - `loomy doctor` checks the orchestration rule too, and `loomy doctor --fix` completes the project.
 - **The delegation advice depends on the lead agent.** The session context always said "delegations: delegate-to-claude.sh and delegate-to-codex.sh", but `delegate-to-claude.sh` is the bridge of a Codex lead: it runs `claude -p` headless, where any shell command that isn't pre-approved is refused (an explorer role started that way could not run a single measurement script).
   - With a Claude lead, the context now says that Claude roles are the native subagents of `.claude/agents/` (Agent tool, in the foreground) and that only Codex roles go through `delegate-to-codex.sh`. A Codex lead keeps `delegate-to-claude.sh`.
   - Same correction in `START.md`, the orchestration template and the bootstrap skill reference (English and French).
   - `delegate-to-claude.sh` warns on stderr when the project's lead is Claude (it still runs: audits, which set `LOOMY_BRIDGE_OK`, and the quota failover come through it legitimately).
-- **`loomy doctor` no longer says "Ideal setup" on an unfinished project.** In a Loomy project, a new PROJECT section checks: bootstrap finished (no pending `START.md`), `.ai/` present, for a Claude lead the subagents of every role routed to Claude in `.claude/agents/`, and the Loomy hooks in `.claude/settings.json` (`.codex/hooks.json` for a Codex lead). Each gap is a warning with its fix command and appears in the summary's "for the ideal" list. Not run in the questionnaire (`--compact`).
+- **`loomy doctor` no longer says "Ideal setup" on an unfinished project.** In a Loomy project, a new PROJECT section checks: bootstrap finished (no pending `START.md`), `.loomy/docs/` present, for a Claude lead the subagents of every role routed to Claude in `.claude/agents/`, and the Loomy hooks in `.claude/settings.json` (`.codex/hooks.json` for a Codex lead). Each gap is a warning with its fix command and appears in the summary's "for the ideal" list. Not run in the questionnaire (`--compact`).
 - A bootstrap with no progress for more than a day is reported by the SessionStart context in one line ("Bootstrap abandoned … ask whether to resume it or close it") instead of presenting the lead agent as waiting for a go-ahead.
+- The version headings from 0.5.7 to 0.8.3 had been overwritten by the following release; they are back, with their content unchanged.
+
+### Changed
+- **Every request goes through the lead agent.** `AGENTS.md` and `CLAUDE.md` carry an orchestration block kept up to date by Loomy (between `<!-- loomy:orchestration:start -->` and `<!-- loomy:orchestration:end -->`, in the project's documentation language): every request, the user's feedback and fixes included, is routed by `ai-route.sh`; the cheapest role that does it reliably comes first; the lead keeps its own model for planning, decisions, integration and review; bigger work goes through `loomy task`, checks through `loomy review`. The templates carry it from the start, and it is added back to a file written without it.
+- **`.ai/` becomes `.loomy/docs/`**, so that everything Loomy adds lives under `.loomy/`. Existing projects are migrated at the next launch (`git mv` when the folder is versioned) and the references in `AGENTS.md`, `CLAUDE.md`, `PROJECT.md`, `ARCHITECTURE.md`, `START.md` and the subagents are updated. The privacy modes still recognise `.ai/`.
+- **Agent tree diagram: the roles without a box are listed** beside the final check (state, name, model) instead of "+4 roles · loomy route", and a wide window (up to 216 columns) gives every role its own box.
 
 ### Added
 - **`UserPromptSubmit` hook: a routing reminder at every prompt.** In a long session, once the context is compacted, the orchestrator forgets the routing and does the work itself. `ai-context.sh --hook prompt` adds one line of `additionalContext` (you are the orchestrator, route by `ai-route.sh` and `.claude/agents/`). It loads only the translation layer (about 20 ms), prints nothing unless the project is ORCHESTRATED with a Claude lead, and stays silent in bridge sessions.
@@ -25,14 +36,14 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
   - Local times are computed by calendar arithmetic instead of calling `date` for every log line.
   - Labels are translated once per frame (`tv`, which writes into a variable), and the small helpers write into variables instead of starting a subshell each.
 
-
+## 0.8.3 — 2026-10-01
 
 ### Changed
 - Agent tree diagram: a blank row above the title, so it no longer sticks to the live tracking header.
 - Agent tree diagram: links aligned. The lead, routing and back boxes share one vertical axis, and the role boxes are spread symmetrically around it, so every vertical link lands exactly on its node; links join the box borders and splits they reach with proper joints (┬ ┴).
 - Agent tree diagram: no arithmetic error when the project has no log yet (the delegation counter read "0" twice).
 
-
+## 0.8.2 — 2026-10-01
 
 ### Changed
 - **The agent tree is drawn as a diagram**, structured like an agent-tree dashboard.
@@ -50,7 +61,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - Key `v` in `loomy watch` switches between diagram and list.
 - In the agent tree of `loomy watch`, a window too small for the diagram is asked once to grow (Terminal.app, iTerm2; not tmux). `loomy config set watch_resize no` turns that off.
 
-
+## 0.8.1 — 2026-10-01
 
 ### Added
 - **Session log that scrolls** in `loomy watch`, on the main screen (SESSION LOG section) and in the agent tree (key `t`).
@@ -59,7 +70,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
   - Events that arrive together scroll in one per refresh instead of jumping, and the newest line is highlighted (▸, bold) for a few seconds.
   - Its height fits the terminal.
 
-
+## 0.8.0 — 2026-10-01
 
 ### Added
 - **Advisor for the Claude lead agent** (Claude Code's advisor tool: a stronger model the session consults before a plan, when an error repeats and before declaring a task done; it reads the whole session).
@@ -78,7 +89,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ### Changed
 - Minimum Claude Code version: 2.1.286, the first one that knows Sonnet 5.5 and accepts its advisor pairing (2.1.283 refused it). Loomy's upkeep offers the update at launch.
 
-
+## 0.7.4 — 2026-09-30
 
 ### Added
 - **Anticipated support for announced models**: `upcoming.<tool>.<tier>=<model>` in the catalog, starting with Claude Haiku 5.5 (`claude-haiku-5-5`, fast tier).
@@ -88,7 +99,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
   - Provisional price: Haiku 4.5's. Checked for real: `claude-haiku-5-5` is not available yet, and the probe says so cleanly.
 - Roadmap: once Haiku 5.5 is out, its role will be adjusted from measured figures.
 
-
+## 0.7.3 — 2026-09-30
 
 ### Added
 - **Kept up to date by itself.** At launch (`loomy`, `start`, `init`, `task`, `audit`, `review`), Loomy checks without slowing anything down whether a newer Loomy is published (cached daily, in the background) and whether Claude Code or Codex is too old for the routed models or doesn't start.
@@ -101,21 +112,21 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - `loomy doctor` lists the copies of `claude` in the PATH when there are several (method and version of each): the usual reason why "the update changed nothing".
 - Projects created with an older Loomy get the relays of new commands (`.loomy/scripts/`) automatically, without `loomy init --update`.
 
-
+## 0.7.2 — 2026-09-30
 
 ### Changed
 - **GPT-6.1 Sol also takes Codex's top tier**: lead agent, architect and security on the Codex side (and the debugger at `xhigh` in Max quality). Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Every Codex role except execution (GPT-6-Luna) now runs on GPT-6.1 Sol.
 - Astra stays as the top tier's fallback. To force it on a machine: `loomy config set model.codex.top gpt-6-astra` (`auto` to go back to the catalog).
 - Questionnaire texts, README tables and `docs/MODEL_CATALOG.md` updated.
 
-
+## 0.7.1 — 2026-09-30
 
 ### Changed
 - **GPT-6.1 Sol** (released 2026-09-29, same price as GPT-6 Sol, cache reads at $0.10) heads the Codex `mid` chain: developer, reviewer and debugger on the Codex side, the audit's cross review. GPT-6 Sol stays as its fallback. Vendor figures: DeepSWE 75.2% for about $1.50 per task, against 74.8% for about $7.70 with Astra. Astra stays at the top tier until a real orchestration test says otherwise. Catalog dated 2026-09-30 (`loomy update --catalog` for earlier versions). Spotted by `loomy models` in Codex's model list and checked with a real Codex call.
 - `loomy audit`: the team labels name the models from the catalog instead of fixed names.
 - Questionnaire: the Balanced profile's description names Sonnet 5.5.
 
-
+## 0.7.0 — 2026-09-29
 
 Day-to-day work after the bootstrap.
 
@@ -143,7 +154,7 @@ Day-to-day work after the bootstrap.
 - Phases now come in three kinds (bootstrap, audit, task), each with its own state, labels and summary in `loomy status` and `loomy watch`.
 - `loomy status`: a phase change keeps the other keys of the state file (a task's id and title).
 
-
+## 0.6.2 — 2026-09-29
 
 ### Added
 - **First use of a local model: the audit writer's fallback.** When Codex is not available and a local model answers on LM Studio (`LOOMY_LOCAL_URL`, `http://127.0.0.1:1234` by default; `LM_API_TOKEN` when the server requires one), `loomy audit` hands the drafting of the report and fix plan to it.
@@ -151,7 +162,7 @@ Day-to-day work after the bootstrap.
   - The auditor saves the draft after reviewing it. The delegation is logged at no cost.
   - Checked for real with `qwen/qwen3.8-27b` on an M3 Max: two validated findings turned into a faithful French section in 48 s. The local model never judges code; with Codex installed, GPT-6-Luna stays the writer.
 
-
+## 0.6.1 — 2026-09-29
 
 ### Changed
 - `loomy audit`: the explorer that maps the attack surface runs on a rigorous model (Claude Sonnet 5.5 medium, or GPT-6-Sol with a Codex auditor) instead of the fast tier (Haiku 4.5, Luna): an entry point it misses is never analysed. The whole audit team now runs on Opus 5.5, Sonnet 5.5 or GPT-6-Sol.
@@ -179,18 +190,18 @@ Day-to-day work after the bootstrap.
 ### Changed
 - Phase helpers take a variable number of phases (the bootstrap's 10, an audit's 6).
 
-
+## 0.5.9 — 2026-09-29
 
 ### Changed
 - **Thrifty profile: a Claude lead agent runs on Sonnet 5.5 `medium`** instead of Opus 5.5 `medium`. In a real orchestration test (same task, lead agent delegating to GPT-6-Luna and checking the result, graded by a hidden test), Sonnet 5.5 `medium` got the same result for about half the lead agent's cost and faster; at `high` it was no cheaper than Opus. The architect, debugger and security roles stay on Opus 5.5, as Anthropic recommends for work needing judgment. A Codex lead agent is unchanged (Astra `medium`). Details in `docs/MODEL_CATALOG.md`.
 
-
+## 0.5.8 — 2026-09-28
 
 ### Changed
 - **Claude Sonnet 5.5** (released 2026-09-28, same price as Sonnet 5) heads the Claude `mid` chain: developer, reviewer, executor and documenter on the Claude side. Sonnet 5 stays as its fallback for accounts without access, to be removed once it is no longer offered. The lead agent and the high-stakes specialists stay on Opus 5.5 at high. Catalog dated 2026-09-28 (`loomy update --catalog` for earlier versions); rationale and sources in `docs/MODEL_CATALOG.md`. Checked with `loomy doctor --live`: every model of the chains answers.
 - The catalog consistency test compares whole fallback chains, not just their first model.
 
-
+## 0.5.7 — 2026-09-28
 
 ### Added
 - **Tab in text fields**: the suggestion (project name, repository name, private AI repository name…) becomes the text being typed, to edit it instead of retyping it; the footer shows `⇥ edit the suggestion` when one is offered.

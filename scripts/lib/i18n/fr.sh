@@ -71,7 +71,7 @@ _t_fr() {
     'The lead agent waits for your go-ahead before creating anything.') _T='L'\''orchestrateur attend ton feu vert avant de créer quoi que ce soit.' ;;
     'The lead agent sets up the project and delegates to dedicated roles.') _T='L'\''orchestrateur met en place le projet et délègue aux rôles dédiés.' ;;
     'Tests, cross review and security checks of the delivered work.') _T='Tests, relecture croisée et contrôles de sécurité du travail livré.' ;;
-    'Writing PROJECT.md, ARCHITECTURE.md and the .ai/ rules.') _T='Rédaction de PROJECT.md, ARCHITECTURE.md et des règles .ai/.' ;;
+    'Writing PROJECT.md, ARCHITECTURE.md and the .loomy/docs/ rules.') _T='Rédaction de PROJECT.md, ARCHITECTURE.md et des règles .loomy/docs/.' ;;
     'Initial commit, if you allowed it in the questionnaire.') _T='Commit initial, si tu l'\''as autorisé dans le questionnaire.' ;;
     'START.md is archived or deleted: the bootstrap is ending.') _T='START.md est archivé ou supprimé : le bootstrap se termine.' ;;
     'The project is set up; the lead agent now follows AGENTS.md and CLAUDE.md.') _T='Le projet est initialisé ; l'\''orchestrateur suit maintenant AGENTS.md et CLAUDE.md.' ;;
@@ -359,7 +359,7 @@ _t_fr() {
     'bootstrap start') _T='démarrage du bootstrap' ;;
     'Resume this project'\''s setup by following START.md, where it stopped: phase "%s". First run .loomy/scripts/ai-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on.') _T='Reprends l'\''initialisation de ce projet en suivant START.md, là où elle s'\''est arrêtée : phase « %s ». Lance d'\''abord .loomy/scripts/ai-context.sh pour le contexte (phase, attentes, dernières délégations). Commence par me résumer où on en est et ce qui reste à faire, puis attends ma validation avant de continuer.' ;;
     'resuming at phase %s') _T='reprise à la phase %s' ;;
-    'Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .ai/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.') _T='Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .ai/AI_WORKFLOW.md, résume l'\''état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh.' ;;
+    'Resume work on this project: run .loomy/scripts/ai-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .loomy/docs/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/ai-route.sh.') _T='Reprends le travail sur ce projet : lance .loomy/scripts/ai-context.sh pour le contexte, lis AGENTS.md (ou CLAUDE.md) et .loomy/docs/AI_WORKFLOW.md, résume l'\''état actuel du dépôt et propose la suite. Délègue chaque rôle selon .loomy/scripts/ai-route.sh.' ;;
     'everyday work (bootstrap done)') _T='travail courant (bootstrap terminé)' ;;
     'Start or resume') _T='Démarrer ou reprendre' ;;
     'a previous session exists on this machine') _T='une session précédente existe sur cette machine' ;;
@@ -966,7 +966,7 @@ _t_fr() {
     'Documentation in English: better if the project is shared internationally.') _T='Documentation en anglais : préférable si le projet est partagé à l'\''international.' ;;
     'After initialisation, what to do with START.md?') _T='Après l'\''initialisation, que faire de START.md ?' ;;
     'START.md no longer has authority once the project is initialised.') _T='START.md n'\''a plus d'\''autorité une fois le projet initialisé.' ;;
-    'Archive it in .ai/bootstrap/ (recommended)') _T='L'\''archiver dans .ai/bootstrap/ (recommandé)' ;;
+    'Archive it in .loomy/docs/bootstrap/ (recommended)') _T='L'\''archiver dans .loomy/docs/bootstrap/ (recommandé)' ;;
     'Keeps a record of the initialisation for later.') _T='Garde une trace de l'\''initialisation, consultable plus tard.' ;;
     'Delete it') _T='Le supprimer' ;;
     'Lighter repo; the history stays only in Git.') _T='Repo plus léger ; l'\''historique ne reste que dans Git.' ;;
@@ -996,7 +996,7 @@ _t_fr() {
     'Nothing leaves your machine without you.') _T='Rien ne quitte votre machine sans vous.' ;;
     'Yes, push the current branch') _T='Oui, push de la branche courante' ;;
     'The branch is pushed after the initial commit, never force-pushed.') _T='La branche est poussée après le commit initial, jamais de force-push.' ;;
-    'Where to keep the AI files (AGENTS.md, CLAUDE.md, .ai/, .loomy/…)?') _T='Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .ai/, .loomy/…) ?' ;;
+    'Where to keep the AI files (AGENTS.md, CLAUDE.md, .loomy/…)?') _T='Où garder les fichiers IA (AGENTS.md, CLAUDE.md, .loomy/…) ?' ;;
     'Versioned with the project') _T='Versionnés avec le projet' ;;
     'Recommended for a private repository: you get them on all your machines, and agents working online on the repository can read them.') _T='Recommandé pour un dépôt privé : tu les retrouves sur toutes tes machines, et les agents qui travaillent en ligne sur le dépôt les lisent.' ;;
     'Local only') _T='Locaux uniquement' ;;
@@ -1045,7 +1045,7 @@ _t_fr() {
     '  loomy feedback --root <dir>  project whose state to attach (default: current folder, if it is a Loomy project)') _T='  loomy feedback --root <dir>  projet dont joindre l'\''état (par défaut : le dossier courant, s'\''il est un projet Loomy)' ;;
     'Attached: versions (Loomy, system, bash, git, Claude Code, Codex, gh), and for a project: type, stage, AI mode,') _T='Joint : versions (Loomy, système, bash, git, Claude Code, Codex, gh), et pour un projet : type, stade, mode IA,' ;;
     'profile, phase and latest log events WITHOUT the task text. Never: name, goal, paths, code.') _T='profil, phase et derniers événements du journal SANS le texte des tâches. Jamais : nom, objectif, chemins, code.' ;;
-    'Visibility of the project'\''s AI files (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Bash 3.2 compatible.') _T='Visibilité des fichiers IA du projet (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Compatible bash 3.2.' ;;
+    'Visibility of the project'\''s AI files (AGENTS.md, CLAUDE.md, .claude/, .loomy/, START.md). Bash 3.2 compatible.') _T='Visibilité des fichiers IA du projet (AGENTS.md, CLAUDE.md, .claude/, .loomy/, START.md). Compatible bash 3.2.' ;;
     '  loomy privacy                          status: mode, files still tracked, private repository') _T='  loomy privacy                          état : mode, fichiers encore suivis, dépôt privé' ;;
     '  loomy privacy versioned                versioned with the project') _T='  loomy privacy versioned                versionnés avec le projet' ;;
     '  loomy privacy local                    excluded from Git on this machine (invisible in the repository)') _T='  loomy privacy local                    exclus de Git sur cette machine (invisibles dans le dépôt)' ;;
@@ -1081,7 +1081,7 @@ _t_fr() {
     'Commands:') _T='Commandes :' ;;
     '  (none)                Shows the role → model / effort / tool matrix for this project') _T='  (aucune)              Affiche la matrice rôle → modèle / effort / outil pour ce projet' ;;
     '  get <role>            One "family model effort" line (for scripts)') _T='  get <rôle>            Une ligne "famille modèle effort" (pour les scripts)' ;;
-    '  markdown              Matrix as Markdown (for .ai/AI_MODEL_ROUTING.md)') _T='  markdown              Matrice au format Markdown (pour .ai/AI_MODEL_ROUTING.md)' ;;
+    '  markdown              Matrix as Markdown (for .loomy/docs/AI_MODEL_ROUTING.md)') _T='  markdown              Matrice au format Markdown (pour .loomy/docs/AI_MODEL_ROUTING.md)' ;;
     '  all                   Matrix of the 4 environments side by side (Markdown)') _T='  all                   Matrice des 4 environnements côte à côte (Markdown)' ;;
     '  claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)') _T='  claude-agents [DIR]   Génère les sous-agents Claude Code (défaut : <projet>/.claude/agents)' ;;
     '  codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)') _T='  codex-profiles        Extrait TOML des profils Codex par rôle (à ajouter à ~/.codex/config.toml)' ;;
@@ -1118,7 +1118,7 @@ _t_fr() {
     '- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: .loomy/scripts/delegate-to-claude.sh and delegate-to-codex.sh.') _T='- Brief (.loomy/brief.md) : mode %s, lead %s, profil %s, risque %s. Routage des rôles : .loomy/scripts/ai-route.sh ; délégations : .loomy/scripts/delegate-to-claude.sh et delegate-to-codex.sh.' ;;
     '- Latest delegations: %s.') _T='- Dernières délégations : %s.' ;;
     '- Git: branch %s, %s modified file(s) not committed.') _T='- Git : branche %s, %s fichier(s) modifié(s) non commité(s).' ;;
-    '- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f).') _T='- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f).' ;;
+    '- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f).') _T='- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f).' ;;
     '- AI files in a separate private repository: don'\''t version them in the project repository; back them up at the end of each step with .loomy/scripts/ai-privacy.sh sync.') _T='- Fichiers IA dans un dépôt privé séparé : ne les versionne pas dans le dépôt du projet ; sauvegarde-les en fin d'\''étape avec .loomy/scripts/ai-privacy.sh sync.' ;;
     '- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration).') _T='- Délégations : lance toujours les bridges au premier plan et attends leur fin (en arrière-plan, elles s'\''arrêtent si la session se ferme). Annonce chacune en une ligne avant (rôle, modèle, tâche, durée indicative) et après (résultat, durée).' ;;
     '- Phase change: announce it on one line "Phase n/10 · Name", then what you are doing and what you expect from the user.') _T='- Changement de phase : annonce-le sur une ligne « Phase n/10 · Nom », puis ce que tu fais et ce que tu attends de l'\''utilisateur.' ;;
@@ -1182,7 +1182,7 @@ _t_fr() {
     'Guides discovery (detected automatically, to confirm).') _T='Oriente la découverte (détecté automatiquement, à confirmer).' ;;
     'Defines how Codex and Claude Code share the work. Preselected from the detected tools.') _T='Définit comment Codex et Claude Code se partagent le travail. Pré-sélection selon les outils détectés.' ;;
     'One tool at a time: the simplest and cheapest.') _T='Un seul outil à la fois : le plus simple et le moins coûteux.' ;;
-    'Both tools take turns, coordinated through Git and .ai/HANDOFF.md.') _T='Les deux outils travaillent tour à tour, coordonnés par Git et .ai/HANDOFF.md.' ;;
+    'Both tools take turns, coordinated through Git and .loomy/docs/HANDOFF.md.') _T='Les deux outils travaillent tour à tour, coordonnés par Git et .loomy/docs/HANDOFF.md.' ;;
     'The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio.') _T='L'\''orchestrateur délègue chaque rôle au meilleur modèle des deux familles (exécution sur GPT-6-Luna, architecture et sécurité sur Opus 5.5, revue croisée) : meilleur rapport qualité/coût.' ;;
     'Both at the same time on separate worktrees: faster, integration needs care.') _T='Les deux en même temps sur des worktrees séparés : plus rapide, intégration à soigner.' ;;
     'The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning.') _T='L'\''outil principal porte l'\''orchestrateur : il planifie, délègue, décide et vérifie. C'\''est lui qui mérite le meilleur raisonnement.' ;;
@@ -1212,12 +1212,12 @@ _t_fr() {
     'Instructions for the agent') _T='Consignes pour l'\''agent' ;;
     '- Treat these answers as settled: confirm them in one line, don'\''t ask for them again, and only ask the questions that are still useful.') _T='- Considère ces réponses comme acquises : confirme-les en une ligne, ne les redemande pas, et ne pose que les questions encore utiles.' ;;
     '- The risk is an estimate: reassess it after discovery and flag any gap.') _T='- Le risque est une estimation : réévalue-le après la découverte et signale tout écart.' ;;
-    '- Apply the `%s` model profile in `.ai/AI_MODEL_ROUTING.md`.') _T='- Applique le profil modèles `%s` dans `.ai/AI_MODEL_ROUTING.md`.' ;;
+    '- Apply the `%s` model profile in `.loomy/docs/AI_MODEL_ROUTING.md`.') _T='- Applique le profil modèles `%s` dans `.loomy/docs/AI_MODEL_ROUTING.md`.' ;;
     '- Initial commit allowed in phase 8 if all checks pass; otherwise stop and explain.') _T='- Commit initial autorisé en phase 8 si toutes les vérifications passent, sinon arrête-toi et explique.' ;;
     '- Don'\''t commit: leave the changes ready and summarise them.') _T='- Ne committe pas : laisse les changements prêts et résume-les.' ;;
     '- Push allowed to `%s` after the initial commit (never force-push).') _T='- Push autorisé vers `%s` après le commit initial (jamais de force-push).' ;;
     '- Don'\''t push anything to a remote.') _T='- Ne pousse rien vers un remote.' ;;
-    '- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude.') _T='- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f) ; ils sont exclus via .git/info/exclude.' ;;
+    '- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude.') _T='- Fichiers IA locaux : ne versionne jamais AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ ni START.md (jamais de git add -f) ; ils sont exclus via .git/info/exclude.' ;;
     '- AI files in a separate private repository: never version them in the project repository (never git add -f).') _T='- Fichiers IA dans un dépôt privé séparé : ne les versionne jamais dans le dépôt du projet (jamais de git add -f).' ;;
     '- After each important step and at the end of the session, back them up: `.loomy/scripts/ai-privacy.sh sync`.') _T='- Après chaque étape importante et en fin de session, sauvegarde-les : `.loomy/scripts/ai-privacy.sh sync`.' ;;
     '- Project technical name: `%s`. Use it for package names, repository names and technical identifiers, so that everything has the same name.') _T='- Nom technique du projet : `%s`. Utilise-le pour les noms de paquet, de dépôt et les identifiants techniques, pour que tout porte le même nom.' ;;
@@ -1391,7 +1391,7 @@ _t_fr() {
     'what changed (or: none)') _T='ce qui a changé (ou : none)' ;;
     'open risk (or: none)') _T='risque ouvert (ou : none)' ;;
     'what the lead agent should do with this result') _T='ce que l'\''orchestrateur doit faire de ce résultat' ;;
-    '- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .ai/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done.') _T='- Délégations structurées : rédige chaque tâche en GOAL / SCOPE / FILES / ACCEPTANCE ; les résultats reviennent en STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (voir .ai/AI_ORCHESTRATION.md). Agis selon STATUS : partial ou blocked signifie que la tâche n'\''est pas terminée.' ;;
+    '- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .loomy/docs/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done.') _T='- Délégations structurées : rédige chaque tâche en GOAL / SCOPE / FILES / ACCEPTANCE ; les résultats reviennent en STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (voir .loomy/docs/AI_ORCHESTRATION.md). Agis selon STATUS : partial ou blocked signifie que la tâche n'\''est pas terminée.' ;;
     'delegation_format: structured, free or auto (the project'\''s choice)') _T='delegation_format : structured, free ou auto (le choix du projet)' ;;
     '      delegation_format (structured or free: overrides every project'\''s choice; auto: the project'\''s choice),') _T='      delegation_format (structured ou free : remplace le choix de chaque projet ; auto : le choix du projet),' ;;
     'Delegation format') _T='Format des délégations' ;;
@@ -1401,7 +1401,7 @@ _t_fr() {
     'Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges.') _T='Champs fixes, sans prose : tâches en GOAL / SCOPE / FILES / ACCEPTANCE, résultats en STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Moins de tokens, résultats vérifiés par les bridges.' ;;
     'Free text') _T='Texte libre' ;;
     'Each agent answers in its own words, as concisely as it sees fit.') _T='Chaque agent répond avec ses propres mots, aussi concis qu'\''il le juge utile.' ;;
-    '- Delegations in structured form: see "Structured delegations" in `.ai/AI_ORCHESTRATION.md` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).') _T='- Délégations en forme structurée : voir « Délégations structurées » dans `.ai/AI_ORCHESTRATION.md` (tâches : GOAL / SCOPE / FILES / ACCEPTANCE ; résultats : STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).' ;;
+    '- Delegations in structured form: see "Structured delegations" in `.loomy/docs/AI_ORCHESTRATION.md` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).') _T='- Délégations en forme structurée : voir « Délégations structurées » dans `.loomy/docs/AI_ORCHESTRATION.md` (tâches : GOAL / SCOPE / FILES / ACCEPTANCE ; résultats : STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT).' ;;
     'Structured') _T='Structurées' ;;
     '%s of %s answers followed the format') _T='%s réponse(s) sur %s au format' ;;
     '%s partial') _T='%s partielle(s)' ;;
@@ -1826,10 +1826,10 @@ _t_fr() {
     'setup of %s') _T='installation de %s' ;;
     'bootstrap unfinished') _T='bootstrap inachevé' ;;
     'START.md still pending (phase: %s%s)') _T='START.md toujours en attente (phase : %s%s)' ;;
-    'or archive START.md in .ai/bootstrap/ if the setup is in fact complete') _T='ou archive START.md dans .ai/bootstrap/ si l'\''installation est en fait terminée' ;;
+    'or archive START.md in .loomy/docs/bootstrap/ if the setup is in fact complete') _T='ou archive START.md dans .loomy/docs/bootstrap/ si l'\''installation est en fait terminée' ;;
     'bootstrap finished') _T='bootstrap terminé' ;;
     'START.md archived') _T='START.md archivé' ;;
-    '.ai/ folder missing') _T='dossier .ai/ absent' ;;
+    '.loomy/docs/ folder missing') _T='dossier .loomy/docs/ absent' ;;
     'created by the bootstrap: routing, workflow and orchestration rules') _T='créé par le bootstrap : règles de routage, de travail et d'\''orchestration' ;;
     'present') _T='présent' ;;
     'subagents missing in .claude/agents/') _T='sous-agents absents de .claude/agents/' ;;
@@ -1842,5 +1842,15 @@ _t_fr() {
     'Codex hooks') _T='hooks Codex' ;;
     'in .codex/hooks.json') _T='dans .codex/hooks.json' ;;
     'delegate-to-claude: this project'\''s lead agent is Claude Code. Use the subagent .claude/agents/%s.md (Agent tool, in the foreground) instead: this bridge runs claude -p, where shell commands that aren'\''t pre-approved are refused.') _T='delegate-to-claude : l'\''orchestrateur de ce projet est Claude Code. Utilise plutôt le sous-agent .claude/agents/%s.md (outil Agent, au premier plan) : ce bridge lance claude -p, où les commandes shell non pré-approuvées sont refusées.' ;;
+    'Loomy completed this project'\''s setup: %s') _T='Loomy a complété la mise en place de ce projet : %s' ;;
+    '- Loomy has just completed this project'\''s setup files: %s. Tell the user in one line.') _T='- Loomy vient de compléter les fichiers de mise en place de ce projet : %s. Signale-le à l'\''utilisateur en une ligne.' ;;
+    '- IMPORTANT: the Loomy setup of this project is not finished. Don'\''t start any other work on an unfinished setup: resume it from the phase below, or tell the user first and let them decide.') _T='- IMPORTANT : la mise en place Loomy de ce projet n'\''est pas terminée. Ne commence aucun autre travail sur une mise en place inachevée : reprends-la à la phase ci-dessous, ou préviens d'\''abord l'\''utilisateur et laisse-le décider.' ;;
+    '[Loomy] The Loomy setup of this project is not finished (START.md is still there). Before any other work, resume it where it stopped (phase in .loomy/state), or tell the user it has to be finished first and ask them.') _T='[Loomy] La mise en place Loomy de ce projet n'\''est pas terminée (START.md est toujours là). Avant tout autre travail, reprends-la là où elle s'\''est arrêtée (phase dans .loomy/state), ou dis à l'\''utilisateur qu'\''elle doit d'\''abord être terminée et demande-lui.' ;;
+    'orchestration rule') _T='règle d'\''orchestration' ;;
+    'orchestration rule missing') _T='règle d'\''orchestration absente' ;;
+    'project completed') _T='projet complété' ;;
+    'Routing and role subagents') _T='Routage et sous-agents des rôles' ;;
+    '%s item(s) set up') _T='%s élément(s) mis en place' ;;
+    'other roles') _T='autres rôles' ;;
   esac
 }

@@ -40,13 +40,13 @@ For a project that will use both tools, prefer:
 ```text
 AGENTS.md
 CLAUDE.md
-.ai/AI_WORKFLOW.md
-.ai/AI_ORCHESTRATION.md  # when cross-model delegation is enabled
-.ai/AI_MODEL_ROUTING.md  # role → model → effort matrix
+.loomy/docs/AI_WORKFLOW.md
+.loomy/docs/AI_ORCHESTRATION.md  # when cross-model delegation is enabled
+.loomy/docs/AI_MODEL_ROUTING.md  # role → model → effort matrix
 .claude/agents/          # only the chosen Claude subagents
 PROJECT.md
 ARCHITECTURE.md          # when justified
-.ai/HANDOFF.md           # only during a handoff
+.loomy/docs/HANDOFF.md           # only during a handoff
 ```
 
 Don't let Codex and Claude modify the same files at the same time in one working tree. Use separate Git worktrees or branches for parallel implementation, or have one tool implement and the other review.

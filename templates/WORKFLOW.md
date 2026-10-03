@@ -13,7 +13,7 @@ Never let Codex and Claude modify the same files at the same time in the same wo
 ## Shared source of truth
 By priority:
 1. the user's current instruction;
-2. the repository instructions (`AGENTS.md`, `CLAUDE.md`, this file, `.ai/AI_ORCHESTRATION.md`);
+2. the repository instructions (`AGENTS.md`, `CLAUDE.md`, this file, `.loomy/docs/AI_ORCHESTRATION.md`);
 3. executable code, configuration and schemas;
 4. tests;
 5. `PROJECT.md` and `ARCHITECTURE.md`;
@@ -34,7 +34,7 @@ The reviewer looks for concrete defects: regressions, missed edge cases, securit
 They don't reimplement, unless asked.
 
 ### HANDOFF
-Agent A stops at a clean checkpoint and writes `.ai/HANDOFF.md`.
+Agent A stops at a clean checkpoint and writes `.loomy/docs/HANDOFF.md`.
 Agent B checks the repository state and takes over.
 Delete or update stale handoffs.
 
@@ -44,7 +44,7 @@ Each agent verifies and commits its work before integration.
 Run the project's quality criteria again after integration.
 
 ### ORCHESTRATED
-The lead agent calls the other model as a specialist, following `.ai/AI_ORCHESTRATION.md`.
+The lead agent calls the other model as a specialist, following `.loomy/docs/AI_ORCHESTRATION.md`.
 Usual uses: review, architecture, debugging, second security opinion, focused research.
 The specialist returns findings; the lead agent checks, decides and integrates.
 
@@ -88,7 +88,7 @@ Only use subagents or cross-model calls when their value exceeds the coordinatio
 - Prefer concise state or handoff files over rereading conversations.
 - Keep the root instruction files short.
 - Prefer one focused call to another model over repeated back-and-forth.
-- Pick the cheapest model and effort that do the task reliably (`.ai/AI_MODEL_ROUTING.md`); move up on evidence, not by default.
+- Pick the cheapest model and effort that do the task reliably (`.loomy/docs/AI_MODEL_ROUTING.md`); move up on evidence, not by default.
 
 ## Verification
 No agent announces success without running the relevant checks.

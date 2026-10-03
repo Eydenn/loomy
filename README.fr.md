@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.8.4-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.9.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -171,7 +171,7 @@ Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou repren
 | 5&nbsp;·&nbsp;Validation | attend ton feu vert | **valide** ou demande des changements |
 | 6&nbsp;·&nbsp;Construction | met en place le projet et délègue | suis les délégations |
 | 7&nbsp;·&nbsp;Vérification | tests, relecture croisée, sécurité | regarde les constats remontés |
-| 8&nbsp;·&nbsp;Documentation | écrit PROJECT.md, ARCHITECTURE.md, `.ai/` | relis |
+| 8&nbsp;·&nbsp;Documentation | écrit PROJECT.md, ARCHITECTURE.md, `.loomy/docs/` | relis |
 | 9&nbsp;·&nbsp;Commit | commit initial, si autorisé | vérifie le commit |
 | 10&nbsp;·&nbsp;Clôture | archive ou supprime START.md | rien |
 
@@ -225,7 +225,7 @@ Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jam
 
 ## 🔒 Fichiers IA : versionnés, locaux ou privés
 
-Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.ai/`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt.
+Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt.
 
 Le questionnaire propose aussi de **créer le dépôt GitHub** du projet, privé ou public. Son nom, tiré du nom du projet, est à valider ou à modifier. En mode dépôt privé séparé, le nom du dépôt des fichiers IA (`<dépôt>-ai`) l'est aussi, et les deux sont confirmés ensemble. Un dépôt existant qui porte un autre nom est signalé, avec la commande pour le renommer ; Loomy ne renomme rien lui-même.
 
@@ -280,7 +280,7 @@ Tout se passe dans le terminal, sans dépendance. **Rien ne démarre tout seul**
 |---|---|
 | <code>loomy&nbsp;status</code> | Instantané : phases, délégations en cours, activité, coûts par modèle, forfaits, Git |
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ Le même écran rafraîchi chaque seconde (ou toutes les N secondes) : délégation en cours avec toupie, chrono et avancement estimé, nouveautés mises en évidence, notification (macOS) et bip à chaque phase, échec ou fin de bootstrap. Un journal de session en bas défile au fil des événements, le plus récent mis en évidence. Touches : `q` quitter, `c` vue resserrée ou complète, `l` journal, `t` arbre des agents, `s` ouvrir la session. Vue resserrée d'office dans un petit terminal |
-| <code>loomy&nbsp;tree</code> | 🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. Aussi touche `t` de `loomy watch`. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées), sinon en liste ; `v` bascule, `loomy config set tree_view auto\|diagram\|list` choisit |
+| <code>loomy&nbsp;tree</code> | 🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. Aussi touche `t` de `loomy watch`. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées ; chaque rôle a sa boîte dans une fenêtre large, les autres sont listés à côté de la vérification finale), sinon en liste ; `v` bascule, `loomy config set tree_view auto\|diagram\|list` choisit |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 La session de l'orchestrateur et le suivi en direct côte à côte (ou l'un au-dessus de l'autre si le terminal est étroit), via tmux ou iTerm2 ; le suivi se ferme avec la session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Journal lisible, à l'heure locale, éventuellement en continu (`--raw` : JSON brut) ; `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts |
 
@@ -545,7 +545,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 |---|---|---|
 | 🧍&nbsp;**SOLO** | un seul outil fait tout | petits projets, budget serré |
 | 👀&nbsp;**REVIEW** | l'un implémente, l'autre relit le diff | changements substantiels |
-| 🔁&nbsp;**HANDOFF** | point d'arrêt propre + `.ai/HANDOFF.md`, l'autre reprend | changement d'outil en cours de route |
+| 🔁&nbsp;**HANDOFF** | point d'arrêt propre + `.loomy/docs/HANDOFF.md`, l'autre reprend | changement d'outil en cours de route |
 | 🌳&nbsp;**PARALLEL** | deux worktrees, périmètres disjoints | chantiers vraiment indépendants |
 | 🎯&nbsp;**ORCHESTRATED** | l'orchestrateur délègue chaque rôle au meilleur modèle des deux familles | **recommandé** quand les deux outils sont installés |
 
@@ -562,7 +562,7 @@ mon-projet/
 ├── CLAUDE.md                  # point d'entrée Claude Code (court)
 ├── PROJECT.md                 # intention produit, périmètre, contraintes
 ├── ARCHITECTURE.md            # si utile
-├── .ai/
+├── .loomy/docs/
 │   ├── AI_WORKFLOW.md         # contrat de collaboration commun
 │   ├── AI_ORCHESTRATION.md    # règles de délégation entre modèles
 │   ├── AI_MODEL_ROUTING.md    # matrice rôle → modèle → effort
@@ -581,7 +581,10 @@ mon-projet/
 
 - **Projet existant.** Lance `loomy init` dans le dépôt. Loomy passe sur une branche dédiée `loomy/adopt` (la branche courante reste intacte, le travail non commité reste tel quel), écrit un état des lieux sans IA (`.loomy/assessment.md` : stack, vraies commandes, tests, CI, conventions, historique Git, zones sensibles, dette), et l'orchestrateur propose un plan d'adoption : `PROJECT.md` et `ARCHITECTURE.md` reconstruits à partir du code, `AGENTS.md` et `CLAUDE.md` alignés sur les commandes du dépôt, rôles dimensionnés selon son risque. Rien d'existant n'est écrasé, aucun code applicatif ne change sans ton accord, et le retour sur la branche d'origine passe par une pull request que tu acceptes.
 - **Audit de sécurité.** Il se lance à la demande, avec le skill officiel Cloudflare. Installe-le avec `.loomy/scripts/install-security-audit.sh --global`, puis demande un audit complet sans modification du code.
-- **Fin du bootstrap.** `START.md` est archivé dans `.ai/bootstrap/` ou supprimé, selon ton choix. Il n'a plus aucune autorité ensuite.
+- **Fin du bootstrap.** `START.md` est archivé dans `.loomy/docs/bootstrap/` ou supprimé, selon ton choix. Il n'a plus aucune autorité ensuite.
+- **Une mise en place jamais à moitié faite.** Ce que Loomy peut mettre en place sans l'agent (les documents de routage, de workflow et d'orchestration, les sous-agents des rôles, la règle d'orchestration dans `AGENTS.md` et `CLAUDE.md`) est créé dès `loomy init`, puis revérifié par chaque commande `loomy` et à l'ouverture de chaque session Claude Code : ce qui manque est complété, aucun fichier existant n'est écrasé. Tant que `START.md` est là, chaque message rappelle à l'orchestrateur de terminer d'abord la mise en place. `loomy doctor` signale les manques, `--fix` les complète.
+- **Chaque demande passe par l'orchestrateur.** La règle d'orchestration (un bloc tenu à jour par Loomy entre ses marqueurs) dit à l'orchestrateur que chaque demande, retours et corrections de l'utilisateur compris, est routée : le rôle le moins cher qui la fait de façon fiable, son propre modèle gardé pour planifier, décider et relire.
+- **Projets plus anciens.** Les projets mis en place avant la 0.9 gardaient leurs documents dans `.ai/` : Loomy les déplace dans `.loomy/docs/` (avec `git mv` s'ils sont versionnés) et met à jour les références.
 
 </details>
 
@@ -716,7 +719,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.8.1 | **journal de session qui défile** dans `loomy watch` et l'arbre des agents : une ligne colorée et alignée par événement, les arrivées défilent une à une, la plus récente mise en évidence |
 | ✅&nbsp;0.8.2 | **arbre des agents en diagramme** (boîtes, liaisons, couche de routage, colonne du conseiller, journal encadré, animé) ; `tree_view auto\|diagram\|list`, touche `v`, la fenêtre s'agrandit si besoin |
 | ✅&nbsp;0.8.3 | diagramme de l'arbre des agents : de l'espace au-dessus du titre |
-| ✅&nbsp;0.8.4 | **Version actuelle** · diagramme de l'arbre des agents deux fois plus rapide (environ 0,5 s par image) |
+| ✅&nbsp;0.8.4 | diagramme de l'arbre des agents deux fois plus rapide (environ 0,5 s par image) |
+| ✅&nbsp;0.9.0 | **Version actuelle** · **une mise en place qui ne peut plus rester à moitié faite** : Loomy crée et vérifie à chaque lancement les documents de routage, les sous-agents et la règle d'orchestration ; chaque demande passe par l'orchestrateur ; `.ai/` devient `.loomy/docs/` ; l'arbre des agents liste les rôles sans boîte |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |

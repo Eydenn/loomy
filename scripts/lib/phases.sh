@@ -59,7 +59,7 @@ loomy_phase_agent() {
     approve) t "The lead agent waits for your go-ahead before creating anything."; echo ;;
     build) t "The lead agent sets up the project and delegates to dedicated roles."; echo ;;
     verify) t "Tests, cross review and security checks of the delivered work."; echo ;;
-    document) t "Writing PROJECT.md, ARCHITECTURE.md and the .ai/ rules."; echo ;;
+    document) t "Writing PROJECT.md, ARCHITECTURE.md and the .loomy/docs/ rules."; echo ;;
     commit) t "Initial commit, if you allowed it in the questionnaire."; echo ;;
     retire) t "START.md is archived or deleted: the bootstrap is ending."; echo ;;
     scope) t "The auditor confirms with you what is audited, how deep, and what is out of scope."; echo ;;

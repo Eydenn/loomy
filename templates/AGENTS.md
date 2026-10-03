@@ -1,12 +1,24 @@
 # AGENTS.md
 
+<!-- loomy:orchestration:start · managed by Loomy, updated automatically -->
+## Orchestration (Loomy)
+
+You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
+
+- Hand each piece of work to its role following `.loomy/scripts/ai-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/delegate-to-<tool>.sh <role> "…"`.
+- Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
+- Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
+- Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
+- If the Loomy setup is unfinished (`START.md` still present), finish it first.
+<!-- loomy:orchestration:end -->
+
 ## Mission
 Build and maintain this repository with accuracy, relevance, simplicity, maintainability, verification and context economy.
 
 ## Shared AI workflow
-For substantial work or any Codex/Claude collaboration, read `.ai/AI_WORKFLOW.md` if it exists.
-For delegation between models, also read `.ai/AI_ORCHESTRATION.md` if it exists.
-You are the lead agent for this repository's AI work: before delegating or picking a model and an effort level, follow `.ai/AI_MODEL_ROUTING.md` if it exists (roles, bridges, escalation).
+For substantial work or any Codex/Claude collaboration, read `.loomy/docs/AI_WORKFLOW.md` if it exists.
+For delegation between models, also read `.loomy/docs/AI_ORCHESTRATION.md` if it exists.
+You are the lead agent for this repository's AI work: before delegating or picking a model and an effort level, follow `.loomy/docs/AI_MODEL_ROUTING.md` if it exists (roles, bridges, escalation).
 Don't copy these rules here.
 
 ## Session resume
@@ -18,7 +30,7 @@ Before closing a session, summarise what was done and the next step. If the AI f
 - Architecture: `ARCHITECTURE.md` if it exists
 - Important decisions: `docs/decisions/`
 - Ongoing plans: `docs/plans/`
-- Handoff between agents: `.ai/HANDOFF.md`, only if it exists and is current
+- Handoff between agents: `.loomy/docs/HANDOFF.md`, only if it exists and is current
 
 Only read the sources useful to the current task.
 
@@ -43,7 +55,7 @@ By default, the main Codex agent does the work.
 Only delegate when the work can be parallelised, needs specialised expertise, benefits from being isolated from the main context, or needs an independent review.
 Avoid duplicate work and several agents on the same area without a clear split.
 
-When Claude Code is available and `.ai/AI_ORCHESTRATION.md` allows it, Codex can call Claude as an external specialist: architecture critique, independent review, hard debugging, second security opinion or focused research.
+When Claude Code is available and `.loomy/docs/AI_ORCHESTRATION.md` allows it, Codex can call Claude as an external specialist: architecture critique, independent review, hard debugging, second security opinion or focused research.
 Codex remains the lead agent: check Claude's findings before acting.
 Don't use cross-model delegation for trivial tasks.
 

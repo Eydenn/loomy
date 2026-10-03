@@ -181,11 +181,11 @@ Détermine le mode par défaut du projet :
 - `PARALLEL` : les deux travaillent en même temps sur des branches ou worktrees isolés.
 
 Si Codex et Claude sont tous deux susceptibles d'être utilisés, choisis `HYBRID` par défaut.
-Ne suppose pas qu'ils partagent directement le contexte de conversation. Coordonne-les par le dépôt, les points de contrôle Git, `.ai/AI_WORKFLOW.md`, et `.ai/HANDOFF.md` quand un passage de relais explicite est nécessaire.
+Ne suppose pas qu'ils partagent directement le contexte de conversation. Coordonne-les par le dépôt, les points de contrôle Git, `.loomy/docs/AI_WORKFLOW.md`, et `.loomy/docs/HANDOFF.md` quand un passage de relais explicite est nécessaire.
 Pour une implémentation parallèle, exige des branches ou worktrees Git séparés et des périmètres qui ne se chevauchent pas.
 
 ### Équipe d'agents adaptative
-Utilise `.loomy/agents/ROLE-CATALOG.md` comme source de rôles réutilisables s'il existe. Ne matérialise les rôles choisis dans `.ai/agents/` que si des fichiers de rôle explicites améliorent l'outil utilisé ; sinon, garde les rôles implicites.
+Utilise `.loomy/agents/ROLE-CATALOG.md` comme source de rôles réutilisables s'il existe. Ne matérialise les rôles choisis dans `.loomy/docs/agents/` que si des fichiers de rôle explicites améliorent l'outil utilisé ; sinon, garde les rôles implicites.
 
 Ne propose que des rôles qui apportent une valeur claire.
 Rôles possibles :
@@ -269,8 +269,8 @@ Après validation :
 
 Génère à la racine un `AGENTS.md` concis pour Codex, avec les faits propres au projet et les règles de travail.
 Génère `CLAUDE.md` pour Claude Code, comme une fine couche de compatibilité.
-Génère `.ai/AI_WORKFLOW.md` à partir du template de workflow commun, pour que Codex et Claude suivent le même contrat de coordination sans dupliquer de longues instructions.
-Si un usage hybride est prévu, prévois `.ai/HANDOFF.md` comme fichier de coordination éphémère, pas comme mémoire permanente du projet.
+Génère `.loomy/docs/AI_WORKFLOW.md` à partir du template de workflow commun, pour que Codex et Claude suivent le même contrat de coordination sans dupliquer de longues instructions.
+Si un usage hybride est prévu, prévois `.loomy/docs/HANDOFF.md` comme fichier de coordination éphémère, pas comme mémoire permanente du projet.
 
 L'`AGENTS.md` généré reprend la section « Autonomie et points d'arrêt » du template : quand avancer seul, et quand s'arrêter pour demander (toujours avant une opération destructive ou difficile à annuler). Adapte-la au projet (ex. commandes de migration, environnements de production), sans l'affaiblir.
 
@@ -282,9 +282,9 @@ Quand le mode hybride est choisi :
 
 1. Crée `AGENTS.md` à la racine pour Codex.
 2. Crée `CLAUDE.md` à la racine pour Claude Code.
-3. Crée `.ai/AI_WORKFLOW.md` à partir de `.loomy/templates/WORKFLOW.md`.
-4. Crée `.ai/AI_ORCHESTRATION.md` à partir de `.loomy/templates/ORCHESTRATION.md` quand la délégation entre modèles est activée.
-5. Ne crée pas `.ai/HANDOFF.md` tant qu'aucun passage de relais réel n'est en cours.
+3. `.loomy/docs/AI_WORKFLOW.md` et `.loomy/docs/AI_ORCHESTRATION.md` ont déjà été créés par Loomy à partir de ses templates : adapte-les au projet, ne les recrée pas.
+4. Dans `AGENTS.md` et `CLAUDE.md`, garde le bloc entre les repères `<!-- loomy:orchestration -->` : Loomy l'entretient (il est remis à la session suivante s'il disparaît).
+5. Ne crée pas `.loomy/docs/HANDOFF.md` tant qu'aucun passage de relais réel n'est en cours.
 6. Pour le travail parallèle, utilise des branches ou worktrees isolés ; ne laisse jamais les deux outils modifier le même répertoire de travail en même temps.
 7. Quand l'implémentation parallèle n'est pas nécessaire, préfère qu'un outil implémente et que l'autre relise, pour un contrôle croisé à forte valeur.
 8. La délégation entre modèles suit le routage de `ai-route.sh`. Avec un lead Codex, les rôles Claude passent par `.loomy/scripts/delegate-to-claude.sh` (spécialiste Claude en lecture seule). Avec un lead Claude, les rôles Claude sont les sous-agents natifs de `.claude/agents/` (outil Agent) : n'utilise pas `delegate-to-claude.sh`, son `claude -p` sans interface refuse toute commande shell non pré-approuvée. Les rôles Codex (exécutant, développeur, relecteur…) passent par `.loomy/scripts/delegate-to-codex.sh`. L'orchestrateur valide chaque résultat avant d'agir. Lance toujours ces scripts **au premier plan** et attends leur fin : une délégation lancée en arrière-plan est interrompue si la session se ferme.
@@ -294,8 +294,8 @@ Quand le mode hybride est choisi :
 
 Quand le routage est validé :
 
-1. Crée `.ai/AI_MODEL_ROUTING.md` à partir de `.loomy/templates/MODEL_ROUTING.md`, puis remplace sa dernière section par la sortie de `.loomy/scripts/ai-route.sh markdown`.
-2. Si l'outil principal est Claude Code, génère les sous-agents avec `.loomy/scripts/ai-route.sh claude-agents`. Ils sont créés dans `.claude/agents/`, modèle et effort renseignés. Supprime les rôles que la proposition n'a pas retenus.
+1. `.loomy/docs/AI_MODEL_ROUTING.md` existe déjà (créé par Loomy avec la matrice résolue). Si le routage validé diffère, régénère sa dernière section avec la sortie de `.loomy/scripts/ai-route.sh markdown`.
+2. Si l'outil principal est Claude Code, les sous-agents de rôle sont déjà dans `.claude/agents/` (créés par Loomy, modèle et effort renseignés). Supprime les rôles que la proposition n'a pas retenus ; adapte les autres au projet si c'est utile.
 3. Si Codex est utilisé, les rôles passent par `delegate-to-codex.sh <rôle>`, qui ne demande aucune configuration. Pour des sessions Codex interactives par rôle, donne à l'utilisateur la sortie de `ai-route.sh codex-profiles`. Ne modifie jamais le `~/.codex/config.toml` global de l'utilisateur sans son accord explicite.
 4. Donne à l'utilisateur la commande de lancement de l'orchestrateur (`ai-route.sh lead`) pour ses prochaines sessions.
 
@@ -387,8 +387,8 @@ Si l'identité Git, la signature, la politique du dépôt ou les permissions blo
 
 Après une initialisation réussie :
 
-1. Crée `.ai/bootstrap/` si la complexité du projet justifie de garder l'historique du bootstrap.
-2. Déplace ce fichier vers `.ai/bootstrap/START.completed.md`, **ou supprime-le** si l'utilisateur a choisi de ne pas garder l'historique.
+1. Crée `.loomy/docs/bootstrap/` si la complexité du projet justifie de garder l'historique du bootstrap.
+2. Déplace ce fichier vers `.loomy/docs/bootstrap/START.completed.md`, **ou supprime-le** si l'utilisateur a choisi de ne pas garder l'historique.
 3. S'il est archivé, ajoute en tête les informations de fin :
    - statut `COMPLETED` ;
    - date de fin ;
@@ -401,7 +401,7 @@ Une fois terminé, ce fichier n'a **plus aucune autorité** sur le travail futur
 Font autorité, dans l'ordre :
 
 1. l'instruction actuelle de l'utilisateur ;
-2. `AGENTS.md`, `CLAUDE.md`, `.ai/AI_WORKFLOW.md` et `.ai/AI_MODEL_ROUTING.md` du projet ;
+2. `AGENTS.md`, `CLAUDE.md`, `.loomy/docs/AI_WORKFLOW.md` et `.loomy/docs/AI_MODEL_ROUTING.md` du projet ;
 3. le code exécutable, les schémas et la configuration ;
 4. les tests ;
 5. `PROJECT.md`, `ARCHITECTURE.md` et les ADR en vigueur ;

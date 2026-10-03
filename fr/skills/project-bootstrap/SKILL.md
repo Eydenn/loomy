@@ -40,13 +40,13 @@ Pour un projet qui utilisera les deux outils, préfère :
 ```text
 AGENTS.md
 CLAUDE.md
-.ai/AI_WORKFLOW.md
-.ai/AI_ORCHESTRATION.md  # si la délégation entre modèles est activée
-.ai/AI_MODEL_ROUTING.md  # matrice rôle → modèle → effort
+.loomy/docs/AI_WORKFLOW.md
+.loomy/docs/AI_ORCHESTRATION.md  # si la délégation entre modèles est activée
+.loomy/docs/AI_MODEL_ROUTING.md  # matrice rôle → modèle → effort
 .claude/agents/          # uniquement les sous-agents Claude retenus
 PROJECT.md
 ARCHITECTURE.md          # si justifié
-.ai/HANDOFF.md           # uniquement pendant un passage de relais
+.loomy/docs/HANDOFF.md           # uniquement pendant un passage de relais
 ```
 
 Ne laisse pas Codex et Claude modifier les mêmes fichiers en même temps dans un même répertoire de travail. Utilise des worktrees ou branches Git séparés pour l'implémentation parallèle, ou fais implémenter un outil et relire l'autre.

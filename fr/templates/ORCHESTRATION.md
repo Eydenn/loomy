@@ -3,7 +3,7 @@
 ## Objectif
 Contrat d'orchestration entre modèles pour ce dépôt.
 
-La session principale est l'**orchestrateur**. Elle porte la tâche de bout en bout. Elle délègue un rôle à l'autre famille de modèles quand `.ai/AI_MODEL_ROUTING.md` l'y envoie ; sinon, elle le confie à ses propres sous-agents ou fait le travail elle-même.
+La session principale est l'**orchestrateur**. Elle porte la tâche de bout en bout. Elle délègue un rôle à l'autre famille de modèles quand `.loomy/docs/AI_MODEL_ROUTING.md` l'y envoie ; sinon, elle le confie à ses propres sous-agents ou fait le travail elle-même.
 
 ## Politique par défaut
 Ne délègue que si c'est clairement utile : un modèle moins cher capable de faire le travail de façon fiable, un spécialiste qui décidera mieux, une relecture indépendante, ou l'isolation du contexte.

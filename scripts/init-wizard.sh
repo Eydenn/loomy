@@ -375,7 +375,7 @@ ask_all() {
   choose_coded MODE "AI collaboration mode?" "$(ans ai_mode "$mode_def")" \
     "Defines how Codex and Claude Code share the work. Preselected from the detected tools." \
     "SOLO|SOLO|One tool at a time: the simplest and cheapest." \
-    "HYBRID|HYBRID|Both tools take turns, coordinated through Git and .ai/HANDOFF.md." \
+    "HYBRID|HYBRID|Both tools take turns, coordinated through Git and .loomy/docs/HANDOFF.md." \
     "ORCHESTRATED|ORCHESTRATED|The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio." \
     "PARALLEL|PARALLEL|Both at the same time on separate worktrees: faster, integration needs care."
   UI_LABEL="$(t "Main tool")"
@@ -417,7 +417,7 @@ ask_all() {
   UI_LABEL="$(t "START.md afterwards")"
   choose_coded HISTORY "After initialisation, what to do with START.md?" "$(ans bootstrap_history archive)" \
     "START.md no longer has authority once the project is initialised." \
-    "archive|Archive it in .ai/bootstrap/ (recommended)|Keeps a record of the initialisation for later." \
+    "archive|Archive it in .loomy/docs/bootstrap/ (recommended)|Keeps a record of the initialisation for later." \
     "delete|Delete it|Lighter repo; the history stays only in Git."
 
   ui_step 13 $TOTAL
@@ -515,7 +515,7 @@ ask_all() {
     PRIVATE|INTERNAL) vis_txt=" $(t "Your GitHub repository is private.")" ;;
   esac
   UI_LABEL="$(t "AI files")"
-  choose_coded AI_FILES "Where to keep the AI files (AGENTS.md, CLAUDE.md, .ai/, .loomy/…)?" "$(ans ai_files "$files_def")" \
+  choose_coded AI_FILES "Where to keep the AI files (AGENTS.md, CLAUDE.md, .loomy/…)?" "$(ans ai_files "$files_def")" \
     "$(t "These are your working rules with the agents. GitHub sets visibility per repository, not per file.")$vis_txt" \
     "versioned|Versioned with the project|Recommended for a private repository: you get them on all your machines, and agents working online on the repository can read them." \
     "local|Local only|Never sent to GitHub: excluded via .git/info/exclude, invisible in the repository. Lost if you change machines." \
@@ -679,7 +679,7 @@ write_brief() {
     echo
     t "- Treat these answers as settled: confirm them in one line, don't ask for them again, and only ask the questions that are still useful."; echo
     t "- The risk is an estimate: reassess it after discovery and flag any gap."; echo
-    t "- Apply the \`%s\` model profile in \`.ai/AI_MODEL_ROUTING.md\`." "$BUDGET"; echo
+    t "- Apply the \`%s\` model profile in \`.loomy/docs/AI_MODEL_ROUTING.md\`." "$BUDGET"; echo
     echo "$lang_txt"
     if [[ "$COMMIT" == "yes" ]]; then
       t "- Initial commit allowed in phase 8 if all checks pass; otherwise stop and explain."; echo
@@ -692,7 +692,7 @@ write_brief() {
       t "- Don't push anything to a remote."; echo
     fi
     case "$AI_FILES" in
-      local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude."; echo ;;
+      local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f); they are excluded via .git/info/exclude."; echo ;;
       private)
         t "- AI files in a separate private repository: never version them in the project repository (never git add -f)."; echo
         t "- After each important step and at the end of the session, back them up: \`.loomy/scripts/ai-privacy.sh sync\`."; echo ;;
@@ -714,7 +714,7 @@ write_brief() {
       t "- Work only on the \`%s\` branch, created from \`%s\`, which stays untouched. Never merge into or push \`%s\` yourself: at the end, offer a pull request or a merge, as the user prefers." "$ADOPT_BRANCH" "$BASE_BRANCH" "$BASE_BRANCH"; echo
     fi
     if [[ "$DELEG_FORMAT" == "structured" ]]; then
-      t "- Delegations in structured form: see \"Structured delegations\" in \`.ai/AI_ORCHESTRATION.md\` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT)."; echo
+      t "- Delegations in structured form: see \"Structured delegations\" in \`.loomy/docs/AI_ORCHESTRATION.md\` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT)."; echo
     fi
     t "- Update progress with \`.loomy/scripts/ai-status.sh set <phase>\`."; echo
   } >"$BRIEF"
@@ -783,6 +783,7 @@ if [[ -n "$GH_USER" ]]; then
 fi
 [[ "$REPO" == "existing" ]] && steps+=("$(t "Assessing the existing project")")
 steps+=("$(t "Saving the brief")")
+steps+=("$(t "Routing and role subagents")")
 [[ "$AI_FILES" != "versioned" ]] && steps+=("$(t "Setting up AI files")")
 [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("$(t "Saving the plans")")
 steps+=("$(t "Preparing the session")")
@@ -837,6 +838,14 @@ fi
 ui_step_run $st
 write_brief
 ui_step_done $st ok "$(t "Brief saved")" "${BRIEF#"$TARGET"/}"
+st=$(( st + 1 ))
+# The pieces Loomy owns are set up now, not left to the lead agent: routing documents, role subagents and the
+# orchestration rule exist even if the bootstrap is interrupted midway.
+ui_step_run $st
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
+loomy_project_repair "$TARGET" 2>/dev/null || true
+ui_step_done $st ok "$(t "Routing and role subagents")" "$(t "%s item(s) set up" "${#LP_DONE[@]}")"
 st=$(( st + 1 ))
 AI_FAIL=0
 if [[ "$AI_FILES" != "versioned" ]]; then

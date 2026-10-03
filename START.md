@@ -181,11 +181,11 @@ Decide the project's default mode:
 - `PARALLEL`: both work at the same time on isolated branches or worktrees.
 
 If Codex and Claude are both likely to be used, choose `HYBRID` by default.
-Don't assume they share conversation context directly. Coordinate them through the repository, Git checkpoints, `.ai/AI_WORKFLOW.md`, and `.ai/HANDOFF.md` when an explicit handoff is needed.
+Don't assume they share conversation context directly. Coordinate them through the repository, Git checkpoints, `.loomy/docs/AI_WORKFLOW.md`, and `.loomy/docs/HANDOFF.md` when an explicit handoff is needed.
 For parallel implementation, require separate Git branches or worktrees and scopes that don't overlap.
 
 ### Adaptive agent team
-Use `.loomy/agents/ROLE-CATALOG.md` as the source of reusable roles if it exists. Only materialise the chosen roles in `.ai/agents/` if explicit role files improve the tool in use; otherwise keep the roles implicit.
+Use `.loomy/agents/ROLE-CATALOG.md` as the source of reusable roles if it exists. Only materialise the chosen roles in `.loomy/docs/agents/` if explicit role files improve the tool in use; otherwise keep the roles implicit.
 
 Only propose roles that bring clear value.
 Possible roles:
@@ -269,8 +269,8 @@ After approval:
 
 Generate a concise `AGENTS.md` at the root for Codex, with the project-specific facts and the working rules.
 Generate `CLAUDE.md` for Claude Code, as a thin compatibility layer.
-Generate `.ai/AI_WORKFLOW.md` from the shared workflow template, so that Codex and Claude follow the same coordination contract without duplicating long instructions.
-If hybrid use is planned, provide `.ai/HANDOFF.md` as an ephemeral coordination file, not as the project's permanent memory.
+Generate `.loomy/docs/AI_WORKFLOW.md` from the shared workflow template, so that Codex and Claude follow the same coordination contract without duplicating long instructions.
+If hybrid use is planned, provide `.loomy/docs/HANDOFF.md` as an ephemeral coordination file, not as the project's permanent memory.
 
 The generated `AGENTS.md` keeps the "Autonomy and stop points" section of the template: when to move forward alone, and when to stop and ask (always before a destructive or hard-to-undo operation). Adapt it to the project (e.g. migration commands, production environments), without weakening it.
 
@@ -282,9 +282,9 @@ When hybrid mode is chosen:
 
 1. Create `AGENTS.md` at the root for Codex.
 2. Create `CLAUDE.md` at the root for Claude Code.
-3. Create `.ai/AI_WORKFLOW.md` from `.loomy/templates/WORKFLOW.md`.
-4. Create `.ai/AI_ORCHESTRATION.md` from `.loomy/templates/ORCHESTRATION.md` when delegation between models is enabled.
-5. Don't create `.ai/HANDOFF.md` until an actual handoff is in progress.
+3. `.loomy/docs/AI_WORKFLOW.md` and `.loomy/docs/AI_ORCHESTRATION.md` were already created by Loomy from its templates: adapt them to the project, don't recreate them.
+4. In `AGENTS.md` and `CLAUDE.md`, keep the block between the `<!-- loomy:orchestration -->` markers: Loomy maintains it (it is added again at the next session if it goes missing).
+5. Don't create `.loomy/docs/HANDOFF.md` until an actual handoff is in progress.
 6. For parallel work, use isolated branches or worktrees; never let both tools modify the same working tree at the same time.
 7. When parallel implementation isn't needed, prefer one tool implementing and the other reviewing, for a high-value cross check.
 8. Delegation between models follows the routing of `ai-route.sh`. With a Codex lead, Claude roles go through `.loomy/scripts/delegate-to-claude.sh` (read-only Claude specialist). With a Claude lead, Claude roles are the native subagents of `.claude/agents/` (Agent tool): don't use `delegate-to-claude.sh`, its headless `claude -p` refuses any shell command that isn't pre-approved. Codex roles (executor, developer, reviewer…) go through `.loomy/scripts/delegate-to-codex.sh`. The lead agent validates each result before acting. Always run these scripts **in the foreground** and wait for them to finish: a delegation started in the background is interrupted if the session closes.
@@ -294,8 +294,8 @@ When hybrid mode is chosen:
 
 Once the routing is approved:
 
-1. Create `.ai/AI_MODEL_ROUTING.md` from `.loomy/templates/MODEL_ROUTING.md`, then replace its last section with the output of `.loomy/scripts/ai-route.sh markdown`.
-2. If the main tool is Claude Code, generate the subagents with `.loomy/scripts/ai-route.sh claude-agents`. They are created in `.claude/agents/`, with model and effort filled in. Remove the roles the proposal didn't keep.
+1. `.loomy/docs/AI_MODEL_ROUTING.md` already exists (created by Loomy with the resolved matrix). If the approved routing differs, regenerate its last section with the output of `.loomy/scripts/ai-route.sh markdown`.
+2. If the main tool is Claude Code, the role subagents are already in `.claude/agents/` (created by Loomy, model and effort filled in). Remove the roles the proposal didn't keep; adapt the others to the project if useful.
 3. If Codex is used, roles go through `delegate-to-codex.sh <role>`, which needs no configuration. For interactive Codex sessions per role, give the user the output of `ai-route.sh codex-profiles`. Never modify the user's global `~/.codex/config.toml` without their explicit approval.
 4. Give the user the lead agent launch command (`ai-route.sh lead`) for their next sessions.
 
@@ -387,8 +387,8 @@ If Git identity, signing, repository policy or permissions block the commit, lea
 
 After a successful setup:
 
-1. Create `.ai/bootstrap/` if the project's complexity justifies keeping the bootstrap history.
-2. Move this file to `.ai/bootstrap/START.completed.md`, **or delete it** if the user chose not to keep the history.
+1. Create `.loomy/docs/bootstrap/` if the project's complexity justifies keeping the bootstrap history.
+2. Move this file to `.loomy/docs/bootstrap/START.completed.md`, **or delete it** if the user chose not to keep the history.
 3. If it is archived, add the completion information at the top:
    - status `COMPLETED`;
    - completion date;
@@ -401,7 +401,7 @@ Once finished, this file has **no authority at all** over future work.
 Authoritative, in order:
 
 1. the user's current instruction;
-2. the project's `AGENTS.md`, `CLAUDE.md`, `.ai/AI_WORKFLOW.md` and `.ai/AI_MODEL_ROUTING.md`;
+2. the project's `AGENTS.md`, `CLAUDE.md`, `.loomy/docs/AI_WORKFLOW.md` and `.loomy/docs/AI_MODEL_ROUTING.md`;
 3. executable code, schemas and configuration;
 4. tests;
 5. `PROJECT.md`, `ARCHITECTURE.md` and the current ADRs;

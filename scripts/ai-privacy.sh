@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Visibility of the project's AI files (AGENTS.md, CLAUDE.md, .ai/, .claude/, .loomy/, START.md). Bash 3.2 compatible.
+# Visibility of the project's AI files (AGENTS.md, CLAUDE.md, .claude/, .loomy/, START.md). Bash 3.2 compatible.
 #   loomy privacy                          status: mode, files still tracked, private repository
 #   loomy privacy versioned                versioned with the project
 #   loomy privacy local                    excluded from Git on this machine (invisible in the repository)

@@ -13,24 +13,47 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------------------------------------------------------------- UserPromptSubmit hook: fast path
-# Runs before every prompt of the session, so it stays light (about 20 ms): it only loads the translation layer,
-# not the model libraries (about 90 ms to source), and prints nothing unless the project is ORCHESTRATED with a
-# Claude lead. Why it exists: in a long session, after a context compaction, the lead forgets the routing and
-# does the work itself; a two-line reminder at each prompt costs almost nothing.
-if [[ "${1:-}" == "--hook" && "${2:-}" == "prompt" ]] || [[ "${3:-}" == "--hook" && "${4:-}" == "prompt" ]]; then
-  [[ -t 0 ]] || cat >/dev/null 2>&1 || true
+# loomy-capability: hook-prompt   (marker read by the project relays and by loomy init: a Loomy without it must
+# never receive --hook prompt, it would answer with the whole resume context at every message)
+# Runs before every prompt of the session, so it stays light: it loads only the translation layer, not the model
+# libraries (about 90 ms to source), and on the silent path (the common case outside ORCHESTRATED projects) it starts
+# no process at all: only shell builtins. Why it exists: in a long session, after a context compaction, the lead
+# forgets the routing and does the work itself; a one-line reminder at each prompt costs almost nothing.
+fp_hook=""; fp_root=""; fp_prev=""
+for fp_a in "$@"; do
+  case "$fp_prev" in --hook) fp_hook="$fp_a" ;; --root) fp_root="$fp_a" ;; esac
+  fp_prev="$fp_a"
+done
+if [[ "$fp_hook" == "prompt" ]]; then
+  # The payload is read to its end with a builtin (a long pasted prompt must not block the writer).
+  if [[ ! -t 0 ]]; then while IFS= read -r fp_line || [[ -n "$fp_line" ]]; do :; done; fi
   [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0   # session started by a bridge (claude -p): no orchestrator there
-  P_ROOT="${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}"
-  [[ "${1:-}" == "--root" ]] && P_ROOT="${2:-$P_ROOT}"
-  P_BRIEF="$P_ROOT/.loomy/brief.md"
-  [[ -f "$P_BRIEF" ]] || exit 0
-  p_get() { sed -n '/^---$/,/^---$/p' "$P_BRIEF" | sed -n "s/^$1:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//'; }
-  [[ "$(p_get ai_mode)" == "ORCHESTRATED" && "$(p_get ai_lead)" != "codex" ]] || exit 0
+  P_ROOT="${fp_root:-${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}}"
+  [[ -f "$P_ROOT/.loomy/brief.md" ]] || exit 0
+  # Front matter read line by line (ai_mode, ai_lead): no sed, no subshell.
+  p_mode=""; p_lead=""; p_n=0
+  while IFS= read -r fp_line; do
+    if [[ "$fp_line" == "---" ]]; then p_n=$(( p_n + 1 )); (( p_n >= 2 )) && break; continue; fi
+    case "$fp_line" in "ai_mode:"*) p_mode="${fp_line#ai_mode:}" ;; "ai_lead:"*) p_lead="${fp_line#ai_lead:}" ;; esac
+  done <"$P_ROOT/.loomy/brief.md"
+  p_mode="${p_mode#"${p_mode%%[![:space:]]*}"}"; p_mode="${p_mode//\"/}"
+  p_lead="${p_lead#"${p_lead%%[![:space:]]*}"}"; p_lead="${p_lead//\"/}"
+  # An unfinished setup is said at every message, whatever the mode: work must not go on over it.
+  p_unfinished=0; [[ -f "$P_ROOT/START.md" ]] && p_unfinished=1
+  p_orch=0; [[ "$p_mode" == "ORCHESTRATED" && "$p_lead" != "codex" ]] && p_orch=1
+  (( p_unfinished || p_orch )) || exit 0
   # shellcheck source=lib/i18n.sh
-  source "$SCRIPT_DIR/lib/i18n.sh" 2>/dev/null || t() { printf '%s' "$1"; }
-  p_msg="$(t "[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/ai-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/delegate-to-codex.sh. Do the work yourself only when the routing keeps it on the lead.")"
-  # JSON string: the message has no control characters, only quotes and backslashes need escaping.
-  p_msg="$(printf '%s' "$p_msg" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  source "$SCRIPT_DIR/lib/i18n.sh" 2>/dev/null || tv() { printf -v "$1" '%s' "$2"; }
+  p_msg=""; p_orch_msg=""
+  if (( p_unfinished )); then
+    tv p_msg "[Loomy] The Loomy setup of this project is not finished (START.md is still there). Before any other work, resume it where it stopped (phase in .loomy/state), or tell the user it has to be finished first and ask them."
+  fi
+  if (( p_orch )); then
+    tv p_orch_msg "[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/ai-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/delegate-to-codex.sh. Do the work yourself only when the routing keeps it on the lead."
+    p_msg="${p_msg:+$p_msg }$p_orch_msg"
+  fi
+  # JSON string: the message has no control characters, only backslashes and quotes need escaping.
+  p_msg="${p_msg//\\/\\\\}"; p_msg="${p_msg//\"/\\\"}"
   printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$p_msg"
   exit 0
 fi
@@ -43,6 +66,8 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
 
 HOOK=""; ROOT=""; TOOL="claude"
 while [[ $# -gt 0 ]]; do
@@ -89,8 +114,16 @@ if [[ -n "$HOOK" ]]; then
         nohup bash "$SCRIPT_DIR/ai-privacy.sh" --root "$ROOT" sync --quiet >/dev/null 2>&1 &
       fi
       exit 0 ;;
+    # A hook this version doesn't know (written for a newer Loomy): silence, never the whole resume context.
+    *) exit 0 ;;
   esac
 fi
+
+# ---------------------------------------------------------------- project integrity
+# Every session start checks the pieces Loomy owns and completes what is missing (routing documents, role
+# subagents, orchestration rule), so a setup interrupted midway is repaired before the lead agent works.
+LP_DONE=()
+if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; then loomy_project_repair "$ROOT" 2>/dev/null || true; fi
 
 # ---------------------------------------------------------------- contexte
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }
@@ -101,9 +134,13 @@ UPDATED="$(sed -n 's/^updated=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 ||
 idx="$(loomy_phase_index "$PHASE")"
 
 t "[Loomy] Resume context for project \"%s\"%s." "$(brief name)" "$( [[ -n "$(brief slug)" ]] && echo " ($(brief slug))")"; echo
-if [[ "$PHASE" == "done" ]]; then
+if (( ${#LP_DONE[@]} )); then
+  t "- Loomy has just completed this project's setup files: %s. Tell the user in one line." "$(printf '%s; ' "${LP_DONE[@]}" | sed 's/; $//')"; echo
+fi
+if [[ "$PHASE" == "done" && ! -f "$ROOT/START.md" ]]; then
   t "- Bootstrap finished: START.md no longer has authority. Follow AGENTS.md and CLAUDE.md; you remain the lead agent."; echo
 else
+  t "- IMPORTANT: the Loomy setup of this project is not finished. Don't start any other work on an unfinished setup: resume it from the phase below, or tell the user first and let them decide."; echo
   # No progress for more than a day: the bootstrap was abandoned. "Waiting for the user's go-ahead" would be
   # false, nobody is going to give it: say so in one line and let the user decide.
   stale=0
@@ -145,12 +182,12 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   t "- Git: branch %s, %s modified file(s) not committed." "$br" "$dirty"; echo
 fi
 case "$(privacy_mode "$ROOT")" in
-  local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .ai/, .claude/, .codex/, .loomy/ or START.md (never git add -f)."; echo ;;
+  local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f)."; echo ;;
   private) t "- AI files in a separate private repository: don't version them in the project repository; back them up at the end of each step with .loomy/scripts/ai-privacy.sh sync."; echo ;;
 esac
 t "- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration)."; echo
 if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then
-  t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .ai/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
+  t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .loomy/docs/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
 fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
 t "- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now."; echo

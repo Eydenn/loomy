@@ -323,7 +323,7 @@ CURRENT=""
 UPDATED=""
 [[ -f "$STATE" ]] && UPDATED="$(sed -n 's/^updated=//p' "$STATE" | head -1)"
 
-if [[ -z "$MISSION" && -z "$CURRENT" && -f "$ROOT/.ai/bootstrap/START.completed.md" ]]; then CURRENT="done"; fi
+if [[ -z "$MISSION" && -z "$CURRENT" && ( -f "$ROOT/.loomy/docs/bootstrap/START.completed.md" || -f "$ROOT/.ai/bootstrap/START.completed.md" ) ]]; then CURRENT="done"; fi
 if [[ -z "$MISSION" && -z "$CURRENT" && -f "$ROOT/START.md" && -f "$BRIEF" ]]; then CURRENT="brief"; fi
 idx="$(loomy_phase_index "$CURRENT")"
 note=""
@@ -599,17 +599,17 @@ check_file AGENTS.md
 check_file CLAUDE.md
 check_file PROJECT.md
 check_file ARCHITECTURE.md
-check_file .ai/AI_WORKFLOW.md
-check_file .ai/AI_ORCHESTRATION.md
-check_file .ai/AI_MODEL_ROUTING.md
+check_file .loomy/docs/AI_WORKFLOW.md
+check_file .loomy/docs/AI_ORCHESTRATION.md
+check_file .loomy/docs/AI_MODEL_ROUTING.md
 if [[ -d "$ROOT/.claude/agents" ]]; then
   agents="$(find "$ROOT/.claude/agents" -maxdepth 1 -name '*.md' -exec basename {} .md \; | sort | paste -sd ',' - | sed 's/,/, /g')"
   ui_ok ".claude/agents/" "${agents:-$(t "empty")}"
 else
   ui_rail "${C_DIM}○ .claude/agents/${C_RESET}"
 fi
-if [[ -f "$ROOT/.ai/HANDOFF.md" ]]; then
-  ui_warn ".ai/HANDOFF.md" "$(t "active handoff:") $(sed -n 's/^De *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.ai/HANDOFF.md" | head -1)"
+if [[ -f "$ROOT/.loomy/docs/HANDOFF.md" ]]; then
+  ui_warn ".loomy/docs/HANDOFF.md" "$(t "active handoff:") $(sed -n 's/^De *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1)"
 fi
 
 fi

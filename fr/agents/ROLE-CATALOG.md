@@ -2,7 +2,7 @@
 
 Les rôles routés (lead/orchestrateur, architect, debugger, security, reviewer, developer, executor, explorer, documenter) sont définis dans `templates/MODEL_ROUTING.md`. Leur modèle et leur effort viennent de `scripts/ai-route.sh`, et des sous-agents Claude Code prêts à l'emploi sont générés à partir de `templates/claude-agents/`. Les fiches ci-dessous sont des profils de spécialistes plus larges, qu'on peut intégrer à ces rôles quand un projet en a besoin.
 
-Pendant le bootstrap, n'instancie que les rôles qui améliorent réellement le projet. Copie ou adapte les rôles retenus dans `.ai/agents/` si l'environnement de code gagne à avoir des fichiers de rôle explicites ; sinon, garde-les implicites pour éviter du contexte superflu.
+Pendant le bootstrap, n'instancie que les rôles qui améliorent réellement le projet. Copie ou adapte les rôles retenus dans `.loomy/docs/agents/` si l'environnement de code gagne à avoir des fichiers de rôle explicites ; sinon, garde-les implicites pour éviter du contexte superflu.
 
 ## Orchestrateur
 Porte l'intention, le découpage, la cohérence d'architecture, la délégation, l'intégration, la vérification et la communication finale avec l'utilisateur. Ne refait pas le travail d'un spécialiste après l'avoir délégué.

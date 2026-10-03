@@ -131,7 +131,6 @@ if (( DIAGRAM )); then
   tv TR_37 "session log"
   tv TR_38 "log empty for now"
   tv TR_39 "live: loomy watch, then t"
-  tv TR_40 "other roles"
   # Redrawn every second: helpers that write into variables instead of starting subprocesses.
   _tz="$(date +%z)"; TZOFF=$(( (10#${_tz:1:2} * 3600 + 10#${_tz:3:2} * 60) * ${_tz:0:1}1 ))
   ts2ep() {   # ISO UTC timestamp → EP (epoch), by calendar arithmetic
@@ -179,8 +178,7 @@ if (( DIAGRAM )); then
       fi
     done
   }
-  # Wide terminals show more role boxes (up to every role), never stretched past what they need.
-  (( W > 216 )) && W=216
+  (( W > 140 )) && W=140
   K_LEAD="$C_YELLOW"; K_ROUTE="$C_GREEN"; K_ROLE="$C_CYAN"; K_ADV="$C_MAGENTA"; K_DIM="$C_DIM"; K_TXT=""; K_B="$C_BOLD"
   bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; *) BARS="▮▮▮▮" ;; esac; }
   eff_short() { case "$1" in medium) EFS="med" ;; *) EFS="$1" ;; esac; }
@@ -190,6 +188,13 @@ if (( DIAGRAM )); then
       architect) tv ACT "designs the plan" ;; debugger) tv ACT "finds the cause" ;; security) tv ACT "checks the risks" ;;
       reviewer) tv ACT "reviews the diff" ;; developer) tv ACT "edits + runs tests" ;; executor) tv ACT "runs bounded tasks" ;;
       explorer) tv ACT "reads the code" ;; documenter) tv ACT "writes the docs" ;; *) ACT="$1" ;;
+    esac
+  }
+  # The same in a word or two, for the short list of the roles without a box.
+  action_short() {
+    case "$1" in
+      architect) tv ACT "plan" ;; debugger) tv ACT "root cause" ;; security) tv ACT "risks" ;; reviewer) tv ACT "review" ;;
+      developer) tv ACT "code + tests" ;; executor) tv ACT "bounded tasks" ;; explorer) tv ACT "reading" ;; documenter) tv ACT "docs" ;; *) ACT="$1" ;;
     esac
   }
   role_lbl() {
@@ -218,7 +223,7 @@ if (( DIAGRAM )); then
   done
   ADV_W=0; recent=0; [[ -n "$ADV" ]] && ADV_W=26
   CX=$(( ADV_W > 0 ? ADV_W + 6 : 0 )); CWID=$(( W - CX ))
-  BW=22; NB=$(( (CWID + 4) / (BW + 4) )); (( NB > NROLES )) && NB=$NROLES; (( NB < 2 )) && NB=2
+  BW=22; NB=$(( (CWID + 4) / (BW + 4) )); (( NB > 4 )) && NB=4; (( NB < 2 )) && NB=2
   read -r -a SHOWN <<<"$pick"; SHOWN=("${SHOWN[@]:0:$NB}")
   NB=${#SHOWN[@]}
   _ui_term_size
@@ -324,27 +329,49 @@ if (( DIAGRAM )); then
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
   cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
   cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "${TR_19}${PH_LBL:+ · $PH_LBL}"
-  # The roles without a box, listed beside the final check when there is room (state, name, model), else counted.
+  # The roles without a box, in short beside the final check: grouped by the model that runs them (strongest tier
+  # first), each with what it does and its state. Headers are dropped when the rows run short; "+N" when nothing fits.
   rest=(); for r in $pick; do case " ${SHOWN[*]} " in *" $r "*) ;; *) rest+=("$r") ;; esac; done
   if (( ${#rest[@]} )); then
-    OX=$(( BKX + BKW + 4 )); OW=$(( W - 2 - OX )); (( OW > 38 )) && OW=38; OY=$(( MGY + 1 )); orows=$(( BKY + 3 - OY ))
-    if (( OW >= 18 )); then
-      cv_put "$OX" "$OY" "$K_DIM" "${TR_40} · loomy route"
-      oy=$(( OY + 1 )); k=0
+    OX=$(( BKX + BKW + 3 )); OW=$(( W - 1 - OX )); (( OW > 44 )) && OW=44
+    OY=$(( MGY + 1 )); orows=$(( BKY + 4 - OY ))
+    if (( OW >= 20 )); then
+      # One line per role, "tier|model|role", sorted by tier then model.
+      olines=(); onw=0
       for r in "${rest[@]}"; do
-        if (( oy == OY + orows && k < ${#rest[@]} - 1 )); then cv_put "$OX" "$oy" "$K_DIM" "+$(( ${#rest[@]} - k )) ${TR_5}"; break; fi
-        ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"; role_state_fast "$r"; role_lbl "$r"; color_tier "$R_TIER"
+        role_lbl "$r"; (( ${#RL} > onw )) && onw=${#RL}
+        ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
+        case "$R_TIER" in TOP) o=1 ;; MID) o=2 ;; *) o=3 ;; esac
+        olines+=("$o|$R_MODEL|$r|$R_TIER")
+      done
+      sorted="$(printf '%s\n' "${olines[@]}" | sort -t'|' -k1,1 -k2,2)"
+      ngrp="$(printf '%s\n' "$sorted" | cut -d'|' -f2 | uniq | wc -l | tr -d ' ')"
+      heads=1; (( ngrp + ${#rest[@]} > orows )) && heads=0
+      oy=$OY; prevm=""; k=0
+      while IFS='|' read -r _ om r ot; do
+        [[ -n "$r" ]] || continue
+        color_tier "$ot"
+        if (( heads )) && [[ "$om" != "$prevm" ]]; then
+          oh="$(nice_model "$om")"; cv_put "$OX" "$oy" "$CT" "$oh"; cv_hline $(( OX + ${#oh} + 1 )) $(( OX + OW - 1 )) "$oy" "$K_DIM" "╌"
+          oy=$(( oy + 1 )); prevm="$om"
+        fi
+        if (( oy == OY + orows - 1 && k < ${#rest[@]} - 1 )); then cv_put "$OX" "$oy" "$K_DIM" "+$(( ${#rest[@]} - k )) ${TR_5} · loomy route"; break; fi
+        role_state_fast "$r"; role_lbl "$r"; action_of "$r"
         case "$RS_K" in
           run) og="${UI_SPIN[$(( TICK % 4 ))]}"; ok_="$C_YELLOW" ;;
           last) if [[ "$RS_ST" != ok ]]; then og="✗"; ok_="$C_RED"; elif [[ "$RS_OC" == partial || "$RS_OC" == blocked ]]; then og="◐"; ok_="$C_YELLOW"; else og="✓"; ok_="$C_GREEN"; fi ;;
           *) og="·"; ok_="$K_DIM" ;;
         esac
+        (( heads )) || ok_="$CT"
         cv_put "$OX" "$oy" "$ok_" "$og"
-        cv_put $(( OX + 2 )) "$oy" "$K_TXT" "$RL"
-        om="$R_MODEL"; ol=$(( OW - 4 - ${#RL} )); (( ${#om} > ol )) && om="${om:0:$(( ol > 1 ? ol - 1 : 0 ))}…"
-        (( ol > 2 )) && cv_right $(( OX + OW - 1 )) "$oy" "$CT" "$om"
+        cv_put $(( OX + 2 )) "$oy" "${C_BOLD}" "$RL"
+        # Actions in one column after the longest name (or right after the name when the column leaves no room).
+        ac=$(( OX + 4 + onw )); (( OX + OW - ac < 10 )) && ac=$(( OX + 3 + ${#RL} ))
+        ol=$(( OX + OW - ac )); (( ${#ACT} > ol )) && action_short "$r"
+        oa="$ACT"; (( ${#oa} > ol )) && oa="${oa:0:$(( ol > 1 ? ol - 1 : 0 ))}…"
+        (( ol > 3 )) && cv_put "$ac" "$oy" "$K_DIM" "$oa"
         oy=$(( oy + 1 )); k=$(( k + 1 ))
-      done
+      done <<<"$sorted"
     else
       cv_right $(( W - 1 )) $(( BY + 10 )) "$K_DIM" "+${#rest[@]} ${TR_5} · loomy route"
     fi

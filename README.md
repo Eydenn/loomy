@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.9.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.9.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -261,7 +261,7 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
 | <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
-| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; every role gets a box in a wide window, the others are listed beside the final check), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
+| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
@@ -659,7 +659,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.8.2 | **agent tree as a diagram** (boxes, links, routing layer, advisor column, framed session log, animated); `tree_view auto\|diagram\|list`, key `v`, the window grows when needed |
 | ✅&nbsp;0.8.3 | agent tree diagram: room above the title |
 | ✅&nbsp;0.8.4 | agent tree diagram twice as fast (about 0.5 s per frame) |
-| ✅&nbsp;0.9.0 | **Current version** · **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
+| ✅&nbsp;0.9.0 | **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
+| ✅&nbsp;0.9.1 | **Current version** · agent tree: the roles without a box summed up by model, with what each one does |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

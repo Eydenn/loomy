@@ -2,6 +2,11 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.9.1 — 2026-10-03
+
+### Changed
+- **Agent tree diagram: the roles without a box are summed up by model.** Back to four role boxes at most (the running and most recent roles first, then the usual workers), whatever the window width. The other roles are listed beside the final check, grouped under the model that runs them (strongest tier first), each with its state and what it does; in a narrow space (advisor column), the groups are told by colour and the actions shorten to a word or two ("plan", "root cause", "risks", "docs").
+
 ## 0.9.0 — 2026-10-03
 
 ### Fixed
@@ -21,7 +26,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ### Changed
 - **Every request goes through the lead agent.** `AGENTS.md` and `CLAUDE.md` carry an orchestration block kept up to date by Loomy (between `<!-- loomy:orchestration:start -->` and `<!-- loomy:orchestration:end -->`, in the project's documentation language): every request, the user's feedback and fixes included, is routed by `ai-route.sh`; the cheapest role that does it reliably comes first; the lead keeps its own model for planning, decisions, integration and review; bigger work goes through `loomy task`, checks through `loomy review`. The templates carry it from the start, and it is added back to a file written without it.
 - **`.ai/` becomes `.loomy/docs/`**, so that everything Loomy adds lives under `.loomy/`. Existing projects are migrated at the next launch (`git mv` when the folder is versioned) and the references in `AGENTS.md`, `CLAUDE.md`, `PROJECT.md`, `ARCHITECTURE.md`, `START.md` and the subagents are updated. The privacy modes still recognise `.ai/`.
-- **Agent tree diagram: the roles without a box are listed** beside the final check (state, name, model) instead of "+4 roles · loomy route", and a wide window (up to 216 columns) gives every role its own box.
+- **Agent tree diagram: the roles without a box are listed** beside the final check (state, name, model) instead of "+4 roles · loomy route", and a wide window (up to 216 columns) gives every role its own box (replaced in 0.9.1).
 
 ### Added
 - **`UserPromptSubmit` hook: a routing reminder at every prompt.** In a long session, once the context is compacted, the orchestrator forgets the routing and does the work itself. `ai-context.sh --hook prompt` adds one line of `additionalContext` (you are the orchestrator, route by `ai-route.sh` and `.claude/agents/`). It loads only the translation layer (about 20 ms), prints nothing unless the project is ORCHESTRATED with a Claude lead, and stays silent in bridge sessions.

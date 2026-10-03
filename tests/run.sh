@@ -1247,12 +1247,11 @@ has "tree diagram: roles side by side" "│ .*executor.*│ .*│"
 has "tree diagram: back to the lead agent" "back to the lead agent"
 has "tree diagram: framed session log" "┤ session log ├"
 hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
-has "tree diagram: roles without a box listed beside the final check" "other roles · loomy route"
-has "tree diagram: listed role with its model" "· (architect|debugger|security|documenter) +claude-"
+has "tree diagram: roles without a box grouped by model" "  [A-Z][A-Z0-9 .-]* ╌╌╌"
+has "tree diagram: each one with what it does" "· (architect|debugger|security|documenter) +(designs the plan|finds the cause|checks the risks|writes the docs)"
 hasnt "tree diagram: no bare role count when there is room" "\+[0-9]+ roles · loomy route"
 COLUMNS=216 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
-has "tree diagram, wide: every role as a box" "│ +documenter +│"
-hasnt "tree diagram, wide: nothing left over" "other roles"
+hasnt "tree diagram: four role boxes at most, even in a wide window" "│ +documenter +│"
 # Links aligned: every ▼ has its link right above it, in the same column (checked character by character).
 if command -v python3 >/dev/null 2>&1; then
   NO_COLOR=1 COLUMNS=133 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null 2>/dev/null >"$OUT"

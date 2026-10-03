@@ -1851,6 +1851,13 @@ _t_fr() {
     'project completed') _T='projet complété' ;;
     'Routing and role subagents') _T='Routage et sous-agents des rôles' ;;
     '%s item(s) set up') _T='%s élément(s) mis en place' ;;
-    'other roles') _T='autres rôles' ;;
+    'plan') _T='plan' ;;
+    'root cause') _T='cause' ;;
+    'risks') _T='risques' ;;
+    'review') _T='relecture' ;;
+    'code + tests') _T='code + tests' ;;
+    'bounded tasks') _T='tâches cadrées' ;;
+    'reading') _T='lecture' ;;
+    'docs') _T='doc' ;;
   esac
 }

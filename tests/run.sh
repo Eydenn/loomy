@@ -1334,6 +1334,49 @@ for f in START.md fr/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRAT
   grep -qE 'native subagents|sous-agents natifs' "$REPO/$f" && ok "doc advice by lead: $f" || ko "doc advice by lead: $f still gives the Codex-lead advice only"
 done
 
+# 2. doctor: a project whose bootstrap is unfinished is not "ideal".
+run "doctor on an unfinished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+has "doctor: PROJECT section" "PROJECT"
+has "doctor: bootstrap unfinished" "bootstrap unfinished.*START\.md still pending"
+has "doctor: .ai/ missing" "\.ai/ folder missing"
+has "doctor: subagents missing, with the fix" "subagents missing in \.claude/agents/.*architect"
+has "doctor: subagent fix command" "fix: \.loomy/scripts/ai-route\.sh claude-agents"
+hasnt "doctor: not ideal with a gap" "Ideal setup"
+has "doctor: gaps listed in the summary" "for the ideal: .*bootstrap finished"
+# The bootstrap finishes: no more gap, except the hook added since (the project's settings.json is rebuilt on update).
+bash "$REPO/scripts/ai-status.sh" --root "$SG" set "done" >/dev/null; rm -f "$SG/START.md"; mkdir -p "$SG/.ai"
+bash "$REPO/scripts/ai-route.sh" --root "$SG" claude-agents >/dev/null 2>&1
+run "doctor on a finished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+hasnt "doctor: no bootstrap gap once finished" "bootstrap unfinished|\.ai/ folder missing|subagents missing"
+has "doctor: subagents present" "Claude subagents"
+has "doctor: hooks present" "Claude Code hooks"
+python3 - "$SG/.claude/settings.json" <<'PY' 2>/dev/null
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+d["hooks"].pop("UserPromptSubmit", None)
+json.dump(d, open(p, "w"))
+PY
+run "doctor with an older settings.json" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+has "doctor: missing prompt hook, with the fix" "hooks missing in \.claude/settings\.json.*prompt"
+rm -f "$SG/.claude/agents/explorer.md"
+run "doctor with a missing subagent" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+has "doctor: names the missing subagent" "subagents missing in \.claude/agents/.*explorer"
+# Not a Loomy project: no PROJECT section.
+NP="$WORK/pas-loomy"; mkdir -p "$NP"; git -C "$NP" init -q 2>/dev/null
+run "doctor outside a Loomy project" bash "$REPO/scripts/ai-doctor.sh" --root "$NP"
+hasnt "doctor outside a project: no PROJECT section" "◇  PROJECT"
+
+# SessionStart: an abandoned bootstrap is said in one line, not presented as waiting for a go-ahead.
+SA="$WORK/garde-abandon"; "$LOOMY" init "$SA" --yes --no-clipboard >/dev/null 2>&1
+bash "$REPO/scripts/ai-status.sh" --root "$SA" set approve >/dev/null
+bash "$REPO/scripts/ai-context.sh" --root "$SA" >"$OUT" 2>&1
+has "start context: fresh bootstrap resumes normally" "Bootstrap in progress, phase 5 of 10"
+hasnt "start context: fresh bootstrap is not abandoned" "Bootstrap abandoned"
+sed -i.bak 's/^updated=.*/updated=2000-01-01 10:00/' "$SA/.loomy/state"
+bash "$REPO/scripts/ai-context.sh" --root "$SA" >"$OUT" 2>&1
+has "start context: abandoned bootstrap" "Bootstrap abandoned: stopped at phase 5 of 10 \(Approval\) since 2000-01-01 10:00"
+hasnt "start context: no more 'waits for your go-ahead'" "waits for your go-ahead"
+
 # ------------------------------------------------------------------ install.sh
 section "install.sh"
 PREFIX="$WORK/prefix"

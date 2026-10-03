@@ -9,6 +9,8 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
   - With a Claude lead, the context now says that Claude roles are the native subagents of `.claude/agents/` (Agent tool, in the foreground) and that only Codex roles go through `delegate-to-codex.sh`. A Codex lead keeps `delegate-to-claude.sh`.
   - Same correction in `START.md`, the orchestration template and the bootstrap skill reference (English and French).
   - `delegate-to-claude.sh` warns on stderr when the project's lead is Claude (it still runs: audits, which set `LOOMY_BRIDGE_OK`, and the quota failover come through it legitimately).
+- **`loomy doctor` no longer says "Ideal setup" on an unfinished project.** In a Loomy project, a new PROJECT section checks: bootstrap finished (no pending `START.md`), `.ai/` present, for a Claude lead the subagents of every role routed to Claude in `.claude/agents/`, and the Loomy hooks in `.claude/settings.json` (`.codex/hooks.json` for a Codex lead). Each gap is a warning with its fix command and appears in the summary's "for the ideal" list. Not run in the questionnaire (`--compact`).
+- A bootstrap with no progress for more than a day is reported by the SessionStart context in one line ("Bootstrap abandoned … ask whether to resume it or close it") instead of presenting the lead agent as waiting for a go-ahead.
 
 ## 0.8.4 — 2026-10-01
 

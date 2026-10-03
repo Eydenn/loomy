@@ -254,6 +254,71 @@ ui_ok "$(ai_env_label "$AI_ENV")" "$(t "%s profile" "$(ai_profile_label "$AI_PRO
 ai_resolve lead "$AI_ENV" "$AI_PROFILE"
 ui_info "$(t "lead agent: %s (%s) · details: loomy route" "$R_MODEL" "$R_EFFORT")"
 
+# ---------------------------------------------------------------- project
+# A Loomy project whose setup is unfinished (bootstrap abandoned, subagents never generated, hooks missing) works
+# silently wrong: the lead agent does the roles' work itself. Each gap is a warning with its fix, and keeps the
+# summary from saying "ideal". Not in the questionnaire (--compact): the project is being created there.
+if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
+  ui_section "$(t "PROJECT")" "$(t "setup of %s" "$(_ai_brief_get "$ROOT/.loomy/brief.md" name)")"
+  p_gaps=0
+  p_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
+  p_since="$(sed -n 's/^updated=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
+  p_pending=0; grep -q 'BOOTSTRAP_PENDING' "$ROOT/START.md" 2>/dev/null && p_pending=1
+  p_unfinished=0
+  if [[ -n "$p_phase" && "$p_phase" != "done" ]] || (( p_pending )); then p_unfinished=1; fi
+  if (( p_unfinished )); then
+    ui_warn "$(t "bootstrap unfinished")" "$(t "START.md still pending (phase: %s%s)" "${p_phase:-?}" "${p_since:+, $(t "since %s" "$p_since")}")"
+    ui_info "$(t "fix: %s" "loomy start")  ($(t "or archive START.md in .ai/bootstrap/ if the setup is in fact complete"))"
+    missing_ideal "$(t "bootstrap finished")"; p_gaps=$(( p_gaps + 1 ))
+  else
+    ui_ok "$(t "bootstrap finished")" "$(t "START.md archived")"
+  fi
+  if [[ ! -d "$ROOT/.ai" ]]; then
+    ui_warn "$(t ".ai/ folder missing")" "$(t "created by the bootstrap: routing, workflow and orchestration rules")"
+    ui_info "$(t "fix: %s" "loomy start")"
+    missing_ideal ".ai/"; p_gaps=$(( p_gaps + 1 ))
+  else
+    ui_ok ".ai/" "$(t "present")"
+  fi
+  p_lead="${AI_LEAD:-${AI_ENV#hybrid-}}"
+  if [[ "$p_lead" == "claude" ]]; then
+    # Subagents of the roles the routing keeps on Claude (the same ones ai-route.sh claude-agents generates).
+    p_tpl="$ROOT/.loomy/templates/claude-agents"; [[ -d "$p_tpl" ]] || p_tpl="$SCRIPT_DIR/../templates/claude-agents"
+    p_miss=""
+    for r in $AI_ROLES; do
+      [[ "$r" == "lead" ]] && continue
+      ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
+      [[ "$R_FAMILY" == "claude" && -f "$p_tpl/$r.md" ]] || continue
+      [[ -f "$ROOT/.claude/agents/$r.md" ]] || p_miss="${p_miss:+$p_miss, }$r"
+    done
+    if [[ -n "$p_miss" ]]; then
+      ui_warn "$(t "subagents missing in .claude/agents/")" "$p_miss"
+      ui_info "$(t "fix: %s" ".loomy/scripts/ai-route.sh claude-agents")"
+      missing_ideal "$(t "Claude subagents")"; p_gaps=$(( p_gaps + 1 ))
+    else
+      ui_ok "$(t "Claude subagents")" "$(t "every routed role has its .claude/agents/ file")"
+    fi
+    p_hmiss=""
+    for h in start end stop subagent; do grep -qF -- "--hook $h" "$ROOT/.claude/settings.json" 2>/dev/null || p_hmiss="${p_hmiss:+$p_hmiss, }$h"; done
+    [[ "$AI_MODE" == "ORCHESTRATED" ]] && ! grep -qF -- "--hook prompt" "$ROOT/.claude/settings.json" 2>/dev/null && p_hmiss="${p_hmiss:+$p_hmiss, }prompt"
+    if [[ -n "$p_hmiss" ]]; then
+      ui_warn "$(t "Loomy hooks missing in .claude/settings.json")" "$p_hmiss"
+      ui_info "$(t "fix: %s" "loomy init --update")"
+      missing_ideal "$(t "Claude Code hooks")"; p_gaps=$(( p_gaps + 1 ))
+    else
+      ui_ok "$(t "Claude Code hooks")" "$(t "in .claude/settings.json")"
+    fi
+  elif [[ "$p_lead" == "codex" ]]; then
+    if ! grep -qF -- "--hook start" "$ROOT/.codex/hooks.json" 2>/dev/null; then
+      ui_warn "$(t "Loomy hooks missing in .codex/hooks.json")" "SessionStart"
+      ui_info "$(t "fix: %s" "loomy init --update")"
+      missing_ideal "$(t "Codex hooks")"; p_gaps=$(( p_gaps + 1 ))
+    else
+      ui_ok "$(t "Codex hooks")" "$(t "in .codex/hooks.json")"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- real test
 if (( LIVE )); then
   ui_section "$(t "LIVE MODEL TEST")"

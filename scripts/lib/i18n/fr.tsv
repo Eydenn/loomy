@@ -1815,5 +1815,24 @@ list	liste
 tree_view: auto, diagram or list	tree_view : auto, diagram ou list
       tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),	      tree_view (auto : le diagramme quand la fenêtre le contient, sinon la liste ; diagram ou list pour forcer l'un des deux),
       watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),	      watch_resize (no : loomy watch ne demande plus au terminal de s'agrandir pour le diagramme),
+- Bootstrap abandoned: stopped at phase %s of 10 (%s) since %s, START.md is still pending. Don't wait for a go-ahead nobody is going to give: tell the user in one sentence and ask whether to resume it (loomy start) or to close it, then follow their answer.	- Bootstrap abandonné : arrêté à la phase %s sur 10 (%s) depuis %s, START.md est toujours en attente. N'attends pas un feu vert que personne ne donnera : dis-le à l'utilisateur en une phrase et demande-lui s'il faut le reprendre (loomy start) ou le clore, puis suis sa réponse.
 - Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/ai-route.sh; delegations: Claude roles are your native subagents (.claude/agents/<role>.md, Agent tool, in the foreground), not delegate-to-claude.sh (a headless claude -p refuses every shell command that isn't pre-approved); only Codex roles go through .loomy/scripts/delegate-to-codex.sh.	- Brief (.loomy/brief.md) : mode %s, lead %s, profil %s, risque %s. Routage des rôles : .loomy/scripts/ai-route.sh ; délégations : les rôles Claude sont tes sous-agents natifs (.claude/agents/<rôle>.md, outil Agent, au premier plan), pas delegate-to-claude.sh (un claude -p sans interface refuse toute commande shell non pré-approuvée) ; seuls les rôles Codex passent par .loomy/scripts/delegate-to-codex.sh.
+setup of %s	installation de %s
+bootstrap unfinished	bootstrap inachevé
+START.md still pending (phase: %s%s)	START.md toujours en attente (phase : %s%s)
+or archive START.md in .ai/bootstrap/ if the setup is in fact complete	ou archive START.md dans .ai/bootstrap/ si l'installation est en fait terminée
+bootstrap finished	bootstrap terminé
+START.md archived	START.md archivé
+.ai/ folder missing	dossier .ai/ absent
+created by the bootstrap: routing, workflow and orchestration rules	créé par le bootstrap : règles de routage, de travail et d'orchestration
+present	présent
+subagents missing in .claude/agents/	sous-agents absents de .claude/agents/
+Claude subagents	sous-agents Claude
+every routed role has its .claude/agents/ file	chaque rôle routé a son fichier dans .claude/agents/
+Loomy hooks missing in .claude/settings.json	hooks Loomy absents de .claude/settings.json
+Claude Code hooks	hooks Claude Code
+in .claude/settings.json	dans .claude/settings.json
+Loomy hooks missing in .codex/hooks.json	hooks Loomy absents de .codex/hooks.json
+Codex hooks	hooks Codex
+in .codex/hooks.json	dans .codex/hooks.json
 delegate-to-claude: this project's lead agent is Claude Code. Use the subagent .claude/agents/%s.md (Agent tool, in the foreground) instead: this bridge runs claude -p, where shell commands that aren't pre-approved are refused.	delegate-to-claude : l'orchestrateur de ce projet est Claude Code. Utilise plutôt le sous-agent .claude/agents/%s.md (outil Agent, au premier plan) : ce bridge lance claude -p, où les commandes shell non pré-approuvées sont refusées.

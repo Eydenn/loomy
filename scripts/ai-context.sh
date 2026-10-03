@@ -81,9 +81,20 @@ t "[Loomy] Resume context for project \"%s\"%s." "$(brief name)" "$( [[ -n "$(br
 if [[ "$PHASE" == "done" ]]; then
   t "- Bootstrap finished: START.md no longer has authority. Follow AGENTS.md and CLAUDE.md; you remain the lead agent."; echo
 else
-  t "- Bootstrap in progress, phase %s of 10: %s%s. %s" "$idx" "$(loomy_phase_label "$PHASE")" "${UPDATED:+ ($(t "since %s" "$UPDATED"))}" "$(loomy_phase_agent "$PHASE")"; echo
-  t "- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>."; echo
-  t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
+  # No progress for more than a day: the bootstrap was abandoned. "Waiting for the user's go-ahead" would be
+  # false, nobody is going to give it: say so in one line and let the user decide.
+  stale=0
+  if [[ -n "$UPDATED" ]]; then
+    u_ep="$(date -j -f '%Y-%m-%d %H:%M' "$UPDATED" +%s 2>/dev/null || date -d "$UPDATED" +%s 2>/dev/null || true)"
+    [[ -n "$u_ep" ]] && (( $(date +%s) - u_ep > 86400 )) && stale=1
+  fi
+  if (( stale )); then
+    t "- Bootstrap abandoned: stopped at phase %s of 10 (%s) since %s, START.md is still pending. Don't wait for a go-ahead nobody is going to give: tell the user in one sentence and ask whether to resume it (loomy start) or to close it, then follow their answer." "$idx" "$(loomy_phase_label "$PHASE")" "$UPDATED"; echo
+  else
+    t "- Bootstrap in progress, phase %s of 10: %s%s. %s" "$idx" "$(loomy_phase_label "$PHASE")" "${UPDATED:+ ($(t "since %s" "$UPDATED"))}" "$(loomy_phase_agent "$PHASE")"; echo
+    t "- Resume START.md from this phase. Record every phase change, before any other action: .loomy/scripts/ai-status.sh set <phase>."; echo
+    t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
+  fi
 fi
 k_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/task.state" 2>/dev/null | head -1 || true)"
 if [[ -n "$k_phase" && "$k_phase" != "done" ]]; then

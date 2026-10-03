@@ -12,6 +12,10 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - **`loomy doctor` no longer says "Ideal setup" on an unfinished project.** In a Loomy project, a new PROJECT section checks: bootstrap finished (no pending `START.md`), `.ai/` present, for a Claude lead the subagents of every role routed to Claude in `.claude/agents/`, and the Loomy hooks in `.claude/settings.json` (`.codex/hooks.json` for a Codex lead). Each gap is a warning with its fix command and appears in the summary's "for the ideal" list. Not run in the questionnaire (`--compact`).
 - A bootstrap with no progress for more than a day is reported by the SessionStart context in one line ("Bootstrap abandoned … ask whether to resume it or close it") instead of presenting the lead agent as waiting for a go-ahead.
 
+### Added
+- **`UserPromptSubmit` hook: a routing reminder at every prompt.** In a long session, once the context is compacted, the orchestrator forgets the routing and does the work itself. `ai-context.sh --hook prompt` adds one line of `additionalContext` (you are the orchestrator, route by `ai-route.sh` and `.claude/agents/`). It loads only the translation layer (about 20 ms), prints nothing unless the project is ORCHESTRATED with a Claude lead, and stays silent in bridge sessions.
+  - Installed with the other hooks; `loomy init --update` completes an existing `.claude/settings.json` without duplicating anything (the project's own hooks are kept).
+
 ## 0.8.4 — 2026-10-01
 
 ### Changed

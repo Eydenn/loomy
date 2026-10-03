@@ -1377,6 +1377,49 @@ bash "$REPO/scripts/ai-context.sh" --root "$SA" >"$OUT" 2>&1
 has "start context: abandoned bootstrap" "Bootstrap abandoned: stopped at phase 5 of 10 \(Approval\) since 2000-01-01 10:00"
 hasnt "start context: no more 'waits for your go-ahead'" "waits for your go-ahead"
 
+# 3. UserPromptSubmit: light routing reminder, ORCHESTRATED projects only.
+PH="bash $REPO/scripts/ai-context.sh --hook prompt"
+echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
+has "prompt hook: reminder as additionalContext" '"hookEventName":"UserPromptSubmit","additionalContext":"\[Loomy\] ORCHESTRATED mode: you are the orchestrator'
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert 'ai-route.sh' in d['hookSpecificOutput']['additionalContext']" "$OUT" 2>/dev/null \
+  && ok "prompt hook: valid JSON" || ko "prompt hook: invalid JSON: $(cat "$OUT")"
+echo '{}' | LOOMY_PROJECT_ROOT="$SA" LOOMY_UI_LANG=fr $PH >"$OUT" 2>&1
+has "prompt hook: French" "Mode ORCHESTRATED : tu es l'orchestrateur"
+echo '{}' | LOOMY_DELEGATION=1 CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
+[[ ! -s "$OUT" ]] && ok "prompt hook: silent in a bridge session" || ko "prompt hook: not silent in a bridge session"
+echo '{}' | CLAUDE_PROJECT_DIR="$NP" $PH >"$OUT" 2>&1
+[[ ! -s "$OUT" ]] && ok "prompt hook: silent outside a Loomy project" || ko "prompt hook: not silent outside a project"
+sed -i.bak 's/^ai_mode: ORCHESTRATED/ai_mode: SOLO/' "$SA/.loomy/brief.md"
+echo '{}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
+[[ ! -s "$OUT" ]] && ok "prompt hook: silent when the project isn't ORCHESTRATED" || ko "prompt hook: not silent in SOLO mode"
+echo '{}' | CLAUDE_PROJECT_DIR="$SGX" $PH >"$OUT" 2>&1
+[[ ! -s "$OUT" ]] && ok "prompt hook: silent with a Codex lead" || ko "prompt hook: not silent with a Codex lead"
+# Light: every prompt pays for it (about 20 ms measured; 10 runs under 3 s leaves a wide margin).
+t0=$SECONDS; for _ in 1 2 3 4 5 6 7 8 9 10; do echo '{}' | CLAUDE_PROJECT_DIR="$SG" $PH >/dev/null 2>&1; done
+(( SECONDS - t0 < 3 )) && ok "prompt hook: light (10 runs in $(( SECONDS - t0 )) s)" || ko "prompt hook: too slow ($(( SECONDS - t0 )) s for 10 runs)"
+# Installed in a new project, completed (once) in an existing one, user hooks kept.
+file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
+SU="$WORK/garde-update"; mkdir -p "$SU/.claude"
+printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"echo perso"}]}]}}\n' >"$SU/.claude/settings.json"
+"$LOOMY" init "$SU" --yes --no-clipboard >/dev/null 2>&1
+python3 - "$SU/.claude/settings.json" <<'PY' 2>/dev/null
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+# Back to what 0.8.4 installed: no prompt hook of Loomy's, the user's own one stays.
+d["hooks"]["UserPromptSubmit"] = [g for g in d["hooks"]["UserPromptSubmit"] if "ai-context.sh" not in json.dumps(g)]
+json.dump(d, open(p, "w"))
+PY
+run "init --update on a project with older hooks" "$LOOMY" init "$SU" --update
+run "second init --update" "$LOOMY" init "$SU" --update
+python3 - "$SU/.claude/settings.json" <<'PY' >"$OUT" 2>&1 && ok "update: prompt hook added once, user hook kept" || ko "update: hooks wrong: $(cat "$OUT")"
+import json, sys
+d = json.load(open(sys.argv[1]))
+cmds = [h["command"] for g in d["hooks"]["UserPromptSubmit"] for h in g["hooks"]]
+assert cmds.count("echo perso") == 1, cmds
+assert sum("--hook prompt" in c for c in cmds) == 1, cmds
+assert sum("--hook start" in json.dumps(g) for g in d["hooks"]["SessionStart"]) == 1
+PY
+
 # ------------------------------------------------------------------ install.sh
 section "install.sh"
 PREFIX="$WORK/prefix"

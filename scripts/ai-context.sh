@@ -5,12 +5,35 @@
 #   ai-context.sh --hook end    Claude Code SessionEnd hook: records the closing; in private repository mode, backs up the AI files
 #   ai-context.sh --hook stop     Claude Code Stop hook: real cost of the lead agent's turn ("usage" log entry)
 #   ai-context.sh --hook subagent  SubagentStop hook: real cost of a native subagent
+#   ai-context.sh --hook prompt   UserPromptSubmit hook: one-line routing reminder (ORCHESTRATED projects only)
 #   --tool codex                 same hooks for Codex (.codex/hooks.json)
 # Never blocks a session: if anything goes wrong, it stays silent.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ---------------------------------------------------------------- UserPromptSubmit hook: fast path
+# Runs before every prompt of the session, so it stays light (about 20 ms): it only loads the translation layer,
+# not the model libraries (about 90 ms to source), and prints nothing unless the project is ORCHESTRATED with a
+# Claude lead. Why it exists: in a long session, after a context compaction, the lead forgets the routing and
+# does the work itself; a two-line reminder at each prompt costs almost nothing.
+if [[ "${1:-}" == "--hook" && "${2:-}" == "prompt" ]] || [[ "${3:-}" == "--hook" && "${4:-}" == "prompt" ]]; then
+  [[ -t 0 ]] || cat >/dev/null 2>&1 || true
+  [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0   # session started by a bridge (claude -p): no orchestrator there
+  P_ROOT="${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}"
+  [[ "${1:-}" == "--root" ]] && P_ROOT="${2:-$P_ROOT}"
+  P_BRIEF="$P_ROOT/.loomy/brief.md"
+  [[ -f "$P_BRIEF" ]] || exit 0
+  p_get() { sed -n '/^---$/,/^---$/p' "$P_BRIEF" | sed -n "s/^$1:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//'; }
+  [[ "$(p_get ai_mode)" == "ORCHESTRATED" && "$(p_get ai_lead)" != "codex" ]] || exit 0
+  # shellcheck source=lib/i18n.sh
+  source "$SCRIPT_DIR/lib/i18n.sh" 2>/dev/null || t() { printf '%s' "$1"; }
+  p_msg="$(t "[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/ai-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/delegate-to-codex.sh. Do the work yourself only when the routing keeps it on the lead.")"
+  # JSON string: the message has no control characters, only quotes and backslashes need escaping.
+  p_msg="$(printf '%s' "$p_msg" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$p_msg"
+  exit 0
+fi
 
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
@@ -27,7 +50,7 @@ while [[ $# -gt 0 ]]; do
     --hook) HOOK="${2:-}"; shift ;;
     --root) ROOT="${2:-}"; shift ;;
     --tool) TOOL="${2:-claude}"; shift ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
   esac
   shift
 done

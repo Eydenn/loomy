@@ -175,18 +175,21 @@ LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook
 # End of a lead agent turn and end of a subagent: real cost read from the session transcript.
 LOOMY_HOOK_STOP='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook stop'
 LOOMY_HOOK_SUB='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook subagent'
+# Before each prompt: a one-line routing reminder, silent unless the project is ORCHESTRATED (long sessions forget it).
+LOOMY_HOOK_PROMPT='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook prompt'
 
 # Claude Code status line (Loomy's, which saves the subscription quota, then shows the user's own status line).
 LOOMY_STATUSLINE="sh -c 'd=\${CLAUDE_PROJECT_DIR:-\$PWD}; while [ \"\$d\" != / ] && [ ! -f \"\$d/.loomy/scripts/ai-statusline.sh\" ]; do d=\$(dirname \"\$d\"); done; [ -f \"\$d/.loomy/scripts/ai-statusline.sh\" ] && exec bash \"\$d/.loomy/scripts/ai-statusline.sh\"'"
 
 # _hooks_json: Loomy's "hooks" block, as JSON.
 _hooks_json() {
-  local s e t u
+  local s e t u w
   s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
   t="$(printf '%s' "$LOOMY_HOOK_STOP" | sed 's/"/\\"/g')"; u="$(printf '%s' "$LOOMY_HOOK_SUB" | sed 's/"/\\"/g')"
+  w="$(printf '%s' "$LOOMY_HOOK_PROMPT" | sed 's/"/\\"/g')"
   local sl; sl="$(printf '%s' "$LOOMY_STATUSLINE" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '{\n  "statusLine": { "type": "command", "command": "%s", "padding": 0 },\n' "$sl"
-  printf '  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u"
+  printf '  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "UserPromptSubmit": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u" "$w"
 }
 
 # Codex runs its hooks from the session folder: the command walks up to the Loomy project.
@@ -247,12 +250,13 @@ install_claude_hooks() {
   local f="$TARGET/.claude/settings.json" merger
   mkdir -p "$TARGET/.claude"
   remember_user_statusline
-  if [[ -f "$f" ]] && grep -q 'ai-context.sh" --hook subagent' "$f" && grep -qE 'ai-statusline.sh|"statusLine"' "$f"; then return 0; fi
+  # Already complete: every hook (the prompt one arrived in a later version, so an older install is completed) and a status line.
+  if [[ -f "$f" ]] && grep -q 'ai-context.sh" --hook subagent' "$f" && grep -q 'ai-context.sh" --hook prompt' "$f" && grep -qE 'ai-statusline.sh|"statusLine"' "$f"; then return 0; fi
   merger='import json, os, sys
-path, start, end, stop, sub, status = sys.argv[1:7]
+path, start, end, stop, sub, prompt, status = sys.argv[1:8]
 data = json.load(open(path)) if os.path.exists(path) else {}
 hooks = data.setdefault("hooks", {})
-for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Stop", stop, 10), ("SubagentStop", sub, 10)):
+for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Stop", stop, 10), ("SubagentStop", sub, 10), ("UserPromptSubmit", prompt, 5)):
     groups = hooks.setdefault(event, [])
     if not any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
         groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": t}]})
@@ -262,7 +266,7 @@ tmp = path + ".loomy-tmp"
 with open(tmp, "w") as out:
     json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")
 os.replace(tmp, path)'
-  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" "$LOOMY_STATUSLINE" 2>/dev/null; then return 0; fi
+  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" "$LOOMY_HOOK_PROMPT" "$LOOMY_STATUSLINE" 2>/dev/null; then return 0; fi
   if [[ ! -f "$f" ]]; then _hooks_json >"$f"; return 0; fi
   _hooks_json >"$L/claude-hooks.json"
   ui_warn "$(t "existing .claude/settings.json left unchanged")" "$(t "add the hooks from .loomy/claude-hooks.json to it")"

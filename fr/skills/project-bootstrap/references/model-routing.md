@@ -6,13 +6,13 @@ Objectif : le meilleur raisonnement pour l'orchestrateur (session principale), e
 lead (orchestrateur), architect, debugger, security, reviewer, developer, executor, explorer, documenter. Voir `templates/MODEL_ROUTING.md` pour leur périmètre et leurs règles.
 
 ## Source de vérité
-`scripts/lib/models.sh` contient le catalogue des modèles et les règles de routage. Utilise `scripts/ai-route.sh` pour les lire :
-- `ai-route.sh` pour la matrice colorée ;
-- `ai-route.sh markdown` ou `all` pour les tableaux ;
-- `ai-route.sh get <rôle>` pour les scripts ;
-- `ai-route.sh claude-agents` pour générer `.claude/agents/` ;
-- `ai-route.sh codex-profiles` pour les profils Codex ;
-- `ai-route.sh lead` pour la commande de lancement de l'orchestrateur.
+`scripts/lib/models.sh` contient le catalogue des modèles et les règles de routage. Utilise `scripts/loomy-route.sh` pour les lire :
+- `loomy-route.sh` pour la matrice colorée ;
+- `loomy-route.sh markdown` ou `all` pour les tableaux ;
+- `loomy-route.sh get <rôle>` pour les scripts ;
+- `loomy-route.sh claude-agents` pour générer `.claude/agents/` ;
+- `loomy-route.sh codex-profiles` pour les profils Codex ;
+- `loomy-route.sh lead` pour la commande de lancement de l'orchestrateur.
 
 ## Environnements
 - Full Claude Code et full Codex sont les replis à un seul outil.
@@ -26,7 +26,7 @@ lead (orchestrateur), architect, debugger, security, reviewer, developer, execut
 L'orchestrateur reste toujours sur le meilleur modèle. `econome` baisse les efforts, `equilibre` est le profil par défaut, et `qualite` monte les efforts et place les revues sur le meilleur modèle.
 
 ## Vérification
-`scripts/ai-doctor.sh` contrôle les versions des CLI, la disponibilité des modèles et, avec `--live`, la réponse réelle de chaque modèle routé.
+`scripts/loomy-doctor.sh` contrôle les versions des CLI, la disponibilité des modèles et, avec `--live`, la réponse réelle de chaque modèle routé.
 
 ## Escalade
 Monter d'un cran (exécutant → développeur → orchestrateur, ou effort +1) après deux vérifications échouées ou des preuves qui contredisent le résultat. Ne jamais boucler sur un modèle bon marché.

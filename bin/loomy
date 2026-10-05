@@ -239,44 +239,44 @@ case "$cmd" in
 esac
 
 case "$cmd" in
-  init|install) exec bash "$S/install-into-project.sh" "$@" ;;
+  init|install) exec bash "$S/loomy-install-project.sh" "$@" ;;
   brief|wizard)
     root="$(project_root)"
-    case "${1:-}" in -h|--help) exec bash "$S/init-wizard.sh" --help ;; esac
+    case "${1:-}" in -h|--help) exec bash "$S/loomy-init-wizard.sh" --help ;; esac
     if [[ ! -f "$root/.loomy/VERSION" && ! -f "$root/.loomy/brief.md" ]]; then
       t "No Loomy project in %s: create it first with loomy init." "${root/#$HOME/~}" >&2; echo >&2; exit 1
     fi
-    exec bash "$S/init-wizard.sh" "$root" "$@" ;;
-  start|resume) exec bash "$S/ai-start.sh" --root "$(project_root)" "$@" ;;
-  privacy) exec bash "$S/ai-privacy.sh" --root "$(project_root)" "$@" ;;
-  route|routing) exec bash "$S/ai-route.sh" --root "$(project_root)" "$@" ;;
-  effort) exec bash "$S/ai-effort.sh" --root "$(project_root)" "$@" ;;
-  feedback) exec bash "$S/ai-feedback.sh" "$@" ;;
-  status) exec bash "$S/ai-status.sh" --root "$(project_root)" "$@" ;;
-  assess) exec bash "$S/ai-assess.sh" --root "$(project_root)" "$@" ;;
-  audit) exec bash "$S/ai-audit.sh" --root "$(project_root)" "$@" ;;
-  task|tasks) exec bash "$S/ai-task.sh" --root "$(project_root)" "$@" ;;
-  review) exec bash "$S/ai-review.sh" --root "$(project_root)" "$@" ;;
-  report) exec bash "$S/ai-report.sh" --root "$(project_root)" "$@" ;;
-  models) exec bash "$S/ai-models.sh" "$@" ;;
-  stats) exec bash "$S/ai-stats.sh" --root "$(project_root)" "$@" ;;
-  doctor) exec bash "$S/ai-doctor.sh" --root "$(project_root)" "$@" ;;
-  worktrees) exec bash "$S/create-hybrid-worktrees.sh" "$@" ;;
+    exec bash "$S/loomy-init-wizard.sh" "$root" "$@" ;;
+  start|resume) exec bash "$S/loomy-start.sh" --root "$(project_root)" "$@" ;;
+  privacy) exec bash "$S/loomy-privacy.sh" --root "$(project_root)" "$@" ;;
+  route|routing) exec bash "$S/loomy-route.sh" --root "$(project_root)" "$@" ;;
+  effort) exec bash "$S/loomy-effort.sh" --root "$(project_root)" "$@" ;;
+  feedback) exec bash "$S/loomy-feedback.sh" "$@" ;;
+  status) exec bash "$S/loomy-status.sh" --root "$(project_root)" "$@" ;;
+  assess) exec bash "$S/loomy-assess.sh" --root "$(project_root)" "$@" ;;
+  audit) exec bash "$S/loomy-audit.sh" --root "$(project_root)" "$@" ;;
+  task|tasks) exec bash "$S/loomy-task.sh" --root "$(project_root)" "$@" ;;
+  review) exec bash "$S/loomy-review.sh" --root "$(project_root)" "$@" ;;
+  report) exec bash "$S/loomy-report.sh" --root "$(project_root)" "$@" ;;
+  models) exec bash "$S/loomy-models.sh" "$@" ;;
+  stats) exec bash "$S/loomy-stats.sh" --root "$(project_root)" "$@" ;;
+  doctor) exec bash "$S/loomy-doctor.sh" --root "$(project_root)" "$@" ;;
+  worktrees) exec bash "$S/loomy-worktrees.sh" "$@" ;;
   delegate)
     case "${1:-}" in -h|--help) sub_help delegate; exit 0 ;; esac
     target="${1:-}"; [[ $# -gt 0 ]] && shift
     case "$target" in
-      claude) exec bash "$S/delegate-to-claude.sh" "$@" ;;
-      codex) exec bash "$S/delegate-to-codex.sh" "$@" ;;
+      claude) exec bash "$S/loomy-delegate-claude.sh" "$@" ;;
+      codex) exec bash "$S/loomy-delegate-codex.sh" "$@" ;;
       *) sub_help delegate >&2; exit 2 ;;
     esac ;;
 
-  watch) exec bash "$S/ai-status.sh" --root "$(project_root)" --watch "$@" ;;
-  tree) exec bash "$S/ai-tree.sh" --root "$(project_root)" "$@" ;;
+  watch) exec bash "$S/loomy-status.sh" --root "$(project_root)" --watch "$@" ;;
+  tree) exec bash "$S/loomy-tree.sh" --root "$(project_root)" "$@" ;;
 
   log|logs)
     case "${1:-}" in -h|--help) sub_help log; exit 0 ;; esac
-    exec bash "$S/ai-log.sh" --root "$(project_root)" "$@" ;;
+    exec bash "$S/loomy-log.sh" --root "$(project_root)" "$@" ;;
 
   config)
     sub="${1:-list}"; [[ $# -gt 0 ]] && shift
@@ -376,7 +376,7 @@ case "$cmd" in
     if [[ "${1:-}" == "--all" ]]; then show_installs
     elif (( $(loomy_installs | wc -l) > 1 )); then t "Several loomy installs in the PATH: loomy version --all" >&2; echo >&2; fi ;;
   home)
-    if [[ -t 0 && -t 2 ]]; then exec bash "$S/ai-home.sh"; fi
+    if [[ -t 0 && -t 2 ]]; then exec bash "$S/loomy-home.sh"; fi
     usage ;;
   help|--help|-h)
     # loomy help <commande> : aide de cette commande.

@@ -1,6 +1,6 @@
 # Adaptive role catalog
 
-The routed roles (lead, architect, debugger, security, reviewer, developer, executor, explorer, documenter) are defined in `templates/MODEL_ROUTING.md`. Their model and effort come from `scripts/ai-route.sh`, and ready-to-use Claude Code subagents are generated from `templates/claude-agents/`. The profiles below are broader specialist profiles that can be folded into these roles when a project needs them.
+The routed roles (lead, architect, debugger, security, reviewer, developer, executor, explorer, documenter) are defined in `templates/MODEL_ROUTING.md`. Their model and effort come from `scripts/loomy-route.sh`, and ready-to-use Claude Code subagents are generated from `templates/claude-agents/`. The profiles below are broader specialist profiles that can be folded into these roles when a project needs them.
 
 During the bootstrap, only instantiate the roles that really improve the project. Copy or adapt the chosen roles into `.loomy/docs/agents/` if the coding environment benefits from explicit role files; otherwise keep them implicit to avoid needless context.
 

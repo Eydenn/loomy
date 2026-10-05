@@ -11,26 +11,26 @@ Ne délègue que si c'est clairement utile : un modèle moins cher capable de fa
 Ne délègue pas les modifications triviales, les recherches simples dont l'orchestrateur a déjà le contexte, ni les tâches qu'il a déjà résolues avec assurance.
 
 ## Bridges
-Les deux bridges lisent le modèle et l'effort de chaque rôle dans le moteur de routage (`ai-route.sh`).
+Les deux bridges lisent le modèle et l'effort de chaque rôle dans le moteur de routage (`loomy-route.sh`).
 
-### Codex → Claude : `delegate-to-claude.sh` (lecture seule)
+### Codex → Claude : `loomy-delegate-claude.sh` (lecture seule)
 Pour un lead Codex uniquement. Un lead Claude exécute ses rôles Claude comme sous-agents natifs (`.claude/agents/<rôle>.md`, outil Agent, au premier plan) : le `claude -p` sans interface du bridge refuse toute commande shell non pré-approuvée, un rôle qui doit lancer des mesures ou des scripts n'y fonctionnerait pas.
 
 ```bash
-.loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<tâche>"
+.loomy/scripts/loomy-delegate-claude.sh <architect|debugger|security|reviewer|explorer> "<tâche>"
 ```
 Claude inspecte et rend compte ; ses outils de modification de fichiers sont désactivés. Surcharges : `DELEGATE_CLAUDE_MODEL`, `DELEGATE_CLAUDE_EFFORT`, `DELEGATE_CLAUDE_MAX_TURNS`.
 
-### Claude → Codex : `delegate-to-codex.sh`
+### Claude → Codex : `loomy-delegate-codex.sh`
 ```bash
-.loomy/scripts/delegate-to-codex.sh <executor|developer|documenter> "<tâche>"   # sandbox workspace-write
-.loomy/scripts/delegate-to-codex.sh <reviewer|explorer|debugger|architect|security> "<tâche>"  # sandbox read-only
+.loomy/scripts/loomy-delegate-codex.sh <executor|developer|documenter> "<tâche>"   # sandbox workspace-write
+.loomy/scripts/loomy-delegate-codex.sh <reviewer|explorer|debugger|architect|security> "<tâche>"  # sandbox read-only
 ```
 Les rôles qui écrivent modifient le répertoire de travail ; le script liste les fichiers changés. Surcharges : `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
 En fin de quota d'abonnement (95 % par défaut), un bridge peut confier le rôle à l'autre outil, avec le modèle que le routage prévoit pour ce rôle de ce côté ; il l'annonce sur stderr et le journalise. Rien ne change pour toi : même appel, même type de réponse ; vérifie le résultat comme d'habitude.
 
-Un orchestrateur Codex utilise aussi `delegate-to-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
+Un orchestrateur Codex utilise aussi `loomy-delegate-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
 
 ## Délégations structurées
 Quand le brief indique `delegation_format: structured` (choix du questionnaire, ou `loomy config set delegation_format structured`), tâches et résultats s'échangent en champs fixes, sans prose : moins de tokens, rien de perdu dans la formulation, et des résultats que les bridges vérifient.
@@ -87,4 +87,4 @@ Les deux bridges journalisent chaque appel dans `.loomy/logs/events.jsonl` (mod�
 - Monte en gamme sur preuve (vérifications échouées, contradictions), pas par défaut.
 
 ## Mode parallèle
-Pour une vraie implémentation parallèle, donne à chaque outil son propre worktree et sa branche Git (`create-hybrid-worktrees.sh`), avec des périmètres disjoints. Après l'intégration, relance les critères de qualité sur la branche intégrée.
+Pour une vraie implémentation parallèle, donne à chaque outil son propre worktree et sa branche Git (`loomy-worktrees.sh`), avec des périmètres disjoints. Après l'intégration, relance les critères de qualité sur la branche intégrée.

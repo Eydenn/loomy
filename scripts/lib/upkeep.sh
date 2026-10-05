@@ -27,7 +27,7 @@ _up_remote_loomy() {
 loomy_relays_sync() {
   local r="$1" f n
   [[ -f "$r/.loomy/scripts/_loomy.sh" ]] || return 0
-  for f in "$LOOMY_HOME"/scripts/*.sh; do
+  for f in "$LOOMY_HOME"/scripts/loomy-*.sh; do
     n="$(basename "$f")"; [[ -e "$r/.loomy/scripts/$n" ]] && continue
     printf '#!/usr/bin/env bash\n# Loomy relay: runs %s from the installed Loomy (see _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' "$n" "$n" >"$r/.loomy/scripts/$n" 2>/dev/null \
       && chmod +x "$r/.loomy/scripts/$n" 2>/dev/null
@@ -42,7 +42,7 @@ loomy_upkeep() {
   local snooze today items=() st v remote tool cat_new
   today="$(date +%Y-%m-%d)"
   # The catalog is data only: updated silently.
-  cat_new="$(bash "$LOOMY_HOME/scripts/ai-catalog-check.sh" 2>/dev/null || true)"
+  cat_new="$(bash "$LOOMY_HOME/scripts/loomy-catalog-check.sh" 2>/dev/null || true)"
   [[ -n "$cat_new" ]] && "$LOOMY_HOME/bin/loomy" update --catalog >/dev/null 2>&1 || true
   ui_is_interactive || return 0
   # Announced models (Haiku 5.5…): probed in the background once a day; one line when one has just become available.

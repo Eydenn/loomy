@@ -64,11 +64,11 @@ Profiles:
 - `econome` puts a Claude lead agent on Sonnet 5.5 `medium` (a Codex lead stays on Astra, one notch lower) and lowers the specialists' effort by one notch.
 - `qualite` raises it by one notch (the full Codex debugger moves to Astra xhigh), puts reviews on the best model and moves the executor to Sol or Sonnet high.
 
-Run `ai-route.sh --profile <profile> all` to see the exact matrices.
+Run `loomy-route.sh --profile <profile> all` to see the exact matrices.
 
 ## Lead agent test: Opus 5.5 or Sonnet 5.5 (2026-09-29)
 
-Same small orchestration task in three copies of a hybrid Loomy project (Claude lead, structured delegations): fix two bugs and add a function in a Python module, with tests. The lead agent delegates to the executor (GPT-6-Luna max) through `delegate-to-codex.sh`, then checks the result itself. A hidden test (4 checks), never shown to the agents, grades the result.
+Same small orchestration task in three copies of a hybrid Loomy project (Claude lead, structured delegations): fix two bugs and add a function in a Python module, with tests. The lead agent delegates to the executor (GPT-6-Luna max) through `loomy-delegate-codex.sh`, then checks the result itself. A hidden test (4 checks), never shown to the agents, grades the result.
 
 | Lead agent | Time | Turns | Lead agent cost | Executor cost | Hidden test |
 |---|---|---|---|---|---|
@@ -163,4 +163,4 @@ To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gp
 - [GPT-6.1 Sol benchmarks explained (Vellum)](https://www.vellum.ai/blog/gpt-6-1-sol-benchmarks-explained)
 - [GPT-6.1 Sol: features, benchmarks, pricing (DataCamp)](https://www.datacamp.com/blog/gpt-6-1-sol)
 - [Building with Claude Sonnet 5.5 (Anthropic)](https://claude.dev/blog/building-with-claude-sonnet-5-5/)
-- Codex local model catalog (`~/.codex/models_cache.json`), and real tests with `ai-doctor.sh --live` on 2026-09-23.
+- Codex local model catalog (`~/.codex/models_cache.json`), and real tests with `loomy-doctor.sh --live` on 2026-09-23.

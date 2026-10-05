@@ -7,6 +7,7 @@
 # is kept up to date). Older projects are migrated from .ai/ to .loomy/docs/. To be sourced after models.sh. Bash 3.2.
 
 LP_DONE=()   # what the last repair did (one short line each)
+LP_RENAME_MAP="'ai-assess'=>'loomy-assess', 'ai-audit'=>'loomy-audit', 'ai-catalog-check'=>'loomy-catalog-check', 'ai-context'=>'loomy-context', 'ai-doctor'=>'loomy-doctor', 'ai-effort'=>'loomy-effort', 'ai-feedback'=>'loomy-feedback', 'ai-home'=>'loomy-home', 'ai-local-writer'=>'loomy-local-writer', 'ai-log'=>'loomy-log', 'ai-models'=>'loomy-models', 'ai-privacy'=>'loomy-privacy', 'ai-report'=>'loomy-report', 'ai-review'=>'loomy-review', 'ai-route'=>'loomy-route', 'ai-start'=>'loomy-start', 'ai-stats'=>'loomy-stats', 'ai-status'=>'loomy-status', 'ai-statusline'=>'loomy-statusline', 'ai-task'=>'loomy-task', 'ai-tree'=>'loomy-tree', 'delegate-to-claude'=>'loomy-delegate-claude', 'delegate-to-codex'=>'loomy-delegate-codex', 'detect-ai-tools'=>'loomy-detect-tools', 'init-wizard'=>'loomy-init-wizard', 'install-into-project'=>'loomy-install-project', 'install-security-audit'=>'loomy-install-security-audit', 'create-hybrid-worktrees'=>'loomy-worktrees'"
 
 # _lp_doc_lang <root>: fr or en, the language of the project's documents (brief: doc_language).
 _lp_doc_lang() { local l; l="$(_ai_brief_get "$1/.loomy/brief.md" doc_language 2>/dev/null)"; [[ "$l" == fr ]] && echo fr || echo en; }
@@ -37,6 +38,34 @@ loomy_project_migrate() {
   LP_DONE+=(".ai/ → .loomy/docs/")
 }
 
+# Old script names (before Loomy 0.10) → loomy-* names, for the references in the project's files.
+LP_RENAME_PERL='my %m = (__MAP__); my $re = join("|", map { quotemeta } sort { length($b) <=> length($a) } keys %m); s{(?<![\w.-])($re)\.sh\b}{$m{$1}.sh}g; s{(?<![\w-])delegate-to-(?=<|\*)}{loomy-delegate-}g;'
+
+# loomy_project_rename_scripts <root>: relays under the loomy-* names, and the old names replaced in the hooks and the
+# agents' files. The old relays stay (they keep working through the installed Loomy's compatibility scripts until 1.0).
+loomy_project_rename_scripts() {
+  local r="$1" f n base did=0
+  [[ -f "$r/.loomy/scripts/_loomy.sh" ]] || return 0
+  base="${LOOMY_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+  for f in "$base"/scripts/loomy-*.sh; do
+    n="$(basename "$f")"; [[ -e "$r/.loomy/scripts/$n" ]] && continue
+    printf '#!/usr/bin/env bash\n# Loomy relay: runs %s from the installed Loomy (see _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' "$n" "$n" >"$r/.loomy/scripts/$n" 2>/dev/null \
+      && chmod +x "$r/.loomy/scripts/$n" 2>/dev/null && did=1
+  done
+  command -v perl >/dev/null 2>&1 || return 0
+  for f in "$r/AGENTS.md" "$r/CLAUDE.md" "$r/PROJECT.md" "$r/ARCHITECTURE.md" "$r/START.md" "$r/.claude/settings.json" \
+           "$r/.codex/hooks.json" "$r"/.claude/agents/*.md "$r"/.loomy/docs/*.md; do
+    [[ -f "$f" && ! -L "$f" ]] || continue
+    grep -qE '(ai-[a-z-]+|delegate-to-[a-z<*]+|detect-ai-tools|init-wizard|install-into-project|install-security-audit|create-hybrid-worktrees)(\.sh|>|\*)' "$f" 2>/dev/null || continue
+    cp "$f" "$f.loomy-tmp" 2>/dev/null || continue
+    perl -pi -e "${LP_RENAME_PERL/__MAP__/$LP_RENAME_MAP}" "$f" 2>/dev/null || true
+    cmp -s "$f" "$f.loomy-tmp" || did=1
+    rm -f "$f.loomy-tmp"
+  done
+  (( did )) && LP_DONE+=("scripts → loomy-*")
+  return 0
+}
+
 # _lp_block <root>: the managed orchestration block, in the project's language.
 _lp_block() {
   echo "<!-- loomy:orchestration:start · managed by Loomy, updated automatically -->"
@@ -46,7 +75,7 @@ _lp_block() {
 
 Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, retour ou correction de l'utilisateur) passe par toi et est routée : tu planifies, délègues, vérifies et décides.
 
-- Confie chaque travail à son rôle selon `.loomy/scripts/ai-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/delegate-to-<outil>.sh <rôle> "…"`.
+- Confie chaque travail à son rôle selon `.loomy/scripts/loomy-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/loomy-delegate-<outil>.sh <rôle> "…"`.
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
@@ -58,7 +87,7 @@ FR
 
 You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
 
-- Hand each piece of work to its role following `.loomy/scripts/ai-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/delegate-to-<tool>.sh <role> "…"`.
+- Hand each piece of work to its role following `.loomy/scripts/loomy-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/loomy-delegate-<tool>.sh <role> "…"`.
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
@@ -89,8 +118,9 @@ loomy_project_repair() {
   LP_DONE=()
   [[ -f "$r/.loomy/brief.md" ]] || return 0
   loomy_project_migrate "$r"
+  loomy_project_rename_scripts "$r"
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
-  route="$(dirname "${BASH_SOURCE[0]}")/../ai-route.sh"
+  route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
   mkdir -p "$docs"
   # Routing, workflow and orchestration documents (the agent may refine them; never overwritten).
   for f in WORKFLOW ORCHESTRATION MODEL_ROUTING; do

@@ -11,26 +11,26 @@ Only delegate when clearly useful: a cheaper model able to do the work reliably,
 Don't delegate trivial changes, simple searches the lead agent already has the context for, or tasks it has already solved with confidence.
 
 ## Bridges
-Both bridges read each role's model and effort from the routing engine (`ai-route.sh`).
+Both bridges read each role's model and effort from the routing engine (`loomy-route.sh`).
 
-### Codex → Claude: `delegate-to-claude.sh` (read-only)
+### Codex → Claude: `loomy-delegate-claude.sh` (read-only)
 For a Codex lead only. A Claude lead runs its Claude roles as native subagents (`.claude/agents/<role>.md`, Agent tool, in the foreground): the bridge's headless `claude -p` refuses any shell command that isn't pre-approved, so a role that must run measurements or scripts can't work through it.
 
 ```bash
-.loomy/scripts/delegate-to-claude.sh <architect|debugger|security|reviewer|explorer> "<task>"
+.loomy/scripts/loomy-delegate-claude.sh <architect|debugger|security|reviewer|explorer> "<task>"
 ```
 Claude inspects and reports; its file editing tools are disabled. Overrides: `DELEGATE_CLAUDE_MODEL`, `DELEGATE_CLAUDE_EFFORT`, `DELEGATE_CLAUDE_MAX_TURNS`.
 
-### Claude → Codex: `delegate-to-codex.sh`
+### Claude → Codex: `loomy-delegate-codex.sh`
 ```bash
-.loomy/scripts/delegate-to-codex.sh <executor|developer|documenter> "<task>"   # workspace-write sandbox
-.loomy/scripts/delegate-to-codex.sh <reviewer|explorer|debugger|architect|security> "<task>"  # read-only sandbox
+.loomy/scripts/loomy-delegate-codex.sh <executor|developer|documenter> "<task>"   # workspace-write sandbox
+.loomy/scripts/loomy-delegate-codex.sh <reviewer|explorer|debugger|architect|security> "<task>"  # read-only sandbox
 ```
 Roles that write modify the working tree; the script lists the changed files. Overrides: `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
 Near the end of a subscription quota (95 % by default), a bridge may hand the role to the other tool, with the model the routing gives that role there; it says so on stderr and logs it. Nothing changes for you: same call, same kind of answer; review the result as usual.
 
-A Codex lead agent also uses `delegate-to-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
+A Codex lead agent also uses `loomy-delegate-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
 
 ## Structured delegations
 When the brief says `delegation_format: structured` (questionnaire choice, or `loomy config set delegation_format structured`), tasks and results are exchanged as fixed fields, without prose: fewer tokens, nothing lost in wording, and results the bridges check.
@@ -87,4 +87,4 @@ Avoid generic "looks good" reviews and duplicate reimplementations.
 - Move up on evidence (failed checks, contradictions), not by default.
 
 ## Parallel mode
-For real parallel implementation, give each tool its own worktree and Git branch (`create-hybrid-worktrees.sh`), with disjoint scopes. After integration, run the quality criteria again on the integrated branch.
+For real parallel implementation, give each tool its own worktree and Git branch (`loomy-worktrees.sh`), with disjoint scopes. After integration, run the quality criteria again on the integrated branch.

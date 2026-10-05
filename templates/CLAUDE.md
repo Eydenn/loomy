@@ -5,7 +5,7 @@
 
 You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
 
-- Hand each piece of work to its role following `.loomy/scripts/ai-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/delegate-to-<tool>.sh <role> "…"`.
+- Hand each piece of work to its role following `.loomy/scripts/loomy-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/loomy-delegate-<tool>.sh <role> "…"`.
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
@@ -16,7 +16,7 @@ Use this repository's `AGENTS.md` as the main shared engineering rules.
 The Loomy context (phase, what the user expects, latest delegations) is given to you automatically when each session opens, through a project hook (`.claude/settings.json`); rely on it to pick up where the project stands.
 For substantial work or any Codex/Claude collaboration, read `.loomy/docs/AI_WORKFLOW.md` if it exists.
 For delegation between models, read `.loomy/docs/AI_ORCHESTRATION.md` if it exists.
-As the main session, you are the lead agent: follow `.loomy/docs/AI_MODEL_ROUTING.md` if it exists for roles, models and efforts. The project's subagents are in `.claude/agents/`. Codex roles go through `.loomy/scripts/delegate-to-codex.sh`.
+As the main session, you are the lead agent: follow `.loomy/docs/AI_MODEL_ROUTING.md` if it exists for roles, models and efforts. The project's subagents are in `.claude/agents/`. Codex roles go through `.loomy/scripts/loomy-delegate-codex.sh`.
 
 Only read the project's durable sources when they are useful:
 - `PROJECT.md` for product intent, scope and constraints;

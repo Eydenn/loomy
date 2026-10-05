@@ -12,7 +12,7 @@ Installation recommandée :
 npx skills add https://github.com/cloudflare/security-audit-skill --skill security-audit --global
 ```
 
-Loomy fournit aussi `.loomy/scripts/install-security-audit.sh`.
+Loomy fournit aussi `.loomy/scripts/loomy-install-security-audit.sh`.
 
 Préserve ces garanties du workflow officiel :
 - reconnaissance à partir du code source et cartographie des frontières de confiance ;

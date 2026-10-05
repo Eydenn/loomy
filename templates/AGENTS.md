@@ -5,7 +5,7 @@
 
 You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
 
-- Hand each piece of work to its role following `.loomy/scripts/ai-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/delegate-to-<tool>.sh <role> "…"`.
+- Hand each piece of work to its role following `.loomy/scripts/loomy-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/loomy-delegate-<tool>.sh <role> "…"`.
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
@@ -22,8 +22,8 @@ You are the lead agent for this repository's AI work: before delegating or picki
 Don't copy these rules here.
 
 ## Session resume
-The Loomy context (current phase, what the user expects, latest delegations) arrives automatically at session start through a project hook (`.codex/hooks.json`, `.claude/settings.json`). If it doesn't show up (hooks not approved yet), run `.loomy/scripts/ai-context.sh`. Start by saying in one or two sentences where the project stands and what you propose.
-Before closing a session, summarise what was done and the next step. If the AI files live in a separate private repository, back them up with `.loomy/scripts/ai-privacy.sh sync`.
+The Loomy context (current phase, what the user expects, latest delegations) arrives automatically at session start through a project hook (`.codex/hooks.json`, `.claude/settings.json`). If it doesn't show up (hooks not approved yet), run `.loomy/scripts/loomy-context.sh`. Start by saying in one or two sentences where the project stands and what you propose.
+Before closing a session, summarise what was done and the next step. If the AI files live in a separate private repository, back them up with `.loomy/scripts/loomy-privacy.sh sync`.
 
 ## Project map
 - Product context: `PROJECT.md`

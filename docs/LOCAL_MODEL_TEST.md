@@ -57,6 +57,6 @@ Still to be decided; no version assigned.
 
 ## First integration (0.6.2)
 
-The audit writer of `loomy audit` falls back to the local model when Codex is not available: `scripts/ai-local-writer.sh`, text only, in the light Claude Code setup above.
+The audit writer of `loomy audit` falls back to the local model when Codex is not available: `scripts/loomy-local-writer.sh`, text only, in the light Claude Code setup above.
 Real check on 2026-09-29: `qwen/qwen3.8-27b` drafted the findings section of a report (two validated findings, in French) in 48 s, faithful to the input.
 Local models stay out of anything that judges code in an audit.

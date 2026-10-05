@@ -171,23 +171,23 @@ rm -rf "$P/.loomy"
 section "loomy init (non-interactive)"
 PROJ="$WORK/projet"; mkdir -p "$PROJ"
 run "init --yes in an empty folder" "$LOOMY" init "$PROJ" --yes --no-clipboard
-for f in START.md .loomy/brief.md .loomy/state .loomy/VERSION .loomy/scripts/ai-status.sh .loomy/templates/AGENTS.md; do
+for f in START.md .loomy/brief.md .loomy/state .loomy/VERSION .loomy/scripts/loomy-status.sh .loomy/templates/AGENTS.md; do
   if [[ -e "$PROJ/$f" ]]; then :; else ko "file missing after init: $f"; fi
 done
 ok "control plane files copied"
 file_has "brief: complete front matter" "$PROJ/.loomy/brief.md" "^push_after_commit: "
 file_has "initial phase: discovery" "$PROJ/.loomy/state" "^phase=discover$"
 file_has ".gitignore: log excluded" "$PROJ/.gitignore" "^\.loomy/logs/$"
-has "next step: terminal tracking" "loomy watch|ai-status.sh --watch"
+has "next step: terminal tracking" "loomy watch|loomy-status.sh --watch"
 if [[ ! -f "$XDG_CONFIG_HOME/loomy/config" ]] || ! grep -q '^plan_' "$XDG_CONFIG_HOME/loomy/config"; then ok "--yes saves no plan"; else ko "--yes saved a plan"; fi
 fails "second init outside a terminal: guides without changing anything" 1 "$LOOMY" init "$PROJ" --no-wizard
 has "second init: offers to resume" "loomy start"
 has "second init: offers the update" "loomy init --update"
 # Project update: scripts copied again, brief and phase kept.
-echo "0.0.1" >"$PROJ/.loomy/VERSION"; rm -f "$PROJ/.loomy/scripts/ai-start.sh"; cp "$PROJ/.loomy/brief.md" "$WORK/brief.avant"
+echo "0.0.1" >"$PROJ/.loomy/VERSION"; rm -f "$PROJ/.loomy/scripts/loomy-start.sh"; cp "$PROJ/.loomy/brief.md" "$WORK/brief.avant"
 run "init --update" "$LOOMY" init "$PROJ" --update
 file_has "update: project version up to date" "$PROJ/.loomy/VERSION" "^$(cat "$REPO/VERSION")$"
-[[ -f "$PROJ/.loomy/scripts/ai-start.sh" ]] && ok "update: new scripts copied" || ko "update: scripts missing"
+[[ -f "$PROJ/.loomy/scripts/loomy-start.sh" ]] && ok "update: new scripts copied" || ko "update: scripts missing"
 cmp -s "$PROJ/.loomy/brief.md" "$WORK/brief.avant" && ok "update: brief kept" || ko "update: brief modified"
 file_has "update: phase kept" "$PROJ/.loomy/state" "^phase=discover$"
 fails "update without project refused" 1 "$LOOMY" init "$WORK/pas-un-projet-$$" --update
@@ -367,14 +367,14 @@ grep -q "✓ A faite détail" <<<"$steps" && grep -q "! B partielle à revoir" <
 
 # Readable log and loomy watch views.
 if [[ -s "$PROJ/.loomy/logs/events.jsonl" ]]; then
-  run "readable loomy log" bash "$REPO/scripts/ai-log.sh" --root "$PROJ" -n 5
+  run "readable loomy log" bash "$REPO/scripts/loomy-log.sh" --root "$PROJ" -n 5
   if grep -q '^{' "$OUT"; then ko "loomy log: raw JSON instead of the readable format"; else ok "loomy log: readable format"; fi
-  run "loomy log --raw" bash "$REPO/scripts/ai-log.sh" --root "$PROJ" -n 1 --raw
+  run "loomy log --raw" bash "$REPO/scripts/loomy-log.sh" --root "$PROJ" -n 1 --raw
   has "loomy log --raw: JSON" '^\{"ts"'
-  run "watch log view" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$PROJ" --compact --journal
+  run "watch log view" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-status.sh" --root "$PROJ" --compact --journal
   has "log view: LOG section" "◇  LOG"
 fi
-run "compact view" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$PROJ" --compact
+run "compact view" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-status.sh" --root "$PROJ" --compact
 if grep -q "FICHIERS IA" "$OUT"; then ko "compact view: detailed sections present"; else ok "compact view: detailed sections absent"; fi
 
 # Resumed session (claude --continue): same id, a new start after an end = open session.
@@ -389,12 +389,12 @@ kill "$RPID" 2>/dev/null || true
 
 # loomy effort: effort set per project, over the profile, used by loomy start.
 if [[ -f "$PROJ/.loomy/brief.md" ]]; then
-  run "lead agent effort set" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" low
+  run "lead agent effort set" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-effort.sh" --root "$PROJ" low
   grep -qx "lead=low" "$PROJ/.loomy/efforts" && ok "effort saved in .loomy/efforts" || ko "effort not saved"
-  run "start --print with the set effort" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-start.sh" --root "$PROJ" --print
+  run "start --print with the set effort" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-start.sh" --root "$PROJ" --print
   has "start uses the set effort" "effort low"
-  fails "effort: unknown level refused" 2 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" turbo
-  run "effort --reset" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-effort.sh" --root "$PROJ" --reset
+  fails "effort: unknown level refused" 2 bash "$REPO/scripts/loomy-effort.sh" --root "$PROJ" turbo
+  run "effort --reset" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-effort.sh" --root "$PROJ" --reset
   [[ ! -f "$PROJ/.loomy/efforts" ]] && ok "effort back to the profile" || ko "setting still present"
 fi
 
@@ -403,7 +403,7 @@ FB="$WORK/retour"; mkdir -p "$FB/.loomy/logs"
 printf -- '---\nname: "NomSecret42"\ngoal: "ObjectifSecret42"\ntype: web\nai_mode: ORCHESTRATED\nai_lead: claude\n---\n' >"$FB/.loomy/brief.md"
 printf 'phase=build\n' >"$FB/.loomy/state"
 printf '%s\n' '{"ts":"2026-09-25T10:00:00Z","type":"delegation","id":"f1","role":"executor","family":"codex","model":"gpt-6-luna","status":"ok","duration_s":5,"cost_usd":0.001,"task":"TacheSecrete42"}' >"$FB/.loomy/logs/events.jsonl"
-run "feedback --print" bash "$REPO/scripts/ai-feedback.sh" --root "$FB" --print "un retour de test"
+run "feedback --print" bash "$REPO/scripts/loomy-feedback.sh" --root "$FB" --print "un retour de test"
 has "feedback: message attached" "un retour de test"
 has "feedback: versions attached" "\| Loomy \|"
 has "feedback: project state attached" "phase build"
@@ -413,9 +413,9 @@ if grep -qE "NomSecret42|ObjectifSecret42|TacheSecrete42|$FB" "$OUT"; then ko "f
 if [[ -d "$PROJ/.loomy/scripts" ]]; then
   [[ ! -d "$PROJ/.loomy/scripts/lib" ]] && ok "relays: no more library copied into the project" || ko "relays: lib copied"
   mkdir -p "$WORK/bin-loomy" && ln -sf "$REPO/bin/loomy" "$WORK/bin-loomy/loomy"
-  run "relays without LOOMY_HOME, through the PATH" env -u LOOMY_HOME PATH="$WORK/bin-loomy:$PATH" bash "$PROJ/.loomy/scripts/ai-route.sh" lead
+  run "relays without LOOMY_HOME, through the PATH" env -u LOOMY_HOME PATH="$WORK/bin-loomy:$PATH" bash "$PROJ/.loomy/scripts/loomy-route.sh" lead
   has "relays: lead agent routing" "claude|codex"
-  fails "relays: clear message without Loomy" 127 env -u LOOMY_HOME LOOMY_RELAY_PATHS= PATH=/usr/bin:/bin bash "$PROJ/.loomy/scripts/ai-route.sh" lead
+  fails "relays: clear message without Loomy" 127 env -u LOOMY_HOME LOOMY_RELAY_PATHS= PATH=/usr/bin:/bin bash "$PROJ/.loomy/scripts/loomy-route.sh" lead
 fi
 
 # Catalog: the repository one matches the built-in values (whole fallback chains); a newer downloaded catalog replaces them,
@@ -449,25 +449,25 @@ echo "model.claude.mid=claude-sonnet-4" >"$CH/cfg/loomy/config"
 US="$WORK/usage"; mkdir -p "$US/.loomy"; : >"$US/.loomy/brief.md"
 TR="$WORK/transcript.jsonl"
 for i in 1 1 2; do printf '{"type":"assistant","message":{"id":"msg_%s","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' "$i"; done >"$TR"
-printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/ai-context.sh" --root "$US" --hook stop
-printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/ai-context.sh" --root "$US" --hook stop
+printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/loomy-context.sh" --root "$US" --hook stop
+printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/loomy-context.sh" --root "$US" --hook stop
 n_usage="$(grep -c '"type":"usage"' "$US/.loomy/logs/events.jsonl" 2>/dev/null || echo 0)"
 [[ "$n_usage" == "1" ]] && ok "usage: one event, transcript not reread" || ko "usage: $n_usage event(s)"
 grep -q '"messages":2,.*"cost_usd":2.000000' "$US/.loomy/logs/events.jsonl" && ok "usage: duplicates discarded, cost at public price" || ko "usage: $(cat "$US/.loomy/logs/events.jsonl")"
-printf '{"session_id":"s2","transcript_path":"%s"}' "$TR" | LOOMY_DELEGATION=1 bash "$REPO/scripts/ai-context.sh" --root "$US" --hook start
+printf '{"session_id":"s2","transcript_path":"%s"}' "$TR" | LOOMY_DELEGATION=1 bash "$REPO/scripts/loomy-context.sh" --root "$US" --hook start
 grep -q '"session":"s2"' "$US/.loomy/logs/events.jsonl" && ko "Loomy delegation counted as a session" || ok "Loomy delegations ignored by the hooks"
-run "status: lead agent cost" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/ai-status.sh" --root "$US"
+run "status: lead agent cost" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-status.sh" --root "$US"
 has "status: lead agent measured" "Lead agent .*2 repl"
-run "log --csv" bash "$REPO/scripts/ai-log.sh" --root "$US" --csv
+run "log --csv" bash "$REPO/scripts/loomy-log.sh" --root "$US" --csv
 has "csv: header" "^date_utc,type,role"
 has "csv: lead agent cost" "usage,lead,,claude,claude-haiku-4-5-20251001,ok"
 
 # Log: monthly archive, full history for --since.
 AR="$WORK/archive"; mkdir -p "$AR/.loomy/logs"; : >"$AR/.loomy/brief.md"
 printf '%s\n' '{"ts":"2000-01-05T10:00:00Z","type":"phase","phase":"build"}' >"$AR/.loomy/logs/events.jsonl"
-bash "$REPO/scripts/ai-status.sh" --root "$AR" set verify >/dev/null
+bash "$REPO/scripts/loomy-status.sh" --root "$AR" set verify >/dev/null
 [[ -f "$AR/.loomy/logs/archive/events-2000-01.jsonl" ]] && ok "log: previous month archived" || ko "log: no archive"
-run "log --since in the archives" bash "$REPO/scripts/ai-log.sh" --root "$AR" --since 2000-01-01
+run "log --since in the archives" bash "$REPO/scripts/loomy-log.sh" --root "$AR" --since 2000-01-01
 has "log --since: archived event" "Build"
 
 # Claude Code hooks: Stop and SubagentStop added to an existing settings.json, leaving the user's hooks alone.
@@ -539,7 +539,7 @@ file_has "subfolder: prefixed pattern" "$MONO/.git/info/exclude" "^/apps/site/AG
 section "Continuity (context, hooks, sessions, home)"
 PC2="$WORK/continuite"
 run "init for continuity" "$LOOMY" init "$PC2" --yes --no-clipboard
-file_has "Claude Code hooks installed" "$PC2/.claude/settings.json" 'ai-context.sh\\" --hook start'
+file_has "Claude Code hooks installed" "$PC2/.claude/settings.json" 'loomy-context.sh\\" --hook start'
 if command -v python3 >/dev/null 2>&1; then
   python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$PC2/.claude/settings.json" && ok "settings.json valide" || ko "settings.json invalide"
   PM="$WORK/fusion"; mkdir -p "$PM/.claude" && echo '{"permissions":{"allow":["Bash(ls:*)"]}}' >"$PM/.claude/settings.json"
@@ -547,7 +547,7 @@ if command -v python3 >/dev/null 2>&1; then
   python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['permissions']['allow']==['Bash(ls:*)'] and d['hooks']['SessionStart']" "$PM/.claude/settings.json" \
     && ok "existing settings.json: hooks added, settings kept" || ko "existing settings.json badly merged"
 fi
-file_has "Codex hooks installed" "$PC2/.codex/hooks.json" 'ai-context.sh.*--hook start --tool codex'
+file_has "Codex hooks installed" "$PC2/.codex/hooks.json" 'loomy-context.sh.*--hook start --tool codex'
 if command -v python3 >/dev/null 2>&1; then
   python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$PC2/.codex/hooks.json" && ok ".codex/hooks.json valide" || ko ".codex/hooks.json invalide"
   CX_CMD="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['hooks']['SessionStart'][0]['hooks'][0]['command'])" "$PC2/.codex/hooks.json")"
@@ -555,19 +555,19 @@ if command -v python3 >/dev/null 2>&1; then
   (cd "$PC2/src/deep" && echo '{"session_id":"cx-test","source":"startup"}' | eval "$CX_CMD") >"$OUT" 2>&1
   has "Codex hook from a subfolder: context returned" "Resume context"
   file_has "Codex hook: session recorded with the codex tool" "$PC2/.loomy/logs/events.jsonl" '"tool":"codex","session":"cx-test"'
-  echo '{"session_id":"cx-test"}' | (cd "$PC2" && bash .loomy/scripts/ai-context.sh --hook end --tool codex) >/dev/null 2>&1
+  echo '{"session_id":"cx-test"}' | (cd "$PC2" && bash .loomy/scripts/loomy-context.sh --hook end --tool codex) >/dev/null 2>&1
 fi
-bash "$PC2/.loomy/scripts/ai-context.sh" >"$OUT" 2>&1
+bash "$PC2/.loomy/scripts/loomy-context.sh" >"$OUT" 2>&1
 has "context: project and phase" "Resume context for project"
 has "context: resume instruction" "Resume START.md from this phase"
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
 has "status: no session → open the session" "open the lead agent session"
-echo '{"session_id":"s-test","source":"startup"}' | bash "$PC2/.loomy/scripts/ai-context.sh" --hook start >"$OUT" 2>&1
+echo '{"session_id":"s-test","source":"startup"}' | bash "$PC2/.loomy/scripts/loomy-context.sh" --hook start >"$OUT" 2>&1
 has "start hook: context returned to Claude" "Resume context"
 file_has "start hook: session recorded" "$PC2/.loomy/logs/events.jsonl" '"type":"session","event":"start"'
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
 has "status: session open" "Lead agent session open since"
-echo '{"session_id":"s-test"}' | bash "$PC2/.loomy/scripts/ai-context.sh" --hook end >/dev/null 2>&1
+echo '{"session_id":"s-test"}' | bash "$PC2/.loomy/scripts/loomy-context.sh" --hook end >/dev/null 2>&1
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
 has "status: session closed" "closed at"
 has "status: resume instruction" "reopen the lead agent session"
@@ -597,7 +597,7 @@ if command -v expect >/dev/null 2>&1; then
   wizard_expect() {
     cat >"$WORK/wizard.exp" <<EXP
 set timeout 15
-spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {⏎ confirm} { send "\r" }
@@ -632,7 +632,7 @@ EXP
   [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-pris.git" rev-list --count main)" == "1" ]] && ok "existing repository left untouched" || ko "existing repository changed"
   cat >"$WORK/lier.exp" <<EXP
 set timeout 15
-spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {already exists \\(} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
@@ -655,7 +655,7 @@ EXP
   # Tab: the suggestion becomes editable text (here the repository name, completed rather than retyped).
   cat >"$WORK/tab.exp" <<EXP
 set timeout 15
-spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {GitHub repository name \\(} { expect "edit the suggestion" ; send "\t" ; after 200 ; send -- "-edit\r" }
@@ -672,7 +672,7 @@ EXP
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
 set timeout 15
-spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 expect "question 1/" ; expect "⏎ confirm" ; send "Projet Retour\r"
 expect "question 2/" ; expect "⏎ confirm" ; send "\033\[D"
 expect "question 1/" ; expect "Projet Retour" ; exit 0
@@ -682,7 +682,7 @@ EXP
   # Two repositories: public project + AI files in a private repository, names confirmed together.
   cat >"$WORK/deux-depots.exp" <<EXP
 set timeout 20
-spawn bash "$REPO/scripts/init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
+spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 80} {incr i} {
   expect {
     -re {Create a GitHub repository for this project} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
@@ -788,7 +788,7 @@ has "doctor: claude detected" "claude 2\.[0-9]"
 has "doctor: codex detected" "codex 0\.[0-9]"
 hasnt "doctor: no install command when everything is detected" "install.sh"
 run "doctor --live (sondes)" "$LOOMY" doctor --live
-fails "doctor without any AI CLI: minimum not met" 1 env LOOMY_CODEX_BIN=/inexistant PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPO/scripts/ai-doctor.sh" --root "$PROJ"
+fails "doctor without any AI CLI: minimum not met" 1 env LOOMY_CODEX_BIN=/inexistant PATH="/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPO/scripts/loomy-doctor.sh" --root "$PROJ"
 has "doctor: explicit summary" "Minimum not met"
 has "doctor: Claude Code install command" "curl -fsSL https://claude.ai/install.sh"
 has "doctor: Codex install command" "curl -fsSL https://chatgpt.com/codex/install.sh"
@@ -889,7 +889,7 @@ got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage
 # Claude: the status line saves the documented rate_limits field.
 run "init for the status line" "$LOOMY" init "$WORK/sl-proj" --yes --no-clipboard
 SLC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["statusLine"]["command"])' "$WORK/sl-proj/.claude/settings.json" 2>/dev/null)"
-[[ "$SLC" == *ai-statusline.sh* ]] && ok "status line installed in .claude/settings.json" || ko "status line missing"
+[[ "$SLC" == *loomy-statusline.sh* ]] && ok "status line installed in .claude/settings.json" || ko "status line missing"
 mkdir -p "$WORK/sl-proj/sub"
 SLIN="{\"model\":{\"display_name\":\"Opus 5.5\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42.4,\"resets_at\":$(( NQ + 3600 ))},\"seven_day\":{\"used_percentage\":86,\"resets_at\":$(( NQ + 300000 ))}}}"
 (cd "$WORK/sl-proj/sub" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
@@ -970,7 +970,7 @@ got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$W
 got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_version' _ "$REPO")"
 [[ "$got" == "0.158.0" ]] && ok "codex: version read from the bundled CLI" || ko "codex version: $got"
 mkdir -p "$HOME/.local/bin" && cp "$WORK/stalebin/codex" "$HOME/.local/bin/codex"
-env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/ai-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
+env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/loomy-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
 rm -f "$HOME/.local/bin/codex"
 has "doctor: broken codex command flagged" "points to a Codex CLI that no longer exists"
 has "doctor: readable fix" "fix: loomy doctor --fix"
@@ -995,7 +995,7 @@ run "log with structured outcomes" "$LOOMY" log --root "$SD"
 has "log: partial result marked" "◐ reviewer"
 run "stats with structured outcomes" "$LOOMY" stats --root "$SD"
 has "stats: format compliance" "2 of 2 answers followed the format · 1 partial · 1 blocked"
-run "context in structured mode" bash "$REPO/scripts/ai-context.sh" --root "$SD"
+run "context in structured mode" bash "$REPO/scripts/loomy-context.sh" --root "$SD"
 has "context: structured delegations explained" "Structured delegations: write each task as GOAL"
 run "generated Claude subagents carry the contract" "$LOOMY" route --root "$SD" claude-agents "$WORK/sd-agents"
 file_has "subagent: answer contract" "$WORK/sd-agents/explorer.md" "^STATUS: done \| partial \| blocked$"
@@ -1024,7 +1024,7 @@ printf -- '---\nname: "evil $(touch %s/pwned) `touch %s/pwned` \033[31mRED"\nai_
 run "status on a hostile brief" "$LOOMY" status --root "$HB"
 [[ ! -e "$WORK/pwned" ]] && ok "hostile brief: nothing executed" || ko "hostile brief: command executed"
 if grep -q $'\033\\[31m' "$OUT"; then ko "hostile brief: escape sequence reached the terminal"; else ok "hostile brief: escape sequences removed"; fi
-run "context on a hostile brief" bash "$REPO/scripts/ai-context.sh" --root "$HB"
+run "context on a hostile brief" bash "$REPO/scripts/loomy-context.sh" --root "$HB"
 [[ ! -e "$WORK/pwned" ]] && ok "hostile brief: context executes nothing" || ko "hostile brief: context executed a command"
 mkdir -p "$WORK/clone/bin" && cp "$REPO/bin/loomy" "$WORK/clone/bin/" && cp "$REPO/VERSION" "$WORK/clone/" && ln -s "$REPO/scripts" "$WORK/clone/scripts"
 PATH="$WORK/clone/bin:$PATH" "$WORK/clone/bin/loomy" uninstall >"$OUT" 2>&1
@@ -1052,14 +1052,14 @@ has "audit: auditor on the security role" "claude-opus|gpt-6.1-sol"
 file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
 file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
 file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"
-file_has "audit: Sonnet 5.5 high validator in the team" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_EFFORT=high .*delegate-to-claude.sh\" reviewer"
+file_has "audit: Sonnet 5.5 high validator in the team" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_EFFORT=high .*loomy-delegate-claude.sh\" reviewer"
 file_has "audit: explorer on a rigorous model, not a fast one" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CLAUDE_MODEL=claude-sonnet-5-5 DELEGATE_CLAUDE_EFFORT=medium"
 file_has "audit: fast writer drafts from validated findings only" "$AR/.loomy/audit-prompt.txt" "DELEGATE_CODEX_MODEL=gpt-6-luna .*documenter"
-file_has "audit: cross review by the other family" "$AR/.loomy/audit-prompt.txt" "delegate-to-codex.sh\" reviewer"
+file_has "audit: cross review by the other family" "$AR/.loomy/audit-prompt.txt" "loomy-delegate-codex.sh\" reviewer"
 [[ -z "$(git -C "$AR" status --porcelain)" ]] && ok "audit: nothing added to Git" || ko "audit: Git sees $(git -C "$AR" status --porcelain | tr '\n' ' ')"
 (cd "$AR" && "$LOOMY" status) >"$OUT" 2>&1
 has "audit: status shows the audit phases" "AUDIT.*step 1 of 6"
-bash "$REPO/scripts/ai-status.sh" --root "$AR" --audit set analyze >/dev/null
+bash "$REPO/scripts/loomy-status.sh" --root "$AR" --audit set analyze >/dev/null
 file_has "audit: phase recorded" "$AR/.loomy/audit.state" "^phase=analyze$"
 (cd "$AR" && "$LOOMY" start) >"$OUT" 2>&1
 has "audit: loomy start resumes the audit" "auditor session"
@@ -1071,19 +1071,19 @@ if command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   (cd "$LS" && exec python3 -m http.server "$LPORT" --bind 127.0.0.1) >/dev/null 2>&1 &
   LPID=$!
   for _ in 1 2 3 4 5 6 7 8 9 10; do curl -s -m 1 "http://127.0.0.1:$LPORT/v1/models" >/dev/null 2>&1 && break; sleep 0.3; done
-  got="$(LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/ai-local-writer.sh" --check 2>&1)"
+  got="$(LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/loomy-local-writer.sh" --check 2>&1)"
   [[ "$got" == "qwen/qwen3.8-27b" ]] && ok "local writer: loaded chat model found, embeddings skipped" || ko "local writer check: $got"
-  fails "local writer: remote address refused" 2 env LOOMY_LOCAL_URL="http://example.com:1234" bash "$REPO/scripts/ai-local-writer.sh" --check
-  LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/ai-local-writer.sh" --root "$AR" "Draft the summary" >"$OUT" 2>&1
+  fails "local writer: remote address refused" 2 env LOOMY_LOCAL_URL="http://example.com:1234" bash "$REPO/scripts/loomy-local-writer.sh" --check
+  LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/scripts/loomy-local-writer.sh" --root "$AR" "Draft the summary" >"$OUT" 2>&1
   has "local writer: draft returned" "answer from the claude double"
   grep -q '"bridge":"local".*"cost_usd":0' "$AR/.loomy/logs/events.jsonl" && ok "local writer: delegation logged at no cost" || ko "local writer: not logged"
   mkdir -p "$WORK/only-claude" && ln -sf "$HERE/stubs/claude" "$WORK/only-claude/claude"
   AR2="$WORK/audit-local"; mkdir -p "$AR2" && git -C "$AR2" init -q && echo x >"$AR2/a" && git -C "$AR2" add -A && git -C "$AR2" -c user.name=t -c user.email=t@t commit -qm i
   (cd "$AR2" && env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/no-apps" PATH="$WORK/only-claude:/usr/bin:/bin" LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" bash "$REPO/bin/loomy" audit --yes --print --no-install) >"$OUT" 2>&1
-  file_has "audit without Codex: local writer used" "$AR2/.loomy/audit-prompt.txt" "ai-local-writer.sh"
+  file_has "audit without Codex: local writer used" "$AR2/.loomy/audit-prompt.txt" "loomy-local-writer.sh"
   AR3="$WORK/audit-codex"; mkdir -p "$AR3" && git -C "$AR3" init -q && echo x >"$AR3/a" && git -C "$AR3" add -A && git -C "$AR3" -c user.name=t -c user.email=t@t commit -qm i
   (cd "$AR3" && LOOMY_LOCAL_URL="http://127.0.0.1:$LPORT" "$LOOMY" audit --yes --print --no-install) >/dev/null 2>&1
-  grep -q "delegate-to-codex.sh.* documenter" "$AR3/.loomy/audit-prompt.txt" && ! grep -q "ai-local-writer" "$AR3/.loomy/audit-prompt.txt" && ok "audit with Codex: Luna stays the writer" || ko "audit with Codex: writer not Luna"
+  grep -q "loomy-delegate-codex.sh.* documenter" "$AR3/.loomy/audit-prompt.txt" && ! grep -q "ai-local-writer" "$AR3/.loomy/audit-prompt.txt" && ok "audit with Codex: Luna stays the writer" || ko "audit with Codex: writer not Luna"
   kill "$LPID" 2>/dev/null; wait "$LPID" 2>/dev/null
 else
   ok "local writer: skipped (curl or python3 missing)"
@@ -1092,7 +1092,7 @@ fi
 section "Day-to-day work"
 DW="$WORK/dayto"; "$LOOMY" init "$DW" --yes --no-clipboard >/dev/null 2>&1
 git -C "$DW" add -A >/dev/null 2>&1; git -C "$DW" -c user.name=t -c user.email=t@t commit -qm init >/dev/null 2>&1
-bash "$REPO/scripts/ai-status.sh" --root "$DW" set "done" >/dev/null
+bash "$REPO/scripts/loomy-status.sh" --root "$DW" set "done" >/dev/null
 # loomy task
 (cd "$DW" && "$LOOMY" task "Add a settings page" --print) >"$OUT" 2>&1
 has "task: created and prepared" "#1 · Add a settings page"
@@ -1101,10 +1101,10 @@ file_has "task: index" "$DW/.loomy/TASKS.md" "#1 Add a settings page"
 file_has "task: prompt with its phases" "$DW/.loomy/task-prompt.txt" "--task set"
 (cd "$DW" && "$LOOMY" status) >"$OUT" 2>&1
 has "task: status shows the task" "TASK.*step 1 of 5"
-bash "$REPO/scripts/ai-status.sh" --root "$DW" --task set build >/dev/null
+bash "$REPO/scripts/loomy-status.sh" --root "$DW" --task set build >/dev/null
 grep -q '^status: build' "$DW"/.loomy/tasks/001-*.md && ok "task: file follows the phase" || ko "task: file status not updated"
 file_has "task: title kept in the state" "$DW/.loomy/task.state" "^title=Add a settings page$"
-bash "$REPO/scripts/ai-status.sh" --root "$DW" --task set "done" >/dev/null
+bash "$REPO/scripts/loomy-status.sh" --root "$DW" --task set "done" >/dev/null
 (cd "$DW" && "$LOOMY" status) >"$OUT" 2>&1
 has "task: summary once done" "Task done"
 (cd "$DW" && "$LOOMY" task) >"$OUT" 2>&1
@@ -1192,9 +1192,9 @@ got="$(repair_try)"
 grep -q "uninstall -g" "$RP/calls" && grep -q installer "$RP/calls" && ok "repair: old copy removed before the reinstall" || ko "repair: order ($(tr '\n' ';' <"$RP/calls"))"
 [[ -d "$RP/home/.claude" ]] && ko "repair: settings folder touched" || ok "repair: settings never touched"
 # Upkeep: off in scripts and with LOOMY_NO_AUTOUPDATE; missing relays added to an older project.
-rm -f "$DW/.loomy/scripts/ai-task.sh"
+rm -f "$DW/.loomy/scripts/loomy-task.sh"
 (cd "$DW" && "$LOOMY" task) >/dev/null 2>&1
-[[ -x "$DW/.loomy/scripts/ai-task.sh" ]] && ok "upkeep: missing relay added to the project" || ko "upkeep: relay not added"
+[[ -x "$DW/.loomy/scripts/loomy-task.sh" ]] && ok "upkeep: missing relay added to the project" || ko "upkeep: relay not added"
 got="$(LOOMY_NO_AUTOUPDATE=1 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/upkeep.sh"; loomy_upkeep; echo "rc=$?"' _ "$REPO")"
 [[ "$got" == "rc=0" ]] && ok "upkeep: off with LOOMY_NO_AUTOUPDATE" || ko "upkeep off: $got"
 
@@ -1236,10 +1236,10 @@ grep -q '"type":"advisor".*"model":"claude-opus-5-5","calls":1,"tokens_in":35648
 has "tree: lead agent" "LEAD AGENT"
 has "tree: every role with its model" "Executor.*gpt-6-luna"
 has "tree: session log and status line" "session log"
-bash "$REPO/scripts/ai-status.sh" --root "$DW" --tree >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-status.sh" --root "$DW" --tree >"$OUT" 2>&1
 has "tree: shown by the status view (key t of watch)" "AGENT TREE"
 # Wide terminal: the tree is drawn as a diagram (boxes, links, routing layer, framed session log).
-COLUMNS=132 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+COLUMNS=132 LINES=64 bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 has "tree diagram: title" "LOOMY AGENT TREE"
 has "tree diagram: lead agent box" "┌──.*┐"
 has "tree diagram: routing layer" "LOOMY · routing"
@@ -1250,11 +1250,11 @@ hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
 has "tree diagram: roles without a box grouped by model" "  [A-Z][A-Z0-9 .-]* ╌╌╌"
 has "tree diagram: each one with what it does" "· (architect|debugger|security|documenter) +(designs the plan|finds the cause|checks the risks|writes the docs)"
 hasnt "tree diagram: no bare role count when there is room" "\+[0-9]+ roles · loomy route"
-COLUMNS=216 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+COLUMNS=216 LINES=64 bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 hasnt "tree diagram: four role boxes at most, even in a wide window" "│ +documenter +│"
 # Links aligned: every ▼ has its link right above it, in the same column (checked character by character).
 if command -v python3 >/dev/null 2>&1; then
-  NO_COLOR=1 COLUMNS=133 LINES=64 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null 2>/dev/null >"$OUT"
+  NO_COLOR=1 COLUMNS=133 LINES=64 bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null 2>/dev/null >"$OUT"
   python3 -c '
 import sys
 L = open(sys.argv[1], encoding="utf-8").read().split("\n")
@@ -1269,12 +1269,12 @@ sys.exit(1 if bad or n == 0 else 0)' "$OUT" >"$WORK/align.txt" && ok "tree diagr
 else
   ok "tree diagram: links aligned (skipped, python3 missing)"
 fi
-COLUMNS=132 LINES=40 bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+COLUMNS=132 LINES=40 bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 has "tree auto: list when the window is too small, with a hint" "enlarge the window to 124 × 57"
 hasnt "tree auto: no diagram in a small window" "LOOMY AGENT TREE"
-COLUMNS=132 LINES=40 LOOMY_TREE=diagram bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+COLUMNS=132 LINES=40 LOOMY_TREE=diagram bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 has "tree: diagram forced (tree_view diagram)" "LOOMY AGENT TREE"
-COLUMNS=132 LINES=64 LOOMY_TREE=list bash "$REPO/scripts/ai-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
+COLUMNS=132 LINES=64 LOOMY_TREE=list bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 hasnt "tree: list forced (tree_view list)" "LOOMY AGENT TREE"
 fails "tree_view: invalid value refused" 2 "$LOOMY" config set tree_view boxes
 # Session log in watch: events arriving together scroll in one per refresh, the newest highlighted.
@@ -1305,7 +1305,7 @@ mkdir -p "$WORK/cfg-lang/loomy"; echo "lang=fr" >"$WORK/cfg-lang/loomy/config"
 run "help in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr "$LOOMY" help
 hasnt "help: no English section title left" "◇  TRACKING"
 has "help: French titles" "<commande>|◇  PROJET"
-run "status in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr bash "$REPO/scripts/ai-status.sh" --root "$PROJ"
+run "status in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr bash "$REPO/scripts/loomy-status.sh" --root "$PROJ"
 has "status: French labels" "Statut du projet"
 PFR="$WORK/projet-fr"; mkdir -p "$PFR"
 run "init in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr "$LOOMY" init "$PFR" --yes --no-clipboard
@@ -1320,20 +1320,20 @@ run "every interface sentence is translated" bash -c '[[ -z "$(bash "$1/tools/i1
 section "Lead-aware delegation, project doctor, routing reminder"
 SG="$WORK/garde"
 run "init for the safeguards (Claude lead, ORCHESTRATED)" "$LOOMY" init "$SG" --yes --no-clipboard
-# 1. The delegation advice depends on the lead: delegate-to-claude.sh is a Codex lead's bridge.
-bash "$REPO/scripts/ai-context.sh" --root "$SG" >"$OUT" 2>&1
+# 1. The delegation advice depends on the lead: loomy-delegate-claude.sh is a Codex lead's bridge.
+bash "$REPO/scripts/loomy-context.sh" --root "$SG" >"$OUT" 2>&1
 has "context, Claude lead: native subagents" "native subagents \(\.claude/agents/<role>\.md, Agent tool"
-has "context, Claude lead: only Codex goes through a bridge" "only Codex roles go through \.loomy/scripts/delegate-to-codex\.sh"
-hasnt "context, Claude lead: no advice to use delegate-to-claude.sh" "delegate-to-claude\.sh and delegate-to-codex\.sh"
-(cd "$SG" && bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+has "context, Claude lead: only Codex goes through a bridge" "only Codex roles go through \.loomy/scripts/loomy-delegate-codex\.sh"
+hasnt "context, Claude lead: no advice to use loomy-delegate-claude.sh" "loomy-delegate-claude\.sh and loomy-delegate-codex\.sh"
+(cd "$SG" && bash "$REPO/scripts/loomy-delegate-claude.sh" explorer "look") >"$OUT" 2>&1
 has "bridge called by a Claude lead: warning on stderr" "lead agent is Claude Code.*\.claude/agents/explorer\.md"
-(cd "$SG" && LOOMY_BRIDGE_OK=1 bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+(cd "$SG" && LOOMY_BRIDGE_OK=1 bash "$REPO/scripts/loomy-delegate-claude.sh" explorer "look") >"$OUT" 2>&1
 hasnt "bridge, LOOMY_BRIDGE_OK (audit): no warning" "lead agent is Claude Code"
 SGX="$WORK/garde-codex"; "$LOOMY" init "$SGX" --yes --no-clipboard >/dev/null 2>&1
 sed -i.bak 's/^ai_lead: claude/ai_lead: codex/' "$SGX/.loomy/brief.md"
-bash "$REPO/scripts/ai-context.sh" --root "$SGX" >"$OUT" 2>&1
-has "context, Codex lead: delegate-to-claude.sh kept" "delegate-to-claude\.sh and delegate-to-codex\.sh"
-(cd "$SGX" && bash "$REPO/scripts/delegate-to-claude.sh" explorer "look") >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SGX" >"$OUT" 2>&1
+has "context, Codex lead: loomy-delegate-claude.sh kept" "loomy-delegate-claude\.sh and loomy-delegate-codex\.sh"
+(cd "$SGX" && bash "$REPO/scripts/loomy-delegate-claude.sh" explorer "look") >"$OUT" 2>&1
 hasnt "bridge called by a Codex lead: no warning" "lead agent is Claude Code"
 for f in START.md fr/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRATION.md skills/project-bootstrap/references/orchestration.md fr/skills/project-bootstrap/references/orchestration.md; do
   grep -qE 'native subagents|sous-agents natifs' "$REPO/$f" && ok "doc advice by lead: $f" || ko "doc advice by lead: $f still gives the Codex-lead advice only"
@@ -1343,23 +1343,23 @@ done
 # setup seen on a real project: no docs, no subagents, no orchestration rule).
 rm -rf "$SG/.loomy/docs" "$SG/.claude/agents"
 printf '# SG\n\nRules written by the agent, without the orchestration rule.\n' >"$SG/CLAUDE.md"
-run "doctor on an unfinished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+run "doctor on an unfinished project" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 has "doctor: PROJECT section" "PROJECT"
 has "doctor: bootstrap unfinished" "bootstrap unfinished.*START\.md still pending"
 has "doctor: .loomy/docs/ missing" "\.loomy/docs/ folder missing"
 has "doctor: subagents missing, with the fix" "subagents missing in \.claude/agents/.*architect"
-has "doctor: subagent fix command" "fix: \.loomy/scripts/ai-route\.sh claude-agents"
+has "doctor: subagent fix command" "fix: \.loomy/scripts/loomy-route\.sh claude-agents"
 hasnt "doctor: not ideal with a gap" "Ideal setup"
 has "doctor: gaps listed in the summary" "for the ideal: .*bootstrap finished"
 has "doctor: orchestration rule missing" "orchestration rule missing"
-run "doctor --fix completes the project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG" --fix
+run "doctor --fix completes the project" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG" --fix
 has "doctor --fix: project completed" "project completed"
 [[ -f "$SG/.loomy/docs/AI_MODEL_ROUTING.md" && -f "$SG/.claude/agents/architect.md" ]] && grep -q 'loomy:orchestration:start' "$SG/CLAUDE.md" \
   && ok "doctor --fix: docs, subagents and rule back" || ko "doctor --fix: project not completed"
 # The bootstrap finishes: no more gap, except the hook added since (the project's settings.json is rebuilt on update).
-bash "$REPO/scripts/ai-status.sh" --root "$SG" set "done" >/dev/null; rm -f "$SG/START.md"; mkdir -p "$SG/.loomy/docs"
-bash "$REPO/scripts/ai-route.sh" --root "$SG" claude-agents >/dev/null 2>&1
-run "doctor on a finished project" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+bash "$REPO/scripts/loomy-status.sh" --root "$SG" set "done" >/dev/null; rm -f "$SG/START.md"; mkdir -p "$SG/.loomy/docs"
+bash "$REPO/scripts/loomy-route.sh" --root "$SG" claude-agents >/dev/null 2>&1
+run "doctor on a finished project" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 hasnt "doctor: no bootstrap gap once finished" "bootstrap unfinished|\.loomy/docs/ folder missing|subagents missing"
 has "doctor: subagents present" "Claude subagents"
 has "doctor: hooks present" "Claude Code hooks"
@@ -1369,29 +1369,29 @@ p = sys.argv[1]; d = json.load(open(p))
 d["hooks"].pop("UserPromptSubmit", None)
 json.dump(d, open(p, "w"))
 PY
-run "doctor with an older settings.json" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+run "doctor with an older settings.json" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 has "doctor: missing prompt hook, with the fix" "hooks missing in \.claude/settings\.json.*prompt"
 rm -f "$SG/.claude/agents/explorer.md"
-run "doctor with a missing subagent" bash "$REPO/scripts/ai-doctor.sh" --root "$SG"
+run "doctor with a missing subagent" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 has "doctor: names the missing subagent" "subagents missing in \.claude/agents/.*explorer"
 # Not a Loomy project: no PROJECT section.
 NP="$WORK/pas-loomy"; mkdir -p "$NP"; git -C "$NP" init -q 2>/dev/null
-run "doctor outside a Loomy project" bash "$REPO/scripts/ai-doctor.sh" --root "$NP"
+run "doctor outside a Loomy project" bash "$REPO/scripts/loomy-doctor.sh" --root "$NP"
 hasnt "doctor outside a project: no PROJECT section" "◇  PROJECT"
 
 # SessionStart: an abandoned bootstrap is said in one line, not presented as waiting for a go-ahead.
 SA="$WORK/garde-abandon"; "$LOOMY" init "$SA" --yes --no-clipboard >/dev/null 2>&1
-bash "$REPO/scripts/ai-status.sh" --root "$SA" set approve >/dev/null
-bash "$REPO/scripts/ai-context.sh" --root "$SA" >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-status.sh" --root "$SA" set approve >/dev/null
+bash "$REPO/scripts/loomy-context.sh" --root "$SA" >"$OUT" 2>&1
 has "start context: fresh bootstrap resumes normally" "Bootstrap in progress, phase 5 of 10"
 hasnt "start context: fresh bootstrap is not abandoned" "Bootstrap abandoned"
 sed -i.bak 's/^updated=.*/updated=2000-01-01 10:00/' "$SA/.loomy/state"
-bash "$REPO/scripts/ai-context.sh" --root "$SA" >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SA" >"$OUT" 2>&1
 has "start context: abandoned bootstrap" "Bootstrap abandoned: stopped at phase 5 of 10 \(Approval\) since 2000-01-01 10:00"
 hasnt "start context: no more 'waits for your go-ahead'" "waits for your go-ahead"
 
 # 3. UserPromptSubmit: light routing reminder, ORCHESTRATED projects only.
-PH="bash $REPO/scripts/ai-context.sh --hook prompt"
+PH="bash $REPO/scripts/loomy-context.sh --hook prompt"
 echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
 has "prompt hook: unfinished setup said first" '"additionalContext":"\[Loomy\] The Loomy setup of this project is not finished.*ORCHESTRATED mode'
 sed -i.bak 's/^ai_mode: ORCHESTRATED/ai_mode: SOLO/' "$SA/.loomy/brief.md"
@@ -1401,7 +1401,7 @@ sed -i.bak 's/^ai_mode: SOLO/ai_mode: ORCHESTRATED/' "$SA/.loomy/brief.md"
 mv "$SA/START.md" "$SA/START.keep"; rm -f "$SGX/START.md"
 echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
 has "prompt hook: reminder as additionalContext" '"hookEventName":"UserPromptSubmit","additionalContext":"\[Loomy\] ORCHESTRATED mode: you are the orchestrator'
-python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert 'ai-route.sh' in d['hookSpecificOutput']['additionalContext']" "$OUT" 2>/dev/null \
+python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert 'loomy-route.sh' in d['hookSpecificOutput']['additionalContext']" "$OUT" 2>/dev/null \
   && ok "prompt hook: valid JSON" || ko "prompt hook: invalid JSON: $(cat "$OUT")"
 echo '{}' | LOOMY_PROJECT_ROOT="$SA" LOOMY_UI_LANG=fr $PH >"$OUT" 2>&1
 has "prompt hook: French" "Mode ORCHESTRATED : tu es l'orchestrateur"
@@ -1427,23 +1427,44 @@ for f in templates/CLAUDE.md templates/AGENTS.md fr/templates/CLAUDE.md fr/templ
 done
 # The agent writes CLAUDE.md without the rule (what happened on a real project): the next start puts it back.
 printf '# SI\n\nProject rules.\n' >"$SI/CLAUDE.md"
-bash "$REPO/scripts/ai-context.sh" --root "$SI" >/dev/null 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SI" >/dev/null 2>&1
 grep -q 'Every request in this project' "$SI/CLAUDE.md" && ok "repair: orchestration rule added to CLAUDE.md" || ko "repair: orchestration rule not added"
 [[ "$(sed -n 1p "$SI/CLAUDE.md")" == "# SI" ]] && grep -q 'Project rules.' "$SI/CLAUDE.md" && ok "repair: the agent's text kept" || ko "repair: CLAUDE.md damaged"
 [[ ! -e "$SI/.ai" ]] && ok "init: no .ai/ folder" || ko "init: .ai/ still created"
 mv "$SI/.loomy/docs" "$SI/.ai"; echo "See .ai/AI_WORKFLOW.md and docs/.ai/x." >>"$SI/CLAUDE.md"
 echo "custom" >"$SI/.claude/agents/explorer.md"
-bash "$REPO/scripts/ai-context.sh" --root "$SI" >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SI" >"$OUT" 2>&1
 [[ -d "$SI/.loomy/docs" && ! -e "$SI/.ai" ]] && ok "migration: .ai/ moved to .loomy/docs/" || ko "migration: .ai/ not moved"
 grep -q 'See .loomy/docs/AI_WORKFLOW.md and docs/.ai/x.' "$SI/CLAUDE.md" && ok "migration: references updated, other paths kept" || ko "migration: references: $(grep 'See ' "$SI/CLAUDE.md")"
 has "migration: said in the start context" "Loomy has just completed this project's setup files: .*\.ai/ → \.loomy/docs/"
 [[ "$(cat "$SI/.claude/agents/explorer.md")" == custom ]] && ok "repair: customised subagent kept" || ko "repair: subagent overwritten"
 cp "$SI/CLAUDE.md" "$WORK/claude-avant.md"
-bash "$REPO/scripts/ai-context.sh" --root "$SI" >"$OUT" 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SI" >"$OUT" 2>&1
 cmp -s "$SI/CLAUDE.md" "$WORK/claude-avant.md" && ok "repair: idempotent" || ko "repair: CLAUDE.md changed on a second run"
 hasnt "repair: nothing to say the second time" "Loomy has just completed"
 [[ "$(grep -c 'loomy:orchestration:start' "$SI/CLAUDE.md")" == 1 ]] && ok "repair: a single managed block" || ko "repair: block duplicated"
-LOOMY_NO_REPAIR=1 bash "$REPO/scripts/ai-context.sh" --root "$SI" >/dev/null 2>&1; ok "repair: LOOMY_NO_REPAIR accepted"
+LOOMY_NO_REPAIR=1 bash "$REPO/scripts/loomy-context.sh" --root "$SI" >/dev/null 2>&1; ok "repair: LOOMY_NO_REPAIR accepted"
+
+# Scripts renamed loomy-* (0.10): a project with the old relays and hooks is migrated, the old names keep working.
+SR="$WORK/renommage"; "$LOOMY" init "$SR" --yes --no-clipboard >/dev/null 2>&1
+[[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" ]] && ok "new project: loomy-* relays only" || ko "new project: relays $(ls "$SR/.loomy/scripts" | head -3 | tr '\n' ' ')"
+for f in "$SR"/.loomy/scripts/loomy-*.sh; do n="$(basename "$f")"; o="ai-${n#loomy-}"
+  case "$n" in loomy-delegate-codex.sh) o=delegate-to-codex.sh ;; loomy-delegate-claude.sh) o=delegate-to-claude.sh ;; esac
+  sed "s/$n/$o/g" "$f" >"$SR/.loomy/scripts/$o"; chmod +x "$SR/.loomy/scripts/$o"; rm -f "$f"; done
+sed -i.bak 's/loomy-context\.sh/ai-context.sh/g; s/loomy-statusline\.sh/ai-statusline.sh/g' "$SR/.claude/settings.json"
+printf '# SR\n\nRoute with .loomy/scripts/ai-route.sh; Codex through .loomy/scripts/delegate-to-codex.sh or delegate-to-<tool>.sh. Keep my-ai-route.sh.\n' >"$SR/CLAUDE.md"
+bash "$SR/.loomy/scripts/ai-context.sh" --root "$SR" >"$OUT" 2>&1
+has "rename: said in the start context" "Loomy has just completed this project's setup files: .*scripts → loomy-\*"
+[[ -x "$SR/.loomy/scripts/loomy-route.sh" && -x "$SR/.loomy/scripts/ai-route.sh" ]] && ok "rename: new relays added, old ones kept" || ko "rename: relays"
+grep -q 'loomy-context.sh." --hook start' "$SR/.claude/settings.json" && ! grep -q 'ai-context.sh' "$SR/.claude/settings.json" && ok "rename: hooks rewritten" || ko "rename: hooks: $(grep -o 'scripts/[a-z-]*' "$SR/.claude/settings.json" | sort -u | tr '\n' ' ')"
+grep -q 'Route with .loomy/scripts/loomy-route.sh; Codex through .loomy/scripts/loomy-delegate-codex.sh or loomy-delegate-<tool>.sh. Keep my-ai-route.sh.' "$SR/CLAUDE.md" && ok "rename: references updated, other names kept" || ko "rename: $(grep 'Route with' "$SR/CLAUDE.md")"
+bash "$SR/.loomy/scripts/ai-route.sh" --root "$SR" >"$OUT" 2>&1; has "rename: an old relay still works (compatibility script)" "lead"
+cp "$SR/CLAUDE.md" "$WORK/sr-avant.md"; bash "$SR/.loomy/scripts/loomy-context.sh" --root "$SR" >"$OUT" 2>&1
+cmp -s "$SR/CLAUDE.md" "$WORK/sr-avant.md" && ok "rename: idempotent" || ko "rename: CLAUDE.md changed again"
+hasnt "rename: nothing to say the second time" "scripts → loomy-"
+for f in "$REPO"/scripts/ai-*.sh "$REPO"/scripts/delegate-to-*.sh; do
+  t="$(sed -n 's/.*\/\(loomy-[a-z-]*\.sh\)" "\$@"$/\1/p' "$f")"; [[ -n "$t" && -f "$REPO/scripts/$t" ]] || { ko "compatibility script without target: $(basename "$f")"; continue; }
+done; ok "compatibility scripts point to existing loomy-* scripts"
 
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
@@ -1454,7 +1475,7 @@ python3 - "$SU/.claude/settings.json" <<'PY' 2>/dev/null
 import json, sys
 p = sys.argv[1]; d = json.load(open(p))
 # Back to what 0.8.4 installed: no prompt hook of Loomy's, the user's own one stays.
-d["hooks"]["UserPromptSubmit"] = [g for g in d["hooks"]["UserPromptSubmit"] if "ai-context.sh" not in json.dumps(g)]
+d["hooks"]["UserPromptSubmit"] = [g for g in d["hooks"]["UserPromptSubmit"] if "loomy-context.sh" not in json.dumps(g)]
 json.dump(d, open(p, "w"))
 PY
 run "init --update on a project with older hooks" "$LOOMY" init "$SU" --update

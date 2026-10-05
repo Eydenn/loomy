@@ -426,9 +426,9 @@ ai_resolve() {
   elif [[ "$family" == "claude" && "$lead" == "claude" ]]; then
     R_VIA="$(t "subagent %s" ".claude/agents/$role.md")"
   elif [[ "$family" == "claude" ]]; then
-    R_VIA="delegate-to-claude.sh $role"
+    R_VIA="loomy-delegate-claude.sh $role"
   else
-    R_VIA="delegate-to-codex.sh $role"
+    R_VIA="loomy-delegate-codex.sh $role"
   fi
 }
 
@@ -562,11 +562,11 @@ ai_profile_label() {
 ai_start_prompt() {
   local MODE="${1:-SOLO}" LEAD="${2:-claude}"
   local p
-  p="$(t "Set up this project by strictly following START.md. The starting brief is in .loomy/brief.md: use it as answers already given, confirm it and only ask the missing questions. You are the lead agent: delegate each role according to .loomy/scripts/ai-route.sh. Stay in analysis/plan mode until I approve.")"
+  p="$(t "Set up this project by strictly following START.md. The starting brief is in .loomy/brief.md: use it as answers already given, confirm it and only ask the missing questions. You are the lead agent: delegate each role according to .loomy/scripts/loomy-route.sh. Stay in analysis/plan mode until I approve.")"
   case "$MODE" in
     ORCHESTRATED)
-      if [[ "$LEAD" == "codex" ]]; then p="$p $(t "Codex leads; delegate architecture, security and hard debugging to Claude via delegate-to-claude.sh, only when it adds real value.")"
-      else p="$p $(t "Claude Code leads; delegate bounded execution and cross review to Codex via delegate-to-codex.sh.")"; fi ;;
+      if [[ "$LEAD" == "codex" ]]; then p="$p $(t "Codex leads; delegate architecture, security and hard debugging to Claude via loomy-delegate-claude.sh, only when it adds real value.")"
+      else p="$p $(t "Claude Code leads; delegate bounded execution and cross review to Codex via loomy-delegate-codex.sh.")"; fi ;;
     HYBRID) p="$p $(t "Set up the HYBRID Codex + Claude Code mode without multiplying agents.")" ;;
     PARALLEL) p="$p $(t "Plan the PARALLEL mode with separate worktrees and a clear split of responsibilities.")" ;;
   esac

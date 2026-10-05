@@ -47,7 +47,7 @@ The reviewer inspects the actual diff and reports concrete defects and risks, no
 - Use short handoff files rather than replaying past conversations.
 
 ## Cross-model orchestration
-The main session is the lead agent. It delegates roles from one model family to the other following the routing of `scripts/ai-route.sh`: a Codex lead reaches Claude through `scripts/delegate-to-claude.sh` (read-only); a Claude lead runs its Claude roles as native subagents (`.claude/agents/`, Agent tool) and reaches Codex through `scripts/delegate-to-codex.sh` (writing or read-only depending on the role).
+The main session is the lead agent. It delegates roles from one model family to the other following the routing of `scripts/loomy-route.sh`: a Codex lead reaches Claude through `scripts/loomy-delegate-claude.sh` (read-only); a Claude lead runs its Claude roles as native subagents (`.claude/agents/`, Agent tool) and reaches Codex through `scripts/loomy-delegate-codex.sh` (writing or read-only depending on the role).
 
 Use these calls for an independent review, an architecture critique, hard debugging, a second security opinion or focused research. The lead agent remains responsible for checking the findings and for the final integration.
 

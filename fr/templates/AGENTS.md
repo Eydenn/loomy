@@ -5,7 +5,7 @@
 
 Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, retour ou correction de l'utilisateur) passe par toi et est routée : tu planifies, délègues, vérifies et décides.
 
-- Confie chaque travail à son rôle selon `.loomy/scripts/ai-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/delegate-to-<outil>.sh <rôle> "…"`.
+- Confie chaque travail à son rôle selon `.loomy/scripts/loomy-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/loomy-delegate-<outil>.sh <rôle> "…"`.
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
@@ -22,8 +22,8 @@ Tu es l'orchestrateur du travail IA de ce dépôt : avant de déléguer ou de ch
 Ne recopie pas ces règles ici.
 
 ## Reprise de session
-Le contexte Loomy (phase en cours, attentes de l'utilisateur, dernières délégations) arrive automatiquement en début de session par un hook du projet (`.codex/hooks.json`, `.claude/settings.json`). S'il n'apparaît pas (hooks pas encore approuvés), lance `.loomy/scripts/ai-context.sh`. Commence par dire en une ou deux phrases où en est le projet et ce que tu proposes.
-Avant de clore une session, résume ce qui a été fait et la prochaine étape. Si les fichiers IA sont dans un dépôt privé séparé, sauvegarde-les avec `.loomy/scripts/ai-privacy.sh sync`.
+Le contexte Loomy (phase en cours, attentes de l'utilisateur, dernières délégations) arrive automatiquement en début de session par un hook du projet (`.codex/hooks.json`, `.claude/settings.json`). S'il n'apparaît pas (hooks pas encore approuvés), lance `.loomy/scripts/loomy-context.sh`. Commence par dire en une ou deux phrases où en est le projet et ce que tu proposes.
+Avant de clore une session, résume ce qui a été fait et la prochaine étape. Si les fichiers IA sont dans un dépôt privé séparé, sauvegarde-les avec `.loomy/scripts/loomy-privacy.sh sync`.
 
 ## Carte du projet
 - Contexte produit : `PROJECT.md`

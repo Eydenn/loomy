@@ -8,13 +8,13 @@ Loomy deliberately doesn't ship a frozen copy of the original skill. Install or 
 ## Global install
 
 ```bash
-./.loomy/scripts/install-security-audit.sh --global
+./.loomy/scripts/loomy-install-security-audit.sh --global
 ```
 
 ## Install for the project or the current tools
 
 ```bash
-./.loomy/scripts/install-security-audit.sh
+./.loomy/scripts/loomy-install-security-audit.sh
 ```
 
 Equivalent original command:

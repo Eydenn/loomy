@@ -34,7 +34,7 @@ Ne saute pas l'étape de validation avant de créer le projet, sauf si l'utilisa
 Au début de chaque phase, **avant toute autre action**, enregistre-la : l'utilisateur la voit aussitôt dans `loomy watch`, avec ce qui est attendu de lui.
 
 ```bash
-.loomy/scripts/ai-status.sh set <discover|interview|propose|approve|build|verify|document|commit|retire|done>
+.loomy/scripts/loomy-status.sh set <discover|interview|propose|approve|build|verify|document|commit|retire|done>
 ```
 
 Si le script est absent, ignore cette étape sans le signaler.
@@ -48,11 +48,11 @@ Pendant un long travail, l'utilisateur ne voit qu'un indicateur d'attente : donn
 - **Après chaque délégation**, une ligne : résultat et durée. Exemple : « ✓ Exécutant terminé en 1 min 41 s : 4 fichiers créés. Je vérifie. »
 - Entre deux étapes longues, une ligne de progression suffit (« 3 fichiers sur 5 relus »). Pas de pavé : l'utilisateur doit pouvoir suivre d'un coup d'œil.
 
-Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`. Avec Claude Code, le contexte de reprise (`.loomy/scripts/ai-context.sh`) est injecté automatiquement à l'ouverture de chaque session ; avec Codex, lance ce script en début de session.
+Si la session a été interrompue, l'utilisateur la reprend avec `loomy start` ; une nouvelle session reprend à la phase enregistrée dans `.loomy/state`. Avec Claude Code, le contexte de reprise (`.loomy/scripts/loomy-context.sh`) est injecté automatiquement à l'ouverture de chaque session ; avec Codex, lance ce script en début de session.
 
-Codex reçoit le même contexte par `.codex/hooks.json`, une fois ses hooks approuvés au premier lancement. Quand tu génères `.claude/settings.json` ou `.codex/`, conserve les hooks Loomy déjà présents (`ai-context.sh`).
+Codex reçoit le même contexte par `.codex/hooks.json`, une fois ses hooks approuvés au premier lancement. Quand tu génères `.claude/settings.json` ou `.codex/`, conserve les hooks Loomy déjà présents (`loomy-context.sh`).
 
-Chaque délégation passée par les bridges (`delegate-to-claude.sh`, `delegate-to-codex.sh`) est journalisée automatiquement dans `.loomy/logs/events.jsonl` : rôle, modèle, effort, durée, tokens, coût. L'utilisateur suit ce journal en direct dans le terminal (`loomy watch`). Tu n'as rien à lancer pour cela.
+Chaque délégation passée par les bridges (`loomy-delegate-claude.sh`, `loomy-delegate-codex.sh`) est journalisée automatiquement dans `.loomy/logs/events.jsonl` : rôle, modèle, effort, durée, tokens, coût. L'utilisateur suit ce journal en direct dans le terminal (`loomy watch`). Tu n'as rien à lancer pour cela.
 
 ---
 
@@ -61,7 +61,7 @@ Chaque délégation passée par les bridges (`delegate-to-claude.sh`, `delegate-
 Quand `.loomy/brief.md` indique `repo: existing`, tu adoptes un projet qui vit déjà : son code, son historique et ses habitudes passent en premier. Les phases restent les mêmes, avec ces règles.
 
 **Règles de base**
-- Lis d'abord `.loomy/assessment.md` : des faits recueillis sans IA (stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette). S'il manque ou date, lance `.loomy/scripts/ai-assess.sh`.
+- Lis d'abord `.loomy/assessment.md` : des faits recueillis sans IA (stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette). S'il manque ou date, lance `.loomy/scripts/loomy-assess.sh`.
 - Si `adopt_branch` est renseigné dans le brief, travaille **uniquement sur cette branche**. La `base_branch` reste intacte : ne fusionne jamais dedans, ne la pousse pas, ne réécris pas son historique, jamais de push forcé. Ne renomme ni ne supprime les branches, tags ou remotes existants.
 - Rien d'existant n'est écrasé. Un `README`, `AGENTS.md`, `CLAUDE.md`, une documentation ou une configuration existants sont complétés ou fusionnés, jamais remplacés ; montre le diff de toute modification.
 - Les changements non commités présents à l'arrivée de Loomy appartiennent à l'utilisateur : ne les indexe et ne les committe jamais.
@@ -85,7 +85,7 @@ Quand `.loomy/brief.md` indique `repo: existing`, tu adoptes un projet qui vit d
 
 ## Phase 1 — Découverte
 
-Si `.loomy/brief.md` existe, lis-le en premier. Il contient les réponses de l'utilisateur au questionnaire du terminal (`init-wizard.sh`) :
+Si `.loomy/brief.md` existe, lis-le en premier. Il contient les réponses de l'utilisateur au questionnaire du terminal (`loomy-init-wizard.sh`) :
 - objectif et type de projet ;
 - stade, données sensibles et risque estimé ;
 - mode IA et outil principal ;
@@ -172,7 +172,7 @@ Classe en interne et indique :
 Le risque augmente avec : authentification, permissions, paiements, données personnelles ou sensibles, migrations, infrastructure de production, opérations destructives, cryptographie, logique critique pour la sécurité, ou changements transverses importants.
 
 ### Mode de fonctionnement IA
-Détecte les CLI IA disponibles avec `.loomy/scripts/detect-ai-tools.sh` s'il existe.
+Détecte les CLI IA disponibles avec `.loomy/scripts/loomy-detect-tools.sh` s'il existe.
 Détermine le mode par défaut du projet :
 
 - `SOLO` : un seul agent de code à la fois ;
@@ -212,12 +212,12 @@ N'utilise un sous-agent que si le travail est parallélisable, spécialisé, gag
 ### Routage des modèles
 Tu es l'**orchestrateur** (agent principal) : garde pour toi la planification, les décisions, l'intégration et la vérification, et délègue le travail aux rôles dédiés (architecte, débogueur, sécurité, relecteur, développeur, exécutant, explorateur, documentaliste).
 
-Lance `.loomy/scripts/ai-route.sh` et inclus sa matrice dans la proposition. Pour cette machine et ce brief, elle détermine :
+Lance `.loomy/scripts/loomy-route.sh` et inclus sa matrice dans la proposition. Pour cette machine et ce brief, elle détermine :
 - l'environnement : full Claude, full Codex, ou hybride avec l'un ou l'autre en lead, avec repli automatique si une CLI manque ;
 - le profil de budget ;
 - le modèle, l'effort et le mode d'appel de chaque rôle.
 
-N'invente pas de noms de modèles : le moteur de routage et `.loomy/scripts/ai-doctor.sh` font foi.
+N'invente pas de noms de modèles : le moteur de routage et `.loomy/scripts/loomy-doctor.sh` font foi.
 
 Adapte à la taille du projet : un projet SIMPLE/LOW peut se contenter de l'orchestrateur, d'un explorateur et d'un exécutant ou d'un développeur.
 
@@ -287,17 +287,17 @@ Quand le mode hybride est choisi :
 5. Ne crée pas `.loomy/docs/HANDOFF.md` tant qu'aucun passage de relais réel n'est en cours.
 6. Pour le travail parallèle, utilise des branches ou worktrees isolés ; ne laisse jamais les deux outils modifier le même répertoire de travail en même temps.
 7. Quand l'implémentation parallèle n'est pas nécessaire, préfère qu'un outil implémente et que l'autre relise, pour un contrôle croisé à forte valeur.
-8. La délégation entre modèles suit le routage de `ai-route.sh`. Avec un lead Codex, les rôles Claude passent par `.loomy/scripts/delegate-to-claude.sh` (spécialiste Claude en lecture seule). Avec un lead Claude, les rôles Claude sont les sous-agents natifs de `.claude/agents/` (outil Agent) : n'utilise pas `delegate-to-claude.sh`, son `claude -p` sans interface refuse toute commande shell non pré-approuvée. Les rôles Codex (exécutant, développeur, relecteur…) passent par `.loomy/scripts/delegate-to-codex.sh`. L'orchestrateur valide chaque résultat avant d'agir. Lance toujours ces scripts **au premier plan** et attends leur fin : une délégation lancée en arrière-plan est interrompue si la session se ferme.
+8. La délégation entre modèles suit le routage de `loomy-route.sh`. Avec un lead Codex, les rôles Claude passent par `.loomy/scripts/loomy-delegate-claude.sh` (spécialiste Claude en lecture seule). Avec un lead Claude, les rôles Claude sont les sous-agents natifs de `.claude/agents/` (outil Agent) : n'utilise pas `loomy-delegate-claude.sh`, son `claude -p` sans interface refuse toute commande shell non pré-approuvée. Les rôles Codex (exécutant, développeur, relecteur…) passent par `.loomy/scripts/loomy-delegate-codex.sh`. L'orchestrateur valide chaque résultat avant d'agir. Lance toujours ces scripts **au premier plan** et attends leur fin : une délégation lancée en arrière-plan est interrompue si la session se ferme.
 9. N'utilise pas les appels entre modèles pour des tâches triviales ni pour faire confirmer automatiquement chaque décision.
 
 ### Mise en place du routage des modèles
 
 Quand le routage est validé :
 
-1. `.loomy/docs/AI_MODEL_ROUTING.md` existe déjà (créé par Loomy avec la matrice résolue). Si le routage validé diffère, régénère sa dernière section avec la sortie de `.loomy/scripts/ai-route.sh markdown`.
+1. `.loomy/docs/AI_MODEL_ROUTING.md` existe déjà (créé par Loomy avec la matrice résolue). Si le routage validé diffère, régénère sa dernière section avec la sortie de `.loomy/scripts/loomy-route.sh markdown`.
 2. Si l'outil principal est Claude Code, les sous-agents de rôle sont déjà dans `.claude/agents/` (créés par Loomy, modèle et effort renseignés). Supprime les rôles que la proposition n'a pas retenus ; adapte les autres au projet si c'est utile.
-3. Si Codex est utilisé, les rôles passent par `delegate-to-codex.sh <rôle>`, qui ne demande aucune configuration. Pour des sessions Codex interactives par rôle, donne à l'utilisateur la sortie de `ai-route.sh codex-profiles`. Ne modifie jamais le `~/.codex/config.toml` global de l'utilisateur sans son accord explicite.
-4. Donne à l'utilisateur la commande de lancement de l'orchestrateur (`ai-route.sh lead`) pour ses prochaines sessions.
+3. Si Codex est utilisé, les rôles passent par `loomy-delegate-codex.sh <rôle>`, qui ne demande aucune configuration. Pour des sessions Codex interactives par rôle, donne à l'utilisateur la sortie de `loomy-route.sh codex-profiles`. Ne modifie jamais le `~/.codex/config.toml` global de l'utilisateur sans son accord explicite.
+4. Donne à l'utilisateur la commande de lancement de l'orchestrateur (`loomy-route.sh lead`) pour ses prochaines sessions.
 
 ---
 
@@ -348,7 +348,7 @@ L'audit de sécurité se fait **à la demande** ; il n'est pas chargé en perman
 Quand l'utilisateur demande explicitement un audit de sécurité, une revue de vulnérabilités, une revue du code façon test d'intrusion, ou équivalent :
 
 1. Préfère le skill officiel Cloudflare `security-audit` s'il est disponible.
-2. S'il n'est pas installé, utilise `.loomy/scripts/install-security-audit.sh` s'il existe, ou suis `.loomy/external-skills/security-audit.md`.
+2. S'il n'est pas installé, utilise `.loomy/scripts/loomy-install-security-audit.sh` s'il existe, ou suis `.loomy/external-skills/security-audit.md`.
 3. Préserve les garanties importantes du workflow Cloudflare :
    - reconnaissance à partir du code source ;
    - registre de couverture déterministe ;
@@ -394,7 +394,7 @@ Après une initialisation réussie :
    - date de fin ;
    - identifiant du commit initial s'il existe.
 4. Vérifie que les fichiers permanents du projet ne dépendent plus de ce document.
-5. Lance `.loomy/scripts/ai-status.sh set done`.
+5. Lance `.loomy/scripts/loomy-status.sh set done`.
 
 Une fois terminé, ce fichier n'a **plus aucune autorité** sur le travail futur.
 

@@ -8,7 +8,7 @@
 # Where the quotas come from (no network, no credentials read):
 #   Codex   the "rate_limits" events Codex writes into its own session logs (${CODEX_HOME:-~/.codex}/sessions)
 #   Claude  the documented "rate_limits" field Claude Code gives the status line command; Loomy's status line
-#           (scripts/ai-statusline.sh) saves it to ${XDG_CONFIG_HOME:-~/.config}/loomy/claude-limits
+#           (scripts/loomy-statusline.sh) saves it to ${XDG_CONFIG_HOME:-~/.config}/loomy/claude-limits
 if ! declare -F t >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"; fi
 if ! declare -F loomy_plan >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/config.sh"; fi
 

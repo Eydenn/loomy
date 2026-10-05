@@ -155,7 +155,7 @@ The simplest: **`loomy`** in the project folder, then "Open or resume the lead a
 
 **Resuming is automatic.**
 - **Claude Code:** every time a session opens in the project (terminal, app, `claude` typed by hand), a hook installed by `loomy init` hands it the context: phase, what you need to do, latest delegations. It starts by telling you where the project stands. When the session closes, it is noted; in private repository mode, the AI files are backed up.
-- **Codex:** the same mechanism, through `.codex/hooks.json`. The first time it runs in the project, Codex asks you to trust the folder, then to approve the Loomy hooks: accept both, that is what turns on automatic resuming. Until then, `AGENTS.md` and the `loomy start` prompt ask it to read the context itself (`.loomy/scripts/ai-context.sh`).
+- **Codex:** the same mechanism, through `.codex/hooks.json`. The first time it runs in the project, Codex asks you to trust the folder, then to approve the Loomy hooks: accept both, that is what turns on automatic resuming. Until then, `AGENTS.md` and the `loomy start` prompt ask it to read the context itself (`.loomy/scripts/loomy-context.sh`).
 - **Tracking:** `loomy watch` and `loomy` show whether the lead agent session is open, and since when.
 
 ### 2. Follow the phases, and know when it is your turn
@@ -502,7 +502,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 > [!IMPORTANT]
 > - **Codex shipped with the ChatGPT and Codex apps.** `loomy doctor --fix` makes it available as `codex` through a small script in `~/.local/bin`. A symbolic link would not work: the CLI looks for its helper programs next to the path it was called through.
 > - **Claude Code too old.** Earlier versions refuse `claude-opus-5-5`. The diagnosis offers `claude update`.
-> - **Sandboxed session.** If the Claude Code lead agent runs in a sandbox, allow `delegate-to-codex.sh` to run outside that sandbox when it asks.
+> - **Sandboxed session.** If the Claude Code lead agent runs in a sandbox, allow `loomy-delegate-codex.sh` to run outside that sandbox when it asks.
 
 ---
 
@@ -593,7 +593,7 @@ For contributors: interface strings are written in English in the code (`t "Engl
 <br>
 
 - **Existing project.** Run `loomy init` in the repository. Loomy switches to a dedicated `loomy/adopt` branch (the current one stays untouched, uncommitted work stays as it is), writes an assessment without AI (`.loomy/assessment.md`: stack, real commands, tests, CI, conventions, Git history, sensitive areas, debt), and the lead agent proposes an adoption plan: `PROJECT.md` and `ARCHITECTURE.md` rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's commands, roles sized to its risk. Nothing existing is overwritten, no application code changes without your approval, and merging back goes through a pull request you accept.
-- **Security audit.** It runs on demand, with the official Cloudflare skill. Install it with `.loomy/scripts/install-security-audit.sh --global`, then ask for a full audit without code changes.
+- **Security audit.** It runs on demand, with the official Cloudflare skill. Install it with `.loomy/scripts/loomy-install-security-audit.sh --global`, then ask for a full audit without code changes.
 - **End of the bootstrap.** `START.md` is archived in `.loomy/docs/bootstrap/` or deleted, as you chose. It has no authority afterwards.
 - **A setup never stays half done.** What Loomy can set up without the agent (the routing, workflow and orchestration documents, the role subagents, the orchestration rule in `AGENTS.md` and `CLAUDE.md`) is created at `loomy init`, then checked again by every `loomy` command and at the start of every Claude Code session: whatever is missing is completed, existing files are never overwritten. While `START.md` is still there, every message reminds the lead agent to finish the setup first. `loomy doctor` reports the gaps, `--fix` completes them.
 - **Every request goes through the lead agent.** The orchestration rule (a block kept up to date by Loomy between its markers) tells the lead agent that every request, the user's feedback and fixes included, is routed: the cheapest role that does it reliably, its own model kept for planning, decisions and review.
@@ -636,9 +636,9 @@ loomy/
 ├── install.sh · package.json  # shell, npm and bun install
 ├── START.md · VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
 ├── scripts/
-│   ├── install-into-project.sh · init-wizard.sh · ai-doctor.sh · ai-route.sh · ai-status.sh
-│   ├── delegate-to-claude.sh · delegate-to-codex.sh · detect-ai-tools.sh
-│   ├── create-hybrid-worktrees.sh · install-security-audit.sh
+│   ├── loomy-install-project.sh · loomy-init-wizard.sh · loomy-doctor.sh · loomy-route.sh · loomy-status.sh
+│   ├── loomy-delegate-claude.sh · loomy-delegate-codex.sh · loomy-detect-tools.sh
+│   ├── loomy-worktrees.sh · loomy-install-security-audit.sh
 │   └── lib/                   # ui.sh · i18n.sh · models.sh · journal.sh · config.sh · i18n/fr.tsv
 ├── templates/                 # AGENTS, CLAUDE, WORKFLOW, ORCHESTRATION, MODEL_ROUTING, HANDOFF, PROJECT, ARCHITECTURE, ADR
 │   └── claude-agents/         # architect, debugger, developer, documenter, executor, explorer, reviewer, security

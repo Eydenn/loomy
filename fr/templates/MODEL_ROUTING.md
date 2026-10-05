@@ -8,9 +8,9 @@ Ce fichier est la source de vérité unique pour les choix de modèles et d'effo
 Il est généré par le moteur de routage de Loomy : régénère-le plutôt que de modifier la matrice à la main.
 
 ```bash
-.loomy/scripts/ai-route.sh              # matrice colorée du projet
-.loomy/scripts/ai-route.sh markdown     # la matrice ci-dessous
-.loomy/scripts/ai-route.sh get executor # un seul rôle, pour les scripts
+.loomy/scripts/loomy-route.sh              # matrice colorée du projet
+.loomy/scripts/loomy-route.sh markdown     # la matrice ci-dessous
+.loomy/scripts/loomy-route.sh get executor # un seul rôle, pour les scripts
 ```
 
 ## Rôles
@@ -38,9 +38,9 @@ Il est généré par le moteur de routage de Loomy : régénère-le plutôt que 
 L'environnement se déduit du brief (`ai_mode`, `ai_lead`) et des CLI réellement installées :
 
 - **Full Claude Code** : tous les rôles tournent sur des modèles Claude, comme sous-agents dans `.claude/agents/`.
-- **Full Codex** : tous les rôles tournent sur des modèles GPT-6, via `delegate-to-codex.sh <rôle>`, qui lance `codex exec` sur le modèle routé.
-- **Hybride, lead Claude** : l'orchestrateur tourne sur Opus 5.5. L'exécution part vers GPT-6-Luna via `delegate-to-codex.sh executor`, et la revue croisée via `delegate-to-codex.sh reviewer`.
-- **Hybride, lead Codex** : l'orchestrateur tourne sur GPT-6-Astra. L'architecture, la sécurité et le débogage difficile partent vers Opus 5.5 via `delegate-to-claude.sh` (lecture seule), et la revue vers Sonnet 5.
+- **Full Codex** : tous les rôles tournent sur des modèles GPT-6, via `loomy-delegate-codex.sh <rôle>`, qui lance `codex exec` sur le modèle routé.
+- **Hybride, lead Claude** : l'orchestrateur tourne sur Opus 5.5. L'exécution part vers GPT-6-Luna via `loomy-delegate-codex.sh executor`, et la revue croisée via `loomy-delegate-codex.sh reviewer`.
+- **Hybride, lead Codex** : l'orchestrateur tourne sur GPT-6-Astra. L'architecture, la sécurité et le débogage difficile partent vers Opus 5.5 via `loomy-delegate-claude.sh` (lecture seule), et la revue vers Sonnet 5.
 
 Si le mode demande les deux outils mais qu'un seul est installé, le routage bascule automatiquement sur la matrice complète de cet outil.
 
@@ -58,4 +58,4 @@ L'orchestrateur reste toujours sur le meilleur modèle. Le profil ne change que 
 - `qualite` : orchestrateur et spécialistes en `xhigh`, revues sur le meilleur modèle, exécutant sur le modèle intermédiaire.
 
 ## Matrice résolue pour ce projet
-<!-- Remplacer cette section par la sortie de : .loomy/scripts/ai-route.sh markdown -->
+<!-- Remplacer cette section par la sortie de : .loomy/scripts/loomy-route.sh markdown -->

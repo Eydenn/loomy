@@ -8,13 +8,13 @@ Loomy n'embarque volontairement pas de copie figée du skill d'origine. Installe
 ## Installation globale
 
 ```bash
-./.loomy/scripts/install-security-audit.sh --global
+./.loomy/scripts/loomy-install-security-audit.sh --global
 ```
 
 ## Installation pour le projet ou les outils courants
 
 ```bash
-./.loomy/scripts/install-security-audit.sh
+./.loomy/scripts/loomy-install-security-audit.sh
 ```
 
 Commande d'origine équivalente :

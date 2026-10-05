@@ -5,7 +5,7 @@
 #   ai-start.sh --new        opens a new session with the prompt suited to the project phase
 #   ai-start.sh --print      only shows the commands
 #   ai-start.sh --watch      also opens live tracking next to the session (tmux, iTerm2 or a new window)
-#                            (default when loomy config start_watch yes; --no-watch to skip it)
+#                            (the default; loomy config set start_watch no or --no-watch to skip it)
 #   ai-start.sh --root <dir> works on another project folder
 set -euo pipefail
 
@@ -134,13 +134,14 @@ watch_script() {
 
 start_with_watch() {
   local side=0 w agent name n
-  _ui_term_size; (( UI_COLS >= 160 )) && side=1
+  # Agent on the left, tracking on the right; stacked only in a terminal too narrow for two columns.
+  _ui_term_size; (( UI_COLS >= 110 )) && side=1
   # Tracking scripts left by previous versions (before automatic deletion).
   find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-watch-*' -user "$(id -u)" -mmin +5 -delete 2>/dev/null || true
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     # Already in tmux: a tracking pane alongside, then the agent in the current pane (same process: exec).
     w="$(watch_script $$)"
-    if (( side )); then tmux split-window -d -h -l 40% -c "$ROOT" "bash $w"
+    if (( side )); then tmux split-window -d -h -l 45% -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -c "$ROOT" "bash $w"; fi
     WATCH_NOTE="$( (( side )) && t "live tracking in the right tmux pane, closed with the session" || t "live tracking in the bottom tmux pane, closed with the session")"
     return 0
@@ -176,7 +177,7 @@ start_with_watch() {
     tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
     tmux set-option -t "$name" pane-active-border-style "fg=colour141" >/dev/null
     w="$(watch_script)"
-    if (( side )); then tmux split-window -d -h -l 40% -t "$name" -c "$ROOT" "bash $w"
+    if (( side )); then tmux split-window -d -h -l 45% -t "$name" -c "$ROOT" "bash $w"
     else tmux split-window -d -v -l 35% -t "$name" -c "$ROOT" "bash $w"; fi
     ui_end "$(t "opening %s and live tracking, side by side (tmux) · click or Ctrl-b + arrow to switch panes" "$tool_label")"
     ui_exec tmux attach-session -t "$name"
@@ -240,7 +241,7 @@ esac
 if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
   ui_info "$(t "first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)")"
 fi
-[[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "yes" ]] && WATCH=1 || WATCH=0; }
+[[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && WATCH=0 || WATCH=1; }
 if [[ "$MODE" == "resume" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); fi
 WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start --watch)")"
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi

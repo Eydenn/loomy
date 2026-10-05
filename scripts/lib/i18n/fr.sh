@@ -1859,5 +1859,7 @@ _t_fr() {
     'bounded tasks') _T='tâches cadrées' ;;
     'reading') _T='lecture' ;;
     'docs') _T='doc' ;;
+    '      start_watch (no: loomy start no longer opens live tracking next to the session),') _T='       start_watch (no : loomy start n'\''ouvre plus le suivi en direct à côté de la session),' ;;
+    '                           (the default; loomy config set start_watch no or --no-watch to skip it)') _T='                           (par défaut ; loomy config set start_watch no ou --no-watch pour l'\''éviter)' ;;
   esac
 }

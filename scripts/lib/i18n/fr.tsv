@@ -1854,3 +1854,5 @@ code + tests	code + tests
 bounded tasks	tâches cadrées
 reading	lecture
 docs	doc
+      start_watch (no: loomy start no longer opens live tracking next to the session),	       start_watch (no : loomy start n'ouvre plus le suivi en direct à côté de la session),
+                           (the default; loomy config set start_watch no or --no-watch to skip it)	                           (par défaut ; loomy config set start_watch no ou --no-watch pour l'éviter)

@@ -190,7 +190,7 @@ sub_help() {
             t "      plan_claude_price, plan_codex_price (monthly price in \$ if different from the list price),"; echo
             t "      quota_switch (95 by default: from this share of a subscription quota, work moves to the other tool; off: never),"; echo
             t "      delegation_format (structured or free: overrides every project's choice; auto: the project's choice),"; echo
-            t "      start_watch (yes: loomy start also opens live tracking next to the session),"; echo
+            t "      start_watch (no: loomy start no longer opens live tracking next to the session),"; echo
             t "      notify (no: loomy watch no longer notifies phase changes, failures and end of bootstrap),"; echo
             t "      auto_update (no: loomy no longer offers to update Loomy, Claude Code and Codex at launch),"; echo
             t "      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),"; echo

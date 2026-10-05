@@ -218,7 +218,9 @@ if (( WATCH )); then
     # ---- image
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-    keys="q $(t "quit") · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view") · l $( [[ "$view" == "log" ]] && t "status" || t "log") · t $( [[ "$view" == "tree" ]] && t "status" || t "tree")"
+    # The compact view only shortens the status screen (the tree and the log have their own layout): c is offered there only.
+    keys="q $(t "quit")"; [[ "$view" == "status" ]] && keys="$keys · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view")"
+    keys="$keys · l $( [[ "$view" == "log" ]] && t "status" || t "log") · t $( [[ "$view" == "tree" ]] && t "status" || t "tree")"
     [[ "$view" == "tree" ]] && keys="$keys · v $( [[ "${tree_mode:-}" == "list" ]] && t "diagram" || t "list")"
     [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
     hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
@@ -261,7 +263,7 @@ if (( WATCH )); then
     fi
     case "$key" in
       q|Q) break ;;
-      c|C) if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi ;;
+      c|C) [[ "$view" == "status" ]] && { if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi; } ;;
       l|L) if [[ "$view" == "log" ]]; then view="status"; else view="log"; fi ;;
       t|T) if [[ "$view" == "tree" ]]; then view="status"; else view="tree"; fi ;;
       v|V) [[ "$view" == "tree" ]] && { if [[ "${tree_mode:-}" == "list" ]]; then tree_mode="diagram"; else tree_mode="list"; fi; } ;;

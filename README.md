@@ -19,8 +19,6 @@ A questionnaire to frame the project, a repository structure ready for agents, a
 </div>
 
 > [!NOTE]
-> Loomy's interface, questionnaire and generated project files are in French. This page is an English overview.
->
 > **Pre-release.** Loomy stays at 0.x until the whole flow has been validated in real conditions. The stable release comes after a release-candidate phase validated by testers.
 
 ---
@@ -142,7 +140,7 @@ Once `loomy init` is done, everything goes through the **lead agent**: a Claude 
 
 ### 1. Open or resume its session
 
-The simplest: **`loomy`** in the project folder, then "Ouvrir ou reprendre la session".
+The simplest: **`loomy`** in the project folder, then "Open or resume the lead agent session".
 
 | Where | How |
 |---|---|
@@ -151,13 +149,31 @@ The simplest: **`loomy`** in the project folder, then "Ouvrir ou reprendre la se
 | 🪟&nbsp;**Desktop&nbsp;apps** | In the Claude app (Code tab) or the Codex app: open the **project folder**, pick the model and effort shown by `loomy start --print`, paste the prompt it copied. To resume, reopen the project conversation in the app. |
 
 > [!NOTE]
-> Resuming is automatic. With Claude Code, a hook installed by `loomy init` hands the context (phase, what you need to do, latest delegations) to every session opened in the project, and notes when it closes; in private mode, it also backs up the AI files. Codex gets the same hooks through `.codex/hooks.json`: the first time it runs in the project, it asks you to trust the folder and then to approve the Loomy hooks; accept both to turn on automatic resuming. Until then, `AGENTS.md` and the `loomy start` prompt ask it to read the context itself.
+> Sessions stay on the machine where they were opened. On another machine, `loomy start` opens a new session: the lead agent rereads `START.md`, the brief and the recorded phase, and picks up where the project is.
 >
-> Sessions stay on the machine where they were opened. On another machine, `loomy start` opens a new session: the lead agent rereads `START.md`, the brief and the recorded phase, and picks up where the project is. In an app, allow the lead agent to run the `.loomy/scripts/` scripts: that is how it delegates to the other tool and records phases.
+> In an app, allow the lead agent to run the `.loomy/scripts/` scripts: that is how it delegates to the other tool and records phases.
+
+**Resuming is automatic.**
+- **Claude Code:** every time a session opens in the project (terminal, app, `claude` typed by hand), a hook installed by `loomy init` hands it the context: phase, what you need to do, latest delegations. It starts by telling you where the project stands. When the session closes, it is noted; in private repository mode, the AI files are backed up.
+- **Codex:** the same mechanism, through `.codex/hooks.json`. The first time it runs in the project, Codex asks you to trust the folder, then to approve the Loomy hooks: accept both, that is what turns on automatic resuming. Until then, `AGENTS.md` and the `loomy start` prompt ask it to read the context itself (`.loomy/scripts/ai-context.sh`).
+- **Tracking:** `loomy watch` and `loomy` show whether the lead agent session is open, and since when.
 
 ### 2. Follow the phases, and know when it is your turn
 
-`loomy watch`, in a second terminal, shows the current phase, **what the agent is doing** and **what you need to do**: answer its questions (Interview), approve its proposal (Approval), review the diffs and the commit.
+`loomy watch`, in a second terminal, shows the current phase, **what the agent is doing** and **what you need to do**.
+
+| Phase | The lead agent… | Your turn |
+|---|---|---|
+| 1&nbsp;·&nbsp;Brief | waits to be started | `loomy start` |
+| 2&nbsp;·&nbsp;Discovery | reads the brief and explores the folder | nothing, keep its session open |
+| 3&nbsp;·&nbsp;Interview | asks the missing questions | answer in its session |
+| 4&nbsp;·&nbsp;Proposal | presents stack, structure and plan | read, question |
+| 5&nbsp;·&nbsp;Approval | waits for your go-ahead | **approve** or ask for changes |
+| 6&nbsp;·&nbsp;Build | sets up the project and delegates | follow the delegations |
+| 7&nbsp;·&nbsp;Verification | tests, cross review, security | look at the findings |
+| 8&nbsp;·&nbsp;Documentation | writes PROJECT.md, ARCHITECTURE.md, `.loomy/docs/` | reread |
+| 9&nbsp;·&nbsp;Commit | initial commit, if allowed | check the commit |
+| 10&nbsp;·&nbsp;Wrap-up | archives or deletes START.md | nothing |
 
 ### 3. Then: day-to-day development
 
@@ -173,7 +189,10 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
   - `--all` compares every Loomy project on the machine.
 - **`loomy models`**: the model chains in use and the new models to evaluate. You can put a new model at the head of its chain with up to two fallbacks, switch to low-cost mode (`--thrifty on`: the fallbacks first), or suggest it on GitHub (`--issue`, one issue per model, no duplicates).
 
-`loomy start` still opens a free session. One clear request per session; ask for a proposal before any large change; ask for a security review on sensitive topics.
+`loomy start` still opens a free session.
+
+> [!TIP]
+> **Recommendations.** One clear request per session, with the expected result. Ask for a proposal before any large change. Review each diff before committing. On sensitive topics (authentication, payments, personal data), explicitly ask for a review by the security role.
 
 ### Kept up to date by itself
 
@@ -265,7 +284,10 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
-**What is live.** The screen rereads the project every 2 seconds. Delegations to Claude or Codex appear as soon as they start, with their timer, then their cost; an interrupted one disappears on its own. The phase changes when the lead agent records it (`START.md` asks it to at each step). Work the lead agent does itself, in its session, is not journaled: you follow it in its session.
+**What is live.** The screen rereads the project every 2 seconds:
+- **delegations** to Claude or Codex appear as soon as they start, with their timer, then their cost at the end; an interrupted one disappears on its own;
+- the **phase** changes when the lead agent records it (`START.md` asks it to at each step);
+- work the lead agent does itself, in its session, is not journaled: you follow it in its session.
 
 The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. `LOOMY_JOURNAL=0` disables it, `LOOMY_JOURNAL_TASKS=0` leaves task text out of it.
 
@@ -332,6 +354,27 @@ Delegations and success rate, total and average durations, tokens (in, from cach
 
 The main session, the **lead agent**, keeps the best reasoning to plan, delegate, decide and verify. The rest of the work goes to dedicated roles.
 
+```mermaid
+flowchart TB
+  L["🎯 Lead agent<br/>Opus 5.5 · high"]:::lead
+  L --> AR["🏛️ Architect<br/>Opus 5.5 · high"]:::deep
+  L --> DB["🐞 Debugger<br/>Opus 5.5 · high"]:::deep
+  L --> SE["🔒 Security<br/>Opus 5.5 · high"]:::deep
+  L --> RV["🔍 Reviewer<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
+  L --> DV["🛠️ Developer<br/>Sonnet 5.5 · medium"]:::std
+  L --> EX["⚙️ Executor<br/>GPT-6-Luna · max ⇄"]:::fast
+  L --> XP["🔎 Explorer<br/>Haiku 4.5 · low"]:::fast
+  L --> DO["📚 Documenter<br/>Sonnet 5.5 · low"]:::std
+  classDef lead fill:#534AB7,stroke:#26215C,color:#FFFFFF
+  classDef deep fill:#EEEDFE,stroke:#534AB7,color:#26215C
+  classDef std fill:#E1F5EE,stroke:#1D9E75,color:#085041
+  classDef fast fill:#FAEEDA,stroke:#BA7517,color:#633806
+```
+
+<sub>Hybrid mode with Claude Code as the lead, Balanced profile. ⇄ = role run by the other tool, through a bridge. 🟪 top · 🟩 standard · 🟧 fast.</sub>
+
+### 🗺️ Full matrix (Balanced profile)
+
 | Role | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybrid, Claude lead | 🟣 Hybrid, Codex lead |
 |---|---|---|---|---|
 | 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Sol 6.1 · high | **Opus 5.5 · high** | Sol 6.1 · high |
@@ -344,14 +387,23 @@ The main session, the **lead agent**, keeps the best reasoning to plan, delegate
 | 🔎&nbsp;Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
 | 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
 
-<sub>Balanced profile. ⇄ = role run by the other tool, through a bridge.</sub>
+**Budget profiles.** The lead agent always stays on the top model; only role efforts and models change.
 
-**Budget profiles.** The lead agent always stays on the top model; only role efforts and models change:
-- **Thrifty:** Claude lead on Sonnet 5.5 `medium` (Codex lead on Sol 6.1 `medium`), specialists at `medium`, execution on fast models;
-- **Balanced (default):** the matrix above;
-- **Max quality:** lead agent and specialists at `xhigh`, reviews on the top model, execution on Sol or Sonnet `high`.
+| Profile | Effect |
+|---|---|
+| 💚&nbsp;Thrifty | Claude lead on Sonnet 5.5 `medium` (Codex lead on Sol 6.1 `medium`), specialists at `medium`, execution on fast models |
+| 💛&nbsp;Balanced&nbsp;*(default)* | the matrix above |
+| ❤️&nbsp;Max&nbsp;quality | lead agent and specialists at `xhigh`, reviews on the top model, execution on Sol or Sonnet `high` |
 
-**Fallbacks.** If the mode asks for both tools and one CLI is missing, routing falls back to the full matrix of the available tool. If the lead tool is missing, the other one leads.
+> [!NOTE]
+> **Automatic fallbacks.** If the mode asks for both tools and one CLI is missing, routing falls back to the full matrix of the available tool. If the lead tool is missing, the other one leads.
+>
+> **In hybrid mode:**
+> - the review always comes from the other model family;
+> - architecture, security and debugging always go through Opus 5.5;
+> - execution always goes through GPT-6-Luna.
+>
+> Choose **Claude Code as the lead tool** to have Opus 5.5 as the lead agent. It is the questionnaire's default.
 
 ---
 
@@ -389,7 +441,7 @@ This is a text protocol that works with Claude and Codex as they are. Exchanging
 
 ## 📊 Why this split
 
-<sub>Analysis of 2026-09-23. "AA" = independent measurements by Artificial Analysis. Details, caveats and sources (in French): <a href="docs/MODEL_CATALOG.md">docs/MODEL_CATALOG.md</a>.</sub>
+<sub>Analysis of 2026-09-23. "AA" = independent measurements by Artificial Analysis. Details, caveats and sources: <a href="docs/MODEL_CATALOG.md">docs/MODEL_CATALOG.md</a>.</sub>
 
 | Model | 💵 Price ($ per million tokens, in / out) | Cost per AA task | AA Coding Agent Index | Terminal-Bench 4.0 | 🏷️ Role |
 |---|---|---|---|---|---|
@@ -447,6 +499,11 @@ brew install --cask codex
 
 Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan or Console account; ChatGPT account for Codex), and check with `loomy doctor --live`.
 
+> [!IMPORTANT]
+> - **Codex shipped with the ChatGPT and Codex apps.** `loomy doctor --fix` makes it available as `codex` through a small script in `~/.local/bin`. A symbolic link would not work: the CLI looks for its helper programs next to the path it was called through.
+> - **Claude Code too old.** Earlier versions refuse `claude-opus-5-5`. The diagnosis offers `claude update`.
+> - **Sandboxed session.** If the Claude Code lead agent runs in a sandbox, allow `delegate-to-codex.sh` to run outside that sandbox when it asks.
+
 ---
 
 ## 🛠️ Commands
@@ -478,7 +535,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
 | ❓&nbsp;<code>loomy&nbsp;help&nbsp;[command]</code> | general help, or help for one command |
 
-Tests: `tests/run.sh` runs every command in real conditions (bash, git, a pseudo-terminal for the questionnaire) with stubbed `claude` and `codex` CLIs, so no network and no tokens.
+<sub>Commands find the project from any of its subfolders, including when the Loomy project lives in a subfolder of a larger Git repository. In a project, the lead agent calls the scripts in <code>.loomy/scripts/</code>: small relays to the Loomy installed on the machine (found through <code>$LOOMY_HOME</code>, the <code>loomy</code> command or its usual locations). <code>LOOMY_NO_CLEAR=1</code> keeps the terminal history instead of clearing the screen.</sub>
 
 ---
 
@@ -552,6 +609,21 @@ For contributors: interface strings are written in English in the code (`t "Engl
 The catalog lives in `catalog/models.conf` (published, fetched by `loomy update --catalog`) and `scripts/lib/models.sh` (built-in values): model chains per tier, prices, minimum CLI versions. The update protocol is in `docs/MODEL_CATALOG.md`.
 
 To try another model on a single machine without changing anything: `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`, or pin it with `loomy config set model.codex.fast gpt-6-sol`. If the Codex CLI is installed somewhere unusual, give its path with `LOOMY_CODEX_BIN`.
+
+</details>
+
+<details>
+<summary><b>🧪 Tests</b></summary>
+
+<br>
+
+```bash
+tests/run.sh
+```
+
+With `-v`, the output of failing tests is shown.
+
+The suite exercises every command in real conditions (bash, git, a pseudo-terminal for the questionnaire), with no network and no tokens: `claude` and `codex` are replaced by stand-ins (`tests/stubs/`). It covers installation, the interactive and non-interactive questionnaire, routing for the 4 environments × 3 profiles, both bridges, the journal in every state, live tracking, the diagnosis with or without CLIs, worktrees and `install.sh`. `shellcheck` and `expect` are used when installed.
 
 </details>
 

@@ -140,7 +140,7 @@ Une fois `loomy init` terminé, tout passe par **l'orchestrateur** : une session
 
 ### 1. Ouvrir ou reprendre sa session
 
-Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou reprendre la session ».
+Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou reprendre la session de l'orchestrateur ».
 
 | Où | Comment |
 |---|---|
@@ -575,6 +575,19 @@ mon-projet/
 </details>
 
 <details>
+<summary><b>🌐 Langues</b></summary>
+
+<br>
+
+Loomy parle anglais, et français quand la langue du système est le français (`LC_ALL`, `LC_MESSAGES`, `LANG`, puis la langue du système macOS). Pour la forcer : `loomy config set lang fr|en|auto` ou `LOOMY_LANG`.
+
+La langue choisit aussi les documents que lisent les agents (`START.md`, templates, rôles, skills : les copies françaises sont dans `fr/`), le brief de démarrage et les prompts de délégation. La langue de la documentation du projet est une réponse séparée du questionnaire.
+
+Pour contribuer : les textes de l'interface sont écrits en anglais dans le code (`t "English sentence"`) ; les traductions françaises sont dans `scripts/lib/i18n/fr.tsv`, compilé par `tools/i18n-build.sh`. `tools/i18n-missing.sh` liste les phrases pas encore traduites, et les tests échouent tant qu'il en manque une.
+
+</details>
+
+<details>
 <summary><b>🏗️ Projet existant, audit de sécurité, fin du bootstrap</b></summary>
 
 <br>
@@ -593,13 +606,9 @@ mon-projet/
 
 <br>
 
-Tout le catalogue tient dans `scripts/lib/models.sh` : six variables `AI_MODEL_*`, les prix, et les versions minimales des CLI. Quand de nouveaux modèles sortent :
+Le catalogue tient dans `catalog/models.conf` (publié, récupéré par `loomy update --catalog`) et `scripts/lib/models.sh` (valeurs intégrées) : chaînes de modèles par niveau, prix, versions minimales des CLI. Le protocole de mise à jour est dans `docs/MODEL_CATALOG.md`.
 
-1. mets à jour ces valeurs, et le classement dans `_ai_base` si nécessaire ;
-2. lance `loomy doctor --live` ;
-3. mets à jour `docs/MODEL_CATALOG.md` et `CHANGELOG.md`.
-
-Pour essayer un autre modèle sur une seule machine, sans rien modifier : `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`. Si la CLI Codex est installée à un endroit inhabituel, indique son chemin avec `LOOMY_CODEX_BIN`.
+Pour essayer un autre modèle sur une seule machine sans rien modifier : `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`, ou l'épingler avec `loomy config set model.codex.fast gpt-6-sol`. Si la CLI Codex est installée à un endroit inhabituel, indique son chemin avec `LOOMY_CODEX_BIN`.
 
 </details>
 
@@ -630,12 +639,14 @@ loomy/
 │   ├── install-into-project.sh · init-wizard.sh · ai-doctor.sh · ai-route.sh · ai-status.sh
 │   ├── delegate-to-claude.sh · delegate-to-codex.sh · detect-ai-tools.sh
 │   ├── create-hybrid-worktrees.sh · install-security-audit.sh
-│   └── lib/                   # ui.sh · models.sh · journal.sh · config.sh
+│   └── lib/                   # ui.sh · i18n.sh · models.sh · journal.sh · config.sh · i18n/fr.tsv
 ├── templates/                 # AGENTS, CLAUDE, WORKFLOW, ORCHESTRATION, MODEL_ROUTING, HANDOFF, PROJECT, ARCHITECTURE, ADR
 │   └── claude-agents/         # architect, debugger, developer, documenter, executor, explorer, reviewer, security
 ├── skills/project-bootstrap/  # SKILL.md + références
 ├── agents/ROLE-CATALOG.md · external-skills/security-audit.md
-├── docs/DESIGN.md · docs/MODEL_CATALOG.md
+├── fr/                        # copies françaises de START.md, des templates, des rôles et des skills
+├── catalog/models.conf · docs/DESIGN.md · docs/MODEL_CATALOG.md
+├── tools/                     # i18n-build.sh · i18n-missing.sh
 └── tests/run.sh · tests/stubs/  # suite de tests sans réseau
 ```
 

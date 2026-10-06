@@ -237,5 +237,9 @@ if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then
   t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .loomy/docs/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
 fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
+# Live tracking not open (session started outside loomy start): one line for the user, at the start only.
+if [[ "$HOOK" == "start" && "${src:-startup}" == "startup" ]] && ! ps -axo command 2>/dev/null | grep -F -- "--root $ROOT" | grep -qF -- "--watch"; then
+  t "- Live tracking is not open for this project: tell the user in one line that loomy watch, in another terminal, shows the dispatch live (loomy start opens the session and tracking side by side)."; echo
+fi
 t "- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now."; echo
 exit 0

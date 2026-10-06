@@ -331,6 +331,16 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
   fi
 fi
 
+# ---------------------------------------------------------------- shell hook (offered once, never installed silently)
+if (( FIX )) && ui_is_interactive && [[ -z "$(loomy_config_get shell_hook 2>/dev/null || true)" ]]; then
+  UI_LABEL="$(t "Shell hook")"
+  UI_DESCS=("$(t "In a Loomy project, claude or codex typed alone (the project's lead tool) goes through loomy start: the session and live tracking side by side, with the project context. Anything else runs the real command. Added to your shell's startup file, between markers.")" \
+    "$(t "Nothing is changed; loomy shell-hook install adds it later.")")
+  ui_choose "$(t "Always go through Loomy when you type claude or codex in a project?")" 1 "$(t "Yes, add the shell hook")" "$(t "No thanks")"
+  if [[ "${UI_INDEX:-1}" == "0" ]]; then bash "$SCRIPT_DIR/loomy-shell-hook.sh" install
+  else loomy_config_set shell_hook no 2>/dev/null || true; fi
+fi
+
 # ---------------------------------------------------------------- real test
 if (( LIVE )); then
   ui_section "$(t "LIVE MODEL TEST")"

@@ -174,6 +174,7 @@ usage() {
   _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
   _h_group "$(t "MACHINE")"
+  _h_cmd shell-hook "[install|remove]" "$(t "Optional: in a Loomy project, claude or codex typed alone goes through loomy start (session and live tracking side by side)")"
   _h_cmd doctor "[--fix] [--live]" "$(t "Checks the prerequisites; --fix fixes, --live tests every model")"
   _h_cmd config "[list|get|set]" "$(t "Preferences: Claude and Codex plans")"
   _h_cmd update "[--catalog]" "$(t "Updates Loomy according to its install method; --catalog: only the model and price catalog")"
@@ -198,6 +199,7 @@ sub_help() {
             t "      tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),"; echo
             t "      watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),"; echo
             t "      memory (off: the shared memory is no longer given at the start of sessions),"; echo
+            t "      start_in (app: loomy start opens the session in the Claude or Codex desktop app, live tracking in a Terminal window),"; echo
             t "      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),"; echo
             t "      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),"; echo
             t "      lang (fr or en: interface language; auto: system language, English by default)."; echo
@@ -264,6 +266,7 @@ case "$cmd" in
   models) exec bash "$S/loomy-models.sh" "$@" ;;
   stats) exec bash "$S/loomy-stats.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/loomy-doctor.sh" --root "$(project_root)" "$@" ;;
+  shell-hook) exec bash "$S/loomy-shell-hook.sh" "$@" ;;
   worktrees) exec bash "$S/loomy-worktrees.sh" "$@" ;;
   delegate)
     case "${1:-}" in -h|--help) sub_help delegate; exit 0 ;; esac
@@ -293,6 +296,7 @@ case "$cmd" in
           plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { t "plan_claude: api, pro, max5, max20, team or enterprise" >&2; echo >&2; exit 2; } ;;
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { t "plan_codex: api, plus, pro100, pro200, business or enterprise" >&2; echo >&2; exit 2; } ;;
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { t "%s: a monthly price in \$" "$key" >&2; echo >&2; exit 2; } ;;
+          start_in) [[ "$val" =~ ^(terminal|app)$ ]] || { t "%s: terminal or app" "$key" >&2; echo >&2; exit 2; } ;;
           memory) [[ "$val" =~ ^(on|off)$ ]] || { t "%s: on or off" "$key" >&2; echo >&2; exit 2; } ;;
           start_watch|notify|auto_update) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s: yes or no" "$key" >&2; echo >&2; exit 2; } ;;
           quota_switch) [[ "$val" == "off" || ( "$val" =~ ^[0-9]+$ && "$val" -ge 1 && "$val" -le 100 ) ]] || { t "quota_switch: a percentage (1 to 100) or off" >&2; echo >&2; exit 2; } ;;
@@ -307,7 +311,7 @@ case "$cmd" in
           models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, memory, notify, auto_update, advisor, tree_view, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, start_in, memory, notify, auto_update, advisor, tree_view, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

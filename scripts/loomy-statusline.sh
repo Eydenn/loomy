@@ -34,13 +34,30 @@ if [[ "$flat" == *'"rate_limits"'* ]]; then
 fi
 
 # ---------------------------------------------------------------- display
+# Loomy segment: the project phase while it isn't done, and the delegations running now, so the dispatch stays in
+# sight in every session (terminal or app). Read from the end of the log only: the status line refreshes often.
+seg=""
+R="${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-}}"
+if [[ -n "$R" && -f "$R/.loomy/state" ]]; then
+  ph="$(sed -n 's/^phase=//p' "$R/.loomy/state" 2>/dev/null | head -1)"
+  [[ -n "$ph" && "$ph" != "done" ]] && seg="$ph"
+  J="$R/.loomy/logs/events.jsonl"
+  if [[ -f "$J" ]]; then
+    run="$(tail -n 300 "$J" 2>/dev/null | awk '
+      /"type":"delegation_start"/ { if (match($0, /"id":"[^"]*"/)) { id = substr($0, RSTART, RLENGTH); s[id] = 1 } }
+      /"type":"delegation",/ { if (match($0, /"id":"[^"]*"/)) { id = substr($0, RSTART, RLENGTH); delete s[id] } }
+      END { n = 0; for (k in s) n++; print n }')"
+    [[ "${run:-0}" -gt 0 ]] 2>/dev/null && seg="${seg:+$seg · }⟳ $run"
+  fi
+fi
 user_cmd="$(cat "$CFG/statusline-user" 2>/dev/null || true)"
 if [[ -n "$user_cmd" ]]; then
-  printf '%s' "$INPUT" | bash -c "$user_cmd" 2>/dev/null
+  out="$(printf '%s' "$INPUT" | bash -c "$user_cmd" 2>/dev/null)"
+  if [[ -n "$seg" ]]; then printf '%s · Loomy %s\n' "$out" "$seg"; else printf '%s\n' "$out"; fi
   exit 0
 fi
 model="$(printf '%s' "$flat" | sed -n 's/.*"display_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
-line="Loomy${model:+ · $model}"
+line="Loomy${seg:+ $seg}${model:+ · $model}"
 [[ -n "${p5:-}" ]] && line="$line · 5h $(printf '%.0f' "$p5")%"
 [[ -n "${p7:-}" ]] && line="$line · 7d $(printf '%.0f' "$p7")%"
 printf '%s\n' "$line"

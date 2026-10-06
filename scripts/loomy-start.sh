@@ -6,6 +6,8 @@
 #   loomy-start.sh --print      only shows the commands
 #   loomy-start.sh --watch      also opens live tracking next to the session (tmux, iTerm2 or a new window)
 #                            (the default; loomy config set start_watch no or --no-watch to skip it)
+#   loomy-start.sh --app        opens the session in the desktop app (Claude: on this folder, prompt filled in; Codex:
+#                            prompt filled in) and live tracking in a terminal window (loomy config set start_in app)
 #   loomy-start.sh --root <dir> works on another project folder
 set -euo pipefail
 
@@ -30,9 +32,10 @@ while [[ $# -gt 0 ]]; do
     --resume|-r) MODE="resume" ;;
     --new|-n) MODE="new" ;;
     --print|-p) MODE="print" ;;
+    --app|-a) MODE="app" ;;
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
-    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
+    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
@@ -221,6 +224,10 @@ if [[ "$MODE" == "menu" ]]; then
       descs+=("$(t "Resumes this folder's latest conversation, with its history: %s" "$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")")")
     fi
     opts+=("$(t "New session")"); codes+=(new); descs+=("$(t "Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state." "$tool_label" "$KIND")")
+    if [[ "$(uname -s)" == Darwin ]] && open -Ra "$( [[ "$TOOL" == codex ]] && echo ChatGPT || echo Claude)" >/dev/null 2>&1; then
+      opts+=("$(t "Open in the app")"); codes+=(app)
+      descs+=("$(t "Opens a %s session in the desktop app with the prompt filled in, and live tracking in a terminal window next to it." "$tool_label")")
+    fi
     opts+=("$(t "Show the commands")"); codes+=(print); descs+=("$(t "Opens nothing: shows the commands and copies the prompt, so you run them yourself.")")
     opts+=("$(t "Cancel")"); codes+=(cancel); descs+=("$(t "Opens nothing.")")
     UI_DESCS=("${descs[@]}"); UI_LABEL="$(t "Choice")"
@@ -229,8 +236,38 @@ if [[ "$MODE" == "menu" ]]; then
   fi
 fi
 
+# Default place to open the session: loomy config set start_in app (a choice from the menu stays a choice).
+if [[ "$MODE" == "new" && "$(loomy_config_get start_in 2>/dev/null || true)" == "app" && "${LOOMY_START_IN:-}" != "terminal" ]]; then MODE="app"; fi
+
+# url_encode <text>: percent-encoded for a URL query.
+url_encode() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1" 2>/dev/null \
+    || osascript -l JavaScript -e "function run(a) { return encodeURIComponent(a[0]) }" "$1" 2>/dev/null
+}
+
+# open_in_app: the desktop app on this project (deep links the apps declare themselves), then live tracking in a
+# Terminal window. The app can't open its own terminal panel on loomy watch: the window stands next to it.
+open_in_app() {
+  local url w
+  if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
+  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$(url_encode "$PROMPT")"
+  else url="claude://code/new?folder=$(url_encode "$ROOT")&q=$(url_encode "$PROMPT")"; fi
+  if ! open "$url" >/dev/null 2>&1; then ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1; fi
+  ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
+  [[ "$TOOL" == codex ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
+  if [[ "${LOOMY_START_WATCH:-}" != "0" && "$(loomy_config_get start_watch 2>/dev/null || true)" != "no" ]] && command -v osascript >/dev/null 2>&1; then
+    w="$(watch_script)"
+    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
+    else ui_info "$(t "live tracking: loomy watch")"; fi
+  fi
+  return 0
+}
+
 case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
+  app)
+    if open_in_app; then ui_end "$(t "session in the app · live tracking: loomy watch")"; exit 0; fi
+    MODE="new" ;;
   print)
     print_cmds
     ui_end "$(t "live tracking: loomy watch")"

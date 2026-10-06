@@ -895,11 +895,11 @@ SLC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["statusLi
 mkdir -p "$WORK/sl-proj/sub"
 SLIN="{\"model\":{\"display_name\":\"Opus 5.5\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42.4,\"resets_at\":$(( NQ + 3600 ))},\"seven_day\":{\"used_percentage\":86,\"resets_at\":$(( NQ + 300000 ))}}}"
 (cd "$WORK/sl-proj/sub" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
-has "status line: Loomy line with the quota" "Loomy · Opus 5.5 · 5h 42% · 7d 86%"
+has "status line: Loomy line with the quota" "Loomy( [a-z]+)? · Opus 5\.5 · 5h 42% · 7d 86%"
 file_has "status line: quota saved" "$QC/loomy/claude-limits" "^seven_day_pct=86$"
 echo 'echo MY-OWN-LINE' >"$QC/loomy/statusline-user"
 (cd "$WORK/sl-proj" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
-has "status line: the user's own status line is shown" "^MY-OWN-LINE$"
+has "status line: the user's own status line is shown" "^MY-OWN-LINE( · Loomy .*)?$"
 rm -f "$QC/loomy/statusline-user"
 SLE="$WORK/sl-existing"; mkdir -p "$SLE/.claude"; printf '{"statusLine":{"type":"command","command":"echo mine"}}\n' >"$SLE/.claude/settings.json"
 run "init keeps an existing status line" "$LOOMY" init "$SLE" --yes --no-clipboard
@@ -1584,6 +1584,39 @@ hasnt "memory: a later Codex session, no switch notice" "previous session ran in
 bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" >"$OUT" 2>&1
 hasnt "memory: no switch notice outside the start hook" "previous session ran in"
 grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/memory/STATE.md' "$REPO/templates/CLAUDE.md" && ok "memory: the lead agent is told to keep STATE.md" || ko "memory: no instruction for STATE.md"
+
+# Launch: status line segment, reminder when tracking isn't open, shell hook, opening in the desktop app.
+SL2="$WORK/lancement"; "$LOOMY" init "$SL2" --yes --no-clipboard >/dev/null 2>&1
+printf '{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d1","role":"executor"}\n' >>"$SL2/.loomy/logs/events.jsonl"
+echo '{"model":{"display_name":"Opus 5.5"}}' | LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1
+has "status line: phase and running delegations" "^Loomy discover · ⟳ 1 · Opus 5.5"
+mkdir -p "$XDG_CONFIG_HOME/loomy"; echo 'echo MY-LINE' >"$XDG_CONFIG_HOME/loomy/statusline-user"
+echo '{}' | LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1; rm -f "$XDG_CONFIG_HOME/loomy/statusline-user"
+has "status line: Loomy segment after the user's own line" "^MY-LINE · Loomy discover · ⟳ 1$"
+echo '{"source":"startup"}' | bash "$SL2/.loomy/scripts/loomy-context.sh" --root "$SL2" --hook start >"$OUT" 2>&1
+has "start: reminder when live tracking isn't open" "Live tracking is not open for this project"
+echo '{"source":"resume"}' | bash "$SL2/.loomy/scripts/loomy-context.sh" --root "$SL2" --hook start >"$OUT" 2>&1
+hasnt "start: no reminder when a session is resumed" "Live tracking is not open"
+RCF="$WORK/zshrc-test"; printf 'export A=1\n' >"$RCF"
+LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook install >"$OUT" 2>&1
+grep -q '^claude() {' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: installed, the file kept" || ko "shell hook: install ($(cat "$RCF"))"
+LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook install >/dev/null 2>&1
+[[ "$(grep -c 'loomy shell hook (loomy' "$RCF")" == 1 ]] && ok "shell hook: installed once" || ko "shell hook: duplicated"
+HB="$(sed -n '/^_loomy_lead()/,/^# <<< loomy shell hook/p' "$RCF")"
+printf '#!/bin/sh\necho loomy-called "$@"\n' >"$WORK/stubbin-loomy"; mkdir -p "$WORK/hookbin"; cp "$WORK/stubbin-loomy" "$WORK/hookbin/loomy"; chmod +x "$WORK/hookbin/loomy"
+printf '#!/bin/sh\necho real-claude "$@"\n' >"$WORK/hookbin/claude"; chmod +x "$WORK/hookbin/claude"
+got1="$(cd "$SL2" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude')"
+got2="$(cd "$SL2" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude --version')"
+got3="$(cd "$WORK" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude')"
+[[ "$got1" == "loomy-called start" && "$got2" == "real-claude --version" && "$got3" == "real-claude" ]] && ok "shell hook: claude alone in a project goes through loomy start, anything else unchanged" || ko "shell hook: '$got1' '$got2' '$got3'"
+LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook remove >/dev/null 2>&1
+! grep -q 'claude()' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: removed, the file kept" || ko "shell hook: remove ($(cat "$RCF"))"
+if [[ "$(uname -s)" == Darwin ]]; then
+  mkdir -p "$WORK/openbin"; printf '#!/bin/sh\n[ "$1" = "-Ra" ] && exit 0\necho "$@" >>"%s"\n' "$WORK/open.log" >"$WORK/openbin/open"; chmod +x "$WORK/openbin/open"
+  (cd "$SL2" && PATH="$WORK/openbin:$PATH" bash "$SL2/.loomy/scripts/loomy-start.sh" --app) >"$OUT" 2>&1
+  grep -q '^claude://code/new?folder=.*lancement&q=' "$WORK/open.log" 2>/dev/null && ok "start --app: Claude app opened on the project folder with the prompt" || ko "start --app: $(cat "$WORK/open.log" 2>&1)"
+  has "start --app: model and effort to pick" "pick model claude-"
+fi
 
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'

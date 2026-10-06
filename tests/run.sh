@@ -21,6 +21,8 @@ export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 export LOOMY_HOME="$REPO"
 # The agent stubs exit at once: live tracking beside them (the default of loomy start) is tested on its own.
 export LOOMY_START_WATCH=0
+# Official skills served from local test doubles (no network).
+export LOOMY_SKILLS_FIXTURES="$HERE/fixtures/skills"
 # No network check of the published catalog during tests.
 export LOOMY_CATALOG_CHECK=0
 export LOOMY_NO_AUTOUPDATE=1
@@ -1617,6 +1619,50 @@ if [[ "$(uname -s)" == Darwin ]]; then
   grep -q '^claude://code/new?folder=.*lancement&q=' "$WORK/open.log" 2>/dev/null && ok "start --app: Claude app opened on the project folder with the prompt" || ko "start --app: $(cat "$WORK/open.log" 2>&1)"
   has "start --app: model and effort to pick" "pick model claude-"
 fi
+
+# Official skills: chosen from the brief, installed (analysed) at init, suggested by task, out of Git, lock, sync, updates.
+skf() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/skills.sh"; shift; "$@"' _ "$REPO" "$@"; }
+grep -v '^#' "$REPO/catalog/skills.conf" | grep -v '^date=' | awk -F'|' 'NF != 8 || $4 !~ /^[0-9a-f]{40}$/ || ($2 != "anthropic" && $2 != "openai") { bad = 1 } END { exit bad }' \
+  && ok "skills catalog: well formed, official sources only, pinned commits" || ko "skills catalog: malformed line"
+printf -- '---\nname: "SK"\nrepo: new\ntype: web\ntraits: "auth,payments"\ndetail1: vercel\n---\n' >"$WORK/sk-answers.md"
+SKP="$WORK/skills-web"; "$LOOMY" init "$SKP" --answers "$WORK/sk-answers.md" --yes --no-clipboard >"$OUT" 2>&1
+[[ "$(skf skills_auto_for "$SKP" | tr '\n' ' ')" == "webapp-testing frontend-design security-best-practices security-threat-model vercel-deploy " ]] \
+  && ok "skills: chosen from type, characteristics and hosting" || ko "skills auto: $(skf skills_auto_for "$SKP" | tr '\n' ' ')"
+has "init: official skills step" "Official skills"
+[[ -f "$SKP/.claude/skills/webapp-testing/SKILL.md" && -f "$SKP/.agents/skills/webapp-testing/SKILL.md" ]] && ok "skills: installed for Claude and Codex (orchestrated)" || ko "skills: not installed"
+grep -q '^webapp-testing|anthropic|skills/webapp-testing|[0-9a-f]\{40\}|Apache-2.0|' "$SKP/.loomy/skills.lock" && ok "skills: lock with source, commit and licence" || ko "skills lock: $(cat "$SKP/.loomy/skills.lock" 2>&1)"
+grep -q 'webapp-testing|.*1 script(s) · network no · deletes files no · runs commands yes' "$SKP/.loomy/skills.lock" && ok "skills: analysed before installation" || ko "skills: analysis missing"
+grep -qxF '/.claude/skills/webapp-testing/' "$SKP/.gitignore" && ok "skills: folders kept out of Git (licences)" || ko "skills: not in .gitignore"
+grep -q '"type":"skill","event":"added","name":"webapp-testing"' "$SKP/.loomy/logs/events.jsonl" && ok "skills: each installation logged (watch, tree)" || ko "skills: not logged"
+bash "$SKP/.loomy/scripts/loomy-context.sh" --root "$SKP" >"$OUT" 2>&1
+has "skills: named in the session context" "Official skills installed .*webapp-testing"
+(cd "$SKP" && "$LOOMY" skills) >"$OUT" 2>&1
+has "loomy skills: list with the reason" "webapp-testing .*project web"
+(cd "$SKP" && "$LOOMY" skills suggest "fix the failing GitHub Actions checks") >"$OUT" 2>&1
+has "loomy skills suggest: from the task text" "^gh-fix-ci"
+(cd "$SKP" && "$LOOMY" task "Add end-to-end tests of sign-in with Playwright" --print) >"$OUT" 2>&1
+has "loomy task: skill added for the task, announced" "Skill added.*playwright"
+grep -q 'Official skills added for this task.*playwright' "$SKP/.loomy/task-prompt.txt" && ok "loomy task: the lead agent is told" || ko "loomy task: prompt without the skill"
+skf skills_install "$SKP" sentry "test" >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/sentry" ]] && ok "skills: one asking for secrets is not installed on its own" || ko "skills: secrets skill installed"
+(cd "$SKP" && "$LOOMY" skills add sentry) >"$OUT" 2>&1; [[ -d "$SKP/.claude/skills/sentry" ]] && ok "skills: added by the user on request" || ko "skills add: $(cat "$OUT")"
+rm -rf "$SKP/.claude/skills/frontend-design" "$SKP/.agents/skills/frontend-design"
+(cd "$SKP" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ -f "$SKP/.claude/skills/frontend-design/SKILL.md" ]] && ok "skills sync: missing ones installed again from the lock" || ko "skills sync"
+sed -i.bak 's/^\(vercel-deploy|openai|[^|]*|\)[0-9a-f]*/\1aaaaaaa/' "$SKP/.loomy/skills.lock"
+[[ "$(skf skills_updates "$SKP")" == vercel-deploy\ aaaaaaa→* ]] && ok "skills: updates detected against the catalog" || ko "skills updates: $(skf skills_updates "$SKP")"
+(cd "$SKP" && "$LOOMY" skills remove sentry) >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/sentry" ]] && ! grep -q '^sentry|' "$SKP/.loomy/skills.lock" && ok "skills remove" || ko "skills remove"
+# Safety (cross review): names never paths, symbolic links refused, whole-word keywords, proprietary only on request.
+mkdir -p "$WORK/victime"; echo keep >"$WORK/victime/f"
+(cd "$SKP" && "$LOOMY" skills remove ../../victime) >/dev/null 2>&1; [[ -f "$WORK/victime/f" ]] && ok "skills remove: a path is refused" || ko "skills remove deleted outside the project"
+SKL="$WORK/skills-lien"; "$LOOMY" init "$SKL" --answers "$WORK/sk-answers.md" --yes --no-clipboard >/dev/null 2>&1
+rm -rf "$SKL/.claude/skills"; mkdir -p "$WORK/dehors"; ln -s "$WORK/dehors" "$SKL/.claude/skills"
+skf skills_install "$SKL" frontend-design "test" force >/dev/null 2>&1; [[ -z "$(ls "$WORK/dehors")" ]] && ok "skills: never written through a symbolic link" || ko "skills: written through a link"
+[[ -z "$(skf skills_suggest "$WORK/aucun" "Fix the build and improve precision of the crossword solver" 3 2>/dev/null)" ]] && ok "skills suggest: whole words only (build, precision, crossword)" || ko "skills suggest: $(skf skills_suggest "$SKP" "Fix the build and improve precision of the crossword solver" 3)"
+skf skills_install "$SKP" xlsx "auto" >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/xlsx" ]] && ok "skills: proprietary licence never installed on its own" || ko "skills: proprietary installed"
+(cd "$SKP" && "$LOOMY" skills add xlsx) >/dev/null 2>&1; [[ -d "$SKP/.claude/skills/xlsx" && ! -d "$SKP/.agents/skills/xlsx" ]] && ok "skills: proprietary on request, for Claude only" || ko "skills: proprietary add"
+"$LOOMY" config set skills off >/dev/null 2>&1
+SKO="$WORK/skills-off"; "$LOOMY" init "$SKO" --answers "$WORK/sk-answers.md" --yes --no-clipboard >/dev/null 2>&1
+[[ ! -d "$SKO/.claude/skills" ]] && ok "skills off: nothing installed" || ko "skills off: installed anyway"
+"$LOOMY" config set skills auto >/dev/null 2>&1
 
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'

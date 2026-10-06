@@ -35,6 +35,7 @@ _ai_session_events() {
     /"type":"advisor"/ { print field("ts") "|advisor|consulted|" num("calls") " × " field("model") " · " int((num("tokens_in") + 0) / 1000) "k"; next }
     /"type":"(phase|task_phase|audit_phase)"/ { ty = field("type"); sub(/_?phase$/, "", ty); print field("ts") "|phase|" field("phase") "|" ty; next }
     /"type":"session"/ { print field("ts") "|session|" field("event") "|" field("tool"); next }
+    /"type":"skill"/ { print field("ts") "|skills|" field("event") "|" field("name") " · " substr(field("reason"), 1, 52); next }
     /"type":"usage"/ { if (field("scope") == "lead") print field("ts") "|lead|replied|" num("messages") " msg · " field("model"); next }'
 }
 

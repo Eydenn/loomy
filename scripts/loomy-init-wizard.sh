@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ui.sh
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
+# shellcheck source=lib/skills.sh
+source "$SCRIPT_DIR/lib/skills.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
@@ -645,6 +647,19 @@ trait_check() {
   esac
 }
 
+# plan_skills: SK_PLAN gets the official skills whose condition matches these answers (one per line).
+plan_skills() {
+  local tmpd
+  SK_PLAN=""
+  [[ "$(skills_policy)" == off ]] && return 0
+  tmpd="$(mktemp -d "${TMPDIR:-/tmp}/loomy-plan.XXXXXX")" || return 0
+  mkdir -p "$tmpd/.loomy"
+  printf -- '---\ntype: %s\ntraits: "%s"\ndetail1: "%s"\n---\n' "$TYPE" "$TRAITS" "$DETAIL1" >"$tmpd/.loomy/brief.md"
+  SK_PLAN="$(skills_auto_for "$tmpd")"
+  rm -rf "$tmpd"
+  return 0
+}
+
 # compute_recos: RECOS gets the recommendations worth making for these answers (indicative: nothing is forced).
 compute_recos() {
   local n=0 c r
@@ -709,6 +724,13 @@ show_recap() {
       trait_check "$c"; [[ -n "$TC" ]] || continue
       if (( first )); then ui_rail_kvw "$(t "Checks")" "$TC"; first=0; else ui_rail_kvw "" "$TC"; fi
     done
+    ui_rail ""
+  fi
+  # Official skills these answers bring (from the catalog; installed during the setup with the "auto" policy).
+  plan_skills
+  if [[ -n "$SK_PLAN" ]]; then
+    ui_rail_group "$(t "Official skills")" "$( [[ "$(skills_policy)" == auto ]] && t "installed during the setup, analysed first" || t "suggested: loomy skills add <name>")"
+    while IFS= read -r c; do [[ -n "$c" ]] && ui_rail_kvw "$c" "$(skills_line "$c" | cut -d'|' -f8)"; done <<<"$SK_PLAN"
     ui_rail ""
   fi
   compute_recos
@@ -919,6 +941,8 @@ fi
 [[ "$REPO" == "existing" ]] && steps+=("$(t "Assessing the existing project")")
 steps+=("$(t "Saving the brief")")
 steps+=("$(t "Routing and role subagents")")
+plan_skills
+[[ -n "$SK_PLAN" && "$(skills_policy)" == auto ]] && steps+=("$(t "Official skills")")
 [[ "$AI_FILES" != "versioned" ]] && steps+=("$(t "Setting up AI files")")
 [[ -n "$PLAN_CLAUDE_NEW$PLAN_CODEX_NEW" ]] && steps+=("$(t "Saving the plans")")
 steps+=("$(t "Preparing the session")")
@@ -982,6 +1006,17 @@ source "$SCRIPT_DIR/lib/project.sh"
 loomy_project_repair "$TARGET" 2>/dev/null || true
 ui_step_done $st ok "$(t "Routing and role subagents")" "$(t "%s item(s) set up" "${#LP_DONE[@]}")"
 st=$(( st + 1 ))
+if [[ -n "$SK_PLAN" && "$(skills_policy)" == auto ]]; then
+  ui_step_run $st
+  sk_ok=""; sk_ko=""
+  while IFS= read -r sk; do
+    [[ -n "$sk" ]] || continue
+    if skills_install "$TARGET" "$sk" "$(t "project %s: %s" "$TYPE" "$(skills_line "$sk" | cut -d'|' -f6)")"; then sk_ok="${sk_ok:+$sk_ok, }$sk"; else sk_ko="${sk_ko:+$sk_ko, }$sk"; fi
+  done <<<"$SK_PLAN"
+  if [[ -z "$sk_ko" ]]; then ui_step_done $st ok "$(t "Official skills")" "$sk_ok"
+  else ui_step_done $st warn "$(t "Official skills")" "$(t "installed: %s · not installed: %s (loomy skills add)" "${sk_ok:-—}" "$sk_ko")"; fi
+  st=$(( st + 1 ))
+fi
 AI_FAIL=0
 if [[ "$AI_FILES" != "versioned" ]]; then
   ui_step_run $st

@@ -237,6 +237,10 @@ if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then
   t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT (see .loomy/docs/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
 fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
+# Official skills of the project (the agents load them from their folders): names only, and how to add more.
+if [[ -s "$ROOT/.loomy/skills.lock" ]]; then
+  t "- Official skills installed (.claude/skills/, .agents/skills/): %s. For another kind of work: loomy skills suggest \"…\", then loomy skills add <name> (official sources only)." "$(cut -d'|' -f1 "$ROOT/.loomy/skills.lock" | paste -sd ',' - | sed 's/,/, /g')"; echo
+fi
 # Live tracking not open (session started outside loomy start): one line for the user, at the start only.
 if [[ "$HOOK" == "start" && "${src:-startup}" == "startup" ]] && ! ps -axo command 2>/dev/null | grep -F -- "--root $ROOT" | grep -qF -- "--watch"; then
   t "- Live tracking is not open for this project: tell the user in one line that loomy watch, in another terminal, shows the dispatch live (loomy start opens the session and tracking side by side)."; echo

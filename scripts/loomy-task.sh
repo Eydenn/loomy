@@ -13,6 +13,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/skills.sh
+source "$SCRIPT_DIR/lib/skills.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/phases.sh
@@ -117,6 +119,15 @@ REL="${TFILE#"$ROOT"/}"
 SET=".loomy/scripts/loomy-status.sh --task set"
 [[ -x "$ROOT/.loomy/scripts/loomy-status.sh" ]] || SET="bash \"$SCRIPT_DIR/loomy-status.sh\" --root \"$ROOT\" --task set"
 REVIEW=".loomy/scripts/loomy-review.sh"; [[ -x "$ROOT/$REVIEW" ]] || REVIEW="bash \"$SCRIPT_DIR/loomy-review.sh\" --root \"$ROOT\""
+# Official skills that help with this task (catalog keywords): installed on their own with the "auto" policy, announced.
+SK_NOTE=""
+if (( ! RESUME )) && [[ "$(skills_policy)" != off ]]; then
+  for sk in $(skills_suggest "$ROOT" "$TITLE" 2); do
+    if [[ "$(skills_policy)" == auto ]] && skills_install "$ROOT" "$sk" "$(t "task #%s: %s" "$ID" "$TITLE")"; then
+      SK_NOTE="${SK_NOTE:+$SK_NOTE, }$sk"; SK_SHOW="${SK_SHOW:-}$SK_LAST"$'\n'
+    else SK_ASK="${SK_ASK:+$SK_ASK, }$sk"; fi
+  done
+fi
 if (( RESUME )); then
   PROMPT="Resume task #$ID ($TITLE) where it stopped: phase \"$cur_phase\". Reread $REL (plan and progress), check the repository state, summarise where the task stands in two sentences, then continue with the same rules: record each phase change with: $SET <phase>."
 else
@@ -127,8 +138,10 @@ Record each phase change before acting, with: $SET <phase>   and announce it on 
 2. approve: wait for the user's go-ahead or changes; do not change code before it.
 3. build: do the work, delegating to the roles as usual (bridges in the foreground); tick the Progress checklist as you go, so a long task can be resumed.
 4. verify: run the project's tests and checks, then a cross review of the changes: $REVIEW --working (or against the base branch); fix what is blocking.
-5. commit: propose the commit (message, files) and commit only once the user agrees; never push unless asked.
-Finish with: $SET done, write the Result section (what changed, checks, open points), and give a three-line summary."
+5. commit: update the durable documentation the task touches (PROJECT.md, ARCHITECTURE.md, an ADR for an important decision), then make one coherent commit if the brief allows commits (commit_after_setup: yes); otherwise propose it (message, files) and commit once the user agrees. Never push unless the brief or the user allows it.
+Finish with: $SET done, write the Result section (what changed, checks, open points), update .loomy/memory/STATE.md, and give a three-line summary."
+  [[ -n "$SK_NOTE" ]] && PROMPT="$PROMPT
+Official skills added for this task (in .claude/skills/ or .agents/skills/): $SK_NOTE. Use them where they apply."
 fi
 ADVISOR=""; [[ "$TOOL" == "claude" ]] && ADVISOR="$(ai_advisor_for "$MODEL" "$AI_PROFILE")"
 if [[ "$TOOL" == "claude" && -n "$ADVISOR" ]]; then AGENT_CMD=(claude --model "$MODEL" --effort "$EFFORT" --advisor "$ADVISOR" "$PROMPT")
@@ -141,6 +154,8 @@ ui_section "$(t "TASK")"
 ui_kv "Task" "#$ID · ${C_BOLD}$TITLE${C_RESET}"
 ui_kv "$(t "File")" "$REL"
 ui_kv "$(t "Lead agent")" "$tool_label · $MODEL ($EFFORT)${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
+if [[ -n "${SK_SHOW:-}" ]]; then while IFS= read -r l; do [[ -n "$l" ]] && ui_ok "$(t "Skill added")" "$l"; done <<<"$SK_SHOW"; fi
+[[ -n "${SK_ASK:-}" ]] && ui_info "$(t "skills that would help: %s · loomy skills add <name>" "$SK_ASK")"
 ui_kv "$(t "Phase")" "$(loomy_phase_label "$cur_phase") ${C_DIM}($(t "step %s of %s" "$(loomy_phase_index "$cur_phase")" "$LOOMY_PHASE_COUNT"))${C_RESET}"
 if (( PRINT )) || ! ui_is_interactive; then
   printf '%s\n' "$PROMPT" >"$ROOT/.loomy/task-prompt.txt"

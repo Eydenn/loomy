@@ -569,6 +569,8 @@ ui_rail_group() {
   local right="${2:-}"
   _ui_term_size
   _ui_pad "$1" $(( UI_W - 3 - ${#right} ))
+  # Always a space between the title and its note, even when the note is too long for the line.
+  [[ -n "$right" && "$UI_PADDED" != *" " ]] && UI_PADDED="$UI_PADDED  "
   ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}${UI_PADDED}${C_RESET}${C_DIM}${right}${C_RESET}"
 }
 ui_rail_kv() { _ui_pad "$1" 15; [[ -n "$1" && "$UI_PADDED" != *" " ]] && UI_PADDED="$UI_PADDED "; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"; }

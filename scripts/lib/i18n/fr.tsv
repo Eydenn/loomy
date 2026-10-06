@@ -2039,3 +2039,51 @@ loomy start, so the session always opens with live tracking and the project cont
   loomy shell-hook install      adds the hook to ~/.zshrc or ~/.bashrc (between Loomy's markers)	  loomy shell-hook install      ajoute le hook à ~/.zshrc ou ~/.bashrc (entre les marqueurs de Loomy)
   loomy shell-hook remove       removes it	  loomy shell-hook remove       le supprime
 Anything else (arguments, another folder, the other tool) runs the real command unchanged; LOOMY_SHELL_HOOK=0 skips it.	Tout le reste (arguments, un autre dossier, l'autre outil) lance la vraie commande sans changement ; LOOMY_SHELL_HOOK=0 le désactive.
+Official agent skills of the project (Anthropic and OpenAI): installed, why, analysis; suggestions for a task	Skills officielles d'agents du projet (Anthropic et OpenAI) : installation, raison, analyse ; suggestions pour une tâche
+      skills (auto: official skills installed on their own, each one announced; ask: only suggested; off),	      skills (auto : installation automatique des skills officielles, chacune annoncée ; ask : suggestions uniquement ; off),
+Skill updates available: %s(loomy skills update)	Mises à jour de skills disponibles : %s(loomy skills update)
+%s: auto, ask or off	%s : auto, ask ou off
+- Official skills installed (.claude/skills/, .agents/skills/): %s. For another kind of work: loomy skills suggest "…", then loomy skills add <name> (official sources only).	- Skills officielles installées (.claude/skills/, .agents/skills/) : %s. Pour un autre type de travail : loomy skills suggest "…", puis loomy skills add <name> (sources officielles uniquement).
+Official skills	Skills officielles
+installed during the setup, analysed first	installées pendant la configuration, analysées au préalable
+suggested: loomy skills add <name>	suggérées : loomy skills add <name>
+project %s: %s	projet %s : %s
+%s installed · not installed: %s (loomy skills add)	%s installée · non installée : %s (loomy skills add)
+Unknown argument: %s (loomy skills --help)	Argument inconnu : %s (loomy skills --help)
+OFFICIAL SKILLS	SKILLS OFFICIELLES
+No official skill matches this task.	Aucune skill officielle ne correspond à cette tâche.
+Usage: loomy skills add <name> (loomy skills catalog)	Utilisation : loomy skills add <name> (loomy skills catalog)
+added by the user	ajoutée par l'utilisateur
+Skill installed	Skill installée
+Skill not installed	Skill non installée
+Usage: loomy skills remove <name>	Utilisation : loomy skills remove <name>
+Skill removed	Skill supprimée
+Skills up to date	Skills à jour
+Skill updated	Skill mise à jour
+Skill not updated	Skill non mise à jour
+Skills in place	Skills installées
+SKILLS	SKILLS
+official only · policy %s	officielles uniquement · règle %s
+analysis: %s	analyse : %s
+Installed	Installées
+none yet	aucune pour l'instant
+updates available: %s · loomy skills update	mises à jour disponibles : %s · loomy skills update
+suggested for this project: %s · loomy skills add <name>	suggérées pour ce projet : %s · loomy skills add <name>
+task #%s: %s	tâche #%s : %s
+Skill added	Skill ajoutée
+skills that would help: %s · loomy skills add <name>	skills utiles : %s · loomy skills add <name>
+Official agent skills of a Loomy project (github.com/anthropics/skills and github.com/openai/skills only).	Skills officielles d'agents d'un projet Loomy (github.com/anthropics/skills et github.com/openai/skills uniquement).
+  loomy skills                    installed skills (why, source, analysis) and the catalog's suggestions	  loomy skills                    skills installées (raison, source, analyse) et suggestions du catalogue
+  loomy skills suggest "text"     the skills that would help for this task	  loomy skills suggest "text"     les skills utiles pour cette tâche
+  loomy skills add <name>         installs one (analysed first)	  loomy skills add <name>         en installe une (après analyse)
+  loomy skills remove <name>      removes one	  loomy skills remove <name>      en supprime une
+  loomy skills update             brings the installed skills to the catalog's commits	  loomy skills update             met à jour les skills installées avec les commits du catalogue
+  loomy skills sync               installs again the skills of the lock missing on this machine	  loomy skills sync               réinstalle les skills du verrou absentes de cette machine
+  loomy skills catalog            every skill of the catalog	  loomy skills catalog            toutes les skills du catalogue
+Policy: loomy config set skills auto|ask|off (auto: installed on their own, each one announced).	Règle : loomy config set skills auto|ask|off (auto : installation automatique, chaque skill est annoncée).
+Proprietary licence	Licence propriétaire
+%s is reserved to the vendor's customers: your agreement with it applies; installed for Claude only, kept out of Git	%s est réservé aux clients de l'éditeur : ton accord avec lui s'applique ; installé pour Claude seulement, hors de Git
+Install it anyway?	L'installer quand même ?
+Yes, install it	Oui, l'installer
+Skill not removed	Skill non supprimée
+installed: %s · not installed: %s (loomy skills add)	installées : %s · non installées : %s (loomy skills add)

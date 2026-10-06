@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.12.0 — 2026-10-06
+
+### Added
+- **Official agent skills, added as the project needs them.** Only from github.com/anthropics/skills and github.com/openai/skills, through a catalog of 24 selected skills (`catalog/skills.conf`, each at a pinned commit, refreshed with `loomy update --catalog`).
+  - **At init**: chosen from the project type, the key characteristics and the hosting (e.g. web app with payments on Vercel → webapp-testing, frontend-design, security-best-practices, security-threat-model, vercel-deploy); listed in the recap, installed by a setup step.
+  - **At each task**: `loomy task` matches the task text with the catalog keywords (whole words), installs the skills that help (two at most), announces them and tells the lead agent.
+  - **Analysed before installation**: scripts, network, deletions, commands run, credentials asked; recorded with the reason in `.loomy/skills.lock`, logged (session log of `loomy watch` and the tree), named in the session context.
+  - **Safe by default**: names checked against the catalog, no write through a symbolic link, archives checked (no links, no absolute or `..` paths) before being cached, downloads atomic, the lock rewritten under a lock. Skills asking for credentials or under a proprietary licence (Anthropic's docx, pdf, pptx, xlsx) are only installed on request, the proprietary ones for Claude only.
+  - Skill folders are kept out of Git (licences); the lock brings them back on another clone at the same commit (at launch). Weekly notice of updates.
+  - `loomy skills` (list, why, analysis), `suggest "…"`, `add`, `remove`, `update`, `sync`, `catalog`; `loomy config set skills auto|ask|off`.
+
 ## 0.11.1 — 2026-10-06
 
 ### Added

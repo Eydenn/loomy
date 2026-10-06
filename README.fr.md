@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.11.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -452,6 +452,17 @@ Chaque agent part de zéro, volontairement ; le fil du travail est gardé dans `
 - **Redonnée comme des données, pas des instructions** : l'orchestrateur vérifie un résultat avant d'agir dessus.
 - `loomy memory` montre l'état du travail et les derniers résultats, `loomy memory show [N]` le texte complet de l'un d'eux ; `loomy config set memory off` arrête de la redonner.
 
+
+### 🧩 Skills officiels
+
+Les skills donnent aux agents une méthode éprouvée pour un type de travail (tests dans le navigateur, déploiement, modèle de menace, tableurs…). Loomy ne les prend qu'aux deux sources officielles, [anthropics/skills](https://github.com/anthropics/skills) et [openai/skills](https://github.com/openai/skills), via son catalogue (`catalog/skills.conf`, 24 skills choisis, chacun à un commit figé).
+
+- **À l'initialisation** : le type de projet et ses caractéristiques clés les choisissent (par exemple une application web avec paiements sur Vercel : tests dans le navigateur, design front-end, bonnes pratiques de sécurité, modèle de menace, déploiement Vercel). Le récapitulatif les liste, la mise en place les installe.
+- **À chaque tâche** : `loomy task` compare la tâche au catalogue (mots entiers) et ajoute les skills utiles, chacun annoncé, aussi dans `loomy watch`, et signalé à l'orchestrateur.
+- **Transparent** : chaque skill est analysé avant installation (scripts, réseau, suppressions, commandes lancées, identifiants demandés), enregistré avec la raison de son ajout dans `.loomy/skills.lock`, journalisé. `loomy skills` les liste.
+- **Sûr** : un skill qui demande des identifiants, ou sous licence propriétaire (docx, pdf, pptx, xlsx d'Anthropic), n'est installé qu'à ta demande (`loomy skills add`), les propriétaires pour Claude seulement. Les dossiers des skills restent hors de Git ; le verrou les ramène sur une autre machine, au même commit. Une fois par semaine, le lancement signale les mises à jour (`loomy skills update`).
+- `loomy config set skills auto|ask|off` : installés d'eux-mêmes (par défaut), seulement suggérés, ou jamais.
+
 ---
 
 ## 📊 Pourquoi cette répartition
@@ -540,13 +551,14 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | 🔍&nbsp;<code>loomy&nbsp;review</code> | relecture croisée à la demande de la branche en cours (`[base]`) ou des modifications non commitées (`--working`, `--staged`), en lecture seule, enregistrée dans `.loomy/reviews/` |
 | 🧾&nbsp;<code>loomy&nbsp;report</code> | chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` en Markdown dans `docs/reports/` ; `--all` tous les projets |
 | 🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> | mémoire partagée : l'état du travail tenu par l'orchestrateur et les derniers résultats des délégations en bref ; `show [N]` le texte complet de l'un d'eux |
+| 🧩&nbsp;<code>loomy&nbsp;skills&nbsp;[suggest\|add\|remove\|update\|catalog]</code> | skills officiels du projet : installés, pourquoi, analyse ; `suggest "…"` pour une tâche, `add`/`remove`, `update`, `catalog` |
 | 🧬&nbsp;<code>loomy&nbsp;models</code> | chaînes de modèles et nouveaux modèles à évaluer ; tête de chaîne avec deux replis (cette machine), `--thrifty on\|off`, `--issue` (suggestion GitHub) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | audit de sécurité d'un dépôt Git existant, une mission plutôt qu'un projet (voir plus bas) : `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | suivi (voir ci-dessus) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | statistiques détaillées : par rôle, modèle et jour, durées, tokens, coût ou quota (`--days N`, `--since AAAA-MM-JJ`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | effort de raisonnement de l'orchestrateur pour ce projet (`loomy effort low`, menu sans argument), ou d'un rôle (`loomy effort executor high`) ; `--list`, `--reset` ; pris en compte au prochain `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : à partir de cette part d'un quota d'abonnement, le travail passe à l'autre outil ; `off` : jamais), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `skills` (`auto`, `ask` ou `off`), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : à partir de cette part d'un quota d'abonnement, le travail passe à l'autre outil ; `off` : jamais), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;tâche&gt;</code> | deux worktrees séparés pour le mode parallèle |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | mise à jour de Loomy, valable pour tous les projets ; `update --catalog` : seulement le catalogue des modèles et des prix ; `version --all` liste toutes les installations |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | montre comment désinstaller Loomy selon l'installation, et comment le retirer d'un projet |
@@ -752,7 +764,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.9.1 | arbre des agents : les rôles sans boîte résumés par modèle, avec ce que fait chacun |
 | ✅&nbsp;0.10.0 | **questionnaire repensé** : un seul type de projet (avec **données et analyse** et **sur mesure**), plusieurs caractéristiques clés avec leurs vérifications, une équipe IA recommandée, un récapitulatif de ce qui sera configuré avec des recommandations indicatives ; scripts nommés `loomy-*` ; agent et suivi en direct côte à côte par défaut |
 | ✅&nbsp;0.11.0 | **mémoire partagée** : résultats des délégations et état du travail gardés dans `.loomy/memory/`, redonnés à chaque nouvelle session et après un compactage, Claude Code comme Codex, pour quelques centaines de tokens ; `loomy memory` |
-| ✅&nbsp;0.11.1 | **Version actuelle** · `loomy start --app` (app de bureau Claude ou Codex, suivi à côté), phase et délégations en cours dans la ligne d'état, `loomy shell-hook` en option ; documentation durable et un commit après chaque demande terminée |
+| ✅&nbsp;0.11.1 | `loomy start --app` (app de bureau Claude ou Codex, suivi à côté), phase et délégations en cours dans la ligne d'état, `loomy shell-hook` en option ; documentation durable et un commit après chaque demande terminée |
+| ✅&nbsp;0.12.0 | **Version actuelle** · **skills officiels** (Anthropic et OpenAI seulement) : choisis à l'initialisation selon le projet, ajoutés à chaque tâche, analysés et annoncés, sûrs par défaut ; `loomy skills` |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |

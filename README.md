@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.11.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -452,6 +452,17 @@ Each agent starts from zero by design; the thread of the work is kept in `.loomy
 - **Given back as data, not instructions**: the lead agent checks a result before acting on it.
 - `loomy memory` shows the work state and the latest results, `loomy memory show [N]` the full text of one; `loomy config set memory off` stops giving it back.
 
+
+### 🧩 Official skills
+
+Skills give the agents a proven method for a kind of work (browser tests, deployment, threat modelling, spreadsheets…). Loomy only takes them from the two official sources, [anthropics/skills](https://github.com/anthropics/skills) and [openai/skills](https://github.com/openai/skills), through its catalog (`catalog/skills.conf`, 24 selected skills, each at a pinned commit).
+
+- **At init**: the project type and its key characteristics choose them (for example a web app with payments on Vercel: browser tests, front-end design, security best practices, threat model, Vercel deployment). The recap lists them, the setup installs them.
+- **At each task**: `loomy task` compares the task with the catalog (whole words) and adds the skills that help, each one announced, in `loomy watch` too, and given to the lead agent.
+- **Transparent**: every skill is analysed before installation (scripts, network, deletions, commands run, credentials asked), recorded with why it was added in `.loomy/skills.lock`, logged. `loomy skills` lists them.
+- **Safe**: a skill that asks for credentials, or under a proprietary licence (Anthropic's docx, pdf, pptx, xlsx), is only installed when you ask (`loomy skills add`), the proprietary ones for Claude only. Skill folders stay out of Git; the lock brings them back on another machine, at the same commit. Once a week, the launch says when updates exist (`loomy skills update`).
+- `loomy config set skills auto|ask|off`: installed on their own (default), only suggested, or never.
+
 ---
 
 ## 📊 Why this split
@@ -541,12 +552,13 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🔍&nbsp;<code>loomy&nbsp;review</code> | on-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/` |
 | 🧾&nbsp;<code>loomy&nbsp;report</code> | project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project |
 | 🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> | shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one |
+| 🧩&nbsp;<code>loomy&nbsp;skills&nbsp;[suggest\|add\|remove\|update\|catalog]</code> | official agent skills of the project: installed, why, analysis; `suggest "…"` for a task, `add`/`remove`, `update`, `catalog` |
 | 🧬&nbsp;<code>loomy&nbsp;models</code> | model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on\|off`, `--issue` (GitHub suggestion) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
@@ -752,7 +764,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.9.1 | agent tree: the roles without a box summed up by model, with what each one does |
 | ✅&nbsp;0.10.0 | **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
 | ✅&nbsp;0.11.0 | **shared memory**: delegation results and the work state kept in `.loomy/memory/`, given back at each new session and after a compaction, Claude Code or Codex, for a few hundred tokens; `loomy memory` |
-| ✅&nbsp;0.11.1 | **Current version** · `loomy start --app` (Claude or Codex desktop app, tracking beside it), phase and running delegations in the status line, optional `loomy shell-hook`; durable docs and one commit after each finished request |
+| ✅&nbsp;0.11.1 | `loomy start --app` (Claude or Codex desktop app, tracking beside it), phase and running delegations in the status line, optional `loomy shell-hook`; durable docs and one commit after each finished request |
+| ✅&nbsp;0.12.0 | **Current version** · **official skills** (Anthropic and OpenAI only): chosen at init from the project, added at each task, analysed and announced, safe by default; `loomy skills` |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

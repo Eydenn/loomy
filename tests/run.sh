@@ -1589,7 +1589,7 @@ grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/me
 
 # Launch: status line segment, reminder when tracking isn't open, shell hook, opening in the desktop app.
 SL2="$WORK/lancement"; "$LOOMY" init "$SL2" --yes --no-clipboard >/dev/null 2>&1
-printf '{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d1","role":"executor"}\n' >>"$SL2/.loomy/logs/events.jsonl"
+printf '{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d1","pid":%s,"role":"executor"}\n{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d2","pid":999999,"role":"explorer"}\n' "$$" >>"$SL2/.loomy/logs/events.jsonl"
 echo '{"model":{"display_name":"Opus 5.5"}}' | LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1
 has "status line: phase and running delegations" "^Loomy discover · ⟳ 1 · Opus 5.5"
 mkdir -p "$XDG_CONFIG_HOME/loomy"; echo 'echo MY-LINE' >"$XDG_CONFIG_HOME/loomy/statusline-user"
@@ -1599,12 +1599,20 @@ echo '{"source":"startup"}' | bash "$SL2/.loomy/scripts/loomy-context.sh" --root
 has "start: reminder when live tracking isn't open" "Live tracking is not open for this project"
 echo '{"source":"resume"}' | bash "$SL2/.loomy/scripts/loomy-context.sh" --root "$SL2" --hook start >"$OUT" 2>&1
 hasnt "start: no reminder when a session is resumed" "Live tracking is not open"
+echo '{"rate_limits":{"five_hour":{"used_percentage":12.5,"resets_at":1}}}' | LC_ALL=fr_FR.UTF-8 LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1
+has "status line: decimal quota read whatever the locale" "5h 13%"
+mkdir -p "$XDG_CONFIG_HOME/loomy"; echo 'sleep 5; echo SLOW' >"$XDG_CONFIG_HOME/loomy/statusline-user"
+t0=$SECONDS; echo '{}' | LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1; rm -f "$XDG_CONFIG_HOME/loomy/statusline-user"
+(( SECONDS - t0 < 4 )) && ok "status line: a slow user line doesn't block it" || ko "status line: blocked $(( SECONDS - t0 )) s"
+RCB="$WORK/zshrc-broken"; printf 'export A=1\n# >>> loomy shell hook (loomy shell-hook remove to take it out) >>>\nexport KEEP=1\n' >"$RCB"
+LOOMY_SHELL_RC="$RCB" "$LOOMY" shell-hook remove >/dev/null 2>&1
+grep -q 'export KEEP=1' "$RCB" && ok "shell hook: end marker missing, nothing cut" || ko "shell hook: rc file cut"
 RCF="$WORK/zshrc-test"; printf 'export A=1\n' >"$RCF"
 LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook install >"$OUT" 2>&1
-grep -q '^claude() {' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: installed, the file kept" || ko "shell hook: install ($(cat "$RCF"))"
+grep -q '^function claude {' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: installed, the file kept" || ko "shell hook: install ($(cat "$RCF"))"
 LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook install >/dev/null 2>&1
 [[ "$(grep -c 'loomy shell hook (loomy' "$RCF")" == 1 ]] && ok "shell hook: installed once" || ko "shell hook: duplicated"
-HB="$(sed -n '/^_loomy_lead()/,/^# <<< loomy shell hook/p' "$RCF")"
+HB="$(sed -n '/^function _loomy_lead/,/^# <<< loomy shell hook/p' "$RCF")"
 printf '#!/bin/sh\necho loomy-called "$@"\n' >"$WORK/stubbin-loomy"; mkdir -p "$WORK/hookbin"; cp "$WORK/stubbin-loomy" "$WORK/hookbin/loomy"; chmod +x "$WORK/hookbin/loomy"
 printf '#!/bin/sh\necho real-claude "$@"\n' >"$WORK/hookbin/claude"; chmod +x "$WORK/hookbin/claude"
 got1="$(cd "$SL2" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude')"
@@ -1612,7 +1620,7 @@ got2="$(cd "$SL2" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude --vers
 got3="$(cd "$WORK" && PATH="$WORK/hookbin:$PATH" bash -c "$HB"$'\n''claude')"
 [[ "$got1" == "loomy-called start" && "$got2" == "real-claude --version" && "$got3" == "real-claude" ]] && ok "shell hook: claude alone in a project goes through loomy start, anything else unchanged" || ko "shell hook: '$got1' '$got2' '$got3'"
 LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook remove >/dev/null 2>&1
-! grep -q 'claude()' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: removed, the file kept" || ko "shell hook: remove ($(cat "$RCF"))"
+! grep -q 'function claude' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: removed, the file kept" || ko "shell hook: remove ($(cat "$RCF"))"
 if [[ "$(uname -s)" == Darwin ]]; then
   mkdir -p "$WORK/openbin"; printf '#!/bin/sh\n[ "$1" = "-Ra" ] && exit 0\necho "$@" >>"%s"\n' "$WORK/open.log" >"$WORK/openbin/open"; chmod +x "$WORK/openbin/open"
   (cd "$SL2" && PATH="$WORK/openbin:$PATH" bash "$SL2/.loomy/scripts/loomy-start.sh" --app) >"$OUT" 2>&1
@@ -1682,8 +1690,21 @@ has "feedback triage: maintainers only" "Maintainers only"
 printf '21\tFeedback: watch freezes\twatch freezes after a while\n22\tFeedback: tree too wide\tthe tree overflows\n' >"$FBD/triage.txt"
 STUB_LOG="$FBL" GH_STUB_ISSUES="$FBD/triage.txt" LOOMY_TRIAGE_AI=none bash "$REPO/scripts/loomy-feedback.sh" triage >"$OUT" 2>&1
 has "feedback triage: issues counted" "2 open, not triaged"
-has "feedback triage: report written" "loomy-triage-.*\.md"
+has "feedback triage: report written" "triage-[0-9-]*\.md"
 grep -qE 'issue (comment|edit|close)' "$FBL" && ko "feedback triage: posted without approval" || ok "feedback triage: nothing posted without approval"
+# In a terminal, each reply waits for a choice: here "Skip", then "Stop" (the issue rows don't take the keyboard).
+if command -v expect >/dev/null 2>&1; then
+  cat >"$WORK/triage.exp" <<EXP
+set timeout 20
+spawn env GH_STUB_ISSUES=$FBD/triage.txt LOOMY_TRIAGE_AI=none STUB_LOG=$FBL bash $REPO/scripts/loomy-feedback.sh triage
+expect "What to do with #21" ; expect "⏎ confirm" ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\r"
+expect "What to do with #22" ; expect "⏎ confirm" ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\r"
+expect eof
+EXP
+  : >"$FBL"; expect "$WORK/triage.exp" >"$OUT" 2>&1
+  has "feedback triage: asks for each issue in a terminal" "What to do with #22"
+  grep -qE 'issue	(comment|edit)' "$FBL" && ko "feedback triage: posted although skipped" || ok "feedback triage: skipped and stopped, nothing posted"
+fi
 STUB_LOG="$FBL" bash "$REPO/scripts/loomy-feedback.sh" mark 21 0.12.1 >"$OUT" 2>&1
 grep -q 'issue	edit	21	.*fixed-in:0.12.1' "$FBL" && ok "feedback mark: label fixed-in:<version>" || ko "feedback mark: $(tail -2 "$FBL")"
 printf '21|OPEN|fixed-in:0.12.1|Feedback: watch freezes\n' >"$FBD/close.txt"

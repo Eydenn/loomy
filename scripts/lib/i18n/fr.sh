@@ -2152,5 +2152,8 @@ _t_fr() {
     '  loomy feedback mark <n> <v>  maintainer: feedback #n fixed in version v (label fixed-in:v)') _T='  loomy feedback mark <n> <v>  mainteneur : retour #n corrigé dans la version v (label fixed-in:v)' ;;
     '  loomy feedback close <v>     maintainer: comments and closes the feedback fixed in v, after your approval') _T='  loomy feedback close <v>     mainteneur : commente et ferme les retours corrigés dans la version v, après ton approbation' ;;
     'issue #%s skipped') _T='issue #%s ignorée' ;;
+    'Loomy markers incomplete in %s') _T='Marqueurs Loomy incomplets dans %s' ;;
+    'remove the hook by hand') _T='retire le hook à la main' ;;
+    'The app link could not be built') _T='Le lien vers l'\''app n'\''a pas pu être construit' ;;
   esac
 }

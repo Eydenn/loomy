@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.12.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.2-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -767,7 +767,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.11.0 | **mémoire partagée** : résultats des délégations et état du travail gardés dans `.loomy/memory/`, redonnés à chaque nouvelle session et après un compactage, Claude Code comme Codex, pour quelques centaines de tokens ; `loomy memory` |
 | ✅&nbsp;0.11.1 | `loomy start --app` (app de bureau Claude ou Codex, suivi à côté), phase et délégations en cours dans la ligne d'état, `loomy shell-hook` en option ; documentation durable et un commit après chaque demande terminée |
 | ✅&nbsp;0.12.0 | **skills officiels** (Anthropic et OpenAI seulement) : choisis à l'initialisation selon le projet, ajoutés à chaque tâche, analysés et annoncés, sûrs par défaut ; `loomy skills` |
-| ✅&nbsp;0.12.1 | **Version actuelle** · retours des testeurs traités : `loomy feedback list`, annonce des corrections au lancement, `triage` côté mainteneur (regroupés par cause, réponses rédigées, publiées seulement après accord), `mark` et `close` |
+| ✅&nbsp;0.12.1 | retours des testeurs traités : `loomy feedback list`, annonce des corrections au lancement, `triage` côté mainteneur (regroupés par cause, réponses rédigées, publiées seulement après accord), `mark` et `close` |
+| ✅&nbsp;0.12.2 | **Version actuelle** · correctifs d'audit : le tri des retours ne publie qu'après un choix, modèle de rédaction sans outils, hook de shell sûr sur un fichier abîmé, ligne d'état indépendante de la locale |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | ✅ | Retours des testeurs traités : `loomy feedback list`, `triage` côté mainteneur, `mark`, `close` (0.12.1) |

@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.12.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.2-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -767,7 +767,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.11.0 | **shared memory**: delegation results and the work state kept in `.loomy/memory/`, given back at each new session and after a compaction, Claude Code or Codex, for a few hundred tokens; `loomy memory` |
 | ✅&nbsp;0.11.1 | `loomy start --app` (Claude or Codex desktop app, tracking beside it), phase and running delegations in the status line, optional `loomy shell-hook`; durable docs and one commit after each finished request |
 | ✅&nbsp;0.12.0 | **official skills** (Anthropic and OpenAI only): chosen at init from the project, added at each task, analysed and announced, safe by default; `loomy skills` |
-| ✅&nbsp;0.12.1 | **Current version** · tester feedback processed: `loomy feedback list`, fixed notice at launch, maintainer `triage` (grouped by cause, replies drafted, posted only on approval), `mark` and `close` |
+| ✅&nbsp;0.12.1 | tester feedback processed: `loomy feedback list`, fixed notice at launch, maintainer `triage` (grouped by cause, replies drafted, posted only on approval), `mark` and `close` |
+| ✅&nbsp;0.12.2 | **Current version** · audit fixes: feedback triage only posts after a choice, drafting model without tools, shell hook safe on a damaged rc file, status line locale and timeouts |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | ✅ | Tester feedback processed: `loomy feedback list`, maintainer `triage`, `mark`, `close` (0.12.1) |

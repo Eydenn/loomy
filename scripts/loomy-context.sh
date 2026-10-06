@@ -242,7 +242,7 @@ if [[ -s "$ROOT/.loomy/skills.lock" ]]; then
   t "- Official skills installed (.claude/skills/, .agents/skills/): %s. For another kind of work: loomy skills suggest \"…\", then loomy skills add <name> (official sources only)." "$(cut -d'|' -f1 "$ROOT/.loomy/skills.lock" | paste -sd ',' - | sed 's/,/, /g')"; echo
 fi
 # Live tracking not open (session started outside loomy start): one line for the user, at the start only.
-if [[ "$HOOK" == "start" && "${src:-startup}" == "startup" ]] && ! ps -axo command 2>/dev/null | grep -F -- "--root $ROOT" | grep -qF -- "--watch"; then
+if [[ "$HOOK" == "start" && "${src:-startup}" == "startup" ]] && ! ps -axo command 2>/dev/null | grep -vF grep | grep -qF -- "--root $ROOT --watch"; then
   t "- Live tracking is not open for this project: tell the user in one line that loomy watch, in another terminal, shows the dispatch live (loomy start opens the session and tracking side by side)."; echo
 fi
 t "- To start: tell the user, in one or two sentences, where the project stands and what you propose to do now."; echo

@@ -5,7 +5,8 @@
 # Haiku; LOOMY_TRIAGE_AI=none: no model, one group per issue), written to a Markdown report, then reviewed one by
 # one: nothing is posted to GitHub without the maintainer's approval. Bash 3.2.
 
-# _fb_ai <prompt file> <output file>: runs the fast model available; false when none answered.
+# _fb_ai <prompt file> <output file>: runs the fast model available, unable to act (Codex read-only sandbox, Claude
+# without tools); false when none answered.
 _fb_ai() {
   local codex claude
   case "${LOOMY_TRIAGE_AI:-auto}" in none) return 1 ;; esac
@@ -16,7 +17,8 @@ _fb_ai() {
   fi
   claude="$(command -v claude 2>/dev/null || true)"
   if [[ -n "$claude" ]]; then
-    LOOMY_DELEGATION=1 "$claude" -p --model "${AI_MODEL_CLAUDE_FAST:-claude-haiku-4-5}" "$(cat "$1")" </dev/null >"$2" 2>/dev/null && [[ -s "$2" ]] && return 0
+    # No tool at all (the issues are untrusted text): it can only write the proposal.
+    LOOMY_DELEGATION=1 "$claude" -p --model "${AI_MODEL_CLAUDE_FAST:-claude-haiku-4-5}" --tools "" --strict-mcp-config "$(cat "$1")" </dev/null >"$2" 2>/dev/null && [[ -s "$2" ]] && return 0
   fi
   return 1
 }
@@ -51,7 +53,7 @@ fb_triage() {
     done <"$json" >"$tmp/proposal.txt"
   fi
   # Report, grouped by cause then priority (kept for the maintainer, outside any project).
-  report="${TMPDIR:-/tmp}/loomy-triage-$(date +%Y%m%d-%H%M%S).md"
+  report="$(mktemp -d "${TMPDIR:-/tmp}/loomy-triage.XXXXXX")/triage-$(date +%Y%m%d-%H%M%S).md"
   {
     echo "# Loomy feedback triage — $(date '+%Y-%m-%d %H:%M')"
     echo
@@ -67,8 +69,12 @@ fb_triage() {
   # One by one: post (reply + labels + triaged), labels only, edit the reply, skip, stop.
   gh label create triaged -R "$REPO" --color C5DEF5 --description "Seen by the maintainer" >/dev/null 2>&1 || true
   rows="$(grep -E '^[0-9]+\|' "$tmp/proposal.txt" | sort -t'|' -k3,3)"
-  while IFS='|' read -r n grp pri labels reply; do
+  while IFS='|' read -r n grp pri labels reply <&3; do
     [[ "$n" =~ ^[0-9]+$ ]] || continue
+    # Only the issues fetched above (a number made up by the model is ignored); labels limited to the known ones.
+    awk -F'\t' -v n="$n" '$1 == n { f = 1 } END { exit !f }' "$json" || continue
+    [[ "$pri" =~ ^P[123]$ ]] || pri="P2"
+    labels="$(printf '%s' "$labels" | tr ',' '\n' | tr -d ' ' | grep -xE 'bug|enhancement|documentation|question' | paste -sd ',' -)"
     i=$(( i + 1 ))
     title="$(awk -F'\t' -v n="$n" '$1 == n { print $2 }' "$json")"
     ui_section "#$n · $pri · $grp" "$i/$total"
@@ -92,7 +98,7 @@ fb_triage() {
       4) break ;;
       *) ui_info "$(t "issue #%s skipped" "$n")" ;;
     esac
-  done <<<"$rows"
+  done 3<<<"$rows"
   rm -rf "$tmp"
   ui_end "$(t "fix, then: loomy feedback mark <n> <version>; at release: loomy feedback close <version>")"
 }

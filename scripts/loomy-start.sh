@@ -250,12 +250,18 @@ url_encode() {
 open_in_app() {
   local url w
   if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
-  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$(url_encode "$PROMPT")"
-  else url="claude://code/new?folder=$(url_encode "$ROOT")&q=$(url_encode "$PROMPT")"; fi
+  local ep ef
+  ep="$(url_encode "$PROMPT")"; ef="$(url_encode "$ROOT")"
+  [[ -n "$ep" && -n "$ef" ]] || { ui_warn "$(t "The app link could not be built")" "$(t "opening in the terminal")"; return 1; }
+  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$ep"
+  else url="claude://code/new?folder=$ef&q=$ep"; fi
   if ! open "$url" >/dev/null 2>&1; then ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1; fi
   ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
   [[ "$TOOL" == codex ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
-  if [[ "${LOOMY_START_WATCH:-}" != "0" && "$(loomy_config_get start_watch 2>/dev/null || true)" != "no" ]] && command -v osascript >/dev/null 2>&1; then
+  local wt="$WATCH"
+  [[ -z "$wt" && "${LOOMY_START_WATCH:-}" == "0" ]] && wt=0
+  [[ -z "$wt" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && wt=0 || wt=1; }
+  if (( wt )) && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script)"
     if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
     else ui_info "$(t "live tracking: loomy watch")"; fi

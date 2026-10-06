@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.12.2 — 2026-10-06
+
+### Fixed (audit of 0.10 to 0.12, cross review by GPT-6.1 Sol)
+- **Feedback triage could post without approval**: in a terminal, the issue list took the keyboard, so each choice fell to its default ("Post the reply"). The choices now read the terminal; issue numbers the model makes up are ignored and labels are limited to the known ones.
+- **The model drafting the triage replies can no longer act**: Claude runs without any tool (`--tools ""`, no MCP server), Codex in its read-only sandbox; the issues are untrusted text.
+- **Shell hook**: a start marker without its end marker no longer cuts the rest of the rc file (refused, with a message); a backup is kept before each change; the functions are declared with `function`, so a `claude` or `codex` alias no longer breaks the shell.
+- The triage report is written in a private temporary folder, not at a predictable path.
+- `loomy start --app` honours `--no-watch` / `--watch`, and falls back to the terminal when the app link can't be built (instead of opening the app without its prompt).
+- Status line: quotas read whatever the user's locale (12.5 % no longer shows 0 % in French); a running delegation is counted from the whole recent log and only while its bridge is alive; a slow user status line is cut after 2 seconds.
+- The tracking reminder recognises `loomy watch` for this project only (not a project whose path starts the same way), and no longer finds itself in the process list.
+
 ## 0.12.1 — 2026-10-06
 
 ### Added

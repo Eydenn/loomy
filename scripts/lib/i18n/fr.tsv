@@ -2147,3 +2147,6 @@ Not closed	Non fermée
   loomy feedback mark <n> <v>  maintainer: feedback #n fixed in version v (label fixed-in:v)	  loomy feedback mark <n> <v>  mainteneur : retour #n corrigé dans la version v (label fixed-in:v)
   loomy feedback close <v>     maintainer: comments and closes the feedback fixed in v, after your approval	  loomy feedback close <v>     mainteneur : commente et ferme les retours corrigés dans la version v, après ton approbation
 issue #%s skipped	issue #%s ignorée
+Loomy markers incomplete in %s	Marqueurs Loomy incomplets dans %s
+remove the hook by hand	retire le hook à la main
+The app link could not be built	Le lien vers l'app n'a pas pu être construit

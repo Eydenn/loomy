@@ -327,66 +327,17 @@ loomy privacy restore <your-account>/<project>-ai
 
 ## 📈 Live tracking
 
-Everything happens in the terminal, with no dependency. **Nothing starts on its own**: you start tracking when you want, in a second terminal.
+Everything happens in the terminal, with no dependency. `loomy start` opens live tracking beside the session; `loomy watch` opens it anywhere, at any time.
 
-<details>
-<summary><code>loomy&nbsp;status</code> · Snapshot of the project</summary>
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
+| `loomy watch` | Live tracking (keys t tree, l log, c compact, s session) | `N` |
+| `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
+| `loomy start` | Session and live tracking side by side | `--no-watch` |
+| `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
 
-```bash
-loomy status
-```
-
-Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git
-
-</details>
-
-<details>
-<summary><code>loomy&nbsp;watch&nbsp;[N]</code> · Live tracking, refreshed every second</summary>
-
-```bash
-loomy watch [N]
-```
-
-🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view (status screen: brief hidden, fewer delegations and log lines), `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal
-
-</details>
-
-<details>
-<summary><code>loomy&nbsp;tree</code> · Agent tree: lead agent, advisor, roles live</summary>
-
-```bash
-loomy tree
-```
-
-🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto|diagram|list` chooses
-
-</details>
-
-<details>
-<summary><code>loomy&nbsp;start</code> · Session and tracking side by side</summary>
-
-```bash
-loomy start
-loomy start --no-watch
-```
-
-🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone. In every session, Claude Code's status line shows the phase and the delegations running (⟳ n), also after your own status line; a session opened without tracking is told to mention `loomy watch`
-
-</details>
-
-<details>
-<summary><code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> · Readable log</summary>
-
-```bash
-loomy log [-n N] [-f]
-loomy log --raw
-loomy log --since YYYY-MM-DD
-loomy log --csv
-```
-
-Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs
-
-</details>
+Each command in detail: [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **What is live.** The screen rereads the project every 2 seconds:
 - **delegations** to Claude or Codex appear as soon as they start, with their timer, then their cost at the end; an interrupted one disappears on its own;
@@ -594,388 +545,67 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
 
 ## 🛠️ Commands
 
-### 🚀 Project
-
-<details>
-<summary>🏠&nbsp;<code>loomy</code> · Home: where the project stands and the next step</summary>
-
-```bash
-loomy
-```
-
-Home: where the project stands, what is expected, and the next step in one choice (outside a project: create one)
-
-</details>
-
-<details>
-<summary>📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> · Create or adopt a project</summary>
-
-```bash
-loomy init [dir]
-loomy init --update
-loomy init --reset
-loomy init --no-wizard
-loomy init --yes
-loomy init --answers <file>
-loomy init --no-branch
-```
-
-Creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`; existing Git project: `--no-branch` to stay on the current branch)
-
-</details>
-
-<details>
-<summary>📝&nbsp;<code>loomy&nbsp;brief</code> · Redo the questionnaire</summary>
-
-```bash
-loomy brief
-```
-
-Reruns the questionnaire for the current project
-
-</details>
-
-<details>
-<summary>🔬&nbsp;<code>loomy&nbsp;assess</code> · Assess an existing project, without AI</summary>
-
-```bash
-loomy assess
-loomy assess --print
-```
-
-Assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it)
-
-</details>
-
-<details>
-<summary>🔒&nbsp;<code>loomy&nbsp;privacy</code> · Where the AI files live</summary>
-
-```bash
-loomy privacy
-loomy privacy versioned
-loomy privacy local
-loomy privacy private
-loomy privacy sync
-loomy privacy restore
-```
-
-AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository
-
-</details>
-
-### 💬 Sessions and work
-
-<details>
-<summary>▶️&nbsp;<code>loomy&nbsp;start</code> · Open or resume the lead agent session</summary>
-
-```bash
-loomy start
-loomy start --resume
-loomy start --new
-loomy start --print
-loomy start --watch
-```
-
-Starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`)
-
-</details>
-
-<details>
-<summary>✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> · A named task, from plan to commit</summary>
-
-```bash
-loomy task "…"
-loomy task --resume
-loomy task --print
-```
-
-A named task for the lead agent: plan, approval, build, verification, commit, followed in `watch`; without argument, the list; `--resume`, `--print`
-
-</details>
-
-<details>
-<summary>🔍&nbsp;<code>loomy&nbsp;review</code> · Independent cross review</summary>
-
-```bash
-loomy review
-loomy review --working
-loomy review --staged
-```
-
-On-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/`
-
-</details>
-
-<details>
-<summary>🎚️&nbsp;<code>loomy&nbsp;effort</code> · Reasoning effort of the lead agent</summary>
-
-```bash
-loomy effort
-loomy effort --list
-loomy effort --reset
-```
-
-Reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start`
-
-</details>
-
-<details>
-<summary>🐚&nbsp;<code>loomy&nbsp;shell-hook&nbsp;[install\|remove]</code> · Always go through Loomy when typing claude or codex</summary>
-
-```bash
-loomy shell-hook
-loomy shell-hook install
-loomy shell-hook remove
-```
-
-Optional: in a Loomy project, `claude` or `codex` typed alone (the project's lead tool) goes through `loomy start`, so the session always opens with live tracking and the context; anything else runs the real command. Offered once by `loomy doctor --fix`, never installed silently
-
-</details>
-
-<details>
-<summary>🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> · Two worktrees for parallel mode</summary>
-
-```bash
-loomy worktrees <task>
-```
-
-Two separate worktrees for parallel mode
-
-</details>
-
-### 📈 Tracking and figures
-
-<details>
-<summary>📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> · Status, live tracking, log</summary>
-
-```bash
-loomy status
-loomy watch
-loomy log
-```
-
-Tracking (see above)
-
-</details>
-
-<details>
-<summary>📊&nbsp;<code>loomy&nbsp;stats</code> · Tokens, cost and quotas in detail</summary>
-
-```bash
-loomy stats
-loomy stats --days N
-loomy stats --since YYYY-MM-DD
-```
-
-Detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`)
-
-</details>
-
-<details>
-<summary>🧾&nbsp;<code>loomy&nbsp;report</code> · Project figures, Markdown export</summary>
-
-```bash
-loomy report
-loomy report --md [dir]
-loomy report --all
-```
-
-Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project
-
-</details>
-
-<details>
-<summary>🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> · Work state and latest results</summary>
-
-```bash
-loomy memory [show [N]]
-loomy memory show [N]
-```
-
-Shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one
-
-</details>
-
-### 🤖 Agents, models and skills
-
-<details>
-<summary>🧭&nbsp;<code>loomy&nbsp;route</code> · Role → model → effort matrix</summary>
-
-```bash
-loomy route
-loomy route lead
-loomy route get <role>
-loomy route markdown
-loomy route claude-agents
-```
-
-Role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles`
-
-</details>
-
-<details>
-<summary>🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> · Hand a role to Codex</summary>
-
-```bash
-loomy delegate codex <role> "…"
-```
-
-Hands a role to Codex (executor, developer, documenter can write; the others are read-only)
-
-</details>
-
-<details>
-<summary>🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> · Hand a role to Claude (read-only)</summary>
-
-```bash
-loomy delegate claude <role> "…"
-```
-
-Hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer)
-
-</details>
-
-<details>
-<summary>🧬&nbsp;<code>loomy&nbsp;models</code> · Model chains and new models</summary>
-
-```bash
-loomy models
-loomy models --thrifty on|off
-loomy models --issue
-```
-
-Model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on|off`, `--issue` (GitHub suggestion)
-
-</details>
-
-<details>
-<summary>🧩&nbsp;<code>loomy&nbsp;skills&nbsp;[suggest\|add\|remove\|update\|catalog]</code> · Official skills of the project</summary>
-
-```bash
-loomy skills [suggest|add|remove|update|catalog]
-loomy skills suggest "…"
-loomy skills add <name>
-loomy skills remove <name>
-loomy skills update
-loomy skills catalog
-```
-
-Official agent skills of the project: installed, why, analysis; `suggest "…"` for a task, `add`/`remove`, `update`, `catalog`
-
-</details>
-
-<details>
-<summary>🛡️&nbsp;<code>loomy&nbsp;audit</code> · Security audit of a repository</summary>
-
-```bash
-loomy audit
-loomy audit --resume
-loomy audit --print
-loomy audit --yes
-loomy audit --scope <folders>
-loomy audit --depth quick|standard|deep
-loomy audit --fixes report|plan|branch
-```
-
-Security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick|standard|deep`, `--fixes report|plan|branch`
-
-</details>
-
-### 🔧 Maintenance and help
-
-<details>
-<summary>🩺&nbsp;<code>loomy&nbsp;doctor</code> · Check and repair the machine and the project</summary>
-
-```bash
-loomy doctor
-loomy doctor --fix
-loomy doctor --live
-```
-
-Checks prerequisites (`--fix` fixes, GitHub included: installs `gh`, logs in, checks git access to the Loomy repository; `--live` tests every model)
-
-</details>
-
-<details>
-<summary>⚙️&nbsp;<code>loomy&nbsp;config</code> · Preferences</summary>
-
-```bash
-loomy config
-loomy config list
-loomy config get <key>
-loomy config set <key> <value>
-```
-
-Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
-
-</details>
-
-<details>
-<summary>🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> · Update Loomy</summary>
-
-```bash
-loomy update
-loomy update --catalog
-loomy version
-loomy version --all
-```
-
-Updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install
-
-</details>
-
-<details>
-<summary>🗑️&nbsp;<code>loomy&nbsp;uninstall</code> · Uninstall Loomy</summary>
-
-```bash
-loomy uninstall
-```
-
-Shows how to uninstall Loomy for your install method, and how to remove it from a project
-
-</details>
-
-<details>
-<summary>💬&nbsp;<code>loomy&nbsp;feedback</code> · Report a bug or an idea</summary>
-
-```bash
-loomy feedback
-loomy feedback --print
-```
-
-Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text
-
-</details>
-
-<details>
-<summary>📬&nbsp;<code>loomy&nbsp;feedback&nbsp;list</code> · Follow your feedback; maintainer triage</summary>
-
-```bash
-loomy feedback list
-loomy feedback triage
-loomy feedback mark <n> <version>
-loomy feedback close <version>
-```
-
-Your feedback and where it stands: received, being handled, fixed in X.Y.Z (the launch says once when one of yours is fixed in the installed version). Maintainers: `triage` groups the open feedback by cause with a priority and a proposed reply (fast model), each reply posted only after approval; `mark <n> <version>` then `close <version>` at release
-
-</details>
-
-<details>
-<summary>❓&nbsp;<code>loomy&nbsp;help&nbsp;[command]</code> · Help</summary>
-
-```bash
-loomy help [command]
-```
-
-General help, or help for one command
-
-</details>
+Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](docs/COMMANDS.md).
+
+### Project
+
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy` | Where the project stands and the next step, in one choice | — |
+| `loomy init [dir]` | Create or adopt a project: questionnaire, routing, roles, skills | `--update` `--reset` `--no-wizard` `--yes` `--answers <file>` `--no-branch` |
+| `loomy brief` | Redo the questionnaire | — |
+| `loomy assess` | Assess an existing project, without AI | `--print` |
+| `loomy privacy` | Where the AI files live: versioned, local or private | `versioned` `local` `private` `sync` `restore` |
+
+### Sessions and work
+
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy start` | Open or resume the lead agent session, tracking beside it | `--resume` `--new` `--app` `--no-watch` `--print` |
+| `loomy task "…"` | A named task, from plan to commit | `--resume` `--print` |
+| `loomy review` | Independent cross review of the changes | `--working` `--staged` |
+| `loomy effort` | Reasoning effort of the lead agent or a role | `<level>` `<role> <level>` `--list` `--reset` |
+| `loomy shell-hook [install\|remove]` | Typing claude or codex alone goes through loomy start | `install` `remove` |
+| `loomy worktrees <task>` | Two worktrees for parallel mode | — |
+
+### Tracking and figures
+
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
+| `loomy watch` | Live tracking (keys t tree, l log, c compact, s session) | `N` |
+| `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
+| `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
+| `loomy stats` | Tokens, cost and quotas by role, model and day | `--days N` `--since YYYY-MM-DD` |
+| `loomy report` | Project figures, Markdown export | `--md [dir]` `--all` |
+| `loomy memory [show [N]]` | Work state and latest delegation results | `show [N]` |
+
+### Agents, models and skills
+
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy route` | Role → model → effort matrix | `lead` `get <role>` `markdown` `claude-agents` |
+| `loomy delegate codex <role> "…"` | Hand a role to Codex | — |
+| `loomy delegate claude <role> "…"` | Hand a role to Claude, read-only | — |
+| `loomy models` | Model chains and new models to evaluate | `--thrifty on\|off` `--issue` |
+| `loomy skills [suggest\|add\|remove\|update\|catalog]` | Official skills of the project, and why | `suggest "…"` `add <name>` `remove <name>` `update` `catalog` |
+| `loomy audit` | Security audit of a repository | `--resume` `--print` `--yes` `--scope <folders>` `--depth quick\|standard\|deep` `--fixes report\|plan\|branch` |
+
+### Maintenance and help
+
+| Command | What it does | Main options |
+|---|---|---|
+| `loomy doctor` | Check and repair the machine and the project | `--fix` `--live` |
+| `loomy config` | Preferences | `list` `get <key>` `set <key> <value>` |
+| `loomy update` · `loomy version` | Update Loomy; installed versions | `loomy update --catalog` `loomy version` `loomy version --all` |
+| `loomy uninstall` | How to uninstall Loomy | — |
+| `loomy feedback` | Report a bug or an idea (anonymised issue) | `--print` |
+| `loomy feedback list` | Follow your feedback; maintainer triage | `loomy feedback triage` `loomy feedback mark <n> <version>` `loomy feedback close <version>` |
+| `loomy help [command]` | Help, general or for one command | — |
 
 <sub>Commands find the project from any of its subfolders, including when the Loomy project lives in a subfolder of a larger Git repository. In a project, the lead agent calls the scripts in <code>.loomy/scripts/</code>: small relays to the Loomy installed on the machine (found through <code>$LOOMY_HOME</code>, the <code>loomy</code> command or its usual locations). <code>LOOMY_NO_CLEAR=1</code> keeps the terminal history instead of clearing the screen.</sub>
 
 ---
-
 ## 🤝 Collaboration modes
 
 | Mode | Principle | When |

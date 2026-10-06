@@ -1118,11 +1118,13 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | Status | Planned |
 |---|---|
 | 🔜 | **Claude Haiku 5.5**: once released, a measured test decides its roles (already used as soon as it answers) |
+| 🔜 | **Windows 11 through WSL2**: Loomy already runs on Linux (tested in CI), and Claude Code and Codex both run in WSL2. Remaining: WSL detection in `loomy doctor`, clipboard (`clip.exe`), notifications, `start --app` opening the Windows desktop apps, line endings forced to LF, a Windows section in the docs, then a check on a real Windows 11 machine. A few days |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |
 | | Configurable colour theme, for terminals that don't render bold |
 | | Public repository and token-free Homebrew, when decided |
 | 💡 | **3D game project type (Three.js)**, validated by a test ([notes](docs/THREEJS_GAME_TEST.md)) |
+| 💡 | **Native Windows (Git Bash, without WSL)**, after the WSL feedback: hooks run by Git Bash (`CLAUDE_CODE_GIT_BASH_PATH`), process checks and paths of native Windows, a Windows Terminal split instead of tmux, a Windows CI runner. One to two weeks |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus): Opus effort readjusted at each step of Claude delegations |
 | 💡 | A role on a local model (LM Studio) for confidential code or mechanical tasks ([notes](docs/LOCAL_MODEL_TEST.md)); first use shipped: the audit writer |
 

@@ -1118,11 +1118,13 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | Statut | Prévu |
 |---|---|
 | 🔜 | **Claude Haiku 5.5** : à sa sortie, un test mesuré décide de ses rôles (déjà utilisé dès qu'il répond) |
+| 🔜 | **Windows 11 via WSL2** : Loomy tourne déjà sous Linux (testé en CI), et Claude Code comme Codex fonctionnent dans WSL2. Reste : détection de WSL dans `loomy doctor`, presse-papiers (`clip.exe`), notifications, `start --app` qui ouvre les apps de bureau Windows, fins de ligne forcées en LF, une section Windows dans la doc, puis une vérification sur un vrai Windows 11. Quelques jours |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |
 | | Thème de couleurs réglable, pour les terminaux qui n'affichent pas le gras |
 | | Dépôt public et Homebrew sans jeton, sur décision |
 | 💡 | **Type de projet « jeu 3D (Three.js) »**, validé par un test ([notes](docs/THREEJS_GAME_TEST.md)) |
+| 💡 | **Windows natif (Git Bash, sans WSL)**, après les retours sur WSL : hooks lancés par Git Bash (`CLAUDE_CODE_GIT_BASH_PATH`), vérifications de processus et chemins de Windows natif, partage de Windows Terminal à la place de tmux, une CI sous Windows. Une à deux semaines |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus) : effort d'Opus réajusté à chaque étape des délégations Claude |
 | 💡 | Un rôle sur un modèle local (LM Studio) pour du code confidentiel ou des tâches mécaniques ([notes](docs/LOCAL_MODEL_TEST.md)) ; premier usage livré : le rédacteur de l'audit |
 

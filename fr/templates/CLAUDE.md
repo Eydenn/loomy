@@ -9,6 +9,7 @@ Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, r
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
+- Mémoire partagée : tiens `.loomy/memory/STATE.md` à jour (fait, en cours, décisions, suite ; en anglais, en style télégraphique, 40 lignes au plus, en remplaçant ce qui est dépassé : il est écrit pour les modèles, au moindre coût) après chaque étape importante et avant de finir une session. C'est ce qui garde le fil d'une session à l'autre, après un compactage et entre Claude Code et Codex. Les résultats complets des délégations sont dans `.loomy/memory/delegations/` : pour donner des constats à un rôle, indique-lui le fichier plutôt que d'en recopier le contenu.
 - Si la mise en place Loomy n'est pas terminée (`START.md` encore présent), termine-la d'abord.
 <!-- loomy:orchestration:end -->
 

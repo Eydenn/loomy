@@ -8,7 +8,7 @@
 **Démarre et structure tes projets avec Codex et Claude Code.**
 Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
 
-![version](https://img.shields.io/badge/version-0.10.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.11.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -437,6 +437,21 @@ Les bridges ajoutent ce contrat à leur prompt, les sous-agents Claude généré
 
 C'est un protocole texte, qui fonctionne avec Claude et Codex tels quels. L'échange des états internes des modèles (« communication latente ») relève encore de la recherche : il faut accéder à l'intérieur des modèles, ce que les produits Claude et Codex ne permettent pas.
 
+
+### 🧠 Mémoire partagée
+
+Chaque agent part de zéro, volontairement ; le fil du travail est gardé dans `.loomy/memory/`, pour qu'il survive à une nouvelle session, à un compactage, à une autre machine ou à un passage entre Claude Code et Codex.
+
+| Quoi | Où | Écrit par |
+|---|---|---|
+| La tâche et le résultat complet de chaque délégation | `.loomy/memory/delegations/` (hors de Git : les constats peuvent être sensibles) | les ponts et le hook des sous-agents Claude, automatiquement |
+| L'état du travail : fait, en cours, décisions, suite | `.loomy/memory/STATE.md` (versionné avec les fichiers IA) | l'orchestrateur, après chaque étape importante |
+
+- **Redonnée au début d'une session**, Claude Code comme Codex, et après un compactage : l'état du travail, puis les résultats que l'orchestrateur n'y a pas encore repris. Quand la session précédente s'est tenue dans l'autre outil, l'orchestrateur est prévenu de reprendre à partir de là.
+- **Pensée pour le coût.** Rien n'est ajouté à chaque message, ni à la reprise d'une session (la conversation la contient déjà). Le bloc est plafonné (40 lignes d'état, 4 résultats d'une ligne chacun) puis mis en cache par l'outil : quelques centaines de tokens par nouvelle session, au lieu de dizaines de milliers pour tout réexplorer. `STATE.md` est écrit en anglais et en style télégraphique, quelle que soit la langue de la documentation : le moins de tokens pour tous les modèles. Pour transmettre des constats à un rôle, l'orchestrateur lui indique le fichier au lieu de le recopier.
+- **Redonnée comme des données, pas des instructions** : l'orchestrateur vérifie un résultat avant d'agir dessus.
+- `loomy memory` montre l'état du travail et les derniers résultats, `loomy memory show [N]` le texte complet de l'un d'eux ; `loomy config set memory off` arrête de la redonner.
+
 ---
 
 ## 📊 Pourquoi cette répartition
@@ -523,6 +538,7 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 | ✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> | une tâche nommée pour l'orchestrateur : plan, validation, construction, vérification, commit, suivie dans `watch` ; sans argument, la liste ; `--resume`, `--print` |
 | 🔍&nbsp;<code>loomy&nbsp;review</code> | relecture croisée à la demande de la branche en cours (`[base]`) ou des modifications non commitées (`--working`, `--staged`), en lecture seule, enregistrée dans `.loomy/reviews/` |
 | 🧾&nbsp;<code>loomy&nbsp;report</code> | chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` en Markdown dans `docs/reports/` ; `--all` tous les projets |
+| 🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> | mémoire partagée : l'état du travail tenu par l'orchestrateur et les derniers résultats des délégations en bref ; `show [N]` le texte complet de l'un d'eux |
 | 🧬&nbsp;<code>loomy&nbsp;models</code> | chaînes de modèles et nouveaux modèles à évaluer ; tête de chaîne avec deux replis (cette machine), `--thrifty on\|off`, `--issue` (suggestion GitHub) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | audit de sécurité d'un dépôt Git existant, une mission plutôt qu'un projet (voir plus bas) : `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 🔬&nbsp;<code>loomy&nbsp;assess</code> | état des lieux d'un projet existant, sans IA : stack, commandes, tests, CI, conventions, historique Git, zones sensibles, dette (`.loomy/assessment.md` ; `--print` pour seulement l'afficher) |
@@ -733,7 +749,8 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | ✅&nbsp;0.8.4 | diagramme de l'arbre des agents deux fois plus rapide (environ 0,5 s par image) |
 | ✅&nbsp;0.9.0 | **une mise en place qui ne peut plus rester à moitié faite** : Loomy crée et vérifie à chaque lancement les documents de routage, les sous-agents et la règle d'orchestration ; chaque demande passe par l'orchestrateur ; `.ai/` devient `.loomy/docs/` ; l'arbre des agents liste les rôles sans boîte |
 | ✅&nbsp;0.9.1 | arbre des agents : les rôles sans boîte résumés par modèle, avec ce que fait chacun |
-| ✅&nbsp;0.10.0 | **Version actuelle** · **questionnaire repensé** : un seul type de projet (avec **données et analyse** et **sur mesure**), plusieurs caractéristiques clés avec leurs vérifications, une équipe IA recommandée, un récapitulatif de ce qui sera configuré avec des recommandations indicatives ; scripts nommés `loomy-*` ; agent et suivi en direct côte à côte par défaut |
+| ✅&nbsp;0.10.0 | **questionnaire repensé** : un seul type de projet (avec **données et analyse** et **sur mesure**), plusieurs caractéristiques clés avec leurs vérifications, une équipe IA recommandée, un récapitulatif de ce qui sera configuré avec des recommandations indicatives ; scripts nommés `loomy-*` ; agent et suivi en direct côte à côte par défaut |
+| ✅&nbsp;0.11.0 | **Version actuelle** · **mémoire partagée** : résultats des délégations et état du travail gardés dans `.loomy/memory/`, redonnés à chaque nouvelle session et après un compactage, Claude Code comme Codex, pour quelques centaines de tokens ; `loomy memory` |
 | 🔜 | **Claude Haiku 5.5** (annoncé, les premiers retours le disent rapide et peu cher) : déjà pris en compte dès qu'il répond (0.7.4). À sa sortie, un test mesuré, comme pour Sonnet 5.5, décidera s'il prend aussi l'exécutant en full Claude, le documentaliste Claude et le rédacteur de l'audit sans Codex ; et une comparaison avec GPT-6-Luna comme exécutant en hybride |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Retours des testeurs (`loomy feedback`) traités |

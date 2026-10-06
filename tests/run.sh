@@ -1512,6 +1512,79 @@ for f in "$REPO"/scripts/ai-*.sh "$REPO"/scripts/delegate-to-*.sh; do
   t="$(sed -n 's/.*\/\(loomy-[a-z-]*\.sh\)" "\$@"$/\1/p' "$f")"; [[ -n "$t" && -f "$REPO/scripts/$t" ]] || { ko "compatibility script without target: $(basename "$f")"; continue; }
 done; ok "compatibility scripts point to existing loomy-* scripts"
 
+# Shared memory (.loomy/memory/): results of the delegations, work state, given back at the start of every session.
+SM="$WORK/memoire"; "$LOOMY" init "$SM" --yes --no-clipboard >/dev/null 2>&1
+printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"; sleep 1
+[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
+grep -qxF '.loomy/memory/delegations/' "$SM/.gitignore" && ok "memory: delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
+(cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
+MF="$(ls "$SM"/.loomy/memory/delegations/*-executor-*.md 2>/dev/null | head -1)"
+[[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/delegations" 2>&1))"
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"Map the CSV schemas"}}' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"STATUS: done\nSUMMARY: three CSV files, one key\nNEXT: load them"}]}}' >"$WORK/sub.jsonl"
+printf '{"agent_id":"a1","agent_type":"explorer","agent_transcript_path":"%s","transcript_path":"%s"}' "$WORK/sub.jsonl" "$WORK/sub.jsonl" \
+  | CLAUDE_PROJECT_DIR="$SM" bash "$SM/.loomy/scripts/loomy-context.sh" --hook subagent >/dev/null 2>&1
+MS="$(ls "$SM"/.loomy/memory/delegations/*-explorer-*.md 2>/dev/null | head -1)"
+[[ -n "$MS" ]] && grep -q 'Map the CSV schemas' "$MS" && grep -q 'three CSV files, one key' "$MS" && ok "memory: native subagent result saved from its transcript" || ko "memory: subagent result not saved"
+[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md present" || ko "memory: STATE.md lost"
+mv "$SM/.loomy/memory/STATE.md.new" "$SM/.loomy/memory/STATE.md"; touch -t 202601010000 "$SM/.loomy/memory/STATE.md"
+bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
+has "memory: work state given at session start" "Work state \(.loomy/memory/STATE.md"
+has "memory: decisions in the context" "DuckDB on Parquet"
+hasnt "memory: empty sections left out" "## In progress"
+has "memory: latest results in short" "explorer · subagent · ok · .*three CSV files, one key · next: load them"
+has "memory: Codex result in short" "executor · .* · ok · .*answer from the codex double · next: finish it"
+# Cost: the block is bounded, absent when a session is resumed, and results already taken into STATE.md are not repeated.
+python3 - "$OUT" <<'PY2' && ok "memory: block bounded (under 3,000 characters)" || ko "memory: block too large"
+import sys, re
+t = open(sys.argv[1], encoding="utf-8").read()
+i = t.find("Work state (.loomy"); j = t.find("\n- ", t.find("Latest delegation results") + 5)
+sys.exit(0 if 0 <= i and len(t[i:j if j > 0 else None]) < 3000 else 1)
+PY2
+echo '{"session_id":"r1","source":"resume"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >"$OUT" 2>&1
+hasnt "memory: nothing added when a session is resumed" "Work state \(.loomy|Latest delegation results"
+touch "$SM/.loomy/memory/STATE.md"
+bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
+hasnt "memory: results already in STATE.md not repeated" "Latest delegation results"
+has "memory: work state still given" "DuckDB on Parquet"
+"$LOOMY" config set memory off >/dev/null 2>&1; bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1; "$LOOMY" config set memory on >/dev/null 2>&1
+hasnt "memory: memory off, nothing given" "Work state \(.loomy"
+echo '{"session_id":"s1","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >/dev/null 2>&1
+echo '{"session_id":"s2","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
+has "memory: switching tool, picks up from the memory" "previous session ran in Claude Code"
+echo '{"session_id":"s3","source":"compact"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
+has "memory: given back after a compaction" "DuckDB on Parquet"
+hasnt "memory: same tool, no switch notice" "previous session ran in"
+run "loomy memory" bash -c "cd '$SM' && '$LOOMY' memory"
+has "loomy memory: work state and results" "SHARED MEMORY"
+has "loomy memory: result listed" "three CSV files"
+run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
+has "loomy memory show: full text of the latest" "Map the CSV schemas"
+for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; sleep 1' _ "$REPO" "$SM" "$i"; done
+[[ "$(ls "$SM/.loomy/memory/delegations" | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest results pruned" || ko "memory: pruning ($(ls "$SM/.loomy/memory/delegations" | wc -l))"
+# Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.
+mem() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; shift; "$@"' _ "$REPO" "$@"; }
+LOOMY_MEMORY_KEEP=abc mem loomy_memory_save "$SM" i1 "my/role x" m ok "task" $'summary: lower case\nchecks: passed\nnext: go on'
+[[ $? -eq 0 ]] && ok "memory: invalid retention value does not stop the caller" || ko "memory: save failed"
+mem loomy_memory_digest "$SM" 1 >"$OUT" 2>&1
+has "memory: odd role saved under a clean name" "my-role-x"
+has "memory: lowercase fields read, next one not swallowed" ": lower case · next: go on"
+mkdir -p "$WORK/ailleurs"; for i in 1 2 3; do echo x >"$WORK/ailleurs/$i.md"; done
+SL="$WORK/memlien"; mkdir -p "$SL/.loomy/memory"; ln -s "$WORK/ailleurs" "$SL/.loomy/memory/delegations"
+LOOMY_MEMORY_KEEP=1 mem loomy_memory_save "$SL" i2 role m ok task result
+[[ "$(ls "$WORK/ailleurs" | wc -l | tr -d ' ')" == 3 ]] && ok "memory: never writes or prunes through a symbolic link" || ko "memory: files touched through the link"
+(cd "$SM" && "$LOOMY" memory show 999) >"$OUT" 2>&1
+has "loomy memory show: out of range refused" "choose N from 1 to"
+SW="$WORK/memoutil"; "$LOOMY" init "$SW" --yes --no-clipboard >/dev/null 2>&1; JW="$SW/.loomy/logs/events.jsonl"; mkdir -p "$(dirname "$JW")"
+printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":1}" >>"$JW"
+echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
+has "memory: Codex after Claude (launcher + hook events), switch seen" "previous session ran in Claude Code"
+printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' '{"ts":"2026-10-02T09:00:00Z","type":"session","event":"start","tool":"codex","pid":2}' >"$JW"
+echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
+hasnt "memory: a later Codex session, no switch notice" "previous session ran in"
+bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" >"$OUT" 2>&1
+hasnt "memory: no switch notice outside the start hook" "previous session ran in"
+grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/memory/STATE.md' "$REPO/templates/CLAUDE.md" && ok "memory: the lead agent is told to keep STATE.md" || ko "memory: no instruction for STATE.md"
+
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
 SU="$WORK/garde-update"; mkdir -p "$SU/.claude"

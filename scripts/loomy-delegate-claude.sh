@@ -10,6 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
+# shellcheck source=lib/memory.sh
+source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
 
@@ -167,6 +169,9 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+# Shared memory: the task and the full result, for the next sessions and the other tool.
+MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
+loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$MEM_RESULT"
 t "loomy-delegate-claude: %ss · input tokens %s (%s cached), output %s · cost \$%s" "$DURATION" "$(( T_IN + T_CACHED + T_CWRITE ))" "$T_CACHED" "$T_OUT" "$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2; echo >&2
 
 # Handed over by the Codex bridge: its caller expects Codex's plain answer, not Claude's JSON.

@@ -9,6 +9,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
+- Shared memory: keep `.loomy/memory/STATE.md` up to date (done, in progress, decisions, next; English, telegraphic, 40 lines at most, replacing what is outdated: it is written for the models, at the lowest cost) after each important step and before ending a session. This is what keeps the thread from one session to the next, after a compaction, and between Claude Code and Codex. The full results of the delegations are in `.loomy/memory/delegations/`: to give findings to a role, point it to the file rather than copying its content.
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 <!-- loomy:orchestration:end -->
 

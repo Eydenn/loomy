@@ -2,6 +2,20 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.11.0 — 2026-10-06
+
+### Added
+- **Shared memory (`.loomy/memory/`): the thread of the work survives a new session, a compaction, another machine and a switch between Claude Code and Codex.** Until now each delegated role started from zero (by design) and its findings only lived in the lead agent's conversation: lost at a compaction, in a new session, or when the other tool took over.
+  - **Every delegation result is kept**, with its task: the Codex and Claude bridges and the hook of native Claude subagents write `.loomy/memory/delegations/<date>-<role>-<id>.md`, kept out of Git (findings can be sensitive); the oldest are removed beyond 200 (`LOOMY_MEMORY_KEEP`).
+  - **The work state**, `.loomy/memory/STATE.md` (done, in progress, decisions, next), is kept by the lead agent after each important step and before ending a session, as the orchestration rule now says; versioned with the AI files.
+  - **Given back at the start of every session**, Claude Code or Codex, and after a compaction: the work state, then the results not yet taken into it, in one line each. When the previous session ran in the other tool, the lead agent is told to pick up from the memory.
+  - **Built for cost**: nothing at each message nor when a session is resumed; capped (40 lines of state, 4 results not yet in it); cached by the tools afterwards; `STATE.md` in English and telegraphic style, whatever the documentation language; findings handed to a role by file path, not copied. A few hundred tokens per new session instead of exploring again.
+  - Results are given back as data, not instructions. Writing to memory never stops a bridge or a hook, and never goes through a symbolic link.
+  - `loomy memory` (work state and latest results), `loomy memory show [N]` (full text); `loomy config set memory off`.
+
+### Fixed
+- `loomy-context.sh` didn't load the configuration library: settings read there were silently ignored.
+
 ## 0.10.0 — 2026-10-06
 
 ### Changed

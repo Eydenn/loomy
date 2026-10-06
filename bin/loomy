@@ -170,6 +170,7 @@ usage() {
   _h_cmd watch "[N]" "$(t "Live tracking (keys: q, c view, l log, t agent tree, s session)")"
   _h_cmd tree "" "$(t "Agent tree: the lead agent, its advisor and every role with its model, effort and state, then the session log")"
   _h_cmd stats "[--days N|--since D]" "$(t "Detailed statistics: delegations by role, model and day, durations, tokens, cost (or quota with a subscription)")"
+  _h_cmd memory "[-n N] [show [N]]" "$(t "Shared memory: the work state kept by the lead agent and the results of the delegations, what carries the work across sessions and between Claude Code and Codex")"
   _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
   _h_group "$(t "MACHINE")"
@@ -196,6 +197,7 @@ sub_help() {
             t "      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),"; echo
             t "      tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),"; echo
             t "      watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),"; echo
+            t "      memory (off: the shared memory is no longer given at the start of sessions),"; echo
             t "      screen (alt: separate screen; clear: screen and history cleared, for terminals without a separate screen; auto),"; echo
             t "      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),"; echo
             t "      lang (fr or en: interface language; auto: system language, English by default)."; echo
@@ -258,6 +260,7 @@ case "$cmd" in
   task|tasks) exec bash "$S/loomy-task.sh" --root "$(project_root)" "$@" ;;
   review) exec bash "$S/loomy-review.sh" --root "$(project_root)" "$@" ;;
   report) exec bash "$S/loomy-report.sh" --root "$(project_root)" "$@" ;;
+  memory) exec bash "$S/loomy-memory.sh" --root "$(project_root)" "$@" ;;
   models) exec bash "$S/loomy-models.sh" "$@" ;;
   stats) exec bash "$S/loomy-stats.sh" --root "$(project_root)" "$@" ;;
   doctor) exec bash "$S/loomy-doctor.sh" --root "$(project_root)" "$@" ;;
@@ -290,6 +293,7 @@ case "$cmd" in
           plan_claude) [[ "$val" =~ ^(api|pro|max5|max20|team|enterprise)$ ]] || { t "plan_claude: api, pro, max5, max20, team or enterprise" >&2; echo >&2; exit 2; } ;;
           plan_codex) [[ "$val" =~ ^(api|plus|pro100|pro200|business|enterprise)$ ]] || { t "plan_codex: api, plus, pro100, pro200, business or enterprise" >&2; echo >&2; exit 2; } ;;
           plan_claude_price|plan_codex_price) [[ "$val" =~ ^[0-9]+([.][0-9]+)?$ ]] || { t "%s: a monthly price in \$" "$key" >&2; echo >&2; exit 2; } ;;
+          memory) [[ "$val" =~ ^(on|off)$ ]] || { t "%s: on or off" "$key" >&2; echo >&2; exit 2; } ;;
           start_watch|notify|auto_update) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s: yes or no" "$key" >&2; echo >&2; exit 2; } ;;
           quota_switch) [[ "$val" == "off" || ( "$val" =~ ^[0-9]+$ && "$val" -ge 1 && "$val" -le 100 ) ]] || { t "quota_switch: a percentage (1 to 100) or off" >&2; echo >&2; exit 2; } ;;
           delegation_format) [[ "$val" =~ ^(auto|structured|free)$ ]] || { t "delegation_format: structured, free or auto (the project's choice)" >&2; echo >&2; exit 2; } ;;
@@ -303,7 +307,7 @@ case "$cmd" in
           models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, notify, auto_update, advisor, tree_view, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, delegation_format, start_watch, memory, notify, auto_update, advisor, tree_view, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

@@ -10,6 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
 source "$SCRIPT_DIR/lib/journal.sh"
+# shellcheck source=lib/memory.sh
+source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
 
@@ -135,6 +137,8 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
 fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+# Shared memory: the task and the full result, for the next sessions and the other tool.
+loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$(cat "$TMP/last.txt" 2>/dev/null || true)"
 
 if [[ $STATUS -ne 0 ]]; then
   t "loomy-delegate-codex: codex exec failed (code %s). Last log lines:" "$STATUS" >&2; echo >&2

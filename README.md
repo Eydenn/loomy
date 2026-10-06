@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.10.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.11.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -437,6 +437,21 @@ The bridges add this contract to their prompt, generated Claude subagents carry 
 
 This is a text protocol that works with Claude and Codex as they are. Exchanging internal model states ("latent communication") is still research: it needs access to the models' internals, which the Claude and Codex products don't offer.
 
+
+### 🧠 Shared memory
+
+Each agent starts from zero by design; the thread of the work is kept in `.loomy/memory/`, so that it survives a new session, a compaction, another machine, or a switch between Claude Code and Codex.
+
+| What | Where | Written by |
+|---|---|---|
+| The task and the full result of every delegation | `.loomy/memory/delegations/` (kept out of Git: findings can be sensitive) | the bridges and the Claude subagents' hook, automatically |
+| The work state: done, in progress, decisions, next | `.loomy/memory/STATE.md` (versioned with the AI files) | the lead agent, after each important step |
+
+- **Given back at the start of a session**, Claude Code or Codex, and after a compaction: the work state, then the results the lead agent hasn't taken into it yet. When the previous session ran in the other tool, the lead agent is told to pick up from there.
+- **Built for cost.** Nothing is added at each message, nor when a session is resumed (the conversation already holds it). The block is capped (40 lines of state, 4 results in one line each) and cached by the tool afterwards: a few hundred tokens per new session, instead of tens of thousands to explore again. `STATE.md` is written in English and in telegraphic style, whatever the documentation language: the fewest tokens for every model. To hand findings to a role, the lead agent points it to the file instead of copying it.
+- **Given back as data, not instructions**: the lead agent checks a result before acting on it.
+- `loomy memory` shows the work state and the latest results, `loomy memory show [N]` the full text of one; `loomy config set memory off` stops giving it back.
+
 ---
 
 ## 📊 Why this split
@@ -524,6 +539,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | ✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> | a named task for the lead agent: plan, approval, build, verification, commit, followed in `watch`; without argument, the list; `--resume`, `--print` |
 | 🔍&nbsp;<code>loomy&nbsp;review</code> | on-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/` |
 | 🧾&nbsp;<code>loomy&nbsp;report</code> | project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project |
+| 🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> | shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one |
 | 🧬&nbsp;<code>loomy&nbsp;models</code> | model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on\|off`, `--issue` (GitHub suggestion) |
 | 🛡️&nbsp;<code>loomy&nbsp;audit</code> | security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
@@ -733,7 +749,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.8.4 | agent tree diagram twice as fast (about 0.5 s per frame) |
 | ✅&nbsp;0.9.0 | **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
 | ✅&nbsp;0.9.1 | agent tree: the roles without a box summed up by model, with what each one does |
-| ✅&nbsp;0.10.0 | **Current version** · **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
+| ✅&nbsp;0.10.0 | **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
+| ✅&nbsp;0.11.0 | **Current version** · **shared memory**: delegation results and the work state kept in `.loomy/memory/`, given back at each new session and after a compaction, Claude Code or Codex, for a few hundred tokens; `loomy memory` |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

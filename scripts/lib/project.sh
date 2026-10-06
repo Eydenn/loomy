@@ -6,6 +6,9 @@
 # rule in AGENTS.md / CLAUDE.md. Existing files are never overwritten (only the managed block between Loomy's markers
 # is kept up to date). Older projects are migrated from .ai/ to .loomy/docs/. To be sourced after models.sh. Bash 3.2.
 
+# shellcheck source=memory.sh
+source "$(dirname "${BASH_SOURCE[0]}")/memory.sh"
+
 LP_DONE=()   # what the last repair did (one short line each)
 LP_RENAME_MAP="'ai-assess'=>'loomy-assess', 'ai-audit'=>'loomy-audit', 'ai-catalog-check'=>'loomy-catalog-check', 'ai-context'=>'loomy-context', 'ai-doctor'=>'loomy-doctor', 'ai-effort'=>'loomy-effort', 'ai-feedback'=>'loomy-feedback', 'ai-home'=>'loomy-home', 'ai-local-writer'=>'loomy-local-writer', 'ai-log'=>'loomy-log', 'ai-models'=>'loomy-models', 'ai-privacy'=>'loomy-privacy', 'ai-report'=>'loomy-report', 'ai-review'=>'loomy-review', 'ai-route'=>'loomy-route', 'ai-start'=>'loomy-start', 'ai-stats'=>'loomy-stats', 'ai-status'=>'loomy-status', 'ai-statusline'=>'loomy-statusline', 'ai-task'=>'loomy-task', 'ai-tree'=>'loomy-tree', 'delegate-to-claude'=>'loomy-delegate-claude', 'delegate-to-codex'=>'loomy-delegate-codex', 'detect-ai-tools'=>'loomy-detect-tools', 'init-wizard'=>'loomy-init-wizard', 'install-into-project'=>'loomy-install-project', 'install-security-audit'=>'loomy-install-security-audit', 'create-hybrid-worktrees'=>'loomy-worktrees'"
 
@@ -79,6 +82,7 @@ Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, r
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
+- Mémoire partagée : tiens `.loomy/memory/STATE.md` à jour (fait, en cours, décisions, suite ; en anglais, en style télégraphique, 40 lignes au plus, en remplaçant ce qui est dépassé : il est écrit pour les modèles, au moindre coût) après chaque étape importante et avant de finir une session. C'est ce qui garde le fil d'une session à l'autre, après un compactage et entre Claude Code et Codex. Les résultats complets des délégations sont dans `.loomy/memory/delegations/` : pour donner des constats à un rôle, indique-lui le fichier plutôt que d'en recopier le contenu.
 - Si la mise en place Loomy n'est pas terminée (`START.md` encore présent), termine-la d'abord.
 FR
   else
@@ -91,6 +95,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
+- Shared memory: keep `.loomy/memory/STATE.md` up to date (done, in progress, decisions, next; English, telegraphic, 40 lines at most, replacing what is outdated: it is written for the models, at the lowest cost) after each important step and before ending a session. This is what keeps the thread from one session to the next, after a compaction, and between Claude Code and Codex. The full results of the delegations are in `.loomy/memory/delegations/`: to give findings to a role, point it to the file rather than copying its content.
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi
@@ -148,6 +153,14 @@ loomy_project_repair() {
       (( n > 0 )) && LP_DONE+=(".claude/agents/: $n subagent(s)")
     fi
     [[ -n "$tmpd" ]] && rm -rf "$tmpd"
+  fi
+  # Shared memory: the work state file, and the delegation results kept out of Git (findings can be sensitive).
+  if [[ ! -f "$(loomy_memory_dir "$r")/STATE.md" ]]; then
+    loomy_memory_state_init "$r"; [[ -f "$(loomy_memory_dir "$r")/STATE.md" ]] && LP_DONE+=(".loomy/memory/STATE.md")
+  fi
+  if { [[ -f "$r/.gitignore" ]] || git -C "$r" rev-parse --is-inside-work-tree >/dev/null 2>&1; } \
+     && ! grep -qxF '.loomy/memory/delegations/' "$r/.gitignore" 2>/dev/null; then
+    printf '\n# Loomy: delegation results (shared memory, may hold sensitive findings)\n.loomy/memory/delegations/\n' >>"$r/.gitignore"
   fi
   # The orchestration rule where the agents read it.
   _lp_ensure_block "$r/AGENTS.md" "$r"

@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.11.1 — 2026-10-06
+
+### Added
+- **`loomy start --app`**: the session opens in the desktop app. The Claude app opens a Claude Code session on the project folder with the startup prompt filled in (`claude://code/new`, the link the app declares for "New Claude Code Session Here"); the Codex app opens a conversation with the prompt filled in (`codex://threads/new`; the folder is chosen in the app). Live tracking opens in a Terminal window next to it: the apps don't let another program open their own terminal panel. Also in the `loomy start` menu ("Open in the app"), and the default with `loomy config set start_in app`.
+- **Status line**: Claude Code's status line shows the project phase and the delegations running (⟳ n), read from the end of the log; also after the user's own status line.
+- **Reminder**: a session opened without live tracking (outside `loomy start`) is told to mention `loomy watch` in one line.
+- **`loomy shell-hook`** (optional): in a Loomy project, `claude` or `codex` typed alone (the project's lead tool) goes through `loomy start`; anything else (arguments, another folder, the other tool) runs the real command. Added between markers to `~/.zshrc` or `~/.bashrc`, offered once by `loomy doctor --fix`, never installed silently; `loomy shell-hook remove`, `LOOMY_SHELL_HOOK=0`.
+
+### Changed
+- **Reliable context**: the orchestration rule now asks, after each finished and verified request, for the durable documentation it touches to be updated (`PROJECT.md`, `ARCHITECTURE.md`, an ADR for an important decision) and for one coherent commit when the brief allows commits; the session context recalls the brief's commit and push permissions. The repository, its commits and its documentation stay the project's durable memory, the shared memory carries the work in progress.
+
 ## 0.11.0 — 2026-10-06
 
 ### Added

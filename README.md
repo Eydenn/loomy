@@ -5,10 +5,10 @@
   <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
 </picture>
 
-**Start and structure your projects with Codex and Claude Code.**
-A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
+**Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
+Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.12.2-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.3-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -20,6 +20,18 @@ A questionnaire to frame the project, a repository structure ready for agents, a
 
 > [!NOTE]
 > **Pre-release.** Loomy stays at 0.x until the whole flow has been validated in real conditions. The stable release comes after a release-candidate phase validated by testers.
+
+---
+
+## ✨ Why Loomy
+
+| | |
+|---|---|
+| 🎯&nbsp;**Quality** | The best reasoning plans, decides and reviews; every change can be cross-reviewed by the other model family; the project's characteristics (accounts, payments, sensitive data…) set the checks the agents must do. |
+| 💰&nbsp;**Cost** | Each piece of work goes to the cheapest role that does it reliably (GPT-6-Luna for bounded tasks, Sonnet 5.5 or GPT-6.1 Sol for everyday work, Opus 5.5 for architecture and security). Tokens, cost and subscription quotas are measured; work moves to the other tool before a quota runs out. |
+| 🧠&nbsp;**Continuity** | Shared memory, durable documentation and one commit per finished request keep the thread across sessions, compactions, machines, and between Claude Code and Codex, for a few hundred tokens per session. |
+| 🧩&nbsp;**Method** | A project type and its key characteristics set up the structure, the roles and the official skills (Anthropic and OpenAI) the agents need, added as the project evolves. |
+| 👀&nbsp;**Visibility** | The lead agent on the left, the dispatch on the right: phases, delegations, agent tree and costs live, in the terminal or beside the desktop app. |
 
 ---
 
@@ -153,8 +165,8 @@ loomy version --all
 flowchart LR
   A["🩺 Check<br/>loomy doctor"]:::check --> B["📝 Questionnaire<br/>loomy init"]:::step
   B --> C["🧭 Routing<br/>loomy route"]:::route
-  C --> D["🎯 Lead agent<br/>follows START.md"]:::lead
-  D --> E["📜 Journal<br/>every delegation"]:::step
+  C --> D["🎯 Lead agent<br/>routes every request"]:::lead
+  D --> E["🧠 Memory · 🧩 Skills<br/>results kept, methods added"]:::step
   E --> F["📈 Tracking<br/>loomy watch"]:::check
   classDef step fill:#F1EFE8,stroke:#888780,color:#2C2C2A
   classDef check fill:#E1F5EE,stroke:#1D9E75,color:#085041
@@ -164,13 +176,14 @@ flowchart LR
 
 1. **Check.** Verifies CLI versions, finds Codex even when it is bundled inside the ChatGPT app, checks model availability, and offers fixes.
 2. **Questionnaire.** Ten questions grouped by theme, each showing the consequence of every option. One **project type** (web app / SaaS, showcase site, API, **data & analysis**, AI app, mobile, desktop, CLI, email templates, or **custom**) pre-fills the rest. Then the **key characteristics**, several at once and pre-checked by type: user accounts, payments, personal data, large data volumes, external feeds, public API, AI in the product, real time, production infra, multi-tenant; they set the risk and the checks given to the agents. The details follow from the type (for data: sources, volume, deliverables), then the stage and the **AI team**: one recommended line from the tools detected, or Customise (mode, lead tool, profile, delegation format). A recap shows **what Loomy will configure** and **recommendations** (effort, profile, models) that are indicative only. The first time, an eleventh question asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
-3. **Routing.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing.
+3. **Routing and skills.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing, and installs the official skills the project needs.
 4. **Lead agent.** The main session follows `START.md`:
 
    <kbd>Discover</kbd> → <kbd>Interview</kbd> → <kbd>Propose</kbd> → <kbd>✋ Approve</kbd> → <kbd>Build</kbd> → <kbd>Verify</kbd> → <kbd>Document</kbd> → <kbd>Commit</kbd> → <kbd>Retire</kbd>
 
    It delegates the work to dedicated roles and never moves on without your approval.
-5. **Journal and tracking.** Every delegation is recorded (model, effort, duration, tokens, cost) as soon as it starts. You follow it live in the terminal.
+5. **Day to day.** Every request, your feedback included, goes through the lead agent: the cheapest capable role does it, the other model family reviews it, the durable documentation is updated and the work committed.
+6. **Memory and tracking.** Every delegation is recorded (model, effort, duration, tokens, cost) and its result kept in the shared memory, given back at the next session, Claude Code or Codex. You follow it all live.
 
 ---
 

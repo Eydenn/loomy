@@ -1,7 +1,7 @@
 {
   "name": "loomy",
-  "version": "0.12.2",
-  "description": "Starts and structures your projects with Codex and Claude Code: questionnaire, agent-ready repository structure, lead agent on the best model with dedicated roles, live tracking in the terminal.",
+  "version": "0.12.3",
+  "description": "Your AI development team, orchestrated: Claude Code and Codex on your projects, each request routed to the model that does it reliably for the least cost, cross reviews, official skills, shared memory and live tracking in the terminal.",
   "private": true,
   "license": "UNLICENSED",
   "author": "Eydenn",

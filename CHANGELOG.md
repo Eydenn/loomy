@@ -2,6 +2,12 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.12.3 — 2026-10-06
+
+### Changed
+- **The logo cursor of `loomy watch` breathes like the README's**: lit, a progressive fade, then off, over 1.1 s, at its own pace (a small process repaints only the cursor, about 16 times a second; the screen frame and it never write at the same time). The agent tree's pulses are shifted too (the lead box every two seconds, each role by its place), so that nothing changes in step with the seconds any more. `LOOMY_NO_ANIM=1` keeps the cursor still.
+- **README**: a new introduction and a "Why Loomy" table (quality, cost, continuity, method, visibility); prerequisites before installation; commands grouped by theme, each one folded with a short description, a copyable code block of its variants and its explanation; live tracking presented the same way; the roadmap only lists what is planned, everything shipped is in the changelog.
+
 ## 0.12.2 — 2026-10-06
 
 ### Fixed (audit of 0.10 to 0.12, cross review by GPT-6.1 Sol)

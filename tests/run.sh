@@ -1714,6 +1714,10 @@ STUB_LOG="$FBL" GH_STUB_ISSUES="$FBD/close.txt" LOOMY_FEEDBACK_YES=1 bash "$REPO
 grep -q 'issue	close	21	.*Fixed in Loomy 0.12.1' "$FBL" && ok "feedback close: commented and closed once approved" || ko "feedback close: $(tail -2 "$FBL")"
 grep -q 'loomy feedback --print' "$REPO/templates/CLAUDE.md" && ok "feedback: the lead agent prepares Loomy feedback, never sends it" || ko "feedback: no instruction for the lead agent"
 
+# Logo cursor: the README's profile (lit, fading, off over 1.1 s), independent of the seconds.
+got="$(TERM=xterm-256color LOOMY_FORCE_COLOR=1 bash -c 'source "$1/scripts/lib/ui.sh"; for ms in 0 300 400 550 700 800 1099 1100 1650; do _ui_cursor_level $ms; printf "%s " "$UI_CL"; done' _ "$REPO")"
+[[ "$got" == "0 0 0 2 4 5 5 0 2 " ]] && ok "logo cursor: lit, progressive fade, off, every 1.1 s" || ko "logo cursor levels: $got"
+
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
 SU="$WORK/garde-update"; mkdir -p "$SU/.claude"

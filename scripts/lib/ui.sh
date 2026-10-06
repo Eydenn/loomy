@@ -123,6 +123,7 @@ ui_screen_end() {
 UI_STTY="$( { [[ -t 0 ]] && stty -g </dev/tty; } 2>/dev/null || true)"
 _ui_restore() {
   _ui_tick_stop
+  ui_cursor_anim_stop
   ui_form_end
   ui_screen_end
   printf '\033[?25h' >&2
@@ -251,7 +252,10 @@ _ui_page_draw() {
   (( start > n - avail )) && start=$(( n - avail )); (( start < 0 )) && start=0
   UI_BODY_START=$start; end=$(( start + avail )); (( end > n )) && end=$n
   for (( i = start; i < end; i++ )); do out="${out}${UI_PAGE_L[$i]:-}"$'\033[K\n'; done
+  if [[ -n "$UI_ANIM_LOCK" ]]; then local w=0; while ! mkdir "$UI_ANIM_LOCK" 2>/dev/null && (( w < 20 )); do sleep 0.01; w=$(( w + 1 )); done; fi
   printf '%s%s\033[J\033[%d;1H%s\033[K' "$out" "$tail" "$UI_ROWS" "$UI_FOOTER" >&2
+  [[ -n "$UI_ANIM_LOCK" ]] && rmdir "$UI_ANIM_LOCK" 2>/dev/null
+  return 0
 }
 
 # ---------------------------------------------------------------- live activity
@@ -506,11 +510,66 @@ UI_LOGO=(
 # ui_logo_ok: true when the terminal is wide enough for the logo.
 ui_logo_ok() { _ui_term_size; (( UI_COLS >= 40 )); }
 
+# Logo cursor animation, like the README's (opacity 1 → 1 → 0 → 0 over 1.1 s: lit, fading, off), at its own pace:
+# a small process repaints only the cursor ~16 times a second, independently of the screen refresh, so nothing
+# blinks in step with the seconds. UI_CURSOR_RAMP: colours from lit to off (256 colours, or 8 with dim).
+UI_CURSOR_PERIOD=1100; UI_ANIM_PID=""; UI_ANIM_LOCK=""
+if [[ -n "$C_RESET" && ( "${TERM:-}" == *256color* || "${COLORTERM:-}" == truecolor || "${COLORTERM:-}" == 24bit ) ]]; then
+  UI_CURSOR_RAMP=($'\033[38;5;98m' $'\033[38;5;97m' $'\033[38;5;61m' $'\033[38;5;60m' $'\033[38;5;239m' $'\033[38;5;237m')
+elif [[ -n "$C_RESET" ]]; then
+  UI_CURSOR_RAMP=($'\033[35m' $'\033[35m' $'\033[2;35m' $'\033[2;35m' $'\033[90m' $'\033[90m')
+else UI_CURSOR_RAMP=(); fi
+
+# _ui_cursor_level <ms>: index in UI_CURSOR_RAMP for that time (0 lit … 5 off) in UI_CL.
+_ui_cursor_level() {
+  local p=$(( $1 % UI_CURSOR_PERIOD )) third=$(( UI_CURSOR_PERIOD / 3 ))
+  if (( p < third )); then UI_CL=0
+  elif (( p < 2 * third )); then UI_CL=$(( (p - third) * 5 / third ))
+  else UI_CL=5; fi
+}
+
+# _ui_cursor_col: screen column (1-based) of the logo cursor, prefix of two spaces included.
+_ui_cursor_col() { local l="${UI_LOGO[0]%%\{C\}*}"; l="${l//\{A\}/}"; l="${l//\{F\}/}"; UI_CCOL=$(( ${#l} + 3 )); }
+
+# ui_cursor_anim_start / ui_cursor_anim_stop: the cursor animation of the Loomy screen (logo shown at the top).
+ui_cursor_anim_start() {
+  [[ "$UI_SCREEN" == "1" && ${#UI_CURSOR_RAMP[@]} -gt 0 && -z "$UI_ANIM_PID" && -z "${LOOMY_NO_ANIM:-}" ]] || return 0
+  # The lock is a folder named after this process (nothing else is created); stale ones from a killed terminal go.
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-anim-*.lock' -user "$(id -u)" -mmin +10 -exec rmdir {} \; 2>/dev/null || true
+  UI_ANIM_LOCK="${TMPDIR:-/tmp}/loomy-anim-$$.lock"
+  _ui_cursor_col
+  (
+    trap - EXIT INT TERM
+    last=-1
+    while :; do
+      sleep 0.06
+      _ui_term_size; (( UI_ROWS >= 20 && UI_COLS >= 40 )) || continue
+      _ui_now_ms; _ui_cursor_level "$UI_NOW"
+      (( UI_CL == last )) && continue
+      # One writer at a time: the screen frame takes the same lock while it prints.
+      mkdir "$UI_ANIM_LOCK" 2>/dev/null || continue
+      c="${UI_CURSOR_RAMP[$UI_CL]}"
+      printf '\0337\033[1;%dH%s▄▄\033[2;%dH%s██\033[3;%dH%s▀▀%s\0338' "$UI_CCOL" "$c" "$UI_CCOL" "$c" "$UI_CCOL" "$c" "$C_RESET" >&2
+      rmdir "$UI_ANIM_LOCK" 2>/dev/null
+      last=$UI_CL
+    done
+  ) &
+  UI_ANIM_PID=$!
+  return 0
+}
+ui_cursor_anim_stop() {
+  if [[ -n "$UI_ANIM_PID" ]]; then kill "$UI_ANIM_PID" 2>/dev/null || true; wait "$UI_ANIM_PID" 2>/dev/null || true; UI_ANIM_PID=""; fi
+  if [[ -n "$UI_ANIM_LOCK" ]]; then rmdir "$UI_ANIM_LOCK" 2>/dev/null; UI_ANIM_LOCK=""; fi
+  return 0
+}
+
 # _ui_logo_lines <prefix>: coloured logo lines in UI_LINES.
 _ui_logo_lines() {
   local l accent="${C_RAIL}" text="${C_BOLD}" cursor="${C_RAIL}"
   # Cursor off: same place, barely visible tint (the logo doesn't move).
   [[ "${LOOMY_LOGO_BLINK:-on}" == "off" && -n "$C_RESET" ]] && cursor=$'\033[38;5;237m'
+  # Animated cursor: drawn at the colour of this instant, so a new frame never makes it jump.
+  if [[ -n "$UI_ANIM_PID" ]]; then _ui_now_ms; _ui_cursor_level "$UI_NOW"; cursor="${UI_CURSOR_RAMP[$UI_CL]}"; fi
   UI_LINES=()
   for l in "${UI_LOGO[@]}"; do
     l="${l//\{A\}/${C_RESET}${accent}}"; l="${l//\{C\}/${C_RESET}${cursor}}"; l="${l//\{F\}/${C_RESET}${text}}"

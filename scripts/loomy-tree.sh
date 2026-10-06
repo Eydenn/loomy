@@ -250,7 +250,9 @@ if (( DIAGRAM )); then
   CC=$(( CX + CWID / 2 ))
   MW=38; MX=$(( CC - MW / 2 )); MY=6
   mcx=$CC
-  lk="$K_LEAD"; [[ "$sess" == open* ]] && (( TICK % 2 )) && lk="${C_BOLD}${C_YELLOW}"
+  # Animations at different paces (the lead box every two seconds, each role shifted by its place), so that the
+  # whole diagram doesn't change in step with the seconds.
+  lk="$K_LEAD"; [[ "$sess" == open* ]] && (( (TICK / 2) % 2 )) && lk="${C_BOLD}${C_YELLOW}"
   cv_box "$MX" "$MY" "$MW" 6 "$lk"
   cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$NM_LEAD · ${TR_8}"
   cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "${TR_9}"
@@ -299,10 +301,10 @@ if (( DIAGRAM )); then
     bk="$K_ROLE"; stl=""; stk="$K_DIM"
     case "$RS_K" in
       run) el="$RS_EL"; (( el < 0 )) && el=0
-            if (( TICK % 2 )); then bk="${C_BOLD}${C_CYAN}"; else bk="$C_CYAN"; fi
+            if (( (TICK + b) % 2 )); then bk="${C_BOLD}${C_CYAN}"; else bk="$C_CYAN"; fi
             w_run=""; tv w_run "running"; printf -v stl '%s %s %d:%02d' "${UI_SPIN[$(( TICK % 4 ))]}" "$w_run" $(( el / 60 )) $(( el % 60 )); stk="$C_YELLOW"
             # The dot travels down the arrow of a working role.
-            cv_put "$c" $(( SY + 2 + TICK % 2 )) "$C_YELLOW" "●" ;;
+            cv_put "$c" $(( SY + 2 + (TICK + b) % 2 )) "$C_YELLOW" "●" ;;
       last) d0="${RS_DUR%.*}"; d0="${d0:-0}"
             if [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
             elif [[ "$RS_OC" == "partial" ]]; then tv w "partial"; stl="◐ $w"; stk="$C_YELLOW"
@@ -436,7 +438,7 @@ if (( DIAGRAM )); then
   tilde="~"
   pname="${ROOT##*/}"
   cv_put 0 "$PY" "$C_GREEN" "$tilde/$pname \$"
-  cur=""; (( TICK % 2 )) && cur=" █"
+  cur=" ▏"
   cv_put $(( ${#pname} + 5 )) "$PY" "$K_TXT" "loomy watch$cur"
   # Status bar: label, then its value in brackets, coloured like its part of the diagram.
   sx=0

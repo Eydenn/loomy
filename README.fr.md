@@ -5,10 +5,10 @@
   <img alt="Loomy" src="docs/assets/loomy-light.svg" width="340">
 </picture>
 
-**Démarre et structure tes projets avec Codex et Claude Code.**
-Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les agents, un orchestrateur sur le meilleur modèle qui délègue à des rôles dédiés, et un suivi en direct dans le terminal.
+**Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
+Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.12.2-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.3-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -20,6 +20,18 @@ Un questionnaire pour cadrer le projet, une structure de dépôt prête pour les
 
 > [!NOTE]
 > **Pré-version.** Loomy reste en 0.x tant que l'ensemble n'a pas été validé en conditions réelles. La version stable viendra après une phase de « release candidate » validée par les testeurs.
+
+---
+
+## ✨ Pourquoi Loomy
+
+| | |
+|---|---|
+| 🎯&nbsp;**Qualité** | Le meilleur raisonnement planifie, décide et relit ; chaque changement peut être relu par l'autre famille de modèles ; les caractéristiques du projet (comptes, paiements, données sensibles…) fixent les vérifications que les agents doivent faire. |
+| 💰&nbsp;**Coût** | Chaque travail va au rôle le moins cher qui le fait de façon fiable (GPT-6-Luna pour les tâches cadrées, Sonnet 5.5 ou GPT-6.1 Sol pour le quotidien, Opus 5.5 pour l'architecture et la sécurité). Tokens, coût et quotas d'abonnement sont mesurés ; le travail passe à l'autre outil avant qu'un quota s'épuise. |
+| 🧠&nbsp;**Continuité** | Mémoire partagée, documentation durable et un commit par demande terminée gardent le fil d'une session à l'autre, après un compactage, sur une autre machine, et entre Claude Code et Codex, pour quelques centaines de tokens par session. |
+| 🧩&nbsp;**Méthode** | Un type de projet et ses caractéristiques clés mettent en place la structure, les rôles et les skills officiels (Anthropic et OpenAI) dont les agents ont besoin, enrichis au fil du projet. |
+| 👀&nbsp;**Visibilité** | L'orchestrateur à gauche, le dispatch à droite : phases, délégations, arbre des agents et coûts en direct, dans le terminal ou à côté de l'app de bureau. |
 
 ---
 
@@ -153,8 +165,8 @@ loomy version --all
 flowchart LR
   A["🩺 Diagnostic<br/>loomy doctor"]:::check --> B["📝 Questionnaire<br/>loomy init"]:::step
   B --> C["🧭 Routage<br/>loomy route"]:::route
-  C --> D["🎯 Orchestrateur<br/>suit START.md"]:::lead
-  D --> E["📜 Journal<br/>chaque délégation"]:::step
+  C --> D["🎯 Orchestrateur<br/>route chaque demande"]:::lead
+  D --> E["🧠 Mémoire · 🧩 Skills<br/>résultats gardés, méthodes ajoutées"]:::step
   E --> F["📈 Suivi<br/>loomy watch"]:::check
   classDef step fill:#F1EFE8,stroke:#888780,color:#2C2C2A
   classDef check fill:#E1F5EE,stroke:#1D9E75,color:#085041
@@ -164,13 +176,14 @@ flowchart LR
 
 1. **Diagnostic.** Vérifie les versions des CLI, trouve Codex même caché dans l'app ChatGPT, contrôle les modèles disponibles, et propose les corrections.
 2. **Questionnaire.** Dix questions en français, groupées par thème, chacune avec la conséquence de chaque choix. Un seul **type de projet** (application web / SaaS, site vitrine, API, **données et analyse**, application IA, mobile, desktop, CLI, modèles d'e-mails, ou **sur mesure**) pré-remplit la suite. Puis les **caractéristiques clés**, plusieurs à la fois et pré-cochées selon le type : comptes utilisateur, paiements, données personnelles, gros volumes de données, flux externes, API publique, IA dans le produit, temps réel, infra de production, multi-tenant ; elles fixent le risque et les vérifications confiées aux agents. Les précisions découlent du type (pour les données : sources, volume, livrables), puis viennent le stade et l'**équipe IA** : une ligne recommandée selon les outils détectés, ou Personnaliser (mode, outil principal, profil, format de délégation). Un récapitulatif montre **ce que Loomy va configurer** et des **recommandations** (effort, profil, modèles), seulement indicatives. La première fois, une onzième question demande tes forfaits Claude et ChatGPT. ← revient à la question précédente ; dans un champ texte, Tab reprend la suggestion pour la modifier (nom du projet, nom du dépôt…).
-3. **Routage.** Transforme le brief et les outils installés en une matrice rôle → modèle → effort, avec repli automatique si une CLI manque.
+3. **Routage et skills.** Transforme le brief et les outils installés en une matrice rôle → modèle → effort, avec repli automatique si une CLI manque, et installe les skills officiels dont le projet a besoin.
 4. **Orchestrateur.** La session principale suit `START.md` :
 
    <kbd>Découverte</kbd> → <kbd>Entretien</kbd> → <kbd>Proposition</kbd> → <kbd>✋ Validation</kbd> → <kbd>Construction</kbd> → <kbd>Vérification</kbd> → <kbd>Documentation</kbd> → <kbd>Commit</kbd> → <kbd>Clôture</kbd>
 
    Elle délègue le travail aux rôles dédiés et n'avance jamais sans ta validation.
-5. **Journal et suivi.** Chaque délégation est enregistrée (modèle, effort, durée, tokens, coût) dès son lancement. Tu la suis en direct dans le terminal.
+5. **Au quotidien.** Chaque demande, tes retours compris, passe par l'orchestrateur : le rôle le moins cher capable la fait, l'autre famille de modèles la relit, la documentation durable est mise à jour et le travail commité.
+6. **Mémoire et suivi.** Chaque délégation est enregistrée (modèle, effort, durée, tokens, coût) et son résultat gardé dans la mémoire partagée, redonnée à la session suivante, Claude Code comme Codex. Tu suis tout en direct.
 
 ---
 

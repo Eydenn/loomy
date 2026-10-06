@@ -245,7 +245,7 @@ if (( WATCH )); then
     if [[ "$UI_SCREEN" == "1" ]]; then
       # App frame: header (project, time), body shown from the top (↑↓ to scroll), footer (keys).
       ui_header "$NAME_W" "$(t "live tracking") · $(date '+%H:%M:%S')"
-      LOOMY_LOGO_BLINK=$( (( tick % 2 )) && echo off || echo on)
+      ui_cursor_anim_start
       _ui_term_size; _ui_chrome
       (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
       UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop

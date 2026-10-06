@@ -23,6 +23,9 @@ Loomy frames each project, then a lead agent on the best model routes every requ
 
 ---
 
+<p align="center"><img src="docs/assets/loomy-watch.svg" alt="loomy watch: the lead agent, the routing and the roles live" width="100%"></p>
+<p align="center"><sub>The live view that <code>loomy start</code> opens beside the session: the lead agent, the routing by model tier, the roles at work (two running, one partial, one done), the other roles, and the session log.</sub></p>
+
 ## ✨ Why Loomy
 
 | | |

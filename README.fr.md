@@ -23,6 +23,9 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 
 ---
 
+<p align="center"><img src="docs/assets/loomy-watch-fr.svg" alt="loomy watch : l'orchestrateur, le routage et les rôles en direct" width="100%"></p>
+<p align="center"><sub>La vue en direct que <code>loomy start</code> ouvre à côté de la session : l'orchestrateur, le routage par niveau de modèle, les rôles au travail (deux en cours, un partiel, un terminé), les autres rôles et le journal de session.</sub></p>
+
 ## ✨ Pourquoi Loomy
 
 | | |

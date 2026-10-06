@@ -237,6 +237,13 @@ case "$cmd" in
         # shellcheck source=../scripts/lib/project.sh
         source "$S/lib/project.sh"
         loomy_project_repair "$p_root" 2>/dev/null || true
+        # Feedback: one line when one of yours is fixed in the installed version (checked once a day, in the background).
+        fbf="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/feedback-fixed"
+        if [[ -s "$fbf" && -t 2 ]]; then t "Your feedback is fixed in this version: %s" "$(cat "$fbf")" >&2; echo >&2; rm -f "$fbf"; fi
+        if [[ "$(loomy_config_get feedback_checked 2>/dev/null || true)" != "$(date +%Y-%m-%d)" ]] && command -v gh >/dev/null 2>&1; then
+          loomy_config_set feedback_checked "$(date +%Y-%m-%d)" 2>/dev/null || true
+          ( bash "$S/loomy-feedback.sh" --check-fixed >/dev/null 2>&1 & ) 2>/dev/null || true
+        fi
         # Official skills: the ones of the lock missing on this machine (another clone), and once a week the updates.
         # shellcheck source=../scripts/lib/skills.sh
         source "$S/lib/skills.sh"

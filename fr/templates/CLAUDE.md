@@ -11,6 +11,7 @@ Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, r
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
 - Contexte fiable : après chaque demande terminée et vérifiée, mets à jour la documentation durable qu'elle touche (`PROJECT.md`, `ARCHITECTURE.md`, un ADR dans `docs/decisions/` pour une décision importante), puis fais un commit cohérent (un par demande, message clair) si le brief autorise les commits ; sinon prépare-le et signale-le. Ne pousse que si le brief l'autorise. Le dépôt, ses commits et sa documentation sont la mémoire durable du projet.
 - Mémoire partagée : tiens `.loomy/memory/STATE.md` à jour (fait, en cours, décisions, suite ; en anglais, en style télégraphique, 40 lignes au plus, en remplaçant ce qui est dépassé : il est écrit pour les modèles, au moindre coût) après chaque étape importante et avant de finir une session. C'est ce qui garde le fil d'une session à l'autre, après un compactage et entre Claude Code et Codex. Les résultats complets des délégations sont dans `.loomy/memory/delegations/` : pour donner des constats à un rôle, indique-lui le fichier plutôt que d'en recopier le contenu.
+- Un problème qui vient de Loomy lui-même (pas du projet) : prépare le retour avec `loomy feedback --print "…"` et propose-le à l'utilisateur ; il ne part jamais sans son accord.
 - Si la mise en place Loomy n'est pas terminée (`START.md` encore présent), termine-la d'abord.
 <!-- loomy:orchestration:end -->
 

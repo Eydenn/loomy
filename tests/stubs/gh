@@ -23,5 +23,10 @@ case "${1:-} ${2:-}" in
     [[ -n "${GH_STUB_REMOTES:-}" ]] && mkdir -p "$GH_STUB_REMOTES/$(dirname "$name")" && git init --bare -q -b main "$GH_STUB_REMOTES/$name.git"
     if [[ -n "$remote" && -n "$source_dir" ]]; then git -C "$source_dir" remote add "$remote" "https://github.com/$name.git"; fi
     echo "https://github.com/$name" ;;
+  "issue list")
+    # GH_STUB_ISSUES=file: what the --jq query would print (one formatted line per issue).
+    [[ -n "${GH_STUB_ISSUES:-}" && -f "$GH_STUB_ISSUES" ]] && cat "$GH_STUB_ISSUES"
+    exit 0 ;;
+  "api repos/"*) case "$*" in *permissions.push*) echo "${GH_STUB_PUSH:-true}" ;; esac; exit 0 ;;
   *) exit 0 ;;
 esac

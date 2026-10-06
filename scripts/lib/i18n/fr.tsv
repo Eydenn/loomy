@@ -2087,3 +2087,63 @@ Install it anyway?	L'installer quand même ?
 Yes, install it	Oui, l'installer
 Skill not removed	Skill non supprimée
 installed: %s · not installed: %s (loomy skills add)	installées : %s · non installées : %s (loomy skills add)
+Your feedback is fixed in this version: %s	Ton retour est corrigé dans cette version : %s
+FEEDBACK TRIAGE	TRI DES RETOURS
+%s open, not triaged	%s ouverts, non triés
+Nothing to triage	Rien à trier
+grouping by cause and drafting replies (fast model)…	regroupement par cause et rédaction de réponses (modèle rapide)…
+no model available: one group per issue, neutral reply	aucun modèle disponible : un groupe par issue, réponse neutre
+Thanks for this feedback! It is noted and will be looked at; we'll update this issue.	Merci pour ce retour ! Il est pris en compte et sera examiné ; nous mettrons cette issue à jour.
+%s issue(s)	%s issue(s)
+nothing was posted (run it in a terminal to review each reply)	rien n'a été publié (lance la commande dans un terminal pour examiner chaque réponse)
+Labels	Labels
+Reply	Réponse
+Posts this reply, adds the labels, the priority and triaged.	Publie cette réponse, ajoute les labels, la priorité et triaged.
+Labels, priority and triaged only, no reply.	Labels, priorité et triaged uniquement, sans réponse.
+Write your own reply, then post it.	Rédige ta propre réponse, puis publie-la.
+Leaves this issue as it is.	Laisse cette issue telle quelle.
+Ends the triage here.	Termine le tri ici.
+What to do with #%s?	Que faire de #%s ?
+Post the reply	Publier la réponse
+Labels only	Labels uniquement
+Edit the reply	Modifier la réponse
+Skip	Ignorer
+Stop	Arrêter
+Your reply	Ta réponse
+Labels not set	Labels non définis
+Reply posted	Réponse publiée
+Reply not posted	Réponse non publiée
+Triaged	Triée
+fix, then: loomy feedback mark <n> <version>; at release: loomy feedback close <version>	corrige d'abord : loomy feedback mark <n> <version> ; à la sortie : loomy feedback close <version>
+GitHub CLI not ready	GitHub CLI n'est pas prêt
+gh auth login, then try again	exécute gh auth login, puis réessaie
+YOUR FEEDBACK	TON RETOUR
+none yet: loomy feedback "…"	aucun pour le moment : loomy feedback "…"
+fixed in %s	corrigé dans %s
+you have it	tu l'as
+closed	fermé
+being handled	en cours de traitement
+received	reçu
+Maintainers only	Réservé aux mainteneurs
+Usage: loomy feedback mark <number> <version>	Utilisation : loomy feedback mark <number> <version>
+Feedback #%s marked fixed in %s	Retour #%s marqué comme corrigé dans %s
+closed with loomy feedback close %s at release	fermé avec loomy feedback close %s à la sortie
+Not marked	Non marqué
+Usage: loomy feedback close <version>	Utilisation : loomy feedback close <version>
+Nothing to close for %s	Rien à fermer pour %s
+FEEDBACK FIXED IN %s	RETOUR CORRIGÉ DANS %s
+Fixed in Loomy %s, thanks for the feedback! Update with: loomy update	Corrigé dans Loomy %s, merci pour ton retour ! Mets à jour avec : loomy update
+comment: %s	commentaire : %s
+nothing was posted (run it in a terminal to approve)	rien n'a été publié (lance la commande dans un terminal pour approuver)
+Close	Fermer
+Comment and close these issues?	Commenter et fermer ces issues ?
+Yes, comment and close	Oui, commenter et fermer
+nothing was posted	rien n'a été publié
+Closed	Fermée
+Not closed	Non fermée
+  loomy feedback list          your feedback and where it stands (received, being handled, fixed in X.Y.Z)	  loomy feedback list          tes retours et leur état (reçu, en cours de traitement, corrigé dans X.Y.Z)
+  loomy feedback triage        maintainer: open feedback grouped by cause, priority and reply proposed; each reply	  loomy feedback triage        mainteneur : retours ouverts regroupés par cause, priorité et réponse proposée ; chaque réponse
+                                  posted only after your approval	                                  publiée uniquement après ton approbation
+  loomy feedback mark <n> <v>  maintainer: feedback #n fixed in version v (label fixed-in:v)	  loomy feedback mark <n> <v>  mainteneur : retour #n corrigé dans la version v (label fixed-in:v)
+  loomy feedback close <v>     maintainer: comments and closes the feedback fixed in v, after your approval	  loomy feedback close <v>     mainteneur : commente et ferme les retours corrigés dans la version v, après ton approbation
+issue #%s skipped	issue #%s ignorée

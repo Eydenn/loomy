@@ -2,6 +2,15 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.12.1 — 2026-10-06
+
+### Added
+- **Tester feedback is followed and processed**, on top of `loomy feedback` (which sends it).
+  - **Testers**: `loomy feedback list` shows their feedback and where it stands (received, being handled, fixed in X.Y.Z, closed). Once a day in the background, the launch checks whether one of theirs is fixed in the installed version and says it once.
+  - **Maintainer**: `loomy feedback triage` takes the open feedback not triaged yet, groups it by cause with a priority (P1 to P3), labels and a proposed reply drafted by a fast model (GPT-6-Luna, or Claude Haiku; none: one group per issue), writes a Markdown report, then goes through the issues one by one: post the reply, labels only, edit the reply, skip or stop. Nothing is posted without approval.
+  - `loomy feedback mark <n> <version>` labels a feedback `fixed-in:<version>`; `loomy feedback close <version>` comments and closes them at release, after a yes.
+  - The lead agent, facing a problem in Loomy itself, prepares the feedback with `loomy feedback --print` and offers it; it is never sent on its own.
+
 ## 0.12.0 — 2026-10-06
 
 ### Added

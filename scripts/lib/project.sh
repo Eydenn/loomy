@@ -84,6 +84,7 @@ Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, r
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
 - Contexte fiable : après chaque demande terminée et vérifiée, mets à jour la documentation durable qu'elle touche (`PROJECT.md`, `ARCHITECTURE.md`, un ADR dans `docs/decisions/` pour une décision importante), puis fais un commit cohérent (un par demande, message clair) si le brief autorise les commits ; sinon prépare-le et signale-le. Ne pousse que si le brief l'autorise. Le dépôt, ses commits et sa documentation sont la mémoire durable du projet.
 - Mémoire partagée : tiens `.loomy/memory/STATE.md` à jour (fait, en cours, décisions, suite ; en anglais, en style télégraphique, 40 lignes au plus, en remplaçant ce qui est dépassé : il est écrit pour les modèles, au moindre coût) après chaque étape importante et avant de finir une session. C'est ce qui garde le fil d'une session à l'autre, après un compactage et entre Claude Code et Codex. Les résultats complets des délégations sont dans `.loomy/memory/delegations/` : pour donner des constats à un rôle, indique-lui le fichier plutôt que d'en recopier le contenu.
+- Un problème qui vient de Loomy lui-même (pas du projet) : prépare le retour avec `loomy feedback --print "…"` et propose-le à l'utilisateur ; il ne part jamais sans son accord.
 - Si la mise en place Loomy n'est pas terminée (`START.md` encore présent), termine-la d'abord.
 FR
   else
@@ -98,6 +99,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
 - Reliable context: after each finished and verified request, update the durable documentation it touches (`PROJECT.md`, `ARCHITECTURE.md`, an ADR in `docs/decisions/` for an important decision), then make one coherent commit (one per request, clear message) if the brief allows commits; otherwise prepare it and say so. Push only if the brief allows it. The repository, its commits and its documentation are the project's durable memory.
 - Shared memory: keep `.loomy/memory/STATE.md` up to date (done, in progress, decisions, next; English, telegraphic, 40 lines at most, replacing what is outdated: it is written for the models, at the lowest cost) after each important step and before ending a session. This is what keeps the thread from one session to the next, after a compaction, and between Claude Code and Codex. The full results of the delegations are in `.loomy/memory/delegations/`: to give findings to a role, point it to the file rather than copying its content.
+- A problem coming from Loomy itself (not the project): prepare the feedback with `loomy feedback --print "…"` and offer it to the user; it is never sent without their approval.
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi

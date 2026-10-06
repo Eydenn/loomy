@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.12.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.12.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -544,6 +544,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, GitHub included: installs `gh`, logs in, checks git access to the Loomy repository; `--live` tests every model) |
 | 🐚&nbsp;<code>loomy&nbsp;shell-hook&nbsp;[install\|remove]</code> | optional: in a Loomy project, `claude` or `codex` typed alone (the project's lead tool) goes through `loomy start`, so the session always opens with live tracking and the context; anything else runs the real command. Offered once by `loomy doctor --fix`, never installed silently |
 | 💬&nbsp;<code>loomy&nbsp;feedback</code> | reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text |
+| 📬&nbsp;<code>loomy&nbsp;feedback&nbsp;list</code> | your feedback and where it stands: received, being handled, fixed in X.Y.Z (the launch says once when one of yours is fixed in the installed version). Maintainers: `triage` groups the open feedback by cause with a priority and a proposed reply (fast model), each reply posted only after approval; `mark <n> <version>` then `close <version>` at release |
 | 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
 | 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
@@ -765,10 +766,11 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.10.0 | **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
 | ✅&nbsp;0.11.0 | **shared memory**: delegation results and the work state kept in `.loomy/memory/`, given back at each new session and after a compaction, Claude Code or Codex, for a few hundred tokens; `loomy memory` |
 | ✅&nbsp;0.11.1 | `loomy start --app` (Claude or Codex desktop app, tracking beside it), phase and running delegations in the status line, optional `loomy shell-hook`; durable docs and one commit after each finished request |
-| ✅&nbsp;0.12.0 | **Current version** · **official skills** (Anthropic and OpenAI only): chosen at init from the project, added at each task, analysed and announced, safe by default; `loomy skills` |
+| ✅&nbsp;0.12.0 | **official skills** (Anthropic and OpenAI only): chosen at init from the project, added at each task, analysed and announced, safe by default; `loomy skills` |
+| ✅&nbsp;0.12.1 | **Current version** · tester feedback processed: `loomy feedback list`, fixed notice at launch, maintainer `triage` (grouped by cause, replies drafted, posted only on approval), `mark` and `close` |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
-| | Tester feedback (`loomy feedback`) processed |
+| ✅ | Tester feedback processed: `loomy feedback list`, maintainer `triage`, `mark`, `close` (0.12.1) |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |
 | | Configurable color theme (`loomy config`) for terminals that don't render bold |
 | | Short README ("5 minutes to start"), full reference separately |

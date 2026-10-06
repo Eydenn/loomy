@@ -11,6 +11,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
 - Reliable context: after each finished and verified request, update the durable documentation it touches (`PROJECT.md`, `ARCHITECTURE.md`, an ADR in `docs/decisions/` for an important decision), then make one coherent commit (one per request, clear message) if the brief allows commits; otherwise prepare it and say so. Push only if the brief allows it. The repository, its commits and its documentation are the project's durable memory.
 - Shared memory: keep `.loomy/memory/STATE.md` up to date (done, in progress, decisions, next; English, telegraphic, 40 lines at most, replacing what is outdated: it is written for the models, at the lowest cost) after each important step and before ending a session. This is what keeps the thread from one session to the next, after a compaction, and between Claude Code and Codex. The full results of the delegations are in `.loomy/memory/delegations/`: to give findings to a role, point it to the file rather than copying its content.
+- A problem coming from Loomy itself (not the project): prepare the feedback with `loomy feedback --print "…"` and offer it to the user; it is never sent without their approval.
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 <!-- loomy:orchestration:end -->
 

@@ -1011,7 +1011,7 @@ if [[ -n "$SK_PLAN" && "$(skills_policy)" == auto ]]; then
   sk_ok=""; sk_ko=""
   while IFS= read -r sk; do
     [[ -n "$sk" ]] || continue
-    if skills_install "$TARGET" "$sk" "$(t "project %s: %s" "$TYPE" "$(skills_line "$sk" | cut -d'|' -f6)")"; then sk_ok="${sk_ok:+$sk_ok, }$sk"; else sk_ko="${sk_ko:+$sk_ko, }$sk"; fi
+    if skills_install "$TARGET" "$sk" "$(t "project %s: %s" "$TYPE" "$(skills_line "$sk" | cut -d'|' -f8)")"; then sk_ok="${sk_ok:+$sk_ok, }$sk"; else sk_ko="${sk_ko:+$sk_ko, }$sk"; fi
   done <<<"$SK_PLAN"
   if [[ -z "$sk_ko" ]]; then ui_step_done $st ok "$(t "Official skills")" "$sk_ok"
   else ui_step_done $st warn "$(t "Official skills")" "$(t "installed: %s · not installed: %s (loomy skills add)" "${sk_ok:-—}" "$sk_ko")"; fi

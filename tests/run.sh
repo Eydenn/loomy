@@ -1664,6 +1664,35 @@ SKO="$WORK/skills-off"; "$LOOMY" init "$SKO" --answers "$WORK/sk-answers.md" --y
 [[ ! -d "$SKO/.claude/skills" ]] && ok "skills off: nothing installed" || ko "skills off: installed anyway"
 "$LOOMY" config set skills auto >/dev/null 2>&1
 
+# Tester feedback: follow-up (list, fixed notice), maintainer triage, mark and close; nothing posted without approval.
+FBD="$WORK/fb"; mkdir -p "$FBD"; FBL="$WORK/gh-calls.log"; : >"$FBL"
+printf '%s\n' '12|OPEN|feedback,fixed-in:0.1.0|Feedback: watch is slow' '13|OPEN|feedback,triaged|Feedback: an idea' '14|CLOSED||Feedback: old one' >"$FBD/list.txt"
+GH_STUB_ISSUES="$FBD/list.txt" bash "$REPO/scripts/loomy-feedback.sh" list >"$OUT" 2>&1
+has "feedback list: fixed, with the version" "#12 .*watch is slow · fixed in 0.1.0 .*you have it"
+has "feedback list: being handled" "#13 .*an idea · being handled"
+has "feedback list: closed" "#14 .*closed"
+rm -f "$XDG_CONFIG_HOME/loomy/feedback-seen" "$XDG_CONFIG_HOME/loomy/feedback-fixed"
+GH_STUB_ISSUES="$FBD/list.txt" bash "$REPO/scripts/loomy-feedback.sh" --check-fixed >/dev/null 2>&1
+grep -q '#12 watch is slow' "$XDG_CONFIG_HOME/loomy/feedback-fixed" 2>/dev/null && ok "feedback: fixed in the installed version, noted for the next launch" || ko "feedback: fixed notice missing"
+GH_STUB_ISSUES="$FBD/list.txt" bash "$REPO/scripts/loomy-feedback.sh" --check-fixed >/dev/null 2>&1; rm -f "$XDG_CONFIG_HOME/loomy/feedback-fixed"
+GH_STUB_ISSUES="$FBD/list.txt" bash "$REPO/scripts/loomy-feedback.sh" --check-fixed >/dev/null 2>&1
+[[ ! -s "$XDG_CONFIG_HOME/loomy/feedback-fixed" ]] && ok "feedback: each fix announced once" || ko "feedback: announced again"
+GH_STUB_PUSH=false bash "$REPO/scripts/loomy-feedback.sh" triage >"$OUT" 2>&1
+has "feedback triage: maintainers only" "Maintainers only"
+printf '21\tFeedback: watch freezes\twatch freezes after a while\n22\tFeedback: tree too wide\tthe tree overflows\n' >"$FBD/triage.txt"
+STUB_LOG="$FBL" GH_STUB_ISSUES="$FBD/triage.txt" LOOMY_TRIAGE_AI=none bash "$REPO/scripts/loomy-feedback.sh" triage >"$OUT" 2>&1
+has "feedback triage: issues counted" "2 open, not triaged"
+has "feedback triage: report written" "loomy-triage-.*\.md"
+grep -qE 'issue (comment|edit|close)' "$FBL" && ko "feedback triage: posted without approval" || ok "feedback triage: nothing posted without approval"
+STUB_LOG="$FBL" bash "$REPO/scripts/loomy-feedback.sh" mark 21 0.12.1 >"$OUT" 2>&1
+grep -q 'issue	edit	21	.*fixed-in:0.12.1' "$FBL" && ok "feedback mark: label fixed-in:<version>" || ko "feedback mark: $(tail -2 "$FBL")"
+printf '21|OPEN|fixed-in:0.12.1|Feedback: watch freezes\n' >"$FBD/close.txt"
+STUB_LOG="$FBL" GH_STUB_ISSUES="$FBD/close.txt" bash "$REPO/scripts/loomy-feedback.sh" close 0.12.1 >"$OUT" 2>&1
+grep -q 'issue	close' "$FBL" && ko "feedback close: closed without approval" || ok "feedback close: asks first"
+STUB_LOG="$FBL" GH_STUB_ISSUES="$FBD/close.txt" LOOMY_FEEDBACK_YES=1 bash "$REPO/scripts/loomy-feedback.sh" close 0.12.1 >"$OUT" 2>&1
+grep -q 'issue	close	21	.*Fixed in Loomy 0.12.1' "$FBL" && ok "feedback close: commented and closed once approved" || ko "feedback close: $(tail -2 "$FBL")"
+grep -q 'loomy feedback --print' "$REPO/templates/CLAUDE.md" && ok "feedback: the lead agent prepares Loomy feedback, never sends it" || ko "feedback: no instruction for the lead agent"
+
 # Installed in a new project, completed (once) in an existing one, user hooks kept.
 file_has "UserPromptSubmit hook installed in a new project" "$SGX/.claude/settings.json" '"UserPromptSubmit"'
 SU="$WORK/garde-update"; mkdir -p "$SU/.claude"

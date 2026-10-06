@@ -226,6 +226,7 @@ if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   br="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
   dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
   t "- Git: branch %s, %s modified file(s) not committed." "$br" "$dirty"; echo
+  t "- Brief permissions: commits: %s, push: %s. After each finished and verified request: durable docs updated, then one coherent commit when allowed." "$( [[ "$(brief commit_after_setup)" == yes ]] && t "allowed" || t "by the user")" "$( [[ "$(brief push_after_commit)" == yes ]] && t "allowed" || t "not allowed")"; echo
 fi
 case "$(privacy_mode "$ROOT")" in
   local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f)."; echo ;;

@@ -2006,5 +2006,9 @@ _t_fr() {
     'Only %s result(s) kept: choose N from 1 to %s.') _T='Seulement %s résultat(s) conservé(s) : choisis N entre 1 et %s.' ;;
     '      memory (off: the shared memory is no longer given at the start of sessions),') _T='       memory (off : la mémoire partagée n'\''est plus donnée au début des sessions),' ;;
     '%s: on or off') _T='%s : on ou off' ;;
+    '- Brief permissions: commits: %s, push: %s. After each finished and verified request: durable docs updated, then one coherent commit when allowed.') _T='- Autorisations du brief : commits : %s, push : %s. Après chaque demande terminée et vérifiée : documentation durable mise à jour, puis un commit cohérent si c'\''est autorisé.' ;;
+    'by the user') _T='par l'\''utilisateur' ;;
+    'not allowed') _T='non autorisé' ;;
+    'allowed') _T='autorisé' ;;
   esac
 }

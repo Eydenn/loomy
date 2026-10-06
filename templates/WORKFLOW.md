@@ -104,6 +104,6 @@ A multi-agent task is only finished when:
 - scope conflicts are resolved;
 - the integrated code is verified;
 - review comments are addressed or explicitly accepted;
-- durable documentation is up to date if needed;
+- the durable documentation it touches is updated (`PROJECT.md`, `ARCHITECTURE.md`, ADRs);
 - temporary handoff files are deleted or current;
 - the Git state is clean, or its state is deliberately documented.

@@ -104,6 +104,6 @@ Une tâche multi-agents n'est terminée que lorsque :
 - les conflits de périmètre sont résolus ;
 - le code intégré est vérifié ;
 - les remarques de relecture sont traitées ou explicitement acceptées ;
-- la documentation durable est à jour si nécessaire ;
+- la documentation durable concernée est mise à jour (`PROJECT.md`, `ARCHITECTURE.md`, ADR) ;
 - les fichiers de relais temporaires sont supprimés ou à jour ;
 - l'état Git est propre, ou son état est documenté volontairement.

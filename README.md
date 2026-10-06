@@ -51,14 +51,54 @@ loomy init
 loomy start
 ```
 
-**5. Follow live**, in a second terminal
-
-```bash
-loomy watch
-```
+**5. Follow live**: `loomy start` already opens live tracking beside the session; `loomy watch` reopens it anywhere.
 
 > [!TIP]
 > From then on, just type **`loomy`** in the project folder: it shows where the project stands, what is expected from you, and offers to open or resume the session, follow live, or see the status.
+
+---
+
+## ✅ Prerequisites
+
+| | 🟢 Minimum | ⭐ Ideal |
+|---|---|---|
+| **System** | macOS, bash ≥ 3.2 (the macOS one works), `git`; Linux: tested automatically (CI), not yet validated in real use | + `gh` logged in |
+| **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, installed in the terminal and detected by `loomy doctor`: hybrid mode |
+| **Models** | those of your tool | all answer `loomy doctor --live` |
+| **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |
+
+**Install Claude Code and Codex in the terminal.** `loomy doctor` shows what it detects and prints these commands for a missing CLI; `loomy doctor --fix` offers to run them for you.
+
+**Claude Code** (official installer)
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+or with Homebrew
+
+```bash
+brew install --cask claude-code
+```
+
+**Codex** (official installer)
+
+```bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+```
+
+or with Homebrew
+
+```bash
+brew install --cask codex
+```
+
+Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan or Console account; ChatGPT account for Codex), and check with `loomy doctor --live`.
+
+> [!IMPORTANT]
+> - **Codex shipped with the ChatGPT and Codex apps.** `loomy doctor --fix` makes it available as `codex` through a small script in `~/.local/bin`. A symbolic link would not work: the CLI looks for its helper programs next to the path it was called through.
+> - **Claude Code too old.** Earlier versions refuse `claude-opus-5-5`. The diagnosis offers `claude update`.
+> - **Sandboxed session.** If the Claude Code lead agent runs in a sandbox, allow `loomy-delegate-codex.sh` to run outside that sandbox when it asks.
 
 ---
 
@@ -276,13 +316,50 @@ loomy privacy restore <your-account>/<project>-ai
 
 Everything happens in the terminal, with no dependency. **Nothing starts on its own**: you start tracking when you want, in a second terminal.
 
-| Command | View |
-|---|---|
-| <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view (status screen: brief hidden, fewer delegations and log lines), `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
-| <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
-| <code>loomy&nbsp;start</code> | 🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone. In every session, Claude Code's status line shows the phase and the delegations running (⟳ n), also after your own status line; a session opened without tracking is told to mention `loomy watch` |
-| <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
+<details>
+<summary><code>loomy&nbsp;status</code> · Snapshot of the project</summary>
+
+<br>
+
+Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git
+
+</details>
+
+<details>
+<summary><code>loomy&nbsp;watch&nbsp;[N]</code> · Live tracking, refreshed every second</summary>
+
+<br>
+
+🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view (status screen: brief hidden, fewer delegations and log lines), `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal
+
+</details>
+
+<details>
+<summary><code>loomy&nbsp;tree</code> · Agent tree: lead agent, advisor, roles live</summary>
+
+<br>
+
+🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto|diagram|list` chooses
+
+</details>
+
+<details>
+<summary><code>loomy&nbsp;start</code> · Session and tracking side by side</summary>
+
+<br>
+
+🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone. In every session, Claude Code's status line shows the phase and the delegations running (⟳ n), also after your own status line; a session opened without tracking is told to mention `loomy watch`
+
+</details>
+
+<details>
+<summary><code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> · Readable log</summary>
+
+<br>
+
+Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs
+
+</details>
 
 **What is live.** The screen rereads the project every 2 seconds:
 - **delegations** to Claude or Codex appear as soon as they start, with their timer, then their cost at the end; an interrupted one disappears on its own;
@@ -488,82 +565,269 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
 
 ---
 
-## ✅ Prerequisites
-
-| | 🟢 Minimum | ⭐ Ideal |
-|---|---|---|
-| **System** | macOS, bash ≥ 3.2 (the macOS one works), `git`; Linux: tested automatically (CI), not yet validated in real use | + `gh` logged in |
-| **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, installed in the terminal and detected by `loomy doctor`: hybrid mode |
-| **Models** | those of your tool | all answer `loomy doctor --live` |
-| **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |
-
-**Install Claude Code and Codex in the terminal.** `loomy doctor` shows what it detects and prints these commands for a missing CLI; `loomy doctor --fix` offers to run them for you.
-
-**Claude Code** (official installer)
-
-```bash
-curl -fsSL https://claude.ai/install.sh | bash
-```
-
-or with Homebrew
-
-```bash
-brew install --cask claude-code
-```
-
-**Codex** (official installer)
-
-```bash
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
-```
-
-or with Homebrew
-
-```bash
-brew install --cask codex
-```
-
-Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan or Console account; ChatGPT account for Codex), and check with `loomy doctor --live`.
-
-> [!IMPORTANT]
-> - **Codex shipped with the ChatGPT and Codex apps.** `loomy doctor --fix` makes it available as `codex` through a small script in `~/.local/bin`. A symbolic link would not work: the CLI looks for its helper programs next to the path it was called through.
-> - **Claude Code too old.** Earlier versions refuse `claude-opus-5-5`. The diagnosis offers `claude update`.
-> - **Sandboxed session.** If the Claude Code lead agent runs in a sandbox, allow `loomy-delegate-codex.sh` to run outside that sandbox when it asks.
-
----
-
 ## 🛠️ Commands
 
-| Command | Purpose |
-|---|---|
-| 🏠&nbsp;<code>loomy</code> | home: where the project stands, what is expected, and the next step in one choice (outside a project: create one) |
-| 📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> | creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`; existing Git project: `--no-branch` to stay on the current branch) |
-| 📝&nbsp;<code>loomy&nbsp;brief</code> | reruns the questionnaire for the current project |
-| 🔒&nbsp;<code>loomy&nbsp;privacy</code> | AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository |
-| ▶️&nbsp;<code>loomy&nbsp;start</code> | starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`) |
-| 🩺&nbsp;<code>loomy&nbsp;doctor</code> | checks prerequisites (`--fix` fixes, GitHub included: installs `gh`, logs in, checks git access to the Loomy repository; `--live` tests every model) |
-| 🐚&nbsp;<code>loomy&nbsp;shell-hook&nbsp;[install\|remove]</code> | optional: in a Loomy project, `claude` or `codex` typed alone (the project's lead tool) goes through `loomy start`, so the session always opens with live tracking and the context; anything else runs the real command. Offered once by `loomy doctor --fix`, never installed silently |
-| 💬&nbsp;<code>loomy&nbsp;feedback</code> | reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text |
-| 📬&nbsp;<code>loomy&nbsp;feedback&nbsp;list</code> | your feedback and where it stands: received, being handled, fixed in X.Y.Z (the launch says once when one of yours is fixed in the installed version). Maintainers: `triage` groups the open feedback by cause with a priority and a proposed reply (fast model), each reply posted only after approval; `mark <n> <version>` then `close <version>` at release |
-| 🧭&nbsp;<code>loomy&nbsp;route</code> | role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles` |
-| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Codex (executor, developer, documenter can write; the others are read-only) |
-| 🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> | hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer) |
-| 🔬&nbsp;<code>loomy&nbsp;assess</code> | assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it) |
-| ✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> | a named task for the lead agent: plan, approval, build, verification, commit, followed in `watch`; without argument, the list; `--resume`, `--print` |
-| 🔍&nbsp;<code>loomy&nbsp;review</code> | on-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/` |
-| 🧾&nbsp;<code>loomy&nbsp;report</code> | project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project |
-| 🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> | shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one |
-| 🧩&nbsp;<code>loomy&nbsp;skills&nbsp;[suggest\|add\|remove\|update\|catalog]</code> | official agent skills of the project: installed, why, analysis; `suggest "…"` for a task, `add`/`remove`, `update`, `catalog` |
-| 🧬&nbsp;<code>loomy&nbsp;models</code> | model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on\|off`, `--issue` (GitHub suggestion) |
-| 🛡️&nbsp;<code>loomy&nbsp;audit</code> | security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick\|standard\|deep`, `--fixes report\|plan\|branch` |
-| 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
-| 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
-| 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
-| 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
-| 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
-| 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
-| ❓&nbsp;<code>loomy&nbsp;help&nbsp;[command]</code> | general help, or help for one command |
+### 🚀 Project
+
+<details>
+<summary>🏠&nbsp;<code>loomy</code> · Home: where the project stands and the next step</summary>
+
+<br>
+
+Home: where the project stands, what is expected, and the next step in one choice (outside a project: create one)
+
+</details>
+
+<details>
+<summary>📦&nbsp;<code>loomy&nbsp;init&nbsp;[dir]</code> · Create or adopt a project</summary>
+
+<br>
+
+Creates the folder if needed (or offers to create it from the project name), then initializes the project, new or existing: questionnaire, then structure set up by the lead agent; on an initialized project: resume, `--update`, `--reset` (`--no-wizard`, `--yes`, `--answers`; existing Git project: `--no-branch` to stay on the current branch)
+
+</details>
+
+<details>
+<summary>📝&nbsp;<code>loomy&nbsp;brief</code> · Redo the questionnaire</summary>
+
+<br>
+
+Reruns the questionnaire for the current project
+
+</details>
+
+<details>
+<summary>🔬&nbsp;<code>loomy&nbsp;assess</code> · Assess an existing project, without AI</summary>
+
+<br>
+
+Assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (`.loomy/assessment.md`; `--print` to only show it)
+
+</details>
+
+<details>
+<summary>🔒&nbsp;<code>loomy&nbsp;privacy</code> · Where the AI files live</summary>
+
+<br>
+
+AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository
+
+</details>
+
+### 💬 Sessions and work
+
+<details>
+<summary>▶️&nbsp;<code>loomy&nbsp;start</code> · Open or resume the lead agent session</summary>
+
+<br>
+
+Starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`)
+
+</details>
+
+<details>
+<summary>✅&nbsp;<code>loomy&nbsp;task&nbsp;"…"</code> · A named task, from plan to commit</summary>
+
+<br>
+
+A named task for the lead agent: plan, approval, build, verification, commit, followed in `watch`; without argument, the list; `--resume`, `--print`
+
+</details>
+
+<details>
+<summary>🔍&nbsp;<code>loomy&nbsp;review</code> · Independent cross review</summary>
+
+<br>
+
+On-demand cross review of the current branch (`[base]`) or of uncommitted changes (`--working`, `--staged`), read-only, saved in `.loomy/reviews/`
+
+</details>
+
+<details>
+<summary>🎚️&nbsp;<code>loomy&nbsp;effort</code> · Reasoning effort of the lead agent</summary>
+
+<br>
+
+Reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start`
+
+</details>
+
+<details>
+<summary>🐚&nbsp;<code>loomy&nbsp;shell-hook&nbsp;[install\|remove]</code> · Always go through Loomy when typing claude or codex</summary>
+
+<br>
+
+Optional: in a Loomy project, `claude` or `codex` typed alone (the project's lead tool) goes through `loomy start`, so the session always opens with live tracking and the context; anything else runs the real command. Offered once by `loomy doctor --fix`, never installed silently
+
+</details>
+
+<details>
+<summary>🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> · Two worktrees for parallel mode</summary>
+
+<br>
+
+Two separate worktrees for parallel mode
+
+</details>
+
+### 📈 Tracking and figures
+
+<details>
+<summary>📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> · Status, live tracking, log</summary>
+
+<br>
+
+Tracking (see above)
+
+</details>
+
+<details>
+<summary>📊&nbsp;<code>loomy&nbsp;stats</code> · Tokens, cost and quotas in detail</summary>
+
+<br>
+
+Detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`)
+
+</details>
+
+<details>
+<summary>🧾&nbsp;<code>loomy&nbsp;report</code> · Project figures, Markdown export</summary>
+
+<br>
+
+Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project
+
+</details>
+
+<details>
+<summary>🧠&nbsp;<code>loomy&nbsp;memory&nbsp;[show&nbsp;[N]]</code> · Work state and latest results</summary>
+
+<br>
+
+Shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one
+
+</details>
+
+### 🤖 Agents, models and skills
+
+<details>
+<summary>🧭&nbsp;<code>loomy&nbsp;route</code> · Role → model → effort matrix</summary>
+
+<br>
+
+Role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles`
+
+</details>
+
+<details>
+<summary>🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;codex&nbsp;&lt;role&gt;&nbsp;"…"</code> · Hand a role to Codex</summary>
+
+<br>
+
+Hands a role to Codex (executor, developer, documenter can write; the others are read-only)
+
+</details>
+
+<details>
+<summary>🔀&nbsp;<code>loomy&nbsp;delegate&nbsp;claude&nbsp;&lt;role&gt;&nbsp;"…"</code> · Hand a role to Claude (read-only)</summary>
+
+<br>
+
+Hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer)
+
+</details>
+
+<details>
+<summary>🧬&nbsp;<code>loomy&nbsp;models</code> · Model chains and new models</summary>
+
+<br>
+
+Model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on|off`, `--issue` (GitHub suggestion)
+
+</details>
+
+<details>
+<summary>🧩&nbsp;<code>loomy&nbsp;skills&nbsp;[suggest\|add\|remove\|update\|catalog]</code> · Official skills of the project</summary>
+
+<br>
+
+Official agent skills of the project: installed, why, analysis; `suggest "…"` for a task, `add`/`remove`, `update`, `catalog`
+
+</details>
+
+<details>
+<summary>🛡️&nbsp;<code>loomy&nbsp;audit</code> · Security audit of a repository</summary>
+
+<br>
+
+Security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick|standard|deep`, `--fixes report|plan|branch`
+
+</details>
+
+### 🔧 Maintenance and help
+
+<details>
+<summary>🩺&nbsp;<code>loomy&nbsp;doctor</code> · Check and repair the machine and the project</summary>
+
+<br>
+
+Checks prerequisites (`--fix` fixes, GitHub included: installs `gh`, logs in, checks git access to the Loomy repository; `--live` tests every model)
+
+</details>
+
+<details>
+<summary>⚙️&nbsp;<code>loomy&nbsp;config</code> · Preferences</summary>
+
+<br>
+
+Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
+
+</details>
+
+<details>
+<summary>🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> · Update Loomy</summary>
+
+<br>
+
+Updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install
+
+</details>
+
+<details>
+<summary>🗑️&nbsp;<code>loomy&nbsp;uninstall</code> · Uninstall Loomy</summary>
+
+<br>
+
+Shows how to uninstall Loomy for your install method, and how to remove it from a project
+
+</details>
+
+<details>
+<summary>💬&nbsp;<code>loomy&nbsp;feedback</code> · Report a bug or an idea</summary>
+
+<br>
+
+Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text
+
+</details>
+
+<details>
+<summary>📬&nbsp;<code>loomy&nbsp;feedback&nbsp;list</code> · Follow your feedback; maintainer triage</summary>
+
+<br>
+
+Your feedback and where it stands: received, being handled, fixed in X.Y.Z (the launch says once when one of yours is fixed in the installed version). Maintainers: `triage` groups the open feedback by cause with a priority and a proposed reply (fast model), each reply posted only after approval; `mark <n> <version>` then `close <version>` at release
+
+</details>
+
+<details>
+<summary>❓&nbsp;<code>loomy&nbsp;help&nbsp;[command]</code> · Help</summary>
+
+<br>
+
+General help, or help for one command
+
+</details>
 
 <sub>Commands find the project from any of its subfolders, including when the Loomy project lives in a subfolder of a larger Git repository. In a project, the lead agent calls the scripts in <code>.loomy/scripts/</code>: small relays to the Loomy installed on the machine (found through <code>$LOOMY_HOME</code>, the <code>loomy</code> command or its usual locations). <code>LOOMY_NO_CLEAR=1</code> keeps the terminal history instead of clearing the screen.</sub>
 
@@ -708,74 +972,15 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 
 ## 🔮 Roadmap
 
-| Status | Feature |
+| Status | Planned |
 |---|---|
-| ✅&nbsp;0.1 | `loomy` command, questionnaire, doctor, lead + roles routing, bridges, journal, live terminal tracking (full screen, `start --watch`, notifications), per-project effort, subscriptions, Homebrew, npm, bun and shell installs, test suite |
-| ✅&nbsp;0.2 | **Consolidate, before testers arrive**: done |
-| ✅ | `loomy start --watch` joins an open session instead of closing it; temporary scripts cleaned up; platforms stated accurately (macOS, Linux tested automatically) |
-| ✅ | macOS and Linux tests on every push (GitHub Actions) |
-| ✅ | `loomy feedback`: prefilled GitHub issue (version, doctor, end of journal, anonymized brief) |
-| ✅ | Simpler tester install: `loomy doctor --fix` chains the `gh` steps |
-| ✅&nbsp;0.3 | **Harden**: done |
-| ✅ | No more script copies in each project: a link to the installed Loomy; `loomy init --update` only for template changes |
-| ✅ | Model and price catalog updated without a new release (`loomy update --catalog`), warning when a routed model disappears |
-| ✅ | Real costs: Claude Code lead (`Stop` hook) and sub-agents (`SubagentStop` hook), measured from the transcript at list price; CSV export |
-| ✅ | Monthly journal archive, `loomy log --since` |
-| ✅&nbsp;0.3.5 | **Fixed-frame interface**: header (logo, project, context), a body that alone changes, footer (keys, version); the home screen opens status, journal, visibility and help inside the frame; nothing piles up in the terminal |
-| ✅&nbsp;0.3.7 | **Autonomy and stop points** in generated instructions (`AGENTS.md`, `CLAUDE.md`): the agent moves on alone within a bounded task and stops before anything destructive, following Anthropic's Opus 5.5 guidance |
-| ✅&nbsp;0.3.8 | **Fast-changing models**: per-tier fallback chains in the catalog (newest first, automatic fallback for those without access), availability learned on each machine (`doctor --live`, a refused delegation), pinnable model (`loomy config set model.claude.mid …`), role balance editable from the catalog, new catalog announced; protocol in `docs/MODEL_CATALOG.md` |
-| ✅&nbsp;0.4 | **English and French interface** |
-| ✅ | Language detected automatically (`LC_ALL`, `LC_MESSAGES`, `LANG`, then the system language on macOS): French when it starts with `fr`, **English by default** otherwise or when nothing is detectable (macOS and Linux); setting `loomy config set lang fr\|en\|auto` |
-| ✅ | Every interface text goes through a dictionary, migrated screen by screen: frame and home, `watch` and `status`, `start` and `effort`, questionnaire and setup, doctor, help and messages |
-| ✅ | Project document language suggested from the detected language; test covering both languages |
-| ✅&nbsp;0.4.1 | **English first**: code, help, agent documents (`START.md`, templates, roles, skills), startup brief, delegation prompts, README and changelog in English; French is a translation (`scripts/lib/i18n/fr.tsv`, `fr/`) used when French is detected |
-| ✅&nbsp;0.5 | **Adopting an existing project** |
-| ✅ | `loomy init` on an already developed, versioned project (Git, remote, branches): nothing is overwritten, everything goes through a dedicated branch and an approval |
-| ✅ | Initial assessment (`loomy assess`): languages, frameworks, structure, dependencies, tests, CI, code conventions, existing docs, Git history (activity, sensitive areas, authors), debt and risks spotted |
-| ✅ | Initial adaptation from that assessment: `PROJECT.md`, `ARCHITECTURE.md` and decisions rebuilt from the code, `AGENTS.md` and `CLAUDE.md` aligned with the repository's conventions (test, lint, build commands), roles, routing and effort tuned to the project's size and risk |
-| ✅ | Adoption plan reviewed before any commit: what was understood, what remains to confirm, prioritized recommendations |
-| ✅&nbsp;0.5.1 | Screen-by-screen check of every command, in English and French |
-| ✅&nbsp;0.5.2 | Security and robustness review ([SECURITY.md](SECURITY.md)) |
-| ✅&nbsp;0.5.3 | **Real subscription quotas**: share of the Claude and Codex quotas in use (5-hour and weekly windows) instead of dollars with a subscription, tokens per task, alerts at 80 % and 95 %; `loomy stats` for detailed statistics |
-| ✅&nbsp;0.5.4 | **Automatic switch near the end of a quota**: from 95 % of a subscription quota, the roles (and a new lead agent session) move to the other tool with a suitable model, writing roles inside Claude Code's sandbox; `quota_switch` setting |
-| ✅&nbsp;0.5.5 | **structured delegations** (optional, chosen in the questionnaire): tasks and results as fixed fields, checked by the bridges, outcomes in status, log and stats; Codex CLI found again after a ChatGPT app update |
-| ✅&nbsp;0.5.6 | **existing GitHub repository**: a taken name is detected in the questionnaire; another name, or the repository linked (its content fetched, setup on a `loomy/setup` branch to reconcile by pull request), never overwritten |
-| ✅&nbsp;0.5.7 | **Tab edits a suggestion** in text fields (project name, repository name…); taken repository name: `<name>-loomy` suggested |
-| ✅&nbsp;0.5.8 | **Claude Sonnet 5.5** heads everyday Claude work (Sonnet 5 as fallback); lead agents unchanged |
-| ✅&nbsp;0.5.9 | **Thrifty profile: Sonnet 5.5 as the Claude lead agent** (`medium`), Opus kept for the hard roles; checked in a real orchestration test |
-| ✅&nbsp;0.6.0 | **Security audit** (`loomy audit`): a mission with its own phases followed in `loomy watch`, Cloudflare's security-audit skill, a multi-agent team (auditor, explorer, Sonnet 5.5 high validator, cross review), report and fix plan kept out of Git, fixes on a branch when allowed |
-| ✅&nbsp;0.6.1 | audit team entirely on rigorous models (explorer on Sonnet 5.5 or GPT-6-Sol) |
-| ✅&nbsp;0.6.2 | first local model use: the audit writer falls back to LM Studio when Codex is not available (text only, nothing leaves the machine) |
-| ✅&nbsp;0.7.0 | **Day-to-day work after bootstrap** |
-| ✅ | `loomy task "…"`: a named task handed to the lead, tracked in `watch` (phases, cost, duration), through approval and commit; a progress file per task (`.loomy/tasks/`, index in `.loomy/TASKS.md`) kept by the agent during long tasks |
-| ✅ | `loomy models`: spots new models to evaluate (Codex model list, vendor APIs when a key is set, published catalog), puts one at the head of its chain with up to two fallbacks, a low-cost mode that prefers fallbacks; a GitHub suggestion issue per new model (`models` label, no duplicates) |
-| ✅ | `loomy review`: on-demand cross review of the current branch or diff |
-| ✅ | Project templates (SaaS web app, landing page, REST API, CLI, email templates) that prefill the brief and give a starting structure |
-| ✅ | `loomy report`: project summary (tasks, costs, delegations), cross-project comparison, Markdown file to keep in the repository |
-| ✅&nbsp;0.7.1 | **GPT-6.1 Sol** heads everyday Codex work (GPT-6 Sol as fallback) |
-| ✅&nbsp;0.7.2 | **GPT-6.1 Sol for every Codex role** except execution; Astra as fallback, or forced with `loomy config set model.codex.top gpt-6-astra` |
-| ✅&nbsp;0.7.3 | **kept up to date by itself**: one question at launch updates Loomy, Claude Code and Codex; a repair that insists, up to a clean reinstall |
-| ✅&nbsp;0.7.4 | **anticipated support for announced models**: Claude Haiku 5.5 is probed daily and heads the fast chain as soon as it answers on your account (Haiku 4.5 as fallback) |
-| ✅&nbsp;0.8.0 | **advisor and agent tree**: Opus advises the Thrifty Sonnet lead (Claude Code's advisor, measured consultations); `loomy tree` and key `t` of `watch` show the lead, its advisor and every role live |
-| ✅&nbsp;0.8.1 | **session log that scrolls** in `loomy watch` and the agent tree: one coloured, aligned line per event, arrivals scrolling in one by one, the newest highlighted |
-| ✅&nbsp;0.8.2 | **agent tree as a diagram** (boxes, links, routing layer, advisor column, framed session log, animated); `tree_view auto\|diagram\|list`, key `v`, the window grows when needed |
-| ✅&nbsp;0.8.3 | agent tree diagram: room above the title |
-| ✅&nbsp;0.8.4 | agent tree diagram twice as fast (about 0.5 s per frame) |
-| ✅&nbsp;0.9.0 | **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
-| ✅&nbsp;0.9.1 | agent tree: the roles without a box summed up by model, with what each one does |
-| ✅&nbsp;0.10.0 | **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
-| ✅&nbsp;0.11.0 | **shared memory**: delegation results and the work state kept in `.loomy/memory/`, given back at each new session and after a compaction, Claude Code or Codex, for a few hundred tokens; `loomy memory` |
-| ✅&nbsp;0.11.1 | `loomy start --app` (Claude or Codex desktop app, tracking beside it), phase and running delegations in the status line, optional `loomy shell-hook`; durable docs and one commit after each finished request |
-| ✅&nbsp;0.12.0 | **official skills** (Anthropic and OpenAI only): chosen at init from the project, added at each task, analysed and announced, safe by default; `loomy skills` |
-| ✅&nbsp;0.12.1 | tester feedback processed: `loomy feedback list`, fixed notice at launch, maintainer `triage` (grouped by cause, replies drafted, posted only on approval), `mark` and `close` |
-| ✅&nbsp;0.12.2 | **Current version** · audit fixes: feedback triage only posts after a choice, drafting model without tools, shell hook safe on a damaged rc file, status line locale and timeouts |
-| 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
+| 🔜 | **Claude Haiku 5.5**: once released, a measured test decides its roles (already used as soon as it answers) |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
-| ✅ | Tester feedback processed: `loomy feedback list`, maintainer `triage`, `mark`, `close` (0.12.1) |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |
-| | Configurable color theme (`loomy config`) for terminals that don't render bold |
-| | Short README ("5 minutes to start"), full reference separately |
+| | Configurable colour theme, for terminals that don't render bold |
 | | Public repository and token-free Homebrew, when decided |
-| 💡 | **3D game project type (Three.js)**, validated by a test ([test notes](docs/THREEJS_GAME_TEST.md)): the questionnaire offers [threejs-game-skills](https://github.com/majidmanzarpour/threejs-game-skills) (MIT, Majid Manzarpour) installed for the project; gameplay by Sonnet 5.5 and Luna, a graphics pass by Opus with its AAA graphics skill; the director skill stays a tool of the lead agent; optional paid asset APIs flagged |
-| 💡 | [Jev](https://github.com/WXK-AI/jev-opus) integration: Opus 5.5 effort readjusted at every step during Claude delegations, when Jev is installed |
-| 💡 | Local model through [LM Studio](https://lmstudio.ai) (to be decided): a role run on a local model, for confidential code or to save on mechanical tasks (API cost, or subscription quota), its work reviewed by the lead; most likely by reusing a Codex profile pointed at LM Studio rather than a third model family. Tested on 2026-09-28 with `qwen/qwen3.8-27b` on an M3 Max with 48 GB: feasible through Codex and Claude Code (small task done in about 2.5 min when the delegation runs light) — [test notes](docs/LOCAL_MODEL_TEST.md). Not for judging code in security audits, which stays on the most rigorous models (Opus 5.5, Sonnet 5.5, GPT-6-Sol). First use shipped in 0.6.2: the audit writer falls back to the local model when Codex is not available |
+| 💡 | **3D game project type (Three.js)**, validated by a test ([notes](docs/THREEJS_GAME_TEST.md)) |
+| 💡 | [Jev](https://github.com/WXK-AI/jev-opus): Opus effort readjusted at each step of Claude delegations |
+| 💡 | A role on a local model (LM Studio) for confidential code or mechanical tasks ([notes](docs/LOCAL_MODEL_TEST.md)); first use shipped: the audit writer |
+
+Everything already shipped, version by version: [CHANGELOG.md](CHANGELOG.md).

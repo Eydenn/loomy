@@ -2,6 +2,25 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.10.0 — 2026-10-06
+
+### Changed
+- **Questionnaire redesigned: one project type, several key characteristics, a recommended team, a recap of what gets configured.**
+  - "Project template" and "Type" asked the same thing twice: they are one question now, with **Data & analysis** and **Custom** added. Types: web app / SaaS, showcase site, API, data & analysis, AI / LLM app, mobile, desktop, CLI / library, email templates, custom.
+  - **Key characteristics**, several at once and pre-checked by type (none for Custom): user accounts, payments, personal or sensitive data, large data volumes, external feeds or third-party APIs, public API, AI in the product, real time, production infra or secrets, multi-tenant. They replace the sensitive areas, set the risk (MEDIUM: accounts, external feeds, public API, AI; HIGH: payments, personal data, infra, multi-tenant; production raises LOW to MEDIUM) and each one gives the agents its checks, written in the brief.
+  - Details follow from the type. **Data & analysis** asks for the sources (files, SQL, external APIs, streams), the volume (MB, GB, TB) and the deliverables (reports, dashboards, internal tool, API, models); the brief and `START.md` give the lead agent a pipeline (ingestion → raw → versioned transformations → analytical sets → deliverables), a stack sized on the volume, data-quality tests, and the rule that agents only see schemas, statistics and anonymised samples.
+  - **AI team**: one recommended line from the tools detected (Enter to accept), or Customise for the mode, the lead tool, the profile, the delegation format and what happens to `START.md`.
+  - The recap shows **what Loomy will configure** (the checks of each characteristic, the explorer's model) and **recommendations** that are indicative only (for example HIGH risk with the Thrifty profile, sensitive data to analyse on a local model). The routing still follows the profile; the brief asks the lead agent to offer the recommendations, never to apply them alone.
+  - Ten questions instead of thirteen (eleven the first time, with the subscriptions). Older briefs and answer files still load: template, `other` type, sensitive areas and the former account question are read into the new answers.
+- **Every script is named `loomy-*`.** `ai-*.sh` become `loomy-*.sh`, `delegate-to-codex.sh` / `delegate-to-claude.sh` become `loomy-delegate-codex.sh` / `loomy-delegate-claude.sh`, and the other scripts get the prefix too. Projects are migrated by the automatic repair: `loomy-*` relays added, hooks, status line and the references in `AGENTS.md`, `CLAUDE.md`, the subagents and `.loomy/docs/` rewritten. The old names keep working until 1.0 (one-line compatibility scripts), so sessions already open are not broken.
+- **`loomy start` opens the lead agent on the left and `loomy watch` on the right by default** (tmux or iTerm2; stacked under 110 columns), including at the end of the questionnaire, so the real dispatch is always in sight. `--no-watch`, `loomy config set start_watch no` or `LOOMY_START_WATCH=0` opens the session alone; when tmux can't start, the session opens alone with a note.
+
+### Fixed
+- The compact view (`c` in `loomy watch`) only changes the status screen; the key is no longer offered in the tree and log views, where it did nothing.
+- Answer files and existing briefs: `detail1` / `detail2` were never read back (keys with a digit were ignored), so redoing a brief lost the type details.
+- Questionnaire summary: a label longer than its column no longer sticks to the answer.
+- `tools/i18n-missing.sh` also checks the sentences translated with `tv` and the choices of multi-select questions.
+
 ## 0.9.1 — 2026-10-03
 
 ### Changed

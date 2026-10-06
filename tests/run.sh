@@ -19,6 +19,8 @@ export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 # Project relays (.loomy/scripts/*.sh): the "installed" Loomy is this repository.
 export LOOMY_HOME="$REPO"
+# The agent stubs exit at once: live tracking beside them (the default of loomy start) is tested on its own.
+export LOOMY_START_WATCH=0
 # No network check of the published catalog during tests.
 export LOOMY_CATALOG_CHECK=0
 export LOOMY_NO_AUTOUPDATE=1
@@ -611,7 +613,7 @@ EXP
   }
   W1="$WORK/interactif1"; mkdir -p "$W1"
   run "full questionnaire, plans not set" wizard_expect "$W1"
-  has "14 steps when plans must be asked" "question 14/14"
+  has "11 steps when plans must be asked" "question 11/11"
   has "Claude plan question" "your Claude plan"
   file_has "plans saved" "$XDG_CONFIG_HOME/loomy/config" "^plan_codex=api$"
   file_has "brief written" "$W1/.loomy/brief.md" "^ai_mode: "
@@ -619,9 +621,9 @@ EXP
   file_has "brief: private GitHub repository" "$W1/.loomy/brief.md" "^github_repo: private$"
   W2="$WORK/interactif2"; mkdir -p "$W2"
   run "full questionnaire, plans already known" wizard_expect "$W2"
-  has "13 steps" "question 13/13"
+  has "10 steps" "question 10/10"
   hasnt "questionnaire: no raw variable on screen" '\$save_desc|\$\(t '
-  hasnt "plans not asked again" "your Claude plan|/14"
+  hasnt "plans not asked again" "your Claude plan|/11"
   # GitHub repository name already taken: never overwritten; another name (default) or the existing repository linked.
   mkdir -p "$GH_STUB_REMOTES/testeur" && git init --bare -q -b main "$GH_STUB_REMOTES/testeur/deja-pris.git"
   git clone -q "$GH_STUB_REMOTES/testeur/deja-pris.git" "$WORK/i3-seed" 2>/dev/null && git -C "$WORK/i3-seed" add -A 2>/dev/null; echo "# Initial specs" >"$WORK/i3-seed/SPECS.md"; git -C "$WORK/i3-seed" add SPECS.md && git -C "$WORK/i3-seed" -c user.name=t -c user.email=t@t commit -q -m seed && git -C "$WORK/i3-seed" push -q origin HEAD:main 2>/dev/null
@@ -1147,8 +1149,49 @@ got4="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"'
 printf -- '---\nname: "API test"\ngoal: "an api"\nrepo: new\ntemplate: api\n---\n' >"$WORK/tpl-answers.md"
 "$LOOMY" init "$WORK/tpl-api" --answers "$WORK/tpl-answers.md" --yes --no-clipboard >/dev/null 2>&1
 file_has "template: API prefills the type" "$WORK/tpl-api/.loomy/brief.md" "^type: api$"
-file_has "template: recorded" "$WORK/tpl-api/.loomy/brief.md" "^template: api$"
+file_has "template (before 0.10): read as the project type" "$WORK/tpl-api/.loomy/brief.md" "^traits: \"publicapi\"$"
 file_has "template: starting structure for the agent" "$WORK/tpl-api/.loomy/brief.md" "OpenAPI contract first"
+# 0.10 questionnaire: one project type, key characteristics (several), risk, details per type, recap and recommendations.
+qa() { printf -- '---\nname: "%s"\ngoal: "g"\nrepo: new\n%s\n---\n' "$1" "$2" >"$WORK/qa-$1.md"; "$LOOMY" init "$WORK/qa-$1" --answers "$WORK/qa-$1.md" --yes --no-clipboard >"$OUT" 2>&1; QB="$WORK/qa-$1/.loomy/brief.md"; }
+qa web 'type: web'
+file_has "type web: user accounts pre-checked" "$QB" '^traits: "auth"$'
+file_has "type web: MEDIUM risk" "$QB" '^risk: MEDIUM$'
+file_has "type web with accounts: starting structure" "$QB" "Web app with accounts"
+file_has "characteristic in the brief: its check" "$QB" "the security role reviews authentication"
+qa custom 'type: custom'
+file_has "custom type: nothing pre-checked" "$QB" '^traits: ""$'
+file_has "custom type: LOW risk" "$QB" '^risk: LOW$'
+qa other 'type: other'
+file_has "type other (before 0.10): read as custom" "$QB" '^type: custom$'
+qa multi $'type: web\ntraits: "auth,payments,external,multitenant"\nstage: production'
+file_has "several characteristics kept" "$QB" '^traits: "auth,payments,external,multitenant"$'
+file_has "several characteristics: HIGH risk" "$QB" '^risk: HIGH$'
+file_has "former sensitive areas derived" "$QB" '^sensitive: "auth,payments"$'
+qa data $'type: data\ntraits: "bigdata,external,personal"\ndetail1: "files,sql"\ndetail2: tb\ndetail3: "reports,dashboards"\nbudget: econome'
+file_has "data type: sources (several)" "$QB" '^detail1: "files,sql"$'
+file_has "data type: volume" "$QB" '^detail2: "tb"$'
+file_has "data type: deliverables (several)" "$QB" '^detail3: "reports,dashboards"$'
+file_has "data type: pipeline proposed" "$QB" "ingestion → raw storage"
+file_has "data type: data never whole in prompts" "$QB" "Data never goes whole into prompts"
+file_has "recommendation: HIGH risk with Thrifty" "$QB" "Recommendation to offer the user \(not applied\): HIGH risk with the Thrifty profile"
+file_has "recommendation: sensitive data on a local model" "$QB" "local model \(LM Studio\)"
+file_has "recommendation: profile not changed" "$QB" '^budget: econome$'
+has "recap: what Loomy will configure" "What Loomy will configure"
+has "recap: recommendations, indicative" "Recommendations.*indicative"
+qa sens $'type: ai\nsensitive: "payments"'
+file_has "sensitive areas (before 0.10) read as characteristics" "$QB" '^traits: "payments"$'
+qa legtpl $'type: web\ntemplate: landing\nsensitive: ""'
+file_has "brief before 0.10: template wins over type (landing → site)" "$QB" '^type: site$'
+qa legmail $'type: other\ntemplate: emails'
+file_has "brief before 0.10: emails template kept" "$QB" '^type: emails$'
+qa legweb $'type: web\ndetail2: no\nsensitive: "auth"'
+file_has "brief before 0.10: explicit authentication kept" "$QB" '^traits: "auth"$'
+file_has "brief before 0.10: accounts answer not read as a database" "$QB" '^detail2: "tbd"$'
+qa legnoacc $'type: web\ndetail2: no'
+file_has "brief before 0.10: no accounts, nothing checked" "$QB" '^traits: ""$'
+qa team $'type: site\nai_mode: HYBRID\nbudget: qualite'
+file_has "earlier AI team answers kept (Customise)" "$QB" '^ai_mode: HYBRID$'
+file_has "earlier profile kept" "$QB" '^budget: qualite$'
 
 section "Automatic repair and upkeep"
 # Fake installs: an npm copy of claude (method detected from its path), a fake npm and a fake official installer.
@@ -1457,6 +1500,9 @@ bash "$SR/.loomy/scripts/ai-context.sh" --root "$SR" >"$OUT" 2>&1
 has "rename: said in the start context" "Loomy has just completed this project's setup files: .*scripts → loomy-\*"
 [[ -x "$SR/.loomy/scripts/loomy-route.sh" && -x "$SR/.loomy/scripts/ai-route.sh" ]] && ok "rename: new relays added, old ones kept" || ko "rename: relays"
 grep -q 'loomy-context.sh." --hook start' "$SR/.claude/settings.json" && ! grep -q 'ai-context.sh' "$SR/.claude/settings.json" && ok "rename: hooks rewritten" || ko "rename: hooks: $(grep -o 'scripts/[a-z-]*' "$SR/.claude/settings.json" | sort -u | tr '\n' ' ')"
+printf 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.\n' >>"$SR/CLAUDE.md"; rm -f "$SR/.loomy/scripts/loomy-route.sh"
+bash "$SR/.loomy/scripts/ai-context.sh" --root "$SR" >/dev/null 2>&1
+grep -q 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.' "$SR/CLAUDE.md" && ok "rename: other paths and suffixes untouched" || ko "rename: $(grep 'Other:' "$SR/CLAUDE.md")"
 grep -q 'Route with .loomy/scripts/loomy-route.sh; Codex through .loomy/scripts/loomy-delegate-codex.sh or loomy-delegate-<tool>.sh. Keep my-ai-route.sh.' "$SR/CLAUDE.md" && ok "rename: references updated, other names kept" || ko "rename: $(grep 'Route with' "$SR/CLAUDE.md")"
 bash "$SR/.loomy/scripts/ai-route.sh" --root "$SR" >"$OUT" 2>&1; has "rename: an old relay still works (compatibility script)" "lead"
 cp "$SR/CLAUDE.md" "$WORK/sr-avant.md"; bash "$SR/.loomy/scripts/loomy-context.sh" --root "$SR" >"$OUT" 2>&1

@@ -171,7 +171,12 @@ start_with_watch() {
       name="$name-$n"
     fi
     agent="$(printf '%q ' "${AGENT_CMD[@]}")"
-    env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name"
+    # tmux that can't start (container, no terminal): the session opens alone rather than failing.
+    if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name" 2>/dev/null \
+       || ! tmux has-session -t "=$name" 2>/dev/null; then
+      WATCH_NOTE="$(t "tmux could not start here: run loomy watch in another terminal")"
+      return 0
+    fi
     tmux set-option -t "$name" mouse on >/dev/null
     tmux set-option -t "$name" status off >/dev/null
     tmux set-option -t "$name" pane-border-style "fg=colour60" >/dev/null
@@ -241,6 +246,8 @@ esac
 if [[ "$TOOL" == "codex" ]] && ! grep -qF "[projects.\"$ROOT\"]" "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null; then
   ui_info "$(t "first Codex launch in this project: agree to trust the folder, then approve the Loomy hooks (automatic resume)")"
 fi
+# LOOMY_START_WATCH=0 (scripts, tests) or start_watch no: the session alone.
+[[ -z "$WATCH" && "${LOOMY_START_WATCH:-}" == "0" ]] && WATCH=0
 [[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && WATCH=0 || WATCH=1; }
 if [[ "$MODE" == "resume" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); fi
 WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start --watch)")"

@@ -39,7 +39,7 @@ loomy_project_migrate() {
 }
 
 # Old script names (before Loomy 0.10) → loomy-* names, for the references in the project's files.
-LP_RENAME_PERL='my %m = (__MAP__); my $re = join("|", map { quotemeta } sort { length($b) <=> length($a) } keys %m); s{(?<![\w.-])($re)\.sh\b}{$m{$1}.sh}g; s{(?<![\w-])delegate-to-(?=<|\*)}{loomy-delegate-}g;'
+LP_RENAME_PERL='my %m = (__MAP__); my $re = join("|", map { quotemeta } sort { length($b) <=> length($a) } keys %m); s{(?:(?<=scripts/)|(?<![\w./-]))($re)\.sh(?![\w.-])}{$m{$1}.sh}g; s{(?<![\w-])delegate-to-(?=<|\*)}{loomy-delegate-}g;'
 
 # loomy_project_rename_scripts <root>: relays under the loomy-* names, and the old names replaced in the hooks and the
 # agents' files. The old relays stay (they keep working through the installed Loomy's compatibility scripts until 1.0).

@@ -572,6 +572,13 @@ ui_rail_group() {
   ui_print "${C_RAIL}◇${C_RESET}  ${C_TITLE}${UI_PADDED}${C_RESET}${C_DIM}${right}${C_RESET}"
 }
 ui_rail_kv() { _ui_pad "$1" 15; [[ -n "$1" && "$UI_PADDED" != *" " ]] && UI_PADDED="$UI_PADDED "; ui_print "${C_RAIL}│${C_RESET}  ${C_DIM}${UI_PADDED}${C_RESET}$2"; }
+# ui_rail_kvw <label> <text>: like ui_rail_kv, the text wrapped on whole words under the value column.
+ui_rail_kvw() {
+  local l="$1" i ls=(); _ui_term_size; _ui_wrap "$2" $(( UI_W - 22 ))
+  # A copy: printing can redraw the header, which reuses UI_LINES.
+  ls=("${UI_LINES[@]}")
+  for (( i = 0; i < ${#ls[@]}; i++ )); do ui_rail_kv "$( (( i == 0 )) && printf '%s' "$l")" "${ls[$i]}"; done
+}
 ui_rail() { ui_print "${C_RAIL}│${C_RESET}  $*"; }
 ui_rail_end() { ui_print "${C_RAIL}└${C_RESET}  ${C_DIM}$*${C_RESET}"; }
 
@@ -750,9 +757,10 @@ _ui_static() {
           for (( i = 0; i < ${#UI_LOG_G[@]}; i++ )); do
             [[ "${UI_LOG_G[$i]}" == "$UI_GROUP" ]] || continue
             case "${UI_LOG_T[$i]}" in
-              answer) _ui_pad "${UI_LOG_K[$i]}" 18; _ui_fit "${UI_LOG_V[$i]:-—}" $(( cw - 22 ))
+              # Label cut to 17 columns, so that a space always separates it from the answer.
+              answer) _ui_fit "${UI_LOG_K[$i]}" 17; _ui_pad "$UI_FIT" 18; _ui_fit "${UI_LOG_V[$i]:-—}" $(( cw - 22 ))
                       _ui_r "${C_GREEN}✓${C_RESET} ${C_DIM}${UI_PADDED}${C_RESET}${UI_FIT}" ;;
-              fact)   _ui_pad "${UI_LOG_K[$i]}" 18; _ui_fit "${UI_LOG_V[$i]}" $(( cw - 22 ))
+              fact)   _ui_fit "${UI_LOG_K[$i]}" 17; _ui_pad "$UI_FIT" 18; _ui_fit "${UI_LOG_V[$i]}" $(( cw - 22 ))
                       _ui_r "${C_RAIL}◦${C_RESET} ${C_DIM}${UI_PADDED}${UI_FIT}${C_RESET}" ;;
               warn)   _ui_fit "${UI_LOG_V[$i]}" $(( cw - 2 )); _ui_r "${C_YELLOW}!${C_RESET} ${C_DIM}${UI_FIT}${C_RESET}" ;;
               *)      _ui_fit "${UI_LOG_V[$i]}" $(( cw - 2 )); _ui_r "${C_DIM}→ ${UI_FIT}${C_RESET}" ;;

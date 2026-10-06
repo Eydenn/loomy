@@ -72,7 +72,7 @@ load_answers() {
       if (( in_fm )); then break; else in_fm=1; continue; fi
     fi
     (( in_fm )) || continue
-    [[ "$line" =~ ^([a-z_]+):[[:space:]]*(.*)$ ]] || continue
+    [[ "$line" =~ ^([a-z_0-9]+):[[:space:]]*(.*)$ ]] || continue
     key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"
     if [[ "$value" == \"*\" ]]; then value="${value#\"}"; value="${value%\"}"; fi
     value="${value//\\\"/\"}"; value="${value//\\\\/\\}"
@@ -108,6 +108,26 @@ choose_coded() {
     printf -v "$var" '%s' "${codes[$UI_INDEX]}"; printf -v "${var}_LABEL" '%s' "${labels[$UI_INDEX]}"; return 0
   fi
   printf -v "$var" '%s' "$defcode"; printf -v "${var}_LABEL" '%s' "$defcode"
+}
+
+# multi_coded <var> <question> <default codes, comma separated> <hint> "code|Label|Description"...
+# Several answers: <var> gets the codes (comma separated), <var>_LABEL the labels (", " separated).
+multi_coded() {
+  local var="$1" q="$2" defcodes="$3" hint="$4"; shift 4
+  local labels=() codes=() descs=() i=0 item rest defl="" out="" outl=""
+  for item in "$@"; do
+    codes[$i]="${item%%|*}"; rest="${item#*|}"
+    labels[$i]="$(t "${rest%%|*}")"; labels[$i]="${labels[$i]//,/ ·}"
+    if [[ "$rest" == *"|"* ]]; then descs[$i]="$(t "${rest#*|}")"; else descs[$i]=""; fi
+    case ",$defcodes," in *",${codes[$i]},"*) defl="${defl:+$defl,}${labels[$i]}" ;; esac
+    i=$(( i + 1 ))
+  done
+  UI_HINT="$( [[ -n "$hint" ]] && t "$hint")"; UI_DESCS=("${descs[@]}")
+  ui_multi "$(t "$q")" "$defl" "${labels[@]}"
+  for (( i = 0; i < ${#codes[@]}; i++ )); do
+    case ", $UI_VALUE," in *", ${labels[$i]},"*) out="${out:+$out,}${codes[$i]}"; outl="${outl:+$outl, }${labels[$i]}" ;; esac
+  done
+  printf -v "$var" '%s' "$out"; printf -v "${var}_LABEL" '%s' "$outl"
 }
 
 yaml_q() {
@@ -164,7 +184,7 @@ env_check() {
 }
 
 # ---------------------------------------------------------------- questionnaire
-TOTAL=13
+TOTAL=10
 
 # Claude and Codex plans: asked only once, in interactive mode, for a tool that is present and not set yet.
 ASK_PLAN_CLAUDE=0; ASK_PLAN_CODEX=0; PLAN_CLAUDE_NEW=""; PLAN_CODEX_NEW=""
@@ -172,7 +192,7 @@ plan_questions() {
   ui_is_interactive || return 0
   if (( HAS_CLAUDE )) && [[ -z "$(loomy_config_get plan_claude "")" ]]; then ASK_PLAN_CLAUDE=1; fi
   if (( HAS_CODEX )) && [[ -z "$(loomy_config_get plan_codex "")" ]]; then ASK_PLAN_CODEX=1; fi
-  if (( ASK_PLAN_CLAUDE || ASK_PLAN_CODEX )); then TOTAL=14; fi
+  if (( ASK_PLAN_CLAUDE || ASK_PLAN_CODEX )); then TOTAL=11; fi
   return 0
 }
 
@@ -200,42 +220,70 @@ ask_all() {
     "Guides discovery (detected automatically, to confirm)." \
     "new|New project|The agent proposes the stack and structure from scratch." \
     "existing|Existing project to standardise|The agent first analyses what exists and only proposes standardisation changes, without breaking the architecture."
-  TEMPLATE="none"
-  if [[ "$REPO" == "new" ]]; then
-    UI_LABEL="$(t "Template")"
-    choose_coded TEMPLATE "Start from a project template?" "$(ans template none)" \
-      "Prefills the next answers (you can change each one) and gives the lead agent a starting structure." \
-      "none|No template|Every question from scratch." \
-      "saas|SaaS web app|Web front end and back end, user accounts, deployment on Vercel or Netlify." \
-      "landing|Landing page / showcase site|Static or almost static site, no accounts, fast to ship." \
-      "api|REST API with a database|OpenAPI contract, SQL database, validation and integration tests." \
-      "cli|Command-line tool|Node.js CLI published on npm, stable options and help." \
-      "emails|Email templates|Responsive, tested HTML emails (MJML or React Email), with previews and a send test."
-    # Defaults of the next questions, only where nothing was answered yet.
-    tpl_default() { local v="A_$1"; [[ -z "${!v:-}" ]] && printf -v "$v" '%s' "$2"; return 0; }
-    case "$TEMPLATE" in
-      saas) tpl_default type web; tpl_default detail1 vercel; tpl_default detail2 yes; tpl_default stage mvp ;;
-      landing) tpl_default type web; tpl_default detail1 vercel; tpl_default detail2 no; tpl_default stage prototype ;;
-      api) tpl_default type api; tpl_default detail1 rest; tpl_default detail2 sql; tpl_default stage mvp ;;
-      cli) tpl_default type cli; tpl_default detail1 node; tpl_default detail2 registry; tpl_default stage mvp ;;
-      emails) tpl_default type other; tpl_default detail1 "$(t "Email templates (MJML or React Email)")"; tpl_default stage mvp ;;
-    esac
-  fi
 
+  # One question for the kind of project (it used to be a template, then a type): each type pre-fills the next answers.
   ui_step 4 $TOTAL
-  UI_LABEL="$(t "Type")"
-  choose_coded TYPE "What kind of project?" "$(ans type web)" \
-    "Determines the next questions and the suggested checks (build, tests, deployment)." \
-    "web|Web app / SaaS|Front end and optional back end, web deployment; accessibility and SEO to consider." \
+  UI_LABEL="$(t "Project type")"
+  local type_def legacy=0
+  type_def="$(ans type "")"
+  # Briefs and answer files from before 0.10 (no traits): the template, when there was one, was the more precise answer;
+  # the "other" type is now "custom".
+  [[ -z "${A_traits+x}" ]] && legacy=1
+  if (( legacy )); then
+    case "$(ans template none)" in saas) type_def=web ;; landing) type_def=site ;; api|cli|emails) type_def="$(ans template)" ;; esac
+  fi
+  [[ "$type_def" == "other" ]] && type_def=custom
+  choose_coded TYPE "What kind of project?" "${type_def:-web}" \
+    "Pre-fills the next answers (you can change each one) and gives the lead agent a starting structure." \
+    "web|Web app / SaaS|Front end and back end, often with user accounts; web deployment." \
+    "site|Showcase site / landing page|Static or almost static site, no accounts, fast to ship; SEO and accessibility." \
     "api|API / backend service|Service without a UI: API contracts, validation and integration tests at the core." \
+    "data|Data & analysis|Pipelines, analyses, dashboards or tools on large data sources; the choice of models matters most here." \
+    "ai|AI / LLM app|Provider choice, guardrails and answer evaluation." \
     "mobile|Mobile app|Store constraints, permissions, offline; iOS and/or Android builds." \
     "desktop|Desktop app|Packaging, signing and updates per operating system." \
     "cli|CLI / library|Stable public API, packaging and runtime compatibility." \
-    "ai|AI / LLM app|Provider choice, data exposure, guardrails and answer evaluation." \
-    "other|Other|You will describe the type; the agent will ask more questions."
+    "emails|Email templates|Responsive, tested HTML emails (MJML or React Email), with previews and a send test." \
+    "custom|Custom|You check every characteristic yourself on the next screen and describe the project in a few words."
+  TEMPLATE="$TYPE"
 
+  ui_group "$(t "REQUIREMENTS")"
+  # Key characteristics: several at once, pre-checked by type. They set the risk and the checks given to the agent.
   ui_step 5 $TOTAL
-  local d1="" d2=""
+  local traits_def=""
+  if [[ -n "${A_traits+x}" ]]; then traits_def="$A_traits"
+  else
+    # Briefs from before 0.10 had sensitive areas (same codes), and two characteristics among the type details.
+    if [[ -n "${A_sensitive:-}" ]]; then traits_def="$A_sensitive"
+    else
+      case "$TYPE" in web) traits_def="auth" ;; api) traits_def="publicapi" ;; data) traits_def="bigdata,external" ;; ai) traits_def="llm" ;; esac
+      [[ "$(ans type "")" == "web" && "$(ans detail2 "")" == "no" ]] && traits_def=""
+    fi
+    [[ "$(ans type "")" == "web" && "$(ans detail2 "")" == "yes" && ",$traits_def," != *",auth,"* ]] && traits_def="${traits_def:+$traits_def,}auth"
+    [[ "$(ans type "")" == "ai" && "$(ans detail2 "")" == "sensitive" ]] && traits_def="${traits_def:+$traits_def,}personal"
+  fi
+  UI_LABEL="$(t "Characteristics")"
+  multi_coded TRAITS "Key characteristics of the project?" "$traits_def" \
+    "Check everything that applies: each one sets the risk and the checks the agents must do. Nothing checked = none." \
+    "auth|User accounts|MEDIUM risk: sessions, permissions, password storage; the security role reviews authentication." \
+    "payments|Payments|HIGH risk: compliance, idempotency, webhooks; security review before each commit touching them." \
+    "personal|Personal or sensitive data|HIGH risk: GDPR, minimisation; real data never goes into prompts (schemas and anonymised samples)." \
+    "bigdata|Large data volumes|Exploration on a long-context model, performance tests; data never loaded whole into prompts." \
+    "external|External data feeds or third-party APIs|At least MEDIUM risk: mocked contracts, rate limits, retries; secrets in environment variables." \
+    "publicapi|Public API exposed|At least MEDIUM risk: OpenAPI contract, versioning, integration tests." \
+    "llm|AI / LLM inside the product|Answer evaluation, guardrails, API costs tracked; check the provider's data terms." \
+    "realtime|Real time|WebSockets or streams: load and reconnection tests." \
+    "infra|Production infra or secrets|HIGH risk: secrets management; irreversible operations approved by you." \
+    "multitenant|Multi-tenant|HIGH risk: data isolation between customers tested systematically."
+  # The former sensitive areas, kept in the brief for older readers.
+  SENSITIVE=""; local c
+  for c in auth payments personal infra; do case ",$TRAITS," in *",$c,"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}$c" ;; esac; done
+  SENSITIVE_LABEL="${TRAITS_LABEL:-$(t "none")}"
+  [[ -z "$TRAITS" ]] && TRAITS_LABEL="$(t "none")"
+
+  ui_step 6 $TOTAL
+  local d1="" d2="" d3=""
+  X1=""; X2=""; X3=""
   case "$TYPE" in
     web)
       UI_LABEL="$(t "Hosting")"
@@ -243,12 +291,21 @@ ask_all() {
         "vercel|Vercel / Netlify|Simple, serverless deployment, ideal for a modern front end." \
         "cloudflare|Cloudflare|Runs at the edge, very cheap, with runtime constraints." \
         "server|Server / VPS / Docker|Full control, but more operations to handle." "$tbd"
-      UI_LABEL="$(t "Accounts")"
-      choose_coded X2 "User accounts?" "$(ans detail2 tbd)" "Authentication increases risk and scope." \
-        "yes|Yes|Authentication and sessions required: at least MEDIUM risk." \
-        "no|No|No authentication required." "$tbd"
-      d1="$(t "Hosting: %s" "$X1_LABEL")"; d2="$(t "User accounts: %s" "$X2_LABEL")"
-      [[ "$X2" == "yes" ]] && FORCE_AUTH=1 ;;
+      UI_LABEL="$(t "Database")"
+      local db_def; db_def="$(ans detail2 tbd)"
+      [[ -z "${A_traits+x}" ]] && case "$db_def" in yes|no) db_def=tbd ;; esac
+      choose_coded X2 "Database?" "$db_def" "Guides persistence and migrations." \
+        "sql|SQL|Strong relations and integrity (PostgreSQL, SQLite…)." \
+        "nosql|NoSQL|Flexible schema, horizontal scaling." \
+        "none|None|No persistence required." "$tbd"
+      d1="$(t "Hosting: %s" "$X1_LABEL")"; d2="$(t "Database: %s" "$X2_LABEL")" ;;
+    site)
+      UI_LABEL="$(t "Hosting")"
+      choose_coded X1 "Target hosting?" "$(ans detail1 tbd)" "Influences the framework and the deployment." \
+        "vercel|Vercel / Netlify|Simple deployment, previews for each change." \
+        "cloudflare|Cloudflare Pages|Very fast and cheap, at the edge." \
+        "static|Any static host|Plain files: GitHub Pages, S3, a classic host." "$tbd"
+      d1="$(t "Hosting: %s" "$X1_LABEL")" ;;
     api)
       UI_LABEL="$(t "API style")"
       choose_coded X1 "API style?" "$(ans detail1 tbd)" "Shapes the contracts, documentation and tests." \
@@ -261,6 +318,26 @@ ask_all() {
         "nosql|NoSQL|Flexible schema, horizontal scaling." \
         "none|None|No persistence required." "$tbd"
       d1="$(t "API style: %s" "$X1_LABEL")"; d2="$(t "Database: %s" "$X2_LABEL")" ;;
+    data)
+      UI_LABEL="$(t "Sources")"
+      multi_coded X1 "Where does the data come from?" "$(ans detail1 files)" "Each source adds its own ingestion and checks." \
+        "files|Files (CSV · Parquet · Excel)|Loaded and checked at ingestion; the raw files are never modified." \
+        "sql|SQL databases|Read-only access recommended; queries versioned." \
+        "apis|External APIs|Rate limits, retries and cached responses." \
+        "streams|Real-time streams|Continuous ingestion: buffering and replay to plan."
+      UI_LABEL="$(t "Volume")"
+      choose_coded X2 "Order of magnitude of the data?" "$(ans detail2 gb)" "Guides the stack and the model used for exploration." \
+        "mb|Megabytes|Everything fits in memory: Python and Polars are enough." \
+        "gb|Gigabytes|Columnar processing: DuckDB or Polars, Parquet files." \
+        "tb|Terabytes|A warehouse or a distributed engine; agents only ever see samples." "$tbd"
+      UI_LABEL="$(t "Deliverables")"
+      multi_coded X3 "What should the project deliver?" "$(ans detail3 reports)" "Sets the outputs the agent plans for." \
+        "reports|Reports|Documents or notebooks with traceable figures." \
+        "dashboards|Dashboards|Interactive views refreshed from the pipeline." \
+        "tool|Internal tool|An application for the team on top of the data." \
+        "api|API|The results served to other systems." \
+        "models|Statistical or ML models|Training, evaluation and versioned models."
+      d1="$(t "Sources: %s" "$X1_LABEL")"; d2="$(t "Volume: %s" "$X2_LABEL")"; d3="$(t "Deliverables: %s" "$X3_LABEL")" ;;
     mobile)
       UI_LABEL="$(t "Approach")"
       choose_coded X1 "Approach?" "$(ans detail1 tbd)" "Determines the language, tooling and number of codebases." \
@@ -307,63 +384,33 @@ ask_all() {
         "openai|OpenAI|SDK and models from a single provider." \
         "multi|Several|An abstraction layer between providers is needed." \
         "local|Local models|No API cost, performance depends on hardware." "$tbd"
-      UI_LABEL="$(t "Data exposed")"
-      choose_coded X2 "Data sent to the models?" "$(ans detail2 internal)" "Determines the guardrails and risk level." \
-        "public|Public|Few constraints." \
-        "internal|Internal|Check the provider's data retention and usage." \
-        "sensitive|Sensitive data|HIGH risk: anonymisation, guardrails and DEEP security reviews."
-      d1="$(t "Provider: %s" "$X1_LABEL")"; d2="$(t "Data exposed: %s" "$X2_LABEL")" ;;
+      d1="$(t "Provider: %s" "$X1_LABEL")" ;;
+    emails)
+      UI_LABEL="$(t "Technology")"
+      choose_coded X1 "Email technology?" "$(ans detail1 tbd)" "Sets the build of the templates and their previews." \
+        "mjml|MJML|Markup made for emails, compiled to compatible HTML." \
+        "react|React Email|Components in React/TypeScript, previews in the browser." "$tbd"
+      d1="$(t "Technology: %s" "$X1_LABEL")" ;;
     *)
       UI_LABEL="$(t "Custom type")"
       UI_HINT="$(t "A few words are enough; the agent will fill in the rest during the interview.")"
       ui_input "$(t "Describe the project type")" "$(ans detail1 "")"
-      X1="$UI_VALUE"; X2=""; d1="$(t "Custom type: %s" "$UI_VALUE")" ;;
+      X1="$UI_VALUE"; d1="$(t "Custom type: %s" "$UI_VALUE")" ;;
   esac
-  DETAIL1="${X1:-}"; DETAIL2="${X2:-}"
-  DETAILS="$d1${d2:+ · $d2}"
+  DETAIL1="${X1:-}"; DETAIL2="${X2:-}"; DETAIL3="${X3:-}"
+  DETAILS="$d1${d2:+ · $d2}${d3:+ · $d3}"
 
-  ui_group "$(t "REQUIREMENTS")"
-  ui_step 6 $TOTAL
+  ui_step 7 $TOTAL
   UI_LABEL="$(t "Stage")"
-  choose_coded STAGE "Target stage?" "$(ans stage mvp)" \
+  choose_coded STAGE "Target stage?" "$(ans stage "$( [[ "$TYPE" == site ]] && echo prototype || echo mvp)")" \
     "Sets the bar from the start: tests, CI, security." \
     "prototype|Prototype / exploration|Speed first: minimal tests, no mandatory CI." \
     "mvp|MVP|Targeted tests, simple CI, controlled technical debt." \
     "production|Production|Full tests, CI/CD and observability; at least MEDIUM risk."
-
-  ui_step 7 $TOTAL
-  local sens_def="" c
-  # Labels in the interface language; the codes (auth, payments…) stay fixed.
-  local L_AUTH L_PAY L_PERS L_INFRA
-  L_AUTH="$(t "Authentication / accounts")"; L_PAY="$(t "Payments")"; L_PERS="$(t "Personal data")"; L_INFRA="$(t "Secrets / production infra")"
-  for c in $(printf '%s' "$(ans sensitive "")" | tr ',' ' '); do
-    case "$c" in
-      auth) sens_def="${sens_def:+$sens_def,}$L_AUTH" ;;
-      payments) sens_def="${sens_def:+$sens_def,}$L_PAY" ;;
-      personal) sens_def="${sens_def:+$sens_def,}$L_PERS" ;;
-      infra) sens_def="${sens_def:+$sens_def,}$L_INFRA" ;;
-    esac
-  done
-  if [[ "${FORCE_AUTH:-0}" == "1" && "$sens_def" != *"$L_AUTH"* ]]; then
-    sens_def="${sens_def:+$sens_def,}$L_AUTH"
-  fi
-  UI_LABEL="$(t "Sensitive areas")"
-  UI_HINT="$(t "Each checked item raises the risk and requires deeper reviews (DEEP models). Nothing checked = none.")"
-  UI_DESCS=("$(t "MEDIUM risk: sessions, permissions, password storage.")" \
-    "$(t "HIGH risk: compliance, idempotency, systematic security review.")" \
-    "$(t "HIGH risk: GDPR, data minimisation and protection.")" \
-    "$(t "HIGH risk: secrets management, irreversible operations.")")
-  ui_multi "$(t "Sensitive areas?")" "$sens_def" "$L_AUTH" "$L_PAY" "$L_PERS" "$L_INFRA"
-  SENSITIVE=""; SENSITIVE_LABEL="${UI_VALUE:-$(t "none")}"
-  case "$UI_VALUE" in *"$L_AUTH"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}auth" ;; esac
-  case "$UI_VALUE" in *"$L_PAY"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}payments" ;; esac
-  case "$UI_VALUE" in *"$L_PERS"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}personal" ;; esac
-  case "$UI_VALUE" in *"$L_INFRA"*) SENSITIVE="${SENSITIVE:+$SENSITIVE,}infra" ;; esac
   RISK="LOW"
-  case ",$SENSITIVE," in *,auth,*) RISK="MEDIUM" ;; esac
-  case ",$SENSITIVE," in *,payments,*|*,personal,*|*,infra,*) RISK="HIGH" ;; esac
+  case ",$TRAITS," in *,auth,*|*,external,*|*,publicapi,*|*,llm,*) RISK="MEDIUM" ;; esac
+  case ",$TRAITS," in *,payments,*|*,personal,*|*,infra,*|*,multitenant,*) RISK="HIGH" ;; esac
   if [[ "$RISK" == "LOW" && "$STAGE" == "production" ]]; then RISK="MEDIUM"; fi
-  if [[ "$TYPE" == "ai" && "$DETAIL2" == "sensitive" ]]; then RISK="HIGH"; fi
   ui_fact "$(t "Estimated risk")" "$(t "%s risk" "$RISK")"
 
   ui_group "$(t "AI TEAM")"
@@ -371,56 +418,75 @@ ask_all() {
   local mode_def="SOLO" lead_def="claude"
   if (( HAS_CODEX && HAS_CLAUDE )); then mode_def="ORCHESTRATED"
   elif (( HAS_CODEX )); then lead_def="codex"; fi
-  UI_LABEL="$(t "Collaboration")"
-  choose_coded MODE "AI collaboration mode?" "$(ans ai_mode "$mode_def")" \
-    "Defines how Codex and Claude Code share the work. Preselected from the detected tools." \
-    "SOLO|SOLO|One tool at a time: the simplest and cheapest." \
-    "HYBRID|HYBRID|Both tools take turns, coordinated through Git and .loomy/docs/HANDOFF.md." \
-    "ORCHESTRATED|ORCHESTRATED|The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio." \
-    "PARALLEL|PARALLEL|Both at the same time on separate worktrees: faster, integration needs care."
-  UI_LABEL="$(t "Main tool")"
-  choose_coded LEAD "Main tool (lead)?" "$(ans ai_lead "$lead_def")" \
-    "The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning." \
-    "claude|Claude Code|Lead agent on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via loomy-delegate-codex.sh (recommended)." \
-    "codex|Codex|Lead agent on GPT-6.1 Sol; delegates to Claude via loomy-delegate-claude.sh (read-only)."
-
-  ui_step 9 $TOTAL
-  UI_LABEL="$(t "Profile")"
-  choose_coded BUDGET "Model cost / quality profile?" "$(ans budget equilibre)" \
-    "The lead agent always stays on the best model; the profile sets each role's effort and model (details: loomy route)." \
-    "econome|Thrifty|Claude lead on Sonnet 5.5 (Codex lead on GPT-6.1 Sol), specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
-    "equilibre|Balanced (recommended)|Lead agent at high; execution on GPT-6-Luna max or Sonnet 5.5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio." \
-    "qualite|Max quality|Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries."
+  # One recommended team (Enter to accept); Customise opens the detailed questions. Earlier answers that differ
+  # from the recommendation open Customise by default, so nothing is lost.
+  local team_def="rec" rec_mode_l rec_lead_l rec_desc
+  if [[ "$(ans ai_mode "$mode_def")" != "$mode_def" || "$(ans ai_lead "$lead_def")" != "$lead_def" || "$(ans budget equilibre)" != "equilibre" \
+        || "$(ans delegation_format structured)" != "structured" || "$(ans bootstrap_history archive)" != "archive" ]]; then team_def="custom"; fi
+  case "$mode_def" in ORCHESTRATED) rec_mode_l="$(t "Orchestrated")" ;; *) rec_mode_l="$(t "Solo")" ;; esac
+  rec_lead_l="$( [[ "$lead_def" == codex ]] && echo Codex || echo "Claude Code")"
+  ai_env_for "$mode_def" "$lead_def"; ai_resolve lead "$AI_ENV" equilibre
+  if [[ "$mode_def" == ORCHESTRATED ]]; then
+    rec_desc="$(t "%s leads on %s and delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review). Balanced profile, structured delegations." "$rec_lead_l" "$R_MODEL")"
+  else
+    rec_desc="$(t "%s leads on %s with its own roles (one tool detected). Balanced profile, structured delegations." "$rec_lead_l" "$R_MODEL")"
+  fi
+  UI_LABEL="$(t "AI team")"
+  choose_coded TEAM "Which AI team?" "$team_def" \
+    "Preselected from the tools detected on this machine. Customise to choose the mode, the main tool and the profile yourself." \
+    "rec|$(t "Recommended: %s · %s leads · Balanced" "$rec_mode_l" "$rec_lead_l")|$rec_desc" \
+    "custom|Customise|Collaboration mode, main tool, cost/quality profile, delegation format and what to do with START.md afterwards."
+  if [[ "$TEAM" == "rec" ]]; then
+    MODE="$mode_def"; MODE_LABEL="$mode_def"; LEAD="$lead_def"; LEAD_LABEL="$rec_lead_l"
+    BUDGET="equilibre"; BUDGET_LABEL="$(t "Balanced (recommended)")"
+    DELEG_FORMAT="structured"; DELEG_FORMAT_LABEL="$(t "Structured (recommended)")"
+    HISTORY="archive"; HISTORY_LABEL="$(t "Archive it in .loomy/docs/bootstrap/ (recommended)")"
+  else
+    UI_LABEL="$(t "Collaboration")"
+    choose_coded MODE "AI collaboration mode?" "$(ans ai_mode "$mode_def")" \
+      "Defines how Codex and Claude Code share the work. Preselected from the detected tools." \
+      "SOLO|SOLO|One tool at a time: the simplest and cheapest." \
+      "HYBRID|HYBRID|Both tools take turns, coordinated through Git and .loomy/docs/HANDOFF.md." \
+      "ORCHESTRATED|ORCHESTRATED|The lead agent delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review): best quality/cost ratio." \
+      "PARALLEL|PARALLEL|Both at the same time on separate worktrees: faster, integration needs care."
+    UI_LABEL="$(t "Main tool")"
+    choose_coded LEAD "Main tool (lead)?" "$(ans ai_lead "$lead_def")" \
+      "The main tool hosts the lead agent: it plans, delegates, decides and checks. It deserves the best reasoning." \
+      "claude|Claude Code|Lead agent on Opus 5.5, top of the reasoning and agentic benchmarks; delegates to Codex via loomy-delegate-codex.sh (recommended)." \
+      "codex|Codex|Lead agent on GPT-6.1 Sol; delegates to Claude via loomy-delegate-claude.sh (read-only)."
+    UI_LABEL="$(t "Profile")"
+    choose_coded BUDGET "Model cost / quality profile?" "$(ans budget equilibre)" \
+      "The lead agent always stays on the best model; the profile sets each role's effort and model (details: loomy route)." \
+      "econome|Thrifty|Claude lead on Sonnet 5.5 (Codex lead on GPT-6.1 Sol), specialists at medium effort, execution on the fast models. Minimal cost, a few more retries on hard tasks." \
+      "equilibre|Balanced (recommended)|Lead agent at high; execution on GPT-6-Luna max or Sonnet 5.5; architecture, security and hard debugging on Opus 5.5 high. Best quality/cost ratio." \
+      "qualite|Max quality|Lead agent and specialists at xhigh, reviews on the top model, execution on Sol or Sonnet high. Much higher cost, fewer retries."
+    UI_LABEL="$(t "Delegation format")"
+    choose_coded DELEG_FORMAT "How should agents exchange tasks and results?" "$(ans delegation_format structured)" \
+      "Structured exchanges are shorter and easier for the lead agent to check; free text reads like a conversation." \
+      "structured|Structured (recommended)|Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges." \
+      "free|Free text|Each agent answers in its own words, as concisely as it sees fit."
+    UI_LABEL="$(t "START.md afterwards")"
+    choose_coded HISTORY "After initialisation, what to do with START.md?" "$(ans bootstrap_history archive)" \
+      "START.md no longer has authority once the project is initialised." \
+      "archive|Archive it in .loomy/docs/bootstrap/ (recommended)|Keeps a record of the initialisation for later." \
+      "delete|Delete it|Lighter repo; the history stays only in Git."
+  fi
   ai_env_for "$MODE" "$LEAD"
   ROUTE_ENV="$AI_ENV"; ROUTE_NOTE="$AI_ENV_NOTE"
   ai_resolve lead "$ROUTE_ENV" "$BUDGET"; LEAD_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve executor "$ROUTE_ENV" "$BUDGET"; EXEC_LINE="$R_MODEL ($R_EFFORT)"
   ai_resolve architect "$ROUTE_ENV" "$BUDGET"; DEEP_LINE="$R_MODEL ($R_EFFORT)"
+  ai_resolve explorer "$ROUTE_ENV" "$BUDGET"; EXPLORE_LINE="$R_MODEL ($R_EFFORT)"
   ui_fact "$(t "Lead agent")" "$(t "lead agent %s" "${LEAD_LINE}")"
 
-  ui_step 10 $TOTAL
-  UI_LABEL="$(t "Delegation format")"
-  choose_coded DELEG_FORMAT "How should agents exchange tasks and results?" "$(ans delegation_format structured)" \
-    "Structured exchanges are shorter and easier for the lead agent to check; free text reads like a conversation." \
-    "structured|Structured (recommended)|Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges." \
-    "free|Free text|Each agent answers in its own words, as concisely as it sees fit."
-
   ui_group "$(t "DELIVERABLES")"
-  ui_step 11 $TOTAL
+  ui_step 9 $TOTAL
   UI_LABEL="$(t "Docs language")"
   choose_coded DOCLANG "Project documentation language?" "$(ans doc_language "$(ui_lang)")" \
     "Language of the generated files (PROJECT.md, ADRs…). Code and identifiers stay in English." \
     "fr|Français|Documentation written in French." \
     "en|English|Documentation in English: better if the project is shared internationally."
-
-  ui_step 12 $TOTAL
-  UI_LABEL="$(t "START.md afterwards")"
-  choose_coded HISTORY "After initialisation, what to do with START.md?" "$(ans bootstrap_history archive)" \
-    "START.md no longer has authority once the project is initialised." \
-    "archive|Archive it in .loomy/docs/bootstrap/ (recommended)|Keeps a record of the initialisation for later." \
-    "delete|Delete it|Lighter repo; the history stays only in Git."
-
-  ui_step 13 $TOTAL
+  ui_step 10 $TOTAL
   GIT_INIT="no"; COMMIT="no"; PUSH="no"
   if (( HAS_GIT )) && [[ -n "$PARENT_REPO" ]]; then
     UI_LABEL="$(t "Git repository")"
@@ -539,7 +605,7 @@ ask_all() {
     done
   fi
 
-  if (( TOTAL == 14 )); then ui_group "$(t "PLANS")"; ui_step 14 $TOTAL; fi
+  if (( TOTAL == 11 )); then ui_group "$(t "PLANS")"; ui_step 11 $TOTAL; fi
   if (( ASK_PLAN_CLAUDE )); then
     UI_LABEL="$(t "Claude plan")"
     choose_coded PLAN_CLAUDE_NEW "What is your Claude plan?" "${PLAN_CLAUDE_NEW:-api}" \
@@ -562,6 +628,51 @@ ask_all() {
   fi
 }
 
+# trait_check <code>: the check this characteristic gives the agents (one line, for the recap and the brief).
+trait_check() {
+  case "$1" in
+    auth) tv TC "User accounts: the security role reviews authentication, sessions and permissions; tests of sign-up, sign-in and access rights." ;;
+    payments) tv TC "Payments: security review before each commit touching them; idempotency and webhooks tested; never real card data in tests." ;;
+    personal) tv TC "Personal or sensitive data: real data never goes into prompts (schemas, statistics and anonymised samples only); minimisation and GDPR." ;;
+    bigdata) tv TC "Large data volumes: exploration on a long-context model; performance tests; data never loaded whole into prompts." ;;
+    external) tv TC "External feeds and APIs: contracts mocked in tests, rate limits, retries with backoff; secrets in environment variables." ;;
+    publicapi) tv TC "Public API: OpenAPI contract first, versioning, integration tests of every endpoint." ;;
+    llm) tv TC "AI inside the product: answer evaluation set, guardrails, API costs tracked, provider data terms checked." ;;
+    realtime) tv TC "Real time: load and reconnection tests." ;;
+    infra) tv TC "Production infra and secrets: no secret in code or logs; irreversible operations only after the user's approval." ;;
+    multitenant) tv TC "Multi-tenant: data isolation between customers tested on every data access." ;;
+    *) TC="" ;;
+  esac
+}
+
+# compute_recos: RECOS gets the recommendations worth making for these answers (indicative: nothing is forced).
+compute_recos() {
+  local n=0 c r
+  RECOS=()
+  for c in ${TRAITS//,/ }; do n=$(( n + 1 )); done
+  if [[ "$RISK" == "HIGH" && "$BUDGET" == "econome" ]]; then
+    tv r "HIGH risk with the Thrifty profile: switch to Balanced, or raise the security role to high (loomy effort security high)."; RECOS+=("$r")
+  elif [[ "$RISK" == "HIGH" && "$STAGE" == "production" && "$BUDGET" == "equilibre" ]]; then
+    tv r "HIGH risk in production: raise security and review to xhigh (loomy effort security xhigh, loomy effort reviewer xhigh), or choose Max quality."; RECOS+=("$r")
+  fi
+  if (( n >= 4 )) && [[ "$BUDGET" == "econome" ]]; then
+    tv r "Many key characteristics for the Thrifty profile: Balanced will need fewer retries on this complexity."; RECOS+=("$r")
+  fi
+  if [[ ",$TRAITS," == *",bigdata,"* || "$TYPE" == "data" ]]; then
+    case "$EXPLORE_LINE" in
+      *sonnet*|*opus*|*sol*|*astra*) ;;
+      *) r="$(t "Exploration of large data: the explorer runs on %s; for schemas and large files, prefer a long-context model (Sonnet 5.5, 1M context) when delegating." "$EXPLORE_LINE")"; RECOS+=("$r") ;;
+    esac
+  fi
+  if [[ "$TYPE" == "data" && ",$TRAITS," == *",personal,"* ]]; then
+    tv r "Sensitive data to analyse: whatever has to see real values runs on a local model (LM Studio) or not at all; agents get schemas and anonymised samples."; RECOS+=("$r")
+  fi
+  if [[ "$MODE" == "SOLO" && "$RISK" == "HIGH" ]] && (( HAS_CLAUDE && HAS_CODEX )); then
+    tv r "HIGH risk in SOLO mode: ORCHESTRATED adds a cross review by the other model family."; RECOS+=("$r")
+  fi
+  return 0
+}
+
 show_recap() {
   local risk_c="$C_GREEN" goal_txt="$GOAL" parts=""
   [[ "$RISK" == "MEDIUM" ]] && risk_c="$C_YELLOW"
@@ -575,23 +686,37 @@ show_recap() {
   ui_rail_kv "$(t "Name")" "${C_BOLD}${NAME}${C_RESET}"
   ui_rail_kv "$(t "Goal")" "$goal_txt"
   ui_rail_kv "$(t "Project")" "$REPO_LABEL · $TYPE_LABEL · $STAGE_LABEL"
-  ui_rail_kv "$(t "Details")" "$DETAILS"
-  ui_rail_kv "$(t "Sensitive")" "$SENSITIVE_LABEL"
+  ui_rail_kvw "$(t "Details")" "$DETAILS"
+  ui_rail_kvw "$(t "Characteristics")" "$TRAITS_LABEL"
   ui_rail_kv "$(t "Risk")" "${risk_c}${RISK}${C_RESET}"
   ui_rail ""
   ui_rail_group "$(t "AI team")"
   ui_rail_kv "$(t "Mode")" "${C_BOLD}${MODE}${C_RESET} · $(t "lead %s" "${LEAD_LABEL}")"
   ui_rail_kv "$(t "Profile")" "$(no_rec "$BUDGET_LABEL")"
   ui_rail_kv "$(t "Delegations")" "$(no_rec "$DELEG_FORMAT_LABEL")"
-  if [[ "$BUDGET" == "econome" && "$RISK" == "HIGH" ]]; then
-    ui_rail_kv "" "${C_YELLOW}! $(t "HIGH risk with the Frugal profile: use high effort for security on sensitive changes")${C_RESET}"
-  fi
   ui_rail_kv "$(t "Routing")" "$(ai_env_label "$ROUTE_ENV")"
   if [[ -n "$ROUTE_NOTE" ]]; then ui_rail_kv "" "${C_YELLOW}! ${ROUTE_NOTE}${C_RESET}"; fi
   ui_rail_kv "$(t "Lead agent")" "${C_BRAND}${LEAD_LINE}${C_RESET}"
   ui_rail_kv "$(t "Execution")" "$EXEC_LINE"
   ui_rail_kv "$(t "Architecture")" "$DEEP_LINE"
+  ui_rail_kv "$(t "Exploration")" "$EXPLORE_LINE"
   ui_rail ""
+  # What the answers turn into for the agents, then what is worth adjusting.
+  local c first=1
+  if [[ -n "$TRAITS" ]]; then
+    ui_rail_group "$(t "What Loomy will configure")"
+    for c in ${TRAITS//,/ }; do
+      trait_check "$c"; [[ -n "$TC" ]] || continue
+      if (( first )); then ui_rail_kvw "$(t "Checks")" "$TC"; first=0; else ui_rail_kvw "" "$TC"; fi
+    done
+    ui_rail ""
+  fi
+  compute_recos
+  if (( ${#RECOS[@]} )); then
+    ui_rail_group "$(t "Recommendations")" "$(t "indicative: nothing is forced")"
+    for c in "${RECOS[@]}"; do ui_rail_kvw "" "→ $c"; done
+    ui_rail ""
+  fi
   ui_rail_group "$(t "Deliverables")"
   ui_rail_kv "$(t "Docs")" "$DOCLANG_LABEL · $(t "START.md: %s" "$(no_rec "$HISTORY_LABEL")")"
   ui_rail_kv "$(t "Technical name")" "$SLUG ${C_DIM}($(t "folder, technical names"))${C_RESET}"
@@ -629,9 +754,10 @@ write_brief() {
     echo "goal: $(yaml_q "$GOAL")"
     echo "repo: $REPO"
     echo "type: $TYPE"
-    echo "template: ${TEMPLATE:-none}"
+    echo "traits: $(yaml_q "$TRAITS")"
     echo "detail1: $(yaml_q "$DETAIL1")"
     echo "detail2: $(yaml_q "$DETAIL2")"
+    echo "detail3: $(yaml_q "$DETAIL3")"
     echo "details: $(yaml_q "$DETAILS")"
     echo "stage: $STAGE"
     echo "sensitive: $(yaml_q "$SENSITIVE")"
@@ -664,7 +790,7 @@ write_brief() {
     echo "| $(t "Type") | $TYPE_LABEL |"
     echo "| $(t "Details") | $DETAILS |"
     echo "| $(t "Stage") | $STAGE_LABEL |"
-    echo "| $(t "Sensitive areas") | $SENSITIVE_LABEL |"
+    echo "| $(t "Key characteristics") | $TRAITS_LABEL |"
     echo "| $(t "Estimated risk") | $RISK |"
     echo "| $(t "AI mode") | $(t "%s (lead: %s)" "$MODE" "$LEAD_LABEL") |"
     echo "| $(t "Model profile") | $BUDGET_LABEL |"
@@ -697,13 +823,22 @@ write_brief() {
         t "- AI files in a separate private repository: never version them in the project repository (never git add -f)."; echo
         t "- After each important step and at the end of the session, back them up: \`.loomy/scripts/loomy-privacy.sh sync\`."; echo ;;
     esac
-    case "${TEMPLATE:-none}" in
-      saas) t "- Template SaaS web app: propose a front end with server routes, authentication, a database with migrations, a settings page and an end-to-end test of sign-up and sign-in."; echo ;;
-      landing) t "- Template landing page: propose a static site (sections, contact form or call to action, SEO metadata, accessibility checks, Lighthouse above 90)."; echo ;;
-      api) t "- Template REST API: propose an OpenAPI contract first, input validation, SQL migrations, structured errors, integration tests against a test database."; echo ;;
-      cli) t "- Template command-line tool: propose a Node.js CLI with subcommands, --help and --version, clear exit codes, tests of each command, npm packaging."; echo ;;
-      emails) t "- Template email templates: propose MJML or React Email, a shared layout, previews in the browser, checks on the main email clients (dark mode, images off) and a send test."; echo ;;
+    case "$TYPE" in
+      web) if [[ ",$TRAITS," == *",auth,"* ]]; then t "- Web app with accounts: propose a front end with server routes, authentication, a database with migrations, a settings page and an end-to-end test of sign-up and sign-in."; echo
+           else t "- Web app: propose a front end with server routes where needed, a database only if the product needs one, and end-to-end tests of the main journeys."; echo; fi ;;
+      site) t "- Showcase site: propose a static site (sections, contact form or call to action, SEO metadata, accessibility checks, Lighthouse above 90)."; echo ;;
+      api) t "- API: propose an OpenAPI contract first, input validation, SQL migrations, structured errors, integration tests against a test database."; echo ;;
+      cli) t "- Command-line tool: propose subcommands, --help and --version, clear exit codes, tests of each command, packaging for its registry."; echo ;;
+      emails) t "- Email templates: propose MJML or React Email, a shared layout, previews in the browser, checks on the main email clients (dark mode, images off) and a send test."; echo ;;
+      data)
+        t "- Data & analysis project: propose a pipeline ingestion → raw storage (never modified) → versioned transformations → analytical data sets → deliverables. Python with DuckDB or Polars unless the volume calls for a warehouse; notebooks only for exploration; data-quality tests (schemas, nulls, duplicates, ranges) and traceability of every published figure."; echo
+        t "- Data never goes whole into prompts: agents work on schemas, statistics and anonymised samples; scripts process the full data locally."; echo
+        t "- Models for this project: schemas and large files explored on a long-context model (Sonnet 5.5, 1M context); modelling and statistical method on the top model; bounded ingestion and transformation scripts on the executor; calculations cross-reviewed by the other model family."; echo ;;
     esac
+    local c
+    for c in ${TRAITS//,/ }; do trait_check "$c"; [[ -n "$TC" ]] && echo "- $TC"; done
+    compute_recos
+    for c in ${RECOS[@]+"${RECOS[@]}"}; do echo "- $(t "Recommendation to offer the user (not applied): %s" "$c")"; done
     t "- Project technical name: \`%s\`. Use it for package names, repository names and technical identifiers, so that everything has the same name." "$SLUG"; echo
     if (( REMOTE_HAS_HISTORY )); then t "- The GitHub repository \`%s\` already had content (specs, docs…), now in the folder: read it first, it is input for the project. Never force-push or rewrite its history." "$GH_USER/$REPO_NAME"; echo; fi
     if [[ -n "$REMOTE_NAME_NOTE" ]]; then t "- Warning: %s. Tell the user; don't rename anything without their approval (gh repo rename %s)." "$REMOTE_NAME_NOTE" "$SLUG"; echo; fi
@@ -738,7 +873,7 @@ fi
 
 plan_questions
 FORM_GROUPS="$(t "PROJECT")|$(t "REQUIREMENTS")|$(t "AI TEAM")|$(t "DELIVERABLES")"
-if (( TOTAL == 14 )); then FORM_GROUPS="$FORM_GROUPS|$(t "PLANS")"; fi
+if (( TOTAL == 11 )); then FORM_GROUPS="$FORM_GROUPS|$(t "PLANS")"; fi
 while true; do
   # Full screen during the questions; ← replays the pass up to the previous question.
   ui_form_begin "v$LOOMY_VERSION · $(t "startup brief") · ${C_RESET}${C_TITLE}$(basename "$TARGET")${C_RESET}" "$FORM_GROUPS"
@@ -765,8 +900,8 @@ while true; do
     save) break ;;
     cancel) ui_rail_end "$(t "Cancelled: no file written.")"; exit 1 ;;
     again)
-      A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"; A_template="${TEMPLATE:-none}"
-      A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
+      A_name="$NAME"; A_goal="$GOAL"; A_repo="$REPO"; A_type="$TYPE"; A_traits="$TRAITS"
+      A_detail1="$DETAIL1"; A_detail2="$DETAIL2"; A_detail3="$DETAIL3"; A_stage="$STAGE"; A_sensitive="$SENSITIVE"
       A_ai_mode="$MODE"; A_ai_lead="$LEAD"; A_budget="$BUDGET"; A_delegation_format="$DELEG_FORMAT"; A_doc_language="$DOCLANG"
       A_bootstrap_history="$HISTORY"; A_git_init="$GIT_INIT"; A_commit_after_setup="$COMMIT"; A_push_after_commit="$PUSH"; A_ai_files="$AI_FILES"; A_github_repo="$GITHUB_REPO"; A_repo_name="$REPO_NAME"; A_ai_repo_name="$AI_REPO_NAME" ;;
   esac

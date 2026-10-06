@@ -143,6 +143,7 @@ label_of() {
   case "$1" in
     web) t "Web app / SaaS"; echo ;; api) t "API / backend"; echo ;; mobile) t "Mobile app"; echo ;;
     desktop) t "Desktop app"; echo ;; cli) t "CLI / library"; echo ;; ai) t "AI / LLM app"; echo ;;
+    site) t "Showcase site / landing page"; echo ;; data) t "Data & analysis"; echo ;; emails) t "Email templates"; echo ;; custom) t "Custom"; echo ;;
     prototype) t "Prototype"; echo ;; other) t "Other"; echo ;; mvp) t "MVP"; echo ;; production) t "Production"; echo ;;
     econome) t "Thrifty"; echo ;; equilibre) t "Balanced"; echo ;; qualite) t "Max quality"; echo ;;
     codex) t "Codex"; echo ;; claude) t "Claude Code"; echo ;;

@@ -1856,3 +1856,125 @@ reading	lecture
 docs	doc
       start_watch (no: loomy start no longer opens live tracking next to the session),	       start_watch (no : loomy start n'ouvre plus le suivi en direct à côté de la session),
                            (the default; loomy config set start_watch no or --no-watch to skip it)	                           (par défaut ; loomy config set start_watch no ou --no-watch pour l'éviter)
+Project type	Type de projet
+Key characteristics	Caractéristiques clés
+Data sources	Sources de données
+Data volume	Volume de données
+Sources: %s	Sources : %s
+Volume: %s	Volume : %s
+Deliverables: %s	Livrables : %s
+Orchestrated	Orchestré
+Solo	Solo
+%s leads on %s and delegates each role to the best model of both families (execution on GPT-6-Luna, architecture and security on Opus 5.5, cross review). Balanced profile, structured delegations.	%s orchestre %s et délègue chaque rôle au meilleur modèle des deux familles (exécution sur GPT-6-Luna, architecture et sécurité sur Opus 5.5, revue croisée). Profil équilibré, délégations structurées.
+%s leads on %s with its own roles (one tool detected). Balanced profile, structured delegations.	%s orchestre %s avec ses propres rôles (un outil détecté). Profil équilibré, délégations structurées.
+Recommended: %s · %s leads · Balanced	Recommandé : %s · %s orchestre · Équilibré
+Exploration of large data: the explorer runs on %s; for schemas and large files, prefer a long-context model (Sonnet 5.5, 1M context) when delegating.	Exploration de gros volumes de données : l'explorateur utilise %s ; pour les schémas et les gros fichiers, préfère un modèle à long contexte (Sonnet 5.5, contexte 1M) lors des délégations.
+Characteristics	Caractéristiques
+Exploration	Exploration
+What Loomy will configure	Ce que Loomy va configurer
+Checks	Vérifications
+Recommendations	Recommandations
+indicative: nothing is forced	indicatif : rien n'est imposé
+- Web app with accounts: propose a front end with server routes, authentication, a database with migrations, a settings page and an end-to-end test of sign-up and sign-in.	- Application web avec comptes : propose un front-end avec des routes côté serveur, une authentification, une base de données avec des migrations, une page de paramètres et un test de bout en bout de l'inscription et de la connexion.
+- Web app: propose a front end with server routes where needed, a database only if the product needs one, and end-to-end tests of the main journeys.	- Application web : propose un front-end avec des routes côté serveur si nécessaire, une base de données uniquement si le produit en a besoin et des tests de bout en bout des parcours principaux.
+- Showcase site: propose a static site (sections, contact form or call to action, SEO metadata, accessibility checks, Lighthouse above 90).	- Site vitrine : propose un site statique (sections, formulaire de contact ou appel à l'action, métadonnées SEO, vérifications d'accessibilité, score Lighthouse supérieur à 90).
+- API: propose an OpenAPI contract first, input validation, SQL migrations, structured errors, integration tests against a test database.	- API : propose d'abord un contrat OpenAPI, la validation des entrées, des migrations SQL, des erreurs structurées et des tests d'intégration sur une base de données de test.
+- Command-line tool: propose subcommands, --help and --version, clear exit codes, tests of each command, packaging for its registry.	- Outil en ligne de commande : propose des sous-commandes, --help et --version, des codes de sortie clairs, des tests pour chaque commande et un empaquetage pour son registre.
+- Email templates: propose MJML or React Email, a shared layout, previews in the browser, checks on the main email clients (dark mode, images off) and a send test.	- Modèles d'e-mails : propose MJML ou React Email, une mise en page partagée, des aperçus dans le navigateur, des vérifications sur les principaux clients de messagerie (mode sombre, images désactivées) et un test d'envoi.
+- Data & analysis project: propose a pipeline ingestion → raw storage (never modified) → versioned transformations → analytical data sets → deliverables. Python with DuckDB or Polars unless the volume calls for a warehouse; notebooks only for exploration; data-quality tests (schemas, nulls, duplicates, ranges) and traceability of every published figure.	- Projet de données et d'analyse : propose un pipeline ingestion → stockage brut (jamais modifié) → transformations versionnées → jeux de données analytiques → livrables. Python avec DuckDB ou Polars, sauf si le volume nécessite un entrepôt de données ; notebooks réservés à l'exploration ; tests de qualité des données (schémas, valeurs nulles, doublons, plages) et traçabilité de chaque chiffre publié.
+- Data never goes whole into prompts: agents work on schemas, statistics and anonymised samples; scripts process the full data locally.	- Les données ne sont jamais intégrées en entier aux prompts : les agents travaillent sur des schémas, des statistiques et des échantillons anonymisés ; les scripts traitent l'intégralité des données localement.
+- Models for this project: schemas and large files explored on a long-context model (Sonnet 5.5, 1M context); modelling and statistical method on the top model; bounded ingestion and transformation scripts on the executor; calculations cross-reviewed by the other model family.	- Modèles pour ce projet : exploration des schémas et des gros fichiers avec un modèle à long contexte (Sonnet 5.5, contexte 1M) ; modélisation et méthode statistique avec le meilleur modèle ; scripts d'ingestion et de transformation à périmètre défini confiés à l'exécutant ; calculs soumis à une revue croisée par l'autre famille de modèles.
+Recommendation to offer the user (not applied): %s	Recommandation à proposer à l'utilisateur (non appliquée) : %s
+Showcase site / landing page	Site vitrine / page d'atterrissage
+Data & analysis	Données et analyse
+Custom	Sur mesure
+Pre-fills the next answers (you can change each one) and gives the lead agent a starting structure.	Préremplit les réponses suivantes (tu peux modifier chacune) et donne à l'orchestrateur une structure de départ.
+Front end and back end, often with user accounts; web deployment.	Front-end et back-end, souvent avec des comptes utilisateur ; déploiement web.
+Static or almost static site, no accounts, fast to ship; SEO and accessibility.	Site statique ou presque, sans comptes, rapide à publier ; SEO et accessibilité.
+Pipelines, analyses, dashboards or tools on large data sources; the choice of models matters most here.	Pipelines, analyses, tableaux de bord ou outils sur de grandes sources de données ; le choix des modèles est particulièrement important ici.
+Provider choice, guardrails and answer evaluation.	Choix du fournisseur, garde-fous et évaluation des réponses.
+You check every characteristic yourself on the next screen and describe the project in a few words.	Tu vérifies toi-même chaque caractéristique à l'écran suivant et décris le projet en quelques mots.
+Influences the framework and the deployment.	Influence le framework et le déploiement.
+Simple deployment, previews for each change.	Déploiement simple, aperçus pour chaque modification.
+Cloudflare Pages	Cloudflare Pages
+Very fast and cheap, at the edge.	Très rapide et peu coûteux, en périphérie du réseau.
+Any static host	N'importe quel hébergeur statique
+Plain files: GitHub Pages, S3, a classic host.	Fichiers statiques : GitHub Pages, S3, un hébergeur classique.
+Order of magnitude of the data?	Quel est l'ordre de grandeur des données ?
+Guides the stack and the model used for exploration.	Guide le choix de la stack et du modèle utilisé pour l'exploration.
+Megabytes	Mégaoctets
+Everything fits in memory: Python and Polars are enough.	Tout tient en mémoire : Python et Polars suffisent.
+Gigabytes	Gigaoctets
+Columnar processing: DuckDB or Polars, Parquet files.	Traitement colonnaire : DuckDB ou Polars, fichiers Parquet.
+Terabytes	Téraoctets
+A warehouse or a distributed engine; agents only ever see samples.	Un entrepôt de données ou un moteur distribué ; les agents ne voient que des échantillons.
+Email technology?	Technologie d'e-mail ?
+Sets the build of the templates and their previews.	Définit la génération des modèles et de leurs aperçus.
+MJML	MJML
+Markup made for emails, compiled to compatible HTML.	Langage de balisage conçu pour les e-mails, compilé en HTML compatible.
+React Email	React Email
+Components in React/TypeScript, previews in the browser.	Composants en React/TypeScript, aperçus dans le navigateur.
+Which AI team?	Quelle équipe d'IA ?
+Preselected from the tools detected on this machine. Customise to choose the mode, the main tool and the profile yourself.	Présélectionnée selon les outils détectés sur cette machine. Personnalise le mode, l'outil principal et le profil toi-même.
+Customise	Personnaliser
+Collaboration mode, main tool, cost/quality profile, delegation format and what to do with START.md afterwards.	Mode de collaboration, outil principal, profil coût/qualité, format de délégation et suite à donner à START.md.
+Key characteristics of the project?	Caractéristiques clés du projet ?
+Check everything that applies: each one sets the risk and the checks the agents must do. Nothing checked = none.	Coche tout ce qui s'applique : chaque élément définit le risque et les vérifications que les agents doivent effectuer. Rien de coché = aucun.
+User accounts	Comptes utilisateur
+MEDIUM risk: sessions, permissions, password storage; the security role reviews authentication.	Risque MEDIUM : sessions, permissions, stockage des mots de passe ; le rôle sécurité vérifie l'authentification.
+HIGH risk: compliance, idempotency, webhooks; security review before each commit touching them.	Risque HIGH : conformité, idempotence, webhooks ; revue de sécurité avant chaque commit qui les concerne.
+Personal or sensitive data	Données personnelles ou sensibles
+HIGH risk: GDPR, minimisation; real data never goes into prompts (schemas and anonymised samples).	Risque HIGH : RGPD, minimisation ; les données réelles ne sont jamais incluses dans les prompts (schémas et échantillons anonymisés).
+Large data volumes	Volumes de données importants
+Exploration on a long-context model, performance tests; data never loaded whole into prompts.	Exploration avec un modèle à long contexte, tests de performance ; les données ne sont jamais chargées en entier dans les prompts.
+External data feeds or third-party APIs	Flux de données externes ou API tierces
+At least MEDIUM risk: mocked contracts, rate limits, retries; secrets in environment variables.	Risque au moins MEDIUM : contrats simulés, limites de requêtes, nouvelles tentatives ; secrets dans des variables d'environnement.
+Public API exposed	API publique exposée
+At least MEDIUM risk: OpenAPI contract, versioning, integration tests.	Risque au moins MEDIUM : contrat OpenAPI, gestion des versions, tests d'intégration.
+AI / LLM inside the product	IA / LLM intégré au produit
+Answer evaluation, guardrails, API costs tracked; check the provider's data terms.	Évaluation des réponses, garde-fous, suivi des coûts API ; vérifie les conditions du fournisseur concernant les données.
+Real time	Temps réel
+WebSockets or streams: load and reconnection tests.	WebSockets ou flux : tests de charge et de reconnexion.
+Production infra or secrets	Infrastructure de production ou secrets
+HIGH risk: secrets management; irreversible operations approved by you.	Risque HIGH : gestion des secrets ; opérations irréversibles approuvées par toi.
+Multi-tenant	Multi-tenant
+HIGH risk: data isolation between customers tested systematically.	Risque HIGH : isolation des données entre clients testée systématiquement.
+Where does the data come from?	D'où proviennent les données ?
+Each source adds its own ingestion and checks.	Chaque source ajoute ses propres étapes d'ingestion et vérifications.
+Files (CSV · Parquet · Excel)	Fichiers (CSV · Parquet · Excel)
+Loaded and checked at ingestion; the raw files are never modified.	Chargés et vérifiés à l'ingestion ; les fichiers bruts ne sont jamais modifiés.
+SQL databases	Bases de données SQL
+Read-only access recommended; queries versioned.	Accès en lecture seule recommandé ; requêtes versionnées.
+External APIs	API externes
+Rate limits, retries and cached responses.	Limites de requêtes, nouvelles tentatives et réponses mises en cache.
+Real-time streams	Flux en temps réel
+Continuous ingestion: buffering and replay to plan.	Ingestion continue : mise en tampon et rejeu à prévoir.
+What should the project deliver?	Que doit livrer le projet ?
+Sets the outputs the agent plans for.	Définit les livrables que l'orchestrateur prévoit.
+Reports	Rapports
+Documents or notebooks with traceable figures.	Documents ou notebooks avec des chiffres traçables.
+Dashboards	Tableaux de bord
+Interactive views refreshed from the pipeline.	Vues interactives actualisées à partir du pipeline.
+Internal tool	Outil interne
+An application for the team on top of the data.	Une application pour l'équipe qui exploite les données.
+The results served to other systems.	Les résultats sont fournis à d'autres systèmes.
+Statistical or ML models	Modèles statistiques ou ML
+Training, evaluation and versioned models.	Entraînement, évaluation et modèles versionnés.
+Sources	Sources
+Volume	Volume
+User accounts: the security role reviews authentication, sessions and permissions; tests of sign-up, sign-in and access rights.	Comptes utilisateur : le rôle sécurité passe en revue l'authentification, les sessions et les permissions ; tests d'inscription, de connexion et des droits d'accès.
+Payments: security review before each commit touching them; idempotency and webhooks tested; never real card data in tests.	Paiements : revue de sécurité avant chaque commit qui les concerne ; idempotence et webhooks testés ; jamais de vraies données de carte dans les tests.
+Personal or sensitive data: real data never goes into prompts (schemas, statistics and anonymised samples only); minimisation and GDPR.	Données personnelles ou sensibles : les données réelles ne vont jamais dans les prompts (schémas, statistiques et échantillons anonymisés uniquement) ; minimisation et RGPD.
+Large data volumes: exploration on a long-context model; performance tests; data never loaded whole into prompts.	Grands volumes de données : exploration avec un modèle à long contexte ; tests de performance ; les données ne sont jamais chargées en entier dans les prompts.
+External feeds and APIs: contracts mocked in tests, rate limits, retries with backoff; secrets in environment variables.	Flux externes et API : contrats simulés dans les tests, limites de débit, nouvelles tentatives avec backoff ; secrets dans des variables d'environnement.
+Public API: OpenAPI contract first, versioning, integration tests of every endpoint.	API publique : contrat OpenAPI d'abord, gestion des versions, tests d'intégration de chaque endpoint.
+AI inside the product: answer evaluation set, guardrails, API costs tracked, provider data terms checked.	IA intégrée au produit : jeu d'évaluation des réponses, garde-fous, suivi des coûts d'API, vérification des conditions du fournisseur concernant les données.
+Real time: load and reconnection tests.	Temps réel : tests de charge et de reconnexion.
+Production infra and secrets: no secret in code or logs; irreversible operations only after the user's approval.	Infrastructure de production et secrets : aucun secret dans le code ou les journaux ; opérations irréversibles uniquement après approbation de l'utilisateur.
+Multi-tenant: data isolation between customers tested on every data access.	Multi-tenant : isolation des données entre clients testée à chaque accès aux données.
+HIGH risk with the Thrifty profile: switch to Balanced, or raise the security role to high (loomy effort security high).	Risque HIGH avec le profil Économe : passe en Équilibré, ou augmente le rôle sécurité à high (loomy effort security high).
+HIGH risk in production: raise security and review to xhigh (loomy effort security xhigh, loomy effort reviewer xhigh), or choose Max quality.	Risque HIGH en production : augmente la sécurité et la revue à xhigh (loomy effort security xhigh, loomy effort reviewer xhigh), ou choisis Qualité max.
+Many key characteristics for the Thrifty profile: Balanced will need fewer retries on this complexity.	Beaucoup de caractéristiques clés pour le profil Économe : Équilibré demandera moins de nouvelles tentatives pour cette complexité.
+Sensitive data to analyse: whatever has to see real values runs on a local model (LM Studio) or not at all; agents get schemas and anonymised samples.	Données sensibles à analyser : tout ce qui doit voir les valeurs réelles s'exécute sur un modèle local (LM Studio), sinon pas du tout ; les agents reçoivent des schémas et des échantillons anonymisés.
+HIGH risk in SOLO mode: ORCHESTRATED adds a cross review by the other model family.	Risque HIGH en mode SOLO : ORCHESTRATED ajoute une revue croisée par l'autre famille de modèles.
+tmux could not start here: run loomy watch in another terminal	tmux n'a pas pu démarrer ici : lance loomy watch dans un autre terminal

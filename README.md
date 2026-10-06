@@ -8,7 +8,7 @@
 **Start and structure your projects with Codex and Claude Code.**
 A questionnaire to frame the project, a repository structure ready for agents, a lead agent on the best model that delegates to dedicated roles, and live tracking in your terminal.
 
-![version](https://img.shields.io/badge/version-0.9.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.10.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -123,7 +123,7 @@ flowchart LR
 ```
 
 1. **Check.** Verifies CLI versions, finds Codex even when it is bundled inside the ChatGPT app, checks model availability, and offers fixes.
-2. **Questionnaire.** Thirteen questions grouped by theme, each showing the consequence of every option: project type, stage, risk, AI mode, lead tool, budget, Git permissions. The first time, a fourteenth asks for your Claude and ChatGPT subscriptions. For a new project, a template (SaaS web app, landing page, REST API, CLI, email templates) prefills the answers and gives the lead agent a starting structure. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
+2. **Questionnaire.** Ten questions grouped by theme, each showing the consequence of every option. One **project type** (web app / SaaS, showcase site, API, **data & analysis**, AI app, mobile, desktop, CLI, email templates, or **custom**) pre-fills the rest. Then the **key characteristics**, several at once and pre-checked by type: user accounts, payments, personal data, large data volumes, external feeds, public API, AI in the product, real time, production infra, multi-tenant; they set the risk and the checks given to the agents. The details follow from the type (for data: sources, volume, deliverables), then the stage and the **AI team**: one recommended line from the tools detected, or Customise (mode, lead tool, profile, delegation format). A recap shows **what Loomy will configure** and **recommendations** (effort, profile, models) that are indicative only. The first time, an eleventh question asks for your Claude and ChatGPT subscriptions. ← goes back to the previous question; in a text field, Tab turns the suggestion into editable text (project name, repository name…).
 3. **Routing.** Turns the brief and the installed tools into a role → model → effort matrix, with automatic fallback when a CLI is missing.
 4. **Lead agent.** The main session follows `START.md`:
 
@@ -279,9 +279,9 @@ Everything happens in the terminal, with no dependency. **Nothing starts on its 
 | Command | View |
 |---|---|
 | <code>loomy&nbsp;status</code> | Snapshot: phases, running delegations, activity, cost per model, subscriptions, Git |
-| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view, `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
+| <code>loomy&nbsp;watch&nbsp;[N]</code> | 🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view (status screen: brief hidden, fewer delegations and log lines), `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal |
 | <code>loomy&nbsp;tree</code> | 🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto\|diagram\|list` chooses |
-| <code>loomy&nbsp;start&nbsp;--watch</code> | 🪟 The lead agent session and live tracking side by side (or stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session |
+| <code>loomy&nbsp;start</code> | 🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone |
 | <code>loomy&nbsp;log&nbsp;[-n&nbsp;N]&nbsp;[-f]</code> | Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs |
 
 **What is live.** The screen rereads the project every 2 seconds:
@@ -529,7 +529,7 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 | 📈&nbsp;<code>loomy&nbsp;status</code>&nbsp;·&nbsp;<code>loomy&nbsp;watch</code>&nbsp;·&nbsp;<code>loomy&nbsp;log</code> | tracking (see above) |
 | 📊&nbsp;<code>loomy&nbsp;stats</code> | detailed statistics: by role, model and day, durations, tokens, cost or quota (`--days N`, `--since YYYY-MM-DD`) |
 | 🎚️&nbsp;<code>loomy&nbsp;effort</code> | reasoning effort of the lead agent for this project (`loomy effort low`, menu without argument), or of a role (`loomy effort executor high`); `--list`, `--reset`; applied at the next `loomy start` |
-| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`yes`: `loomy start` always opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
+| ⚙️&nbsp;<code>loomy&nbsp;config</code> | preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default) |
 | 🌳&nbsp;<code>loomy&nbsp;worktrees&nbsp;&lt;task&gt;</code> | two separate worktrees for parallel mode |
 | 🔄&nbsp;<code>loomy&nbsp;update</code>&nbsp;·&nbsp;<code>loomy&nbsp;version</code> | updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install |
 | 🗑️&nbsp;<code>loomy&nbsp;uninstall</code> | shows how to uninstall Loomy for your install method, and how to remove it from a project |
@@ -732,7 +732,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | ✅&nbsp;0.8.3 | agent tree diagram: room above the title |
 | ✅&nbsp;0.8.4 | agent tree diagram twice as fast (about 0.5 s per frame) |
 | ✅&nbsp;0.9.0 | **a setup that can't stay half done**: Loomy creates and checks the routing documents, the subagents and the orchestration rule at every launch; every request goes through the lead agent; `.ai/` becomes `.loomy/docs/`; the agent tree lists the roles without a box |
-| ✅&nbsp;0.9.1 | **Current version** · agent tree: the roles without a box summed up by model, with what each one does |
+| ✅&nbsp;0.9.1 | agent tree: the roles without a box summed up by model, with what each one does |
+| ✅&nbsp;0.10.0 | **Current version** · **questionnaire redesigned**: one project type (with **data & analysis** and **custom**), several key characteristics with their checks, a recommended AI team, a recap of what gets configured with indicative recommendations; scripts named `loomy-*`; agent and live tracking side by side by default |
 | 🔜 | **Claude Haiku 5.5** (announced, early reports say fast and cheap): already taken into account as soon as it answers (0.7.4). Once it is out, a measured test, like the one for Sonnet 5.5, decides whether it also takes the full-Claude executor, the Claude documenter, and the audit writer without Codex; plus a comparison with GPT-6-Luna as the hybrid executor |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Tester feedback (`loomy feedback`) processed |

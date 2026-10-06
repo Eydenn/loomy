@@ -87,7 +87,8 @@ When `.loomy/brief.md` says `repo: existing`, you are adopting a project that al
 
 If `.loomy/brief.md` exists, read it first. It holds the user's answers to the terminal questionnaire (`loomy-init-wizard.sh`):
 - project goal and type;
-- stage, sensitive data and estimated risk;
+- key characteristics (`traits`: accounts, payments, sensitive data, large volumes, external feeds, public API…), stage and estimated risk;
+- the checks each characteristic imposes, and recommendations to offer the user (never applied without their approval);
 - AI mode and main tool;
 - model budget profile;
 - documentation language and what happens to this file;
@@ -162,6 +163,8 @@ Before any change to the project, present a concise proposal containing:
 - Key dependencies only
 - Persistence and integrations
 - Deployment or distribution strategy, if relevant
+
+For a **Data & analysis** project (`type: data`), structure the proposal as a pipeline: ingestion → raw storage (never modified) → versioned transformations → analytical data sets → deliverables (reports, dashboards, tool, API, models, as in the brief). Size the stack on the volume (`detail2`): Python with Polars for megabytes, DuckDB or Polars on Parquet for gigabytes, a warehouse or a distributed engine for terabytes. Plan data-quality tests and the traceability of every published figure. Agents never receive the full data set: schemas, statistics and anonymised samples only; with sensitive data, whatever must see real values runs on a local model or not through a model at all.
 
 ### Execution profile
 Classify internally and state:

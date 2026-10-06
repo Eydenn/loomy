@@ -87,7 +87,8 @@ Quand `.loomy/brief.md` indique `repo: existing`, tu adoptes un projet qui vit d
 
 Si `.loomy/brief.md` existe, lis-le en premier. Il contient les réponses de l'utilisateur au questionnaire du terminal (`loomy-init-wizard.sh`) :
 - objectif et type de projet ;
-- stade, données sensibles et risque estimé ;
+- caractéristiques clés (`traits` : comptes, paiements, données sensibles, gros volumes, flux externes, API publique…), stade et risque estimé ;
+- les vérifications imposées par chaque caractéristique, et des recommandations à proposer à l'utilisateur (jamais appliquées sans son accord) ;
 - mode IA et outil principal ;
 - profil de budget des modèles ;
 - langue de la documentation et sort de ce fichier ;
@@ -162,6 +163,8 @@ Avant toute modification du projet, présente une proposition concise contenant 
 - Dépendances clés uniquement
 - Persistance et intégrations
 - Stratégie de déploiement ou de distribution, si pertinent
+
+Pour un projet **Données et analyse** (`type: data`), structure la proposition en pipeline : ingestion → stockage brut (jamais modifié) → transformations versionnées → jeux de données analytiques → livrables (rapports, tableaux de bord, outil, API, modèles, comme dans le brief). Dimensionne la stack selon le volume (`detail2`) : Python avec Polars pour des mégaoctets, DuckDB ou Polars sur Parquet pour des gigaoctets, un entrepôt ou un moteur distribué pour des téraoctets. Prévois des tests de qualité des données et la traçabilité de chaque chiffre publié. Les agents ne reçoivent jamais le jeu de données complet : schémas, statistiques et échantillons anonymisés seulement ; avec des données sensibles, ce qui doit voir des valeurs réelles passe par un modèle local, ou par aucun modèle.
 
 ### Profil d'exécution
 Classe en interne et indique :

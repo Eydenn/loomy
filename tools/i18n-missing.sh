@@ -10,7 +10,7 @@ for raw in open("scripts/lib/i18n/fr.tsv", encoding="utf-8"):
     raw = raw.rstrip("\n")
     if raw and not raw.startswith("#") and "\t" in raw: known.add(raw.split("\t", 1)[0])
 files = glob.glob("scripts/*.sh") + glob.glob("scripts/lib/*.sh") + ["bin/loomy"]
-pat = re.compile(r'\bt "((?:[^"\\$]|\\.)*)"')
+pat = re.compile(r'\b(?:t|tv [A-Za-z_][A-Za-z0-9_]*) "((?:[^"\\$]|\\.)*)"')
 missing = []
 for f in sorted(files):
     text = "\n".join(l for l in open(f, encoding="utf-8").read().split("\n") if not l.lstrip().startswith("#"))
@@ -23,7 +23,7 @@ for f in sorted(files):
     lines = open(f, encoding="utf-8").read().split("\n")
     k = 0
     while k < len(lines):
-        if re.match(r'\s*choose_coded\s', lines[k]):
+        if re.match(r"\s*(choose_coded|multi_coded)\s", lines[k]):
             stmt = lines[k]
             while stmt.rstrip().endswith("\\") and k + 1 < len(lines):
                 k += 1; stmt = stmt.rstrip()[:-1] + " " + lines[k]

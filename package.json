@@ -3,7 +3,7 @@
   "version": "0.12.3",
   "description": "Your AI development team, orchestrated: Claude Code and Codex on your projects, each request routed to the model that does it reliably for the least cost, cross reviews, official skills, shared memory and live tracking in the terminal.",
   "private": true,
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Eydenn",
   "repository": {
     "type": "git",
@@ -37,7 +37,9 @@
     "README.md",
     "README.fr.md",
     "CHANGELOG.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "os": [
     "darwin",

@@ -755,7 +755,8 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |
 | | Configurable colour theme, for terminals that don't render bold |
-| | Public repository and token-free Homebrew, when decided |
+| | **Public repository and `brew install` without a token**, when decided: `Eydenn/loomy` and `Eydenn/homebrew-tap` made public, the formula pointed at the public release archive (no private download strategy, no `gh` needed), `loomy update` and `loomy doctor` simplified; then `brew tap eydenn/tap` once and `brew install loomy`. The MIT licence is ready ([LICENSE](LICENSE)) |
+| 💡 | **`brew install loomy` from homebrew-core**, once the project is public and adopted (Homebrew asks for about 75 stars or 30 forks and watchers): Loomy's own self-update then left to `brew upgrade` for brew installs |
 | 💡 | **3D game project type (Three.js)**, validated by a test ([notes](docs/THREEJS_GAME_TEST.md)) |
 | 💡 | **Native Windows (Git Bash, without WSL)**, after the WSL feedback: hooks run by Git Bash (`CLAUDE_CODE_GIT_BASH_PATH`), process checks and paths of native Windows, a Windows Terminal split instead of tmux, a Windows CI runner. One to two weeks |
 | 💡 | [Jev](https://github.com/WXK-AI/jev-opus): Opus effort readjusted at each step of Claude delegations |

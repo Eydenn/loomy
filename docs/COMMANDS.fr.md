@@ -267,7 +267,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Vérifie les prérequis (`--fix` corrige, y compris GitHub : installation de `gh`, connexion, accès de git au dépôt Loomy ; `--live` teste chaque modèle)
+Vérifie les prérequis (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle)
 
 ### `loomy config`
 

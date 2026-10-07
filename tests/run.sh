@@ -1490,7 +1490,7 @@ hasnt "repair: nothing to say the second time" "Loomy has just completed"
 [[ "$(grep -c 'loomy:orchestration:start' "$SI/CLAUDE.md")" == 1 ]] && ok "repair: a single managed block" || ko "repair: block duplicated"
 LOOMY_NO_REPAIR=1 bash "$REPO/scripts/loomy-context.sh" --root "$SI" >/dev/null 2>&1; ok "repair: LOOMY_NO_REPAIR accepted"
 
-# Scripts renamed loomy-* (0.10): a project with the old relays and hooks is migrated, the old names keep working.
+# Scripts renamed loomy-* (0.10): a project with the old relays and hooks is migrated, the old relays removed.
 SR="$WORK/renommage"; "$LOOMY" init "$SR" --yes --no-clipboard >/dev/null 2>&1
 [[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" ]] && ok "new project: loomy-* relays only" || ko "new project: relays $(ls "$SR/.loomy/scripts" | head -3 | tr '\n' ' ')"
 for f in "$SR"/.loomy/scripts/loomy-*.sh; do n="$(basename "$f")"; o="ai-${n#loomy-}"
@@ -1498,21 +1498,23 @@ for f in "$SR"/.loomy/scripts/loomy-*.sh; do n="$(basename "$f")"; o="ai-${n#loo
   sed "s/$n/$o/g" "$f" >"$SR/.loomy/scripts/$o"; chmod +x "$SR/.loomy/scripts/$o"; rm -f "$f"; done
 sed -i.bak 's/loomy-context\.sh/ai-context.sh/g; s/loomy-statusline\.sh/ai-statusline.sh/g' "$SR/.claude/settings.json"
 printf '# SR\n\nRoute with .loomy/scripts/ai-route.sh; Codex through .loomy/scripts/delegate-to-codex.sh or delegate-to-<tool>.sh. Keep my-ai-route.sh.\n' >"$SR/CLAUDE.md"
-bash "$SR/.loomy/scripts/ai-context.sh" --root "$SR" >"$OUT" 2>&1
+echo "local work" >"$SR/.loomy/scripts/ai-mine.sh"
+printf '#!/usr/bin/env bash\n# Loomy relay: runs ai-log.sh from the installed Loomy (see _loomy.sh).\necho customised\n' >"$SR/.loomy/scripts/ai-log.sh"
+bash "$REPO/scripts/loomy-context.sh" --root "$SR" >"$OUT" 2>&1
 has "rename: said in the start context" "Loomy has just completed this project's setup files: .*scripts → loomy-\*"
-[[ -x "$SR/.loomy/scripts/loomy-route.sh" && -x "$SR/.loomy/scripts/ai-route.sh" ]] && ok "rename: new relays added, old ones kept" || ko "rename: relays"
+[[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" && ! -e "$SR/.loomy/scripts/delegate-to-codex.sh" ]] && ok "rename: new relays added, old relays removed" || ko "rename: relays $(ls "$SR/.loomy/scripts" | tr '\n' ' ')"
+[[ -f "$SR/.loomy/scripts/ai-mine.sh" ]] && ok "rename: a script of the project with an old-looking name is kept" || ko "rename: project script removed"
+[[ -f "$SR/.loomy/scripts/ai-log.sh" ]] && ok "rename: a customised relay is kept" || ko "rename: customised relay removed"
 grep -q 'loomy-context.sh." --hook start' "$SR/.claude/settings.json" && ! grep -q 'ai-context.sh' "$SR/.claude/settings.json" && ok "rename: hooks rewritten" || ko "rename: hooks: $(grep -o 'scripts/[a-z-]*' "$SR/.claude/settings.json" | sort -u | tr '\n' ' ')"
 printf 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.\n' >>"$SR/CLAUDE.md"; rm -f "$SR/.loomy/scripts/loomy-route.sh"
-bash "$SR/.loomy/scripts/ai-context.sh" --root "$SR" >/dev/null 2>&1
+bash "$REPO/scripts/loomy-context.sh" --root "$SR" >/dev/null 2>&1
 grep -q 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.' "$SR/CLAUDE.md" && ok "rename: other paths and suffixes untouched" || ko "rename: $(grep 'Other:' "$SR/CLAUDE.md")"
 grep -q 'Route with .loomy/scripts/loomy-route.sh; Codex through .loomy/scripts/loomy-delegate-codex.sh or loomy-delegate-<tool>.sh. Keep my-ai-route.sh.' "$SR/CLAUDE.md" && ok "rename: references updated, other names kept" || ko "rename: $(grep 'Route with' "$SR/CLAUDE.md")"
-bash "$SR/.loomy/scripts/ai-route.sh" --root "$SR" >"$OUT" 2>&1; has "rename: an old relay still works (compatibility script)" "lead"
 cp "$SR/CLAUDE.md" "$WORK/sr-avant.md"; bash "$SR/.loomy/scripts/loomy-context.sh" --root "$SR" >"$OUT" 2>&1
 cmp -s "$SR/CLAUDE.md" "$WORK/sr-avant.md" && ok "rename: idempotent" || ko "rename: CLAUDE.md changed again"
 hasnt "rename: nothing to say the second time" "scripts → loomy-"
-for f in "$REPO"/scripts/ai-*.sh "$REPO"/scripts/delegate-to-*.sh; do
-  t="$(sed -n 's/.*\/\(loomy-[a-z-]*\.sh\)" "\$@"$/\1/p' "$f")"; [[ -n "$t" && -f "$REPO/scripts/$t" ]] || { ko "compatibility script without target: $(basename "$f")"; continue; }
-done; ok "compatibility scripts point to existing loomy-* scripts"
+others=""; for f in "$REPO"/scripts/*.sh; do case "${f##*/}" in loomy-*) ;; *) others="$others ${f##*/}" ;; esac; done
+[[ -z "$others" ]] && ok "every script is named loomy-*" || ko "scripts not named loomy-*:$others"
 
 # Shared memory (.loomy/memory/): results of the delegations, work state, given back at the start of every session.
 SM="$WORK/memoire"; "$LOOMY" init "$SM" --yes --no-clipboard >/dev/null 2>&1

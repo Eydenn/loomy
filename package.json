@@ -1,15 +1,18 @@
 {
   "name": "loomy",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "description": "Your AI development team, orchestrated: Claude Code and Codex on your projects, each request routed to the model that does it reliably for the least cost, cross reviews, official skills, shared memory and live tracking in the terminal.",
   "private": true,
   "license": "Apache-2.0",
   "author": "Eydenn",
+  "homepage": "https://github.com/Eydenn/loomy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Eydenn/loomy.git"
   },
-  "homepage": "https://github.com/Eydenn/loomy#readme",
+  "bugs": {
+    "url": "https://github.com/Eydenn/loomy/issues"
+  },
   "keywords": [
     "claude-code",
     "codex",

@@ -47,7 +47,7 @@ LP_RENAME_PERL='my %m = (__MAP__); my $re = join("|", map { quotemeta } sort { l
 # loomy_project_rename_scripts <root>: relays under the loomy-* names, and the old names replaced in the hooks and the
 # agents' files. The old relays stay (they keep working through the installed Loomy's compatibility scripts until 1.0).
 loomy_project_rename_scripts() {
-  local r="$1" f n base did=0
+  local r="$1" f n m base did=0
   [[ -f "$r/.loomy/scripts/_loomy.sh" ]] || return 0
   base="${LOOMY_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
   for f in "$base"/scripts/loomy-*.sh; do
@@ -64,6 +64,19 @@ loomy_project_rename_scripts() {
     perl -pi -e "${LP_RENAME_PERL/__MAP__/$LP_RENAME_MAP}" "$f" 2>/dev/null || true
     cmp -s "$f" "$f.loomy-tmp" || did=1
     rm -f "$f.loomy-tmp"
+  done
+  # The relays under the old names (Loomy relay files only, never a script of the project) are removed once their
+  # loomy-* replacement is there.
+  for f in "$r"/.loomy/scripts/ai-*.sh "$r"/.loomy/scripts/delegate-to-*.sh "$r"/.loomy/scripts/detect-ai-tools.sh \
+           "$r"/.loomy/scripts/init-wizard.sh "$r"/.loomy/scripts/install-into-project.sh "$r"/.loomy/scripts/install-security-audit.sh \
+           "$r"/.loomy/scripts/create-hybrid-worktrees.sh; do
+    [[ -f "$f" && ! -L "$f" ]] || continue
+    n="$(basename "$f")"
+    # Exactly the relay Loomy generated for that name (a customised file stays), and its loomy-* replacement in place.
+    [[ "$(cat "$f")" == "$(printf '#!/usr/bin/env bash\n# Loomy relay: runs %s from the installed Loomy (see _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"' "$n" "$n")" ]] || continue
+    m="$(printf '%s' "$n" | perl -pe "${LP_RENAME_PERL/__MAP__/$LP_RENAME_MAP}" 2>/dev/null)"
+    [[ -n "$m" && "$m" != "$n" && -x "$r/.loomy/scripts/$m" ]] || continue
+    rm -f "$f" && did=1
   done
   (( did )) && LP_DONE+=("scripts → loomy-*")
   return 0

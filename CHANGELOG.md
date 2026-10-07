@@ -2,6 +2,20 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.13.0 — 2026-10-07
+
+### Changed
+- **Loomy is public**, under the Apache 2.0 licence (`LICENSE`, `NOTICE`). Installing and updating no longer need a GitHub account, `gh` or a token:
+  - Homebrew: `brew install eydenn/tap/loomy` (or `brew tap eydenn/tap` once, then `brew install loomy`); the formula downloads the public release archive;
+  - npm: `npm install -g github:Eydenn/loomy`; bun: `bun add -g github:Eydenn/loomy`; script: `git clone https://github.com/Eydenn/loomy.git`;
+  - `loomy update` installs the latest published release for npm and bun (never the tip of `main`; when the release can't be found, offline or rate-limited, it stops with a message); the daily version check works without `gh`.
+- `loomy doctor` no longer checks git access to the Loomy repository; `gh` stays optional (creating the project's GitHub repository, sending feedback).
+- Security reports go through GitHub's private vulnerability reporting (`SECURITY.md`); supported version: the latest.
+- **The compatibility scripts with the names from before 0.10 are removed**: every script is named `loomy-*`. The migration of a project now also removes its old relays (only files that are exactly a relay Loomy generated, once their `loomy-*` replacement is in place). A project not opened since 0.10: run any `loomy` command in it once (`loomy start`) to migrate it.
+
+### Fixed
+- `loomy review` called the review bridge under its old name (`delegate-to-<tool>.sh`): it only worked through the compatibility scripts.
+
 ## 0.12.3 — 2026-10-06
 
 ### Changed

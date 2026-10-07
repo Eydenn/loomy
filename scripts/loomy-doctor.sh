@@ -178,10 +178,10 @@ fi
 
 # ---------------------------------------------------------------- confort
 ui_section "$(t "COMFORT")" "$(t "optional")"
-# GitHub: gh installed, logged in, and git authenticating with it (private repositories, including the Loomy tap).
-# With --fix, the three steps run one after the other.
+# GitHub: gh installed and logged in (to create the project repositories, send feedback). Optional.
+# With --fix, both steps run one after the other.
 if ! command -v gh >/dev/null 2>&1; then
-  ui_warn "$(t "gh missing")" "$(t "useful to create GitHub repositories and install Loomy from the private tap")"
+  ui_warn "$(t "gh missing")" "$(t "useful to create the project's GitHub repository and send feedback")"
   if command -v brew >/dev/null 2>&1 && offer_fix "$(t "Install gh (brew install gh)?")" ui_external brew install gh; then :; else missing_ideal "gh"; fi
 fi
 if command -v gh >/dev/null 2>&1; then
@@ -190,25 +190,7 @@ if command -v gh >/dev/null 2>&1; then
     ui_warn "gh" "$(t "not logged in to GitHub")"
     offer_fix "$(t "Log in to GitHub now (gh auth login)?")" ui_external gh auth login && gh auth status >/dev/null 2>&1 && gh_ok=1
   fi
-  if (( gh_ok )); then
-    ui_ok "gh" "$(t "logged in to GitHub")"
-    # Real git access to the Loomy repository (private during the pre-release): that's what the Homebrew tap needs.
-    # Not in the loomy init check (--compact): unrelated to the project being created.
-  fi
-  if (( gh_ok )) && (( ! COMPACT )); then
-    loomy_repo="https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}.git"
-    ui_wait "$(t "Git access to the Loomy repository")"; git_ok=0
-    GIT_TERMINAL_PROMPT=0 git ls-remote "$loomy_repo" HEAD >/dev/null 2>&1 && git_ok=1; ui_wait_end
-    if (( ! git_ok )); then
-      ui_warn "$(t "git → Loomy repository")" "$(t "access denied: git doesn't authenticate with GitHub (or the invitation isn't accepted yet)")"
-      if offer_fix "$(t "Set git up to use your gh account (gh auth setup-git)?")" gh auth setup-git \
-         && GIT_TERMINAL_PROMPT=0 git ls-remote "$loomy_repo" HEAD >/dev/null 2>&1; then git_ok=1
-      else ui_info "$(t "repository invitation: %s" "https://github.com/${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}/invitations")"; missing_ideal "$(t "git access to the Loomy repository")"; fi
-    fi
-    (( git_ok )) && ui_ok "$(t "git → Loomy repository")" "$(t "access checked (Homebrew updates possible)")"
-  elif (( ! gh_ok )); then
-    missing_ideal "$(t "gh logged in")"
-  fi
+  if (( gh_ok )); then ui_ok "gh" "$(t "logged in to GitHub")"; else missing_ideal "$(t "gh logged in")"; fi
 fi
 if command -v pbcopy >/dev/null 2>&1 || command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1; then
   ui_ok "$(t "clipboard")" "$(t "automatic copy of the start prompt")"

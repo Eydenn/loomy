@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.12.3-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.13.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -43,7 +43,7 @@ Loomy frames each project, then a lead agent on the best model routes every requ
 **1. Install Loomy** (once; npm, bun or script: see "Installation")
 
 ```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+brew install eydenn/tap/loomy
 ```
 
 **2. Check your machine** (once)
@@ -119,12 +119,12 @@ Then run `claude`, then `codex`, once each to log in (Claude Pro, Max, Team plan
 
 ## 📦 Installation
 
-Every method installs the same `loomy` command. The repository is private, so they all use your GitHub credentials (`gh auth login`).
+Every method installs the same `loomy` command; none needs a GitHub account.
 
 🍺 **Homebrew** (recommended on macOS)
 
 ```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+brew install eydenn/tap/loomy
 ```
 
 📦 **npm**
@@ -136,13 +136,13 @@ npm install -g github:Eydenn/loomy
 🥟 **bun**
 
 ```bash
-gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz
+bun add -g github:Eydenn/loomy
 ```
 
 🐚 **Shell script**
 
 ```bash
-gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh
+git clone https://github.com/Eydenn/loomy.git ~/Tools/loomy && ~/Tools/loomy/install.sh
 ```
 
 **Update**, whatever the method:
@@ -158,7 +158,7 @@ loomy version --all
 ```
 
 > [!TIP]
-> `loomy update` detects how Loomy was installed and runs the right command. Homebrew downloads inside a sandbox that cannot reach the macOS keychain, so the GitHub token is passed through `HOMEBREW_GITHUB_API_TOKEN` for the download only; `loomy update` does this for you. bun cannot read a private GitHub repository, so it installs the release archive, which `gh` downloads with your credentials. For npm, the update goes into the same folder as the original install, even if you switched Node versions (nvm) since.
+> `loomy update` detects how Loomy was installed and runs the right command: `brew upgrade`, or the latest release for npm and bun. For npm, the update goes into the same folder as the original install, even if you switched Node versions (nvm) since. With Homebrew, `brew tap eydenn/tap` once lets you type `brew install loomy` and `brew upgrade loomy`.
 
 ---
 
@@ -755,7 +755,6 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |
 | | Configurable colour theme, for terminals that don't render bold |
-| | **Public repository and `brew install` without a token**, when decided: `Eydenn/loomy` and `Eydenn/homebrew-tap` made public, the formula pointed at the public release archive (no private download strategy, no `gh` needed), `loomy update` and `loomy doctor` simplified; then `brew tap eydenn/tap` once and `brew install loomy`. The Apache 2.0 licence is ready ([LICENSE](LICENSE), [NOTICE](NOTICE)) |
 | 💡 | **`brew install loomy` from homebrew-core**, once the project is public and adopted (Homebrew asks for about 75 stars or 30 forks and watchers): Loomy's own self-update then left to `brew upgrade` for brew installs |
 | 💡 | **3D game project type (Three.js)**, validated by a test ([notes](docs/THREEJS_GAME_TEST.md)) |
 | 💡 | **Native Windows (Git Bash, without WSL)**, after the WSL feedback: hooks run by Git Bash (`CLAUDE_CODE_GIT_BASH_PATH`), process checks and paths of native Windows, a Windows Terminal split instead of tmux, a Windows CI runner. One to two weeks |

@@ -2155,5 +2155,7 @@ _t_fr() {
     'Loomy markers incomplete in %s') _T='Marqueurs Loomy incomplets dans %s' ;;
     'remove the hook by hand') _T='retire le hook à la main' ;;
     'The app link could not be built') _T='Le lien vers l'\''app n'\''a pas pu être construit' ;;
+    'useful to create the project'\''s GitHub repository and send feedback') _T='utile pour créer le dépôt GitHub du projet et envoyer des retours' ;;
+    'Latest release not found (offline or GitHub API limit): try again later.') _T='Dernière release introuvable (hors ligne ou limite de l'\''API GitHub) : réessaie plus tard.' ;;
   esac
 }

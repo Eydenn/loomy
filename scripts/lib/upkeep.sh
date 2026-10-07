@@ -7,14 +7,22 @@
 # To be sourced after ui.sh, config.sh, models.sh and repair.sh.
 
 # _up_remote_loomy: latest published Loomy version (cache ~/.config/loomy/loomy.remote, refreshed in the background daily).
+# loomy_latest_tag: tag of the latest published release (public GitHub API, or gh), empty when unreachable.
+loomy_latest_tag() {
+  local repo="${LOOMY_REPO:-Eydenn/loomy}" v=""
+  v="$(curl -fsSL -m 8 "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null | sed -n 's/^ *"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+  [[ -z "$v" ]] && command -v gh >/dev/null 2>&1 && v="$(gh release view -R "$repo" --json tagName -q .tagName 2>/dev/null || true)"
+  printf '%s' "$v"
+}
+
 _up_remote_loomy() {
   local cache today checked remote repo="${LOOMY_REPO:-Eydenn/loomy}"
   cache="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/loomy.remote"; today="$(date +%Y-%m-%d)"
   checked="$(sed -n 's/^checked=//p' "$cache" 2>/dev/null | head -1)"; remote="$(sed -n 's/^remote=//p' "$cache" 2>/dev/null | head -1)"
-  if [[ "$checked" != "$today" ]] && command -v gh >/dev/null 2>&1; then
+  if [[ "$checked" != "$today" ]]; then
     mkdir -p "$(dirname "$cache")" 2>/dev/null || true
     (
-      v="$(gh release view -R "$repo" --json tagName -q .tagName 2>/dev/null | sed 's/^v//')"
+      v="$(LOOMY_REPO="$repo" loomy_latest_tag | sed 's/^v//')"
       [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || v="$remote"
       printf 'checked=%s\nremote=%s\n' "$today" "$v" >"$cache"
     ) >/dev/null 2>&1 &

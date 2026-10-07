@@ -2150,3 +2150,5 @@ issue #%s skipped	issue #%s ignorée
 Loomy markers incomplete in %s	Marqueurs Loomy incomplets dans %s
 remove the hook by hand	retire le hook à la main
 The app link could not be built	Le lien vers l'app n'a pas pu être construit
+useful to create the project's GitHub repository and send feedback	utile pour créer le dépôt GitHub du projet et envoyer des retours
+Latest release not found (offline or GitHub API limit): try again later.	Dernière release introuvable (hors ligne ou limite de l'API GitHub) : réessaie plus tard.

@@ -350,7 +350,7 @@ case "$cmd" in
         grep -q '^date=' "$sk" && mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" && mv "$sk" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/skills.conf"
       fi
       rm -f "$sk"
-      # Model and price catalog, published in the repository: read with gh (private repository), otherwise via a public URL.
+      # Model and price catalog, published in the repository (public URL, or gh when available).
       tmp="$(mktemp)"
       if ! { command -v gh >/dev/null 2>&1 && gh api -H "Accept: application/vnd.github.raw" "repos/$LOOMY_REPO/contents/catalog/models.conf" >"$tmp" 2>/dev/null; } \
          && ! curl -fsSL "https://raw.githubusercontent.com/$LOOMY_REPO/main/catalog/models.conf" -o "$tmp" 2>/dev/null; then
@@ -371,33 +371,30 @@ case "$cmd" in
       exit 0
     fi
     method="$(install_method)"
+    # shellcheck source=../scripts/lib/upkeep.sh
+    declare -F loomy_latest_tag >/dev/null || source "$S/lib/upkeep.sh"
     t "Updating Loomy (install: %s)…" "$method" >&2; echo >&2
     rc=0
     case "$method" in
-      brew)
-        # Homebrew downloads in a sandbox without access to the macOS keychain: the formula gets gh's token.
-        if [[ -z "${HOMEBREW_GITHUB_API_TOKEN:-}" ]] && command -v gh >/dev/null 2>&1; then
-          HOMEBREW_GITHUB_API_TOKEN="$(gh auth token 2>/dev/null || true)"; export HOMEBREW_GITHUB_API_TOKEN
-        fi
-        { brew update >/dev/null && brew upgrade eydenn/tap/loomy; } || rc=$? ;;
-      bun)
-        # bun can't install from a private GitHub repository: we go through the latest release archive.
-        tmp="$(mktemp -d "${TMPDIR:-/tmp}/loomy-update.XXXXXX")"
-        { gh release download -R "$LOOMY_REPO" -p 'loomy-*.tgz' -D "$tmp" && bun add -g "$tmp"/loomy-*.tgz; } || rc=$?
-        rm -rf "$tmp" ;;
-      # Same prefix as the existing install, whatever Node is active (nvm).
+      brew) { brew update >/dev/null && brew upgrade eydenn/tap/loomy; } || rc=$? ;;
       # The latest release, not the tip of main (which may hold unreleased work).
-      npm) tag="$(gh release view -R "$LOOMY_REPO" --json tagName -q .tagName 2>/dev/null || true)"
-           npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO${tag:+#$tag}" || rc=$? ;;
+      # Always a published release: without its tag (offline, GitHub API limit), nothing is installed.
+      bun) tag="$(loomy_latest_tag)"
+           if [[ -n "$tag" ]]; then bun add -g "github:$LOOMY_REPO#$tag" || rc=$?
+           else t "Latest release not found (offline or GitHub API limit): try again later." >&2; echo >&2; rc=1; fi ;;
+      # Same prefix as the existing install, whatever Node is active (nvm).
+      npm) tag="$(loomy_latest_tag)"
+           if [[ -n "$tag" ]]; then npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO#$tag" || rc=$?
+           else t "Latest release not found (offline or GitHub API limit): try again later." >&2; echo >&2; rc=1; fi ;;
       git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) t "Unknown install method: reinstall Loomy (see README)." >&2; echo >&2; exit 1 ;;
     esac
     if (( rc != 0 )); then
       ui_err "$(t "The update failed (code %s)" "$rc")" "$(t "detected install: %s" "$method · $LOOMY_HOME")"
       case "$method" in
-        brew) ui_info "$(t "by hand:") HOMEBREW_GITHUB_API_TOKEN=\"\$(gh auth token)\" brew upgrade eydenn/tap/loomy" ;;
+        brew) ui_info "$(t "by hand:") brew upgrade eydenn/tap/loomy" ;;
         npm)  ui_info "$(t "by hand:") npm install -g --prefix ${LOOMY_HOME%/lib/node_modules/*} github:$LOOMY_REPO" ;;
-        bun)  ui_info "$(t "by hand:") gh release download -R $LOOMY_REPO -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz" ;;
+        bun)  ui_info "$(t "by hand:") bun add -g github:$LOOMY_REPO" ;;
         git)  ui_info "$(t "by hand:") git -C $LOOMY_HOME pull --ff-only" ;;
       esac
       exit "$rc"

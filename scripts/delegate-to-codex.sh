@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Compatibility: the name of loomy-delegate-codex.sh before Loomy 0.10, kept for projects whose relays still use it. Removed in 1.0.
-exec bash "$(dirname "${BASH_SOURCE[0]}")/loomy-delegate-codex.sh" "$@"

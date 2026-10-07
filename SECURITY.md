@@ -13,4 +13,8 @@
 
 ## Reporting a vulnerability
 
-Please don't open a public issue. Contact the maintainer privately (GitHub: [@Eydenn](https://github.com/Eydenn)) with the steps to reproduce; you'll get an answer within a few days.
+Please don't open a public issue. Report it privately through GitHub: [Security › Report a vulnerability](https://github.com/Eydenn/loomy/security/advisories/new), with the steps to reproduce and the Loomy version (`loomy version`). You'll get an answer within a few days; a fix is released as soon as possible and credited to you if you wish.
+
+## Supported versions
+
+Loomy is in pre-release (0.x): only the latest version gets fixes. Update with `loomy update`.

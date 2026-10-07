@@ -85,7 +85,7 @@ ui_end "$(t "review in progress, followed in loomy watch…")"
 
 mkdir -p "$ROOT/.loomy/reviews"
 OUTF="$ROOT/.loomy/reviews/$(date +%Y-%m-%d-%H%M)-$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-').md"
-if bash "$SCRIPT_DIR/delegate-to-$TOOL.sh" reviewer "$TASK" >"$OUTF.tmp"; then
+if bash "$SCRIPT_DIR/loomy-delegate-$TOOL.sh" reviewer "$TASK" >"$OUTF.tmp"; then
   { echo "# $(t "Cross review") · $LABEL"; echo; echo "$tool_label · $R_MODEL · $(date '+%Y-%m-%d %H:%M')"; echo; cat "$OUTF.tmp"; } >"$OUTF"
   rm -f "$OUTF.tmp"
   cat "$OUTF"

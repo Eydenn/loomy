@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.12.3-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.13.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -43,7 +43,7 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 **1. Installer Loomy** (une fois ; npm, bun ou script : voir « Installation »)
 
 ```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+brew install eydenn/tap/loomy
 ```
 
 **2. Vérifier la machine** (une fois)
@@ -119,12 +119,12 @@ Lance ensuite `claude`, puis `codex`, une fois chacun pour te connecter (forfait
 
 ## 📦 Installation
 
-Toutes les méthodes installent la même commande `loomy`. Le dépôt étant privé, elles utilisent tes identifiants GitHub (`gh auth login`).
+Toutes les méthodes installent la même commande `loomy` ; aucune n'a besoin d'un compte GitHub.
 
 🍺 **Homebrew** (recommandé sur macOS)
 
 ```bash
-HOMEBREW_GITHUB_API_TOKEN="$(gh auth token)" brew install eydenn/tap/loomy
+brew install eydenn/tap/loomy
 ```
 
 📦 **npm**
@@ -136,13 +136,13 @@ npm install -g github:Eydenn/loomy
 🥟 **bun**
 
 ```bash
-gh release download -R Eydenn/loomy -p 'loomy-*.tgz' -D /tmp/loomy && bun add -g /tmp/loomy/loomy-*.tgz
+bun add -g github:Eydenn/loomy
 ```
 
 🐚 **Script shell**
 
 ```bash
-gh repo clone Eydenn/loomy ~/Tools/loomy && ~/Tools/loomy/install.sh
+git clone https://github.com/Eydenn/loomy.git ~/Tools/loomy && ~/Tools/loomy/install.sh
 ```
 
 **Mise à jour**, quelle que soit la méthode :
@@ -158,7 +158,7 @@ loomy version --all
 ```
 
 > [!TIP]
-> `loomy update` détecte la méthode d'installation et utilise la bonne commande. Homebrew télécharge dans un bac à sable qui n'a pas accès au trousseau macOS : le jeton GitHub lui est transmis par `HOMEBREW_GITHUB_API_TOKEN`, le temps du téléchargement seulement, et `loomy update` s'en charge. bun ne sait pas lire un dépôt GitHub privé : il installe l'archive de la release, que `gh` télécharge avec tes identifiants. Pour npm, la mise à jour se fait dans le même dossier que l'installation d'origine, même si tu as changé de version de Node (nvm) entre-temps.
+> `loomy update` détecte la méthode d'installation et utilise la bonne commande : `brew upgrade`, ou la dernière release pour npm et bun. Pour npm, la mise à jour se fait dans le même dossier que l'installation d'origine, même si tu as changé de version de Node (nvm) entre-temps. Avec Homebrew, `brew tap eydenn/tap` une fois permet ensuite de taper `brew install loomy` et `brew upgrade loomy`.
 
 ---
 
@@ -755,7 +755,6 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |
 | | Thème de couleurs réglable, pour les terminaux qui n'affichent pas le gras |
-| | **Dépôt public et `brew install` sans jeton**, sur décision : `Eydenn/loomy` et `Eydenn/homebrew-tap` rendus publics, la formule pointée vers l'archive publique de la release (plus de téléchargement privé, plus besoin de `gh`), `loomy update` et `loomy doctor` simplifiés ; ensuite `brew tap eydenn/tap` une fois puis `brew install loomy`. La licence Apache 2.0 est prête ([LICENSE](LICENSE), [NOTICE](NOTICE)) |
 | 💡 | **`brew install loomy` depuis homebrew-core**, une fois le projet public et adopté (Homebrew demande environ 75 étoiles ou 30 forks et watchers) : la mise à jour automatique de Loomy laissée alors à `brew upgrade` pour les installations brew |
 | 💡 | **Type de projet « jeu 3D (Three.js) »**, validé par un test ([notes](docs/THREEJS_GAME_TEST.md)) |
 | 💡 | **Windows natif (Git Bash, sans WSL)**, après les retours sur WSL : hooks lancés par Git Bash (`CLAUDE_CODE_GIT_BASH_PATH`), vérifications de processus et chemins de Windows natif, partage de Windows Terminal à la place de tmux, une CI sous Windows. Une à deux semaines |

@@ -105,6 +105,49 @@ if has Makefile; then
   targets="$(grep -oE '^[a-zA-Z][a-zA-Z0-9_-]*:' Makefile | tr -d ':' | grep -xE 'test|lint|build|check|fmt|format|typecheck|ci|dev|run' | sort -u | tr '\n' ' ')"
   for tg in $targets; do CMDS+=("\`make $tg\`"); done
 fi
+# GitHub Actions single-line run commands are useful clues when no project command is declared elsewhere.
+CI_CMD_COUNT=0; RUN_LINE_RE='^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*[^|>]'
+for workflow in .github/workflows/*.yml .github/workflows/*.yaml; do
+  [[ -f "$workflow" ]] || continue
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if (( CI_CMD_COUNT >= 5 )); then break; fi
+    [[ "$line" =~ $RUN_LINE_RE ]] || continue
+    # Untrusted text written into a Markdown report: secrets references and backticks are left out.
+    case "$line" in *'${{ secrets.'*|*'`'*) continue ;; esac
+    # Package installs mention tools (shellcheck, jest…) without being project commands.
+    case "$line" in *apt-get\ *|*apt\ install*|*brew\ install*|*pip\ install*|*pip3\ install*|*npm\ ci*|*npm\ install*|*yarn\ install*|*bun\ install*|*apk\ add*|*dnf\ install*|*yum\ install*) continue ;; esac
+    command="$(printf '%s\n' "$line" | sed -E "s/^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//")"
+    case "$command" in
+      \"*\") command="${command#\"}"; command="${command%\"}" ;;
+      \'*\') command="${command#\'}"; command="${command%\'}" ;;
+    esac
+    command_lc="$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')"
+    [[ "$command_lc" =~ (test|lint|build|check|shellcheck|pytest|vitest|jest|cargo|go[[:space:]]+vet|make|npm[[:space:]]+run|pnpm|yarn|bun[[:space:]]+run) ]] || continue
+    [[ -n "$command" ]] || continue
+    ci_entry="\`$command\` (CI)"
+    duplicate=0
+    for existing in ${CMDS[@]+"${CMDS[@]}"}; do
+      [[ "$existing" == "$ci_entry" ]] && duplicate=1
+    done
+    if [[ "$duplicate" == 0 ]]; then
+      CMDS+=("$ci_entry")
+      CI_CMD_COUNT=$(( CI_CMD_COUNT + 1 ))
+    fi
+  done <"$workflow"
+done
+# Plain test scripts can be the only command documentation in shell projects.
+for script in tests/run.sh tests/run-tests.sh tests/test.sh tests/tests.sh \
+              test/run.sh test/run-tests.sh test/test.sh test/tests.sh \
+              scripts/run.sh scripts/run-tests.sh scripts/test.sh scripts/tests.sh test.sh; do
+  [[ -f "$script" ]] || continue
+  script_entry="\`bash $script\`"
+  ci_script_entry="\`bash $script\` (CI)"
+  duplicate=0
+  for existing in ${CMDS[@]+"${CMDS[@]}"}; do
+    [[ "$existing" == "$script_entry" || "$existing" == "$ci_script_entry" ]] && duplicate=1
+  done
+  [[ "$duplicate" == 1 ]] || CMDS+=("$script_entry")
+done
 LOCKS=""; for f in package-lock.json pnpm-lock.yaml yarn.lock bun.lockb bun.lock poetry.lock uv.lock Pipfile.lock Cargo.lock go.sum Gemfile.lock composer.lock; do has "$f" && LOCKS="${LOCKS:+$LOCKS, }$f"; done
 for f in .editorconfig tsconfig.json .eslintrc .eslintrc.js .eslintrc.json .eslintrc.cjs eslint.config.js eslint.config.mjs .prettierrc .prettierrc.json prettier.config.js biome.json \
          ruff.toml .ruff.toml setup.cfg .flake8 mypy.ini .pre-commit-config.yaml .commitlintrc .commitlintrc.json rustfmt.toml .golangci.yml .rubocop.yml \

@@ -691,7 +691,7 @@ Pour essayer un autre modèle sur une seule machine sans rien modifier : `AI_MOD
 tests/run.sh
 ```
 
-Avec `-v`, la sortie des tests en échec s'affiche.
+Avec `-v`, la sortie des tests en échec s'affiche ; avec `LOOMY_TEST_TIMES=1`, les sections les plus lentes sont listées à la fin.
 
 La suite exerce chaque commande en conditions réelles (bash, git, pseudo-terminal pour le questionnaire), sans réseau ni token : `claude` et `codex` y sont remplacés par des doublures (`tests/stubs/`). Elle couvre l'installation, le questionnaire interactif et non interactif, le routage des 4 environnements × 3 profils, les deux bridges, le journal dans tous ses états, le suivi en direct, le diagnostic avec ou sans CLI, les worktrees et `install.sh`. `shellcheck` et `expect` sont utilisés s'ils sont installés.
 
@@ -716,8 +716,8 @@ loomy/
 ├── skills/project-bootstrap/  # SKILL.md + références
 ├── agents/ROLE-CATALOG.md · external-skills/security-audit.md
 ├── fr/                        # copies françaises de START.md, des templates, des rôles et des skills
-├── catalog/models.conf · docs/DESIGN.md · docs/MODEL_CATALOG.md
-├── tools/                     # i18n-build.sh · i18n-missing.sh
+├── catalog/models.conf · docs/DESIGN.md · docs/MODEL_CATALOG.md · docs/adr/
+├── tools/                     # i18n-build.sh · i18n-missing.sh · release.sh · ansi2svg.py
 └── tests/run.sh · tests/stubs/  # suite de tests sans réseau
 ```
 

@@ -6,6 +6,13 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Changed
 - **The setup contract template moved to `bootstrap/START.md`** (`fr/bootstrap/START.md` in French). A project still gets its `START.md` at its root; only the copy shipped with Loomy moved. At the root of Loomy's own repository it read as an unfinished setup, which kept Loomy from being initialised on itself. Loomy now uses its own orchestrated method for its development; its AI files live in a separate private repository.
+- **`loomy assess` finds the commands of projects that only declare them in their CI or in a plain test script**: single-line `run:` steps of GitHub Actions workflows that test, lint, build or check (marked `(CI)`; package installs, multi-line blocks, secrets references and backticks left out) and `tests/run.sh`-style scripts.
+- **Architecture and decisions documented**: `docs/DESIGN.md` covers every module (skills, memory, feedback, shell hook, status line and tree, upkeep and repair, project repair, setup template); `docs/adr/` records the five decisions behind the main choices (Bash 3.2 without dependencies, compiled French dictionary, model catalog as data, official skills only, 0.x until joint validation).
+- **Releases from the repository**: `tools/release.sh <X.Y.Z> "<notes>"` checks versions, changelog and tag (local and on GitHub, both on HEAD) before publishing the GitHub release and the Homebrew formula.
+
+### Fixed
+- **The test suite no longer acts on the project it is run from**: settings inherited from a Loomy session (`LOOMY_*`, `AI_*`, `DELEGATE_*`) are cleared first; run from a Loomy project, it had installed test skills into that project.
+- **Test suite about 35 % faster** (7 min 16 → 4 min 37 on a Mac) with the same assertions: shellcheck runs file by file in parallel, identical test projects are copied instead of initialised again, independent initialisations run in parallel, and an `expect` step that waited for its timeout three times now fires once. `LOOMY_TEST_TIMES=1 tests/run.sh` lists the slowest sections.
 
 ## 0.14.0 — 2026-10-08
 

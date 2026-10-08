@@ -13,6 +13,10 @@ VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-tests.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
+# Settings inherited from the calling session (a Loomy project, a bridge, a routed role) must not leak in: the tests
+# would act on that project instead of their own folders.
+TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the cleanup below
+for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1
 export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -42,7 +46,10 @@ ko() {
   FAIL=$(( FAIL + 1 )); printf '  \033[31m✗ %s\033[0m\n' "$1"
   if (( VERBOSE )) && [[ -f "$OUT" ]]; then sed 's/^/      │ /' "$OUT" | tail -25; fi
 }
-section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+# LOOMY_TEST_TIMES=1: time spent per section, slowest first, at the end (to keep the suite fast).
+SEC_NAME=""; SEC_START=$SECONDS; SEC_TIMES=""
+_sec_close() { [[ -n "$SEC_NAME" ]] && SEC_TIMES="$SEC_TIMES$(( SECONDS - SEC_START ))	$SEC_NAME"$'\n'; return 0; }
+section() { _sec_close; SEC_NAME="$1"; SEC_START=$SECONDS; printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # run <description> <command…>: the command must succeed.
 run() { local d="$1"; shift; if "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (code $?)"; fi; }
@@ -67,8 +74,7 @@ done
 if [[ -z "$bad" ]]; then ok "bash -n / sh -n on $(echo "$SCRIPTS" | wc -l | tr -d ' ') scripts"; else ko "syntax errors:$bad"; fi
 SHELLCHECK="$(PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" command -v shellcheck || true)"
 if [[ -n "$SHELLCHECK" ]]; then
-  # shellcheck disable=SC2086
-  if (cd "$REPO/scripts" && "$SHELLCHECK" -x -S warning ../bin/loomy ../install.sh ./*.sh lib/*.sh ../tests/run.sh ../tests/stubs/*) >"$OUT" 2>&1
+  if (cd "$REPO/scripts" && printf '%s\0' ../bin/loomy ../install.sh ./*.sh lib/*.sh ../tests/run.sh ../tests/stubs/* | xargs -0 -n 1 -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" "$SHELLCHECK" -x -S warning) >"$OUT" 2>&1
   then ok "shellcheck (warning level)"; else ko "shellcheck (warning level)"; fi
 else
   printf '  \033[2m○ shellcheck missing: static analysis skipped\033[0m\n'
@@ -659,10 +665,11 @@ EXP
   # Tab: the suggestion becomes editable text (here the repository name, completed rather than retyped).
   cat >"$WORK/tab.exp" <<EXP
 set timeout 15
+set tabbed 0
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
-    -re {GitHub repository name \\(} { expect "edit the suggestion" ; send "\t" ; after 200 ; send -- "-edit\r" }
+    -re {GitHub repository name \\(} { if {\$tabbed} { exp_continue } ; set tabbed 1 ; expect "edit the suggestion" ; send "\t" ; after 200 ; send -- "-edit\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -861,6 +868,28 @@ file_has "assessment: TODO markers" "$A" "TODO / FIXME / HACK markers: 1"
 file_has "assessment: uncommitted work flagged" "$A" "uncommitted change"
 file_has "assessment: high risk with a secret" "$A" "estimated risk: HIGH"
 hasnt "assessment: Loomy's own files ignored" "START\.md \("
+EXCI="$WORK/assessment-ci"; mkdir -p "$EXCI/tests" "$EXCI/test" "$EXCI/.github/workflows"
+printf '#!/usr/bin/env bash\n' >"$EXCI/tests/run.sh"
+printf '#!/usr/bin/env bash\n' >"$EXCI/test/test.sh"
+cat >"$EXCI/.github/workflows/ci.yml" <<'YAML'
+name: ci
+jobs:
+  tests:
+    steps:
+      - run: sudo apt-get install -y -qq expect shellcheck
+      - run: bash tests/run.sh
+      - run: |
+          echo build
+      - run: echo ${{ secrets.X }}
+      - run: make test `whoami`
+YAML
+run "loomy assess single-line CI fixture" "$LOOMY" assess --root "$EXCI" --print
+has "assessment: CI test command marked" '`bash tests/run\.sh` \(CI\)'
+has "assessment: plain test script found" '`bash test/test\.sh`'
+hasnt "assessment: multiline CI command skipped" '`echo build` \(CI\)'
+hasnt "assessment: CI secrets skipped" 'secrets\.X'
+hasnt "assessment: CI package installs skipped" 'apt-get'
+hasnt "assessment: CI command with backticks skipped" 'whoami'
 run "loomy assess --print" "$LOOMY" assess --root "$EX" --print
 has "assess: report printed" "Assessment of the existing project"
 run "loomy assess in French" env -u LOOMY_UI_LANG LOOMY_LANG=fr "$LOOMY" assess --root "$EX" --print
@@ -1154,22 +1183,36 @@ file_has "template: API prefills the type" "$WORK/tpl-api/.loomy/brief.md" "^typ
 file_has "template (before 0.10): read as the project type" "$WORK/tpl-api/.loomy/brief.md" "^traits: \"publicapi\"$"
 file_has "template: starting structure for the agent" "$WORK/tpl-api/.loomy/brief.md" "OpenAPI contract first"
 # 0.10 questionnaire: one project type, key characteristics (several), risk, details per type, recap and recommendations.
-qa() { printf -- '---\nname: "%s"\ngoal: "g"\nrepo: new\n%s\n---\n' "$1" "$2" >"$WORK/qa-$1.md"; "$LOOMY" init "$WORK/qa-$1" --answers "$WORK/qa-$1.md" --yes --no-clipboard >"$OUT" 2>&1; QB="$WORK/qa-$1/.loomy/brief.md"; }
-qa web 'type: web'
+qa_start() { printf -- '---\nname: "%s"\ngoal: "g"\nrepo: new\n%s\n---\n' "$1" "$2" >"$WORK/qa-$1.md"; "$LOOMY" init "$WORK/qa-$1" --answers "$WORK/qa-$1.md" --yes --no-clipboard >"$WORK/qa-$1.out" 2>&1 & QA_PIDS="$QA_PIDS $!"; }
+QA_PIDS=""
+qa_start web 'type: web'
+qa_start custom 'type: custom'
+qa_start other 'type: other'
+qa_start multi $'type: web\ntraits: "auth,payments,external,multitenant"\nstage: production'
+qa_start data $'type: data\ntraits: "bigdata,external,personal"\ndetail1: "files,sql"\ndetail2: tb\ndetail3: "reports,dashboards"\nbudget: econome'
+qa_start sens $'type: ai\nsensitive: "payments"'
+qa_start legtpl $'type: web\ntemplate: landing\nsensitive: ""'
+qa_start legmail $'type: other\ntemplate: emails'
+qa_start legweb $'type: web\ndetail2: no\nsensitive: "auth"'
+qa_start legnoacc $'type: web\ndetail2: no'
+qa_start team $'type: site\nai_mode: HYBRID\nbudget: qualite'
+for qa_pid in $QA_PIDS; do wait "$qa_pid"; done
+qa() { cp "$WORK/qa-$1.out" "$OUT"; QB="$WORK/qa-$1/.loomy/brief.md"; }
+qa web
 file_has "type web: user accounts pre-checked" "$QB" '^traits: "auth"$'
 file_has "type web: MEDIUM risk" "$QB" '^risk: MEDIUM$'
 file_has "type web with accounts: starting structure" "$QB" "Web app with accounts"
 file_has "characteristic in the brief: its check" "$QB" "the security role reviews authentication"
-qa custom 'type: custom'
+qa custom
 file_has "custom type: nothing pre-checked" "$QB" '^traits: ""$'
 file_has "custom type: LOW risk" "$QB" '^risk: LOW$'
-qa other 'type: other'
+qa other
 file_has "type other (before 0.10): read as custom" "$QB" '^type: custom$'
-qa multi $'type: web\ntraits: "auth,payments,external,multitenant"\nstage: production'
+qa multi
 file_has "several characteristics kept" "$QB" '^traits: "auth,payments,external,multitenant"$'
 file_has "several characteristics: HIGH risk" "$QB" '^risk: HIGH$'
 file_has "former sensitive areas derived" "$QB" '^sensitive: "auth,payments"$'
-qa data $'type: data\ntraits: "bigdata,external,personal"\ndetail1: "files,sql"\ndetail2: tb\ndetail3: "reports,dashboards"\nbudget: econome'
+qa data
 file_has "data type: sources (several)" "$QB" '^detail1: "files,sql"$'
 file_has "data type: volume" "$QB" '^detail2: "tb"$'
 file_has "data type: deliverables (several)" "$QB" '^detail3: "reports,dashboards"$'
@@ -1180,18 +1223,18 @@ file_has "recommendation: sensitive data on a local model" "$QB" "local model \(
 file_has "recommendation: profile not changed" "$QB" '^budget: econome$'
 has "recap: what Loomy will configure" "What Loomy will configure"
 has "recap: recommendations, indicative" "Recommendations.*indicative"
-qa sens $'type: ai\nsensitive: "payments"'
+qa sens
 file_has "sensitive areas (before 0.10) read as characteristics" "$QB" '^traits: "payments"$'
-qa legtpl $'type: web\ntemplate: landing\nsensitive: ""'
+qa legtpl
 file_has "brief before 0.10: template wins over type (landing → site)" "$QB" '^type: site$'
-qa legmail $'type: other\ntemplate: emails'
+qa legmail
 file_has "brief before 0.10: emails template kept" "$QB" '^type: emails$'
-qa legweb $'type: web\ndetail2: no\nsensitive: "auth"'
+qa legweb
 file_has "brief before 0.10: explicit authentication kept" "$QB" '^traits: "auth"$'
 file_has "brief before 0.10: accounts answer not read as a database" "$QB" '^detail2: "tbd"$'
-qa legnoacc $'type: web\ndetail2: no'
+qa legnoacc
 file_has "brief before 0.10: no accounts, nothing checked" "$QB" '^traits: ""$'
-qa team $'type: site\nai_mode: HYBRID\nbudget: qualite'
+qa team
 file_has "earlier AI team answers kept (Customise)" "$QB" '^ai_mode: HYBRID$'
 file_has "earlier profile kept" "$QB" '^budget: qualite$'
 
@@ -1391,6 +1434,8 @@ run "every interface sentence is translated" bash -c '[[ -z "$(bash "$1/tools/i1
 section "Lead-aware delegation, project doctor, routing reminder"
 SG="$WORK/garde"
 run "init for the safeguards (Claude lead, ORCHESTRATED)" "$LOOMY" init "$SG" --yes --no-clipboard
+SG_TPL="$WORK/_tpl-garde"; cp -R "$SG" "$SG_TPL"
+fresh_init() { cp -R "$SG_TPL" "$1" && sed -i.bak "s/garde/${1##*/}/g" "$1/.loomy/brief.md" && rm -f "$1/.loomy/brief.md.bak"; }
 # 1. The delegation advice depends on the lead: loomy-delegate-claude.sh is a Codex lead's bridge.
 bash "$REPO/scripts/loomy-context.sh" --root "$SG" >"$OUT" 2>&1
 has "context, Claude lead: native subagents" "native subagents \(\.claude/agents/<role>\.md, Agent tool"
@@ -1400,7 +1445,7 @@ hasnt "context, Claude lead: no advice to use loomy-delegate-claude.sh" "loomy-d
 has "bridge called by a Claude lead: warning on stderr" "lead agent is Claude Code.*\.claude/agents/explorer\.md"
 (cd "$SG" && LOOMY_BRIDGE_OK=1 bash "$REPO/scripts/loomy-delegate-claude.sh" explorer "look") >"$OUT" 2>&1
 hasnt "bridge, LOOMY_BRIDGE_OK (audit): no warning" "lead agent is Claude Code"
-SGX="$WORK/garde-codex"; "$LOOMY" init "$SGX" --yes --no-clipboard >/dev/null 2>&1
+SGX="$WORK/garde-codex"; fresh_init "$SGX"
 sed -i.bak 's/^ai_lead: claude/ai_lead: codex/' "$SGX/.loomy/brief.md"
 bash "$REPO/scripts/loomy-context.sh" --root "$SGX" >"$OUT" 2>&1
 has "context, Codex lead: loomy-delegate-claude.sh kept" "loomy-delegate-claude\.sh and loomy-delegate-codex\.sh"
@@ -1451,7 +1496,7 @@ run "doctor outside a Loomy project" bash "$REPO/scripts/loomy-doctor.sh" --root
 hasnt "doctor outside a project: no PROJECT section" "◇  PROJECT"
 
 # SessionStart: an abandoned bootstrap is said in one line, not presented as waiting for a go-ahead.
-SA="$WORK/garde-abandon"; "$LOOMY" init "$SA" --yes --no-clipboard >/dev/null 2>&1
+SA="$WORK/garde-abandon"; fresh_init "$SA"
 bash "$REPO/scripts/loomy-status.sh" --root "$SA" set approve >/dev/null
 bash "$REPO/scripts/loomy-context.sh" --root "$SA" >"$OUT" 2>&1
 has "start context: fresh bootstrap resumes normally" "Bootstrap in progress, phase 5 of 10"
@@ -1489,7 +1534,7 @@ echo '{}' | CLAUDE_PROJECT_DIR="$SGX" $PH >"$OUT" 2>&1
 t0=$SECONDS; for _ in 1 2 3 4 5 6 7 8 9 10; do echo '{}' | CLAUDE_PROJECT_DIR="$SG" $PH >/dev/null 2>&1; done
 (( SECONDS - t0 < 3 )) && ok "prompt hook: light (10 runs in $(( SECONDS - t0 )) s)" || ko "prompt hook: too slow ($(( SECONDS - t0 )) s for 10 runs)"
 # Project integrity: init leaves a complete setup; a .ai/ project (before 0.9) is migrated; the repair is idempotent.
-SI="$WORK/integrite"; "$LOOMY" init "$SI" --yes --no-clipboard >/dev/null 2>&1
+SI="$WORK/integrite"; fresh_init "$SI"
 [[ -f "$SI/.loomy/docs/AI_WORKFLOW.md" && -f "$SI/.loomy/docs/AI_ORCHESTRATION.md" && -f "$SI/.loomy/docs/AI_MODEL_ROUTING.md" ]] \
   && ok "init: routing documents created by Loomy" || ko "init: routing documents missing"
 [[ -f "$SI/.claude/agents/architect.md" ]] && ok "init: role subagents created by Loomy" || ko "init: subagents missing"
@@ -1525,7 +1570,7 @@ hasnt "repair: nothing to say the second time" "Loomy has just completed"
 LOOMY_NO_REPAIR=1 bash "$REPO/scripts/loomy-context.sh" --root "$SI" >/dev/null 2>&1; ok "repair: LOOMY_NO_REPAIR accepted"
 
 # Scripts renamed loomy-* (0.10): a project with the old relays and hooks is migrated, the old relays removed.
-SR="$WORK/renommage"; "$LOOMY" init "$SR" --yes --no-clipboard >/dev/null 2>&1
+SR="$WORK/renommage"; fresh_init "$SR"
 [[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" ]] && ok "new project: loomy-* relays only" || ko "new project: relays $(ls "$SR/.loomy/scripts" | head -3 | tr '\n' ' ')"
 for f in "$SR"/.loomy/scripts/loomy-*.sh; do n="$(basename "$f")"; o="ai-${n#loomy-}"
   case "$n" in loomy-delegate-codex.sh) o=delegate-to-codex.sh ;; loomy-delegate-claude.sh) o=delegate-to-claude.sh ;; esac
@@ -1551,8 +1596,8 @@ others=""; for f in "$REPO"/scripts/*.sh; do case "${f##*/}" in loomy-*) ;; *) o
 [[ -z "$others" ]] && ok "every script is named loomy-*" || ko "scripts not named loomy-*:$others"
 
 # Shared memory (.loomy/memory/): results of the delegations, work state, given back at the start of every session.
-SM="$WORK/memoire"; "$LOOMY" init "$SM" --yes --no-clipboard >/dev/null 2>&1
-printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"; sleep 1
+SM="$WORK/memoire"; fresh_init "$SM"
+printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"
 [[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
 grep -qxF '.loomy/memory/delegations/' "$SM/.gitignore" && ok "memory: delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
 (cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
@@ -1597,7 +1642,7 @@ has "loomy memory: work state and results" "SHARED MEMORY"
 has "loomy memory: result listed" "three CSV files"
 run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
 has "loomy memory show: full text of the latest" "Map the CSV schemas"
-for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; sleep 1' _ "$REPO" "$SM" "$i"; done
+for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; [ "$3" = 3 ] && sleep 1' _ "$REPO" "$SM" "$i"; done
 [[ "$(ls "$SM/.loomy/memory/delegations" | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest results pruned" || ko "memory: pruning ($(ls "$SM/.loomy/memory/delegations" | wc -l))"
 # Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.
 mem() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; shift; "$@"' _ "$REPO" "$@"; }
@@ -1612,7 +1657,7 @@ LOOMY_MEMORY_KEEP=1 mem loomy_memory_save "$SL" i2 role m ok task result
 [[ "$(ls "$WORK/ailleurs" | wc -l | tr -d ' ')" == 3 ]] && ok "memory: never writes or prunes through a symbolic link" || ko "memory: files touched through the link"
 (cd "$SM" && "$LOOMY" memory show 999) >"$OUT" 2>&1
 has "loomy memory show: out of range refused" "choose N from 1 to"
-SW="$WORK/memoutil"; "$LOOMY" init "$SW" --yes --no-clipboard >/dev/null 2>&1; JW="$SW/.loomy/logs/events.jsonl"; mkdir -p "$(dirname "$JW")"
+SW="$WORK/memoutil"; fresh_init "$SW"; JW="$SW/.loomy/logs/events.jsonl"; mkdir -p "$(dirname "$JW")"
 printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":1}" >>"$JW"
 echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
 has "memory: Codex after Claude (launcher + hook events), switch seen" "previous session ran in Claude Code"
@@ -1624,7 +1669,7 @@ hasnt "memory: no switch notice outside the start hook" "previous session ran in
 grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/memory/STATE.md' "$REPO/templates/CLAUDE.md" && ok "memory: the lead agent is told to keep STATE.md" || ko "memory: no instruction for STATE.md"
 
 # Launch: status line segment, reminder when tracking isn't open, shell hook, opening in the desktop app.
-SL2="$WORK/lancement"; "$LOOMY" init "$SL2" --yes --no-clipboard >/dev/null 2>&1
+SL2="$WORK/lancement"; fresh_init "$SL2"
 printf '{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d1","pid":%s,"role":"executor"}\n{"ts":"2026-10-06T10:00:00Z","type":"delegation_start","id":"d2","pid":999999,"role":"explorer"}\n' "$$" >>"$SL2/.loomy/logs/events.jsonl"
 echo '{"model":{"display_name":"Opus 5.5"}}' | LOOMY_PROJECT_ROOT="$SL2" bash "$SL2/.loomy/scripts/loomy-statusline.sh" >"$OUT" 2>&1
 has "status line: phase and running delegations" "^Loomy discover · ⟳ 1 · Opus 5.5"
@@ -1670,6 +1715,7 @@ grep -v '^#' "$REPO/catalog/skills.conf" | grep -v '^date=' | awk -F'|' 'NF != 8
   && ok "skills catalog: well formed, official sources only, pinned commits" || ko "skills catalog: malformed line"
 printf -- '---\nname: "SK"\nrepo: new\ntype: web\ntraits: "auth,payments"\ndetail1: vercel\n---\n' >"$WORK/sk-answers.md"
 SKP="$WORK/skills-web"; "$LOOMY" init "$SKP" --answers "$WORK/sk-answers.md" --yes --no-clipboard >"$OUT" 2>&1
+cp -R "$SKP" "$WORK/_tpl-skills"
 [[ "$(skf skills_auto_for "$SKP" | tr '\n' ' ')" == "webapp-testing frontend-design security-best-practices security-threat-model vercel-deploy " ]] \
   && ok "skills: chosen from type, characteristics and hosting" || ko "skills auto: $(skf skills_auto_for "$SKP" | tr '\n' ' ')"
 has "init: official skills step" "Official skills"
@@ -1697,7 +1743,7 @@ sed -i.bak 's/^\(vercel-deploy|openai|[^|]*|\)[0-9a-f]*/\1aaaaaaa/' "$SKP/.loomy
 # Safety (cross review): names never paths, symbolic links refused, whole-word keywords, proprietary only on request.
 mkdir -p "$WORK/victime"; echo keep >"$WORK/victime/f"
 (cd "$SKP" && "$LOOMY" skills remove ../../victime) >/dev/null 2>&1; [[ -f "$WORK/victime/f" ]] && ok "skills remove: a path is refused" || ko "skills remove deleted outside the project"
-SKL="$WORK/skills-lien"; "$LOOMY" init "$SKL" --answers "$WORK/sk-answers.md" --yes --no-clipboard >/dev/null 2>&1
+SKL="$WORK/skills-lien"; cp -R "$WORK/_tpl-skills" "$SKL"
 rm -rf "$SKL/.claude/skills"; mkdir -p "$WORK/dehors"; ln -s "$WORK/dehors" "$SKL/.claude/skills"
 skf skills_install "$SKL" frontend-design "test" force >/dev/null 2>&1; [[ -z "$(ls "$WORK/dehors")" ]] && ok "skills: never written through a symbolic link" || ko "skills: written through a link"
 [[ -z "$(skf skills_suggest "$WORK/aucun" "Fix the build and improve precision of the crossword solver" 3 2>/dev/null)" ]] && ok "skills suggest: whole words only (build, precision, crossword)" || ko "skills suggest: $(skf skills_suggest "$SKP" "Fix the build and improve precision of the crossword solver" 3)"
@@ -1786,5 +1832,9 @@ run "install.sh --uninstall" env LOOMY_PREFIX="$PREFIX" sh "$REPO/install.sh" --
 [[ ! -e "$PREFIX/bin/loomy" ]] && ok "command removed" || ko "command still present"
 
 # ------------------------------------------------------------------ bilan
+_sec_close
+if [[ "$TEST_TIMES" == 1 ]]; then
+  printf '\n\033[1mSlowest sections (s)\033[0m\n'; printf '%s' "$SEC_TIMES" | sort -rn | head -15 | sed 's/^/  /'
+fi
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

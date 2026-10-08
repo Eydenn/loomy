@@ -691,7 +691,7 @@ To try another model on a single machine without changing anything: `AI_MODEL_CO
 tests/run.sh
 ```
 
-With `-v`, the output of failing tests is shown.
+With `-v`, the output of failing tests is shown; with `LOOMY_TEST_TIMES=1`, the slowest sections are listed at the end.
 
 The suite exercises every command in real conditions (bash, git, a pseudo-terminal for the questionnaire), with no network and no tokens: `claude` and `codex` are replaced by stand-ins (`tests/stubs/`). It covers installation, the interactive and non-interactive questionnaire, routing for the 4 environments × 3 profiles, both bridges, the journal in every state, live tracking, the diagnosis with or without CLIs, worktrees and `install.sh`. `shellcheck` and `expect` are used when installed.
 
@@ -716,8 +716,8 @@ loomy/
 ├── skills/project-bootstrap/  # SKILL.md + references
 ├── agents/ROLE-CATALOG.md · external-skills/security-audit.md
 ├── fr/                        # French copies of START.md, templates, agents and skills
-├── catalog/models.conf · docs/DESIGN.md · docs/MODEL_CATALOG.md
-├── tools/                     # i18n-build.sh · i18n-missing.sh
+├── catalog/models.conf · docs/DESIGN.md · docs/MODEL_CATALOG.md · docs/adr/
+├── tools/                     # i18n-build.sh · i18n-missing.sh · release.sh · ansi2svg.py
 └── tests/run.sh · tests/stubs/  # test suite without network
 ```
 

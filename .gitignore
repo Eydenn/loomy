@@ -16,8 +16,8 @@ Thumbs.db
 *.log
 tmp/
 
-# Loomy's own AI files (.loomy/, .claude/, AGENTS.md, CLAUDE.md) live in a private repository (loomy privacy)
-/.loomy/
+# Loomy's own AI files (.loomy/, .claude/, AGENTS.md, CLAUDE.md) live in a private repository (loomy privacy):
+# they are excluded through .git/info/exclude, never here (this file also applies to that private repository).
 
 # npm/bun packages generated locally
 node_modules/

@@ -296,6 +296,8 @@ loomy privacy private	loomy privacy private
 no AI file to back up	aucun fichier IA à sauvegarder
 The AI files changed on both sides	Les fichiers IA ont changé des deux côtés
 resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main	résous à la main : git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main
+The private repository has uncommitted changes, the rebase cannot run	Le dépôt privé a des modifications non validées, le rebase ne peut pas s'exécuter
+see them with: git --git-dir=.loomy/ai.git --work-tree=. status	les voir avec : git --git-dir=.loomy/ai.git --work-tree=. status
 Push to the private repository failed	Envoi vers le dépôt privé échoué
 AI files backed up	Fichiers IA sauvegardés
 Still tracked by the project repository	Encore suivis par le dépôt du projet

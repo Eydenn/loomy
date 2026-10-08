@@ -11,6 +11,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - **Releases from the repository**: `tools/release.sh <X.Y.Z> "<notes>"` checks versions, changelog and tag (local and on GitHub, both on HEAD) before publishing the GitHub release and the Homebrew formula.
 
 ### Fixed
+- **`loomy privacy sync` failed once the setup was over** (private AI files mode): the deletion of `START.md`, archived at the end of the setup, was never recorded, so the private repository stayed dirty and the sync stopped with a wrong "changed on both sides" message. Deleted AI files are now recorded, nothing is replayed when the remote has no new backup, and a dirty private repository gets its own message.
 - **The test suite no longer acts on the project it is run from**: settings inherited from a Loomy session (`LOOMY_*`, `AI_*`, `DELEGATE_*`) are cleared first; run from a Loomy project, it had installed test skills into that project.
 - **Test suite about 35 % faster** (7 min 16 → 4 min 37 on a Mac) with the same assertions: shellcheck runs file by file in parallel, identical test projects are copied instead of initialised again, independent initialisations run in parallel, and an `expect` step that waited for its timeout three times now fires once. `LOOMY_TEST_TIMES=1 tests/run.sh` lists the slowest sections.
 

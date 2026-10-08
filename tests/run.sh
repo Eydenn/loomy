@@ -538,6 +538,17 @@ file_has "restore: exclusion set on the new machine" "$M2/.git/info/exclude" "^/
 echo "depuis la machine 2" >>"$M2/AGENTS.md"
 run "sync from the second machine" "$LOOMY" privacy --root "$M2" sync
 run "sync of the first machine after the second" "$LOOMY" privacy --root "$PV" sync
+# A tracked AI file that disappears (START.md archived at the end of the setup): its deletion must be committed.
+echo "# start" >"$PV/START.md"
+run "privacy sync with START.md" "$LOOMY" privacy --root "$PV" sync
+git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+has "sync: START.md tracked by the private repository" "^START.md$"
+mkdir -p "$PV/.loomy/docs/bootstrap" && mv "$PV/START.md" "$PV/.loomy/docs/bootstrap/START.md"
+run "privacy sync after START.md was archived" "$LOOMY" privacy --root "$PV" sync
+git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+hasnt "sync: removed START.md no longer tracked" "^START.md$"
+has "sync: archived START.md tracked" "^.loomy/docs/bootstrap/START.md$"
+[[ -z "$(git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" diff --name-only)" ]] && ok "sync: private repository working tree clean" || ko "sync: private repository still dirty"
 run "back to versioned mode" "$LOOMY" privacy --root "$PV" versioned
 if grep -q "loomy : fichiers IA" "$PV/.git/info/exclude"; then ko "versioned: exclusion still present"; else ok "versioned: exclusion removed"; fi
 fails "sync outside private mode refused" 1 "$LOOMY" privacy --root "$PV" sync

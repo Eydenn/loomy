@@ -84,7 +84,11 @@ create_companion() {
 do_sync() {
   local p paths=() msg
   privacy_companion_ready "$ROOT" || { ui_err "$(t "No private repository for this project")" "$(t "loomy privacy private")"; return 1; }
-  for p in $LOOMY_AI_PATHS; do [[ -e "$ROOT/$p" ]] && paths+=("$p"); done
+  # A path that disappeared (START.md archived at the end of the setup) is staged too when the companion
+  # repository tracks it, so its deletion is committed; a missing, untracked path would make `git add` fail.
+  for p in $LOOMY_AI_PATHS; do
+    if [[ -e "$ROOT/$p" ]] || [[ -n "$(ai_git "$ROOT" ls-files -- "$p" 2>/dev/null)" ]]; then paths+=("$p"); fi
+  done
   (( ${#paths[@]} )) || { ui_info "$(t "no AI file to back up")"; return 0; }
   ai_git "$ROOT" add -A -- "${paths[@]}"
   if ! ai_git "$ROOT" diff --cached --quiet 2>/dev/null; then
@@ -94,10 +98,17 @@ do_sync() {
   # Another machine may have backed up in the meantime: we replay our changes on top of theirs.
   if ai_git "$ROOT" ls-remote --exit-code origin main >/dev/null 2>&1; then
     ai_git "$ROOT" fetch -q origin
-    if ! ai_git "$ROOT" rebase -q origin/main >/dev/null 2>&1; then
-      ai_git "$ROOT" rebase --abort >/dev/null 2>&1 || true
-      ui_err "$(t "The AI files changed on both sides")" "$(t "resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main")"
-      return 1
+    # Nothing to replay when the remote is already contained in our history (a rebase would only fail on a dirty tree).
+    if ! ai_git "$ROOT" merge-base --is-ancestor origin/main HEAD >/dev/null 2>&1; then
+      if ! ai_git "$ROOT" rebase -q origin/main >/dev/null 2>&1; then
+        ai_git "$ROOT" rebase --abort >/dev/null 2>&1 || true
+        if ! ai_git "$ROOT" diff --quiet >/dev/null 2>&1; then
+          ui_err "$(t "The private repository has uncommitted changes, the rebase cannot run")" "$(t "see them with: git --git-dir=.loomy/ai.git --work-tree=. status")"
+        else
+          ui_err "$(t "The AI files changed on both sides")" "$(t "resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main")"
+        fi
+        return 1
+      fi
     fi
   fi
   if ai_git "$ROOT" rev-parse -q --verify HEAD >/dev/null; then

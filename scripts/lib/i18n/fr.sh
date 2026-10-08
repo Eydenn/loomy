@@ -301,6 +301,8 @@ _t_fr() {
     'no AI file to back up') _T='aucun fichier IA à sauvegarder' ;;
     'The AI files changed on both sides') _T='Les fichiers IA ont changé des deux côtés' ;;
     'resolve by hand: git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main') _T='résous à la main : git --git-dir=.loomy/ai.git --work-tree=. pull --rebase origin main' ;;
+    'The private repository has uncommitted changes, the rebase cannot run') _T='Le dépôt privé a des modifications non validées, le rebase ne peut pas s'\''exécuter' ;;
+    'see them with: git --git-dir=.loomy/ai.git --work-tree=. status') _T='les voir avec : git --git-dir=.loomy/ai.git --work-tree=. status' ;;
     'Push to the private repository failed') _T='Envoi vers le dépôt privé échoué' ;;
     'AI files backed up') _T='Fichiers IA sauvegardés' ;;
     'Still tracked by the project repository') _T='Encore suivis par le dépôt du projet' ;;

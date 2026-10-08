@@ -296,12 +296,12 @@ if [[ -d "$L" && ( -f "$L/VERSION" || -f "$L/brief.md" ) ]]; then
 
   do_update() {
     copy_loomy_files
-    if (( IN_PROGRESS )); then cp "$DOCS_ROOT/START.md" "$TARGET/START.md"; fi
+    if (( IN_PROGRESS )); then cp "$DOCS_ROOT/bootstrap/START.md" "$TARGET/START.md"; fi
     ui_ok "$(t "Loomy updated in the project")" "v$OLD_V → v$NEW_V · $(t "brief, phase and log kept")"
   }
   do_reset() {
     copy_loomy_files
-    cp "$DOCS_ROOT/START.md" "$TARGET/START.md"
+    cp "$DOCS_ROOT/bootstrap/START.md" "$TARGET/START.md"
     rm -f "$L/state"
     if [[ -f "$L/brief.md" ]]; then mv "$L/brief.md" "$L/brief.previous.md"; fi
     ui_ok "$(t "Bootstrap reset")" "$(t "START.md copied again, phase reset; previous brief: .loomy/brief.previous.md")"
@@ -407,7 +407,7 @@ if [[ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.DS_S
   adopt_branch
 else ADOPTING=0; fi
 copy_loomy_files
-cp "$DOCS_ROOT/START.md" "$TARGET/START.md"
+cp "$DOCS_ROOT/bootstrap/START.md" "$TARGET/START.md"
 
 if (( RUN_WIZARD )); then run_wizard; fi
 if (( ADOPTING )) && [[ ! -f "$L/assessment.md" ]]; then bash "$LOOMY_ROOT/scripts/loomy-assess.sh" --root "$TARGET" --quiet >/dev/null 2>&1 || true; fi

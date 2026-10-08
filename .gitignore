@@ -16,9 +16,15 @@ Thumbs.db
 *.log
 tmp/
 
-# Loomy installed into its own repository for a try (generated, not canonical)
+# Loomy's own AI files (.loomy/, .claude/, AGENTS.md, CLAUDE.md) live in a private repository (loomy privacy)
 /.loomy/
 
 # npm/bun packages generated locally
 node_modules/
 *.tgz
+
+# Loomy: local activity log
+.loomy/logs/
+
+# Loomy: delegation results (shared memory, may hold sensitive findings)
+.loomy/memory/delegations/

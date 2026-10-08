@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.14.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.14.1-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -704,12 +704,13 @@ La suite exerce chaque commande en conditions réelles (bash, git, pseudo-termin
 loomy/
 ├── bin/loomy                  # commande unique
 ├── install.sh · package.json  # installation shell, npm et bun
-├── START.md · VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
+├── VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
 ├── scripts/
 │   ├── loomy-install-project.sh · loomy-init-wizard.sh · loomy-doctor.sh · loomy-route.sh · loomy-status.sh
 │   ├── loomy-delegate-claude.sh · loomy-delegate-codex.sh · loomy-detect-tools.sh
 │   ├── loomy-worktrees.sh · loomy-install-security-audit.sh
 │   └── lib/                   # ui.sh · i18n.sh · models.sh · journal.sh · config.sh · i18n/fr.tsv
+├── bootstrap/START.md         # contrat de mise en place copié dans chaque projet (START.md), retiré une fois terminée
 ├── templates/                 # AGENTS, CLAUDE, WORKFLOW, ORCHESTRATION, MODEL_ROUTING, HANDOFF, PROJECT, ARCHITECTURE, ADR
 │   └── claude-agents/         # architect, debugger, developer, documenter, executor, explorer, reviewer, security
 ├── skills/project-bootstrap/  # SKILL.md + références

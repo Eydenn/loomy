@@ -2,6 +2,11 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.14.1 — 2026-10-08
+
+### Changed
+- **The setup contract template moved to `bootstrap/START.md`** (`fr/bootstrap/START.md` in French). A project still gets its `START.md` at its root; only the copy shipped with Loomy moved. At the root of Loomy's own repository it read as an unfinished setup, which kept Loomy from being initialised on itself. Loomy now uses its own orchestrated method for its development; its AI files live in a separate private repository.
+
 ## 0.14.0 — 2026-10-08
 
 ### Changed

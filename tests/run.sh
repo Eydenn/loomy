@@ -1406,7 +1406,7 @@ bash "$REPO/scripts/loomy-context.sh" --root "$SGX" >"$OUT" 2>&1
 has "context, Codex lead: loomy-delegate-claude.sh kept" "loomy-delegate-claude\.sh and loomy-delegate-codex\.sh"
 (cd "$SGX" && bash "$REPO/scripts/loomy-delegate-claude.sh" explorer "look") >"$OUT" 2>&1
 hasnt "bridge called by a Codex lead: no warning" "lead agent is Claude Code"
-for f in START.md fr/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRATION.md skills/project-bootstrap/references/orchestration.md fr/skills/project-bootstrap/references/orchestration.md; do
+for f in bootstrap/START.md fr/bootstrap/START.md templates/ORCHESTRATION.md fr/templates/ORCHESTRATION.md skills/project-bootstrap/references/orchestration.md fr/skills/project-bootstrap/references/orchestration.md; do
   grep -qE 'native subagents|sous-agents natifs' "$REPO/$f" && ok "doc advice by lead: $f" || ko "doc advice by lead: $f still gives the Codex-lead advice only"
 done
 

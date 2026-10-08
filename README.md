@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.14.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.14.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -704,12 +704,13 @@ The suite exercises every command in real conditions (bash, git, a pseudo-termin
 loomy/
 ├── bin/loomy                  # single command
 ├── install.sh · package.json  # shell, npm and bun install
-├── START.md · VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
+├── VERSION · CHANGELOG.md · SECURITY.md · README.md · README.fr.md
 ├── scripts/
 │   ├── loomy-install-project.sh · loomy-init-wizard.sh · loomy-doctor.sh · loomy-route.sh · loomy-status.sh
 │   ├── loomy-delegate-claude.sh · loomy-delegate-codex.sh · loomy-detect-tools.sh
 │   ├── loomy-worktrees.sh · loomy-install-security-audit.sh
 │   └── lib/                   # ui.sh · i18n.sh · models.sh · journal.sh · config.sh · i18n/fr.tsv
+├── bootstrap/START.md         # setup contract copied into each project (START.md), removed once the setup is done
 ├── templates/                 # AGENTS, CLAUDE, WORKFLOW, ORCHESTRATION, MODEL_ROUTING, HANDOFF, PROJECT, ARCHITECTURE, ADR
 │   └── claude-agents/         # architect, debugger, developer, documenter, executor, explorer, reviewer, security
 ├── skills/project-bootstrap/  # SKILL.md + references

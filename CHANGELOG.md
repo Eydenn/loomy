@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.14.0 — 2026-10-08
+
+### Changed
+- **Claude Haiku 5.5** (released 2026-10-07) is the fast Claude model, Haiku 4.5 staying as its fallback. It costs a tenth of Haiku 4.5 ($0.10 / $0.50 per million tokens for a prompt up to 100K tokens), scores 38 on the Artificial Analysis index at `high` (GPT-6-Luna's level at `max`) and 33% on Terminal-Bench 4.0 (Luna 13%, Haiku 4.5 0%). Routing (details and sources in `docs/MODEL_CATALOG.md`):
+  - the Claude **explorer** moves from Haiku 4.5 `low` to Haiku 5.5 `medium`;
+  - the full-Claude **executor** moves from Sonnet 5.5 `medium` to Haiku 5.5 `high`; in hybrid mode it stays on Luna `max` (cheaper per task), and Max quality keeps Sonnet or Sol `high`;
+  - on a machine without Haiku 5.5, the executor goes back to Sonnet 5.5, never to Haiku 4.5.
+- **Costs**: Haiku 5.5's long-prompt rate is counted per request (above 100K tokens the whole request costs five times more); the catalog can carry such a rate (`price_long.<model>=<tokens> <input> <output> <cache>`). Sonnet 5.5 cache reads are now $0.10 per million tokens (Anthropic's price cut of 2026-10-07).
+- **Claude Code 2.1.293 or later** is needed (the first version that knows Haiku 5.5: list price, 1M context): `loomy doctor` and the daily check offer the update. With an older version, the cost of a Claude delegation it can't price is recomputed by Loomy.
+- **Role subagents follow the routing**: an untouched `.claude/agents/<role>.md` (same text as Loomy generates, apart from its `model:` and `effort:` lines) is moved to the current model and effort at the next session start, so a new model or a `loomy effort` change reaches existing projects. A subagent with a hand-set model (`opus`, `inherit`…) or any other change is kept as it is.
+
 ## 0.13.0 — 2026-10-07
 
 ### Changed

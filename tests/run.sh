@@ -940,7 +940,7 @@ has "failover: announced" "Codex quota at limit reached .*executor handed to Cla
 has "failover: plain answer, as from Codex" "^answer from the claude double$"
 grep -q $'^claude\t-p' "$FL" && ! grep -q '^codex' "$FL" && ok "failover: Codex role run by Claude" || ko "failover: calls $(cut -c1-60 "$FL" | tr '\n' ' ')"
 grep -q 'acceptEdits' "$FL" && grep -q '"sandbox":{"enabled":true' "$FL" && ok "failover: writing role with accepted edits inside Claude's sandbox" || ko "failover: write mode missing"
-grep -q -- '--model	claude-sonnet' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
+grep -q -- '--model	claude-haiku-5-5' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
 file_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '"role":"executor","family":"claude".*"sandbox":"workspace-write".*"failover_from":"codex"'
 run "status after a failover" qenv "$LOOMY" status --root "$QD"
 has "status: Codex roles go to Claude" "Codex's roles go to Claude until it resets"
@@ -1245,16 +1245,42 @@ got="$(LOOMY_NO_AUTOUPDATE=1 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/
 
 section "Announced models"
 UP_CFG="$WORK/upcoming-cfg"; mkdir -p "$UP_CFG/loomy"
+# A newer downloaded catalog announcing a model (the built-in list is empty while nothing is announced).
+printf '%s\n' 'date=2099-01-01' 'model.claude.fast=claude-haiku-5-5, claude-haiku-4-5' 'upcoming.claude.fast=claude-haiku-9' >"$UP_CFG/loomy/catalog.conf"
 upq() { XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CHAIN_CLAUDE_FAST | $AI_MODEL_CLAUDE_FAST"' _ "$REPO"; }
-[[ "$(upq)" == "claude-haiku-4-5 | claude-haiku-4-5" ]] && ok "announced: Haiku 5.5 not used before it answers" || ko "announced before: $(upq)"
+[[ "$(upq)" == "claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-5-5" ]] && ok "announced: not used before it answers" || ko "announced before: $(upq)"
 XDG_CONFIG_HOME="$UP_CFG" "$LOOMY" models >"$OUT" 2>&1
-has "announced: listed by loomy models" "claude-haiku-5-5.*not available yet"
-hasnt "announced: not suggested as a new model" "✦ claude-haiku-5-5"
-XDG_CONFIG_HOME="$UP_CFG" STUB_UNKNOWN_MODELS="claude-haiku-5-5" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-5-5' _ "$REPO" && ko "announced: refused model seen as available" || ok "announced: a refused model stays out"
-XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-5-5 && ai_model_mark claude-haiku-5-5 ok' _ "$REPO"
-[[ "$(upq)" == "claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-5-5" ]] && ok "announced: once it answers, it heads its chain with Haiku 4.5 as fallback" || ko "announced after: $(upq)"
+has "announced: listed by loomy models" "claude-haiku-9.*not available yet"
+hasnt "announced: not suggested as a new model" "✦ claude-haiku-9"
+XDG_CONFIG_HOME="$UP_CFG" STUB_UNKNOWN_MODELS="claude-haiku-9" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9' _ "$REPO" && ko "announced: refused model seen as available" || ok "announced: a refused model stays out"
+XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9 && ai_model_mark claude-haiku-9 ok' _ "$REPO"
+[[ "$(upq)" == "claude-haiku-9 claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-9" ]] && ok "announced: once it answers, it heads its chain, the others as fallbacks" || ko "announced after: $(upq)"
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_UPCOMING"' _ "$REPO")"
-[[ "claude:fast:$(sed -n 's/^upcoming\.claude\.fast=//p' "$REPO/catalog/models.conf")" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: $got"
+want="$(sed -n 's/^upcoming\.\([a-z]*\)\.\([a-z]*\)=\(.*\)$/\1:\2:\3/p' "$REPO/catalog/models.conf" | tr '\n' ' ' | sed 's/ $//')"
+[[ "$want" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: '$got' vs '$want'"
+
+section "Haiku 5.5 routing and long-prompt rate"
+HK="$WORK/haiku-cfg"; mkdir -p "$HK/loomy"
+hkq() { XDG_CONFIG_HOME="$HK" bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve "$2" "$3" "$4"; echo "$R_MODEL $R_EFFORT"' _ "$REPO" "$@"; }
+[[ "$(hkq executor claude equilibre)" == "claude-haiku-5-5 high" ]] && ok "haiku: full-Claude executor on Haiku 5.5 high" || ko "haiku executor: $(hkq executor claude equilibre)"
+[[ "$(hkq explorer claude equilibre)" == "claude-haiku-5-5 medium" ]] && ok "haiku: Claude explorer on Haiku 5.5 medium" || ko "haiku explorer: $(hkq explorer claude equilibre)"
+[[ "$(hkq executor hybrid-claude equilibre)" == "gpt-6-luna max" ]] && ok "haiku: hybrid executor stays on Luna" || ko "haiku hybrid: $(hkq executor hybrid-claude equilibre)"
+[[ "$(hkq executor claude qualite)" == "claude-sonnet-5-5 high" ]] && ok "haiku: Max quality executor on Sonnet" || ko "haiku qualite: $(hkq executor claude qualite)"
+echo "claude-haiku-5-5=ko" >"$HK/loomy/models.state"
+[[ "$(hkq executor claude equilibre)" == "claude-sonnet-5-5 medium" ]] && ok "haiku: without Haiku 5.5 the executor goes back to Sonnet, not Haiku 4.5" || ko "haiku fallback: $(hkq executor claude equilibre)"
+[[ "$(hkq explorer claude equilibre)" == "claude-haiku-4-5 medium" ]] && ok "haiku: without Haiku 5.5 the explorer falls back to Haiku 4.5" || ko "haiku explorer fallback: $(hkq explorer claude equilibre)"
+# One message under 100K tokens, one over: the second one at the long-prompt rate (0.50 / 2.50).
+HKP="$WORK/haiku-proj"; mkdir -p "$HKP/.loomy/logs"; HKT="$WORK/haiku.jsonl"
+printf '{"type":"assistant","message":{"id":"msg_h1","model":"claude-haiku-5-5","usage":{"input_tokens":50000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000000}}}\n' >"$HKT"
+printf '{"type":"assistant","message":{"id":"msg_h2","model":"claude-haiku-5-5","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >>"$HKT"
+bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$3" lead' _ "$REPO" "$HKP" "$HKT"
+got="$(grep -o '"cost_usd":[0-9.]*' "$HKP/.loomy/logs/events.jsonl" | sed 's/.*://' | sort | tr '\n' ' ')"
+[[ "$got" == "0.500000 0.505000 " ]] && ok "haiku: long prompts priced at the long rate, the rest at the base rate" || ko "haiku long rate: $got"
+file_has "haiku: model logged without the internal marker" "$HKP/.loomy/logs/events.jsonl" '"model":"claude-haiku-5-5"'
+grep -q '@long' "$HKP/.loomy/logs/events.jsonl" && ko "haiku: internal marker leaked into the log" || ok "haiku: no internal marker in the log"
+CL="$WORK/haiku-catalog"; mkdir -p "$CL/loomy"
+printf '%s\n' 'date=2099-01-01' 'price_long.claude-haiku-5-5=200000 1 3 0.10' >"$CL/loomy/catalog.conf"
+[[ "$(XDG_CONFIG_HOME="$CL" bash -c 'source "$1/scripts/lib/models.sh"; ai_price_long claude-haiku-5-5' _ "$REPO")" == "200000 1 3 0.10" ]] && ok "haiku: long-prompt rate read from the catalog" || ko "haiku catalog long rate"
 
 section "Advisor and agent tree"
 AC="$WORK/adv-cfg"; mkdir -p "$AC/loomy"
@@ -1483,6 +1509,14 @@ bash "$REPO/scripts/loomy-context.sh" --root "$SI" >"$OUT" 2>&1
 grep -q 'See .loomy/docs/AI_WORKFLOW.md and docs/.ai/x.' "$SI/CLAUDE.md" && ok "migration: references updated, other paths kept" || ko "migration: references: $(grep 'See ' "$SI/CLAUDE.md")"
 has "migration: said in the start context" "Loomy has just completed this project's setup files: .*\.ai/ → \.loomy/docs/"
 [[ "$(cat "$SI/.claude/agents/explorer.md")" == custom ]] && ok "repair: customised subagent kept" || ko "repair: subagent overwritten"
+# A subagent written by an older routing (model and effort lines only) follows the current one; a hand-set model stays.
+cur="$(sed -n 's/^model: //p' "$SI/.claude/agents/documenter.md")"
+sed -i.bak -e 's/^model: .*/model: claude-sonnet-5/' -e 's/^effort: .*/effort: max/' "$SI/.claude/agents/documenter.md"
+sed -i.bak 's/^model: .*/model: opus/' "$SI/.claude/agents/architect.md"; rm -f "$SI"/.claude/agents/*.bak
+bash "$REPO/scripts/loomy-context.sh" --root "$SI" >"$OUT" 2>&1
+[[ "$(sed -n 's/^model: //p' "$SI/.claude/agents/documenter.md")" == "$cur" ]] && ! grep -q '^effort: max' "$SI/.claude/agents/documenter.md" && ok "repair: untouched subagent moved to the current routing" || ko "repair: subagent not refreshed ($(grep -E '^(model|effort):' "$SI/.claude/agents/documenter.md" | tr '\n' ' '))"
+grep -q '^model: opus$' "$SI/.claude/agents/architect.md" && ok "repair: hand-set subagent model kept" || ko "repair: hand-set model overwritten"
+[[ "$(cat "$SI/.claude/agents/explorer.md")" == custom ]] && ok "repair: customised subagent still kept" || ko "repair: customised subagent overwritten later"
 cp "$SI/CLAUDE.md" "$WORK/claude-avant.md"
 bash "$REPO/scripts/loomy-context.sh" --root "$SI" >"$OUT" 2>&1
 cmp -s "$SI/CLAUDE.md" "$WORK/claude-avant.md" && ok "repair: idempotent" || ko "repair: CLAUDE.md changed on a second run"

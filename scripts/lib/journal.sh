@@ -60,6 +60,7 @@ ai_journal_write() {
 # counted once (id), one "usage" event is written per model.
 # Prices: input, cache write (5 min: 1.25 × input; 1 h: 2 ×), cache read, output. Checked: identical
 # to the cost Claude Code reports (claude -p --output-format json) on a session with a subagent.
+# A model with a long-prompt rate (Haiku 5.5 above 100K tokens) has those messages counted apart, at that rate.
 ai_usage_record() {
   local root="$1" tr="$2" scope="$3" agent="${4:-}" idx done_n total line model tin tcw tcr tout n price cost
   [[ -f "$tr" ]] || return 0
@@ -68,7 +69,8 @@ ai_usage_record() {
   done_n="$(awk -F '\t' -v p="$tr" '$1 == p { n = $2 } END { print n + 0 }' "$idx" 2>/dev/null || echo 0)"
   total="$(wc -l <"$tr" | tr -d ' ')"
   (( total > done_n )) || return 0
-  tail -n +"$(( done_n + 1 ))" "$tr" | head -n "$(( total - done_n ))" | awk '
+  tail -n +"$(( done_n + 1 ))" "$tr" | head -n "$(( total - done_n ))" | awk -v long="$(ai_price_long_list)" '
+    BEGIN { nl = split(long, ll, " "); for (k = 1; k <= nl; k++) { lp[k] = ll[k]; sub(/=.*/, "", lp[k]); lt[k] = ll[k]; sub(/.*=/, "", lt[k]) } }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
     index($0, "\"type\":\"assistant\"") && index($0, "\"usage\"") {
       id = ""; if (match($0, /"id":"msg_[^"]*"/)) id = substr($0, RSTART, RLENGTH)
@@ -78,6 +80,7 @@ ai_usage_record() {
       # Cache write: 5 min (1.25 × input) or 1 h (2 ×); without detail: 1 h (main session).
       cw = num("cache_creation_input_tokens"); w5 = num("ephemeral_5m_input_tokens"); w1 = num("ephemeral_1h_input_tokens")
       if (w5 + w1 == 0) w1 = cw
+      for (k = 1; k <= nl; k++) if (index(m, lp[k]) == 1 && num("input_tokens") + cw + num("cache_read_input_tokens") > lt[k] + 0) { m = m "@long"; break }
       i[m] += num("input_tokens"); f[m] += w5; h[m] += w1; r[m] += num("cache_read_input_tokens"); o[m] += num("output_tokens"); c[m]++
       # Advisor consultations (the Claude Code advisor tool): one advisor_message iteration each, with its own model.
       rest = $0
@@ -98,7 +101,10 @@ ai_usage_record() {
         ai_journal_write "$root" "\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"model\":\"$tin\",\"calls\":$tcr,\"tokens_in\":$tw5,\"tokens_cached\":0,\"tokens_out\":$tw1,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
         continue
       fi
-      price="$(ai_price "$model")"; cost=""; tcw=$(( tw5 + tw1 ))
+      price=""
+      if [[ "$model" == *@long ]]; then model="${model%@long}"; price="$(ai_price_long "$model" | cut -d' ' -f2-)"; fi
+      [[ -n "$price" ]] || price="$(ai_price "$model")"
+      cost=""; tcw=$(( tw5 + tw1 ))
       [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tin" -v f="$tw5" -v h="$tw1" -v r="$tcr" -v o="$tout" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + f * q[1] * 1.25 + h * q[1] * 2 + r * q[3] + o * q[2]) / 1000000 }')"
       ai_journal_write "$root" "\"type\":\"usage\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"agent\":$(ai_json_str "$agent"),\"model\":\"$model\",\"messages\":$n,\"tokens_in\":$(( tin + tcw )),\"tokens_cached\":$tcr,\"tokens_out\":$tout,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
     done

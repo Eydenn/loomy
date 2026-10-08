@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.13.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.14.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -421,7 +421,7 @@ flowchart TB
   L --> RV["🔍 Reviewer<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
   L --> DV["🛠️ Developer<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Executor<br/>GPT-6-Luna · max ⇄"]:::fast
-  L --> XP["🔎 Explorer<br/>Haiku 4.5 · low"]:::fast
+  L --> XP["🔎 Explorer<br/>Haiku 5.5 · medium"]:::fast
   L --> DO["📚 Documenter<br/>Sonnet 5.5 · low"]:::std
   classDef lead fill:#534AB7,stroke:#26215C,color:#FFFFFF
   classDef deep fill:#EEEDFE,stroke:#534AB7,color:#26215C
@@ -441,8 +441,8 @@ flowchart TB
 | 🔒&nbsp;Security | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
 | 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
-| ⚙️&nbsp;Executor | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
-| 🔎&nbsp;Explorer | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
+| ⚙️&nbsp;Executor | **Haiku 5.5 · high** | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔎&nbsp;Explorer | Haiku 5.5 · medium | Luna · low | Haiku 5.5 · medium | Luna · low |
 | 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
 
 **Budget profiles.** The lead agent always stays on the top model; only role efforts and models change.
@@ -750,7 +750,6 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 
 | Status | Planned |
 |---|---|
-| 🔜 | **Claude Haiku 5.5**: once released, a measured test decides its roles (already used as soon as it answers) |
 | 🔜 | **Windows 11 through WSL2**: Loomy already runs on Linux (tested in CI), and Claude Code and Codex both run in WSL2. Remaining: WSL detection in `loomy doctor`, clipboard (`clip.exe`), notifications, `start --app` opening the Windows desktop apps, line endings forced to LF, a Windows section in the docs, then a check on a real Windows 11 machine. A few days |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

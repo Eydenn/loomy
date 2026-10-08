@@ -29,27 +29,29 @@ if [[ ${#_ui_probe} != 1 ]]; then
 fi
 unset _ui_probe _l _locs
 
-AI_CATALOG_DATE="2026-09-30"
+AI_CATALOG_DATE="2026-10-08"
 AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # downloaded catalog prices: "model=input output cache;…"
+AI_PRICES_LONG_EXTRA=""  # downloaded long-prompt prices: "model=threshold input output cache;…"
 AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 
 # Model chains per tier: the first model available on this machine is used, the next ones are
 # fallbacks (not everyone has access to the latest models). The downloaded catalog can replace them.
 AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic coding, office work
 AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5 claude-sonnet-5" # everyday work (Sonnet 5 as fallback)
-AI_CHAIN_CLAUDE_FAST="claude-haiku-4-5"              # research, summaries
+AI_CHAIN_CLAUDE_FAST="claude-haiku-5-5 claude-haiku-4-5" # research, summaries, bounded tickets (Haiku 4.5 as fallback)
 AI_CHAIN_CODEX_TOP="gpt-6.1-sol gpt-6-astra"         # GPT-6.1 Sol first (close to Astra for a fifth of the cost); Astra as fallback, or pinned: loomy config set model.codex.top gpt-6-astra
 AI_CHAIN_CODEX_MID="gpt-6.1-sol gpt-6-sol"           # workhorse, workflows (GPT-6 Sol as fallback)
 AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 # Announced models (not out yet): probed at most once a day; as soon as one answers on this machine, it heads its
 # chain, the current model staying as its fallback. "family:tier:model" entries; the catalog can replace them.
-AI_UPCOMING="claude:fast:claude-haiku-5-5"
+AI_UPCOMING=""
 
 # Downloaded catalog (loomy update --catalog): used when newer than the one shipped with Loomy.
 # Read line by line, never executed. Recognised lines (see catalog/models.conf and docs/MODEL_CATALOG.md):
 #   model.<claude|codex>.<top|mid|fast>=<model>[, <fallback>…]
 #   price.<model>=<input> <output> <cache-read>
+#   price_long.<model>=<prompt tokens> <input> <output> <cache-read>   (prices of a request whose prompt is longer)
 #   route.<claude|codex>.<role>=<TOP|MID|FAST> <effort>
 ai_catalog_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/catalog.conf"; }
 _ai_catalog_load() {
@@ -69,6 +71,8 @@ _ai_catalog_load() {
       up_new="${up_new:+$up_new }${BASH_REMATCH[1]}:${BASH_REMATCH[2]}:${BASH_REMATCH[3]}"
     elif [[ "$line" =~ ^price\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
       AI_PRICES_EXTRA="${AI_PRICES_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
+    elif [[ "$line" =~ ^price_long\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9]+\ [0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
+      AI_PRICES_LONG_EXTRA="${AI_PRICES_LONG_EXTRA}${BASH_REMATCH[1]}=${BASH_REMATCH[2]};"
     elif [[ "$line" =~ ^route\.(claude|codex)\.([a-z]+)=(TOP|MID|FAST)\ (low|medium|high|xhigh|max)$ ]]; then
       AI_ROUTE_EXTRA="${AI_ROUTE_EXTRA}${BASH_REMATCH[1]}:${BASH_REMATCH[2]}=${BASH_REMATCH[3]} ${BASH_REMATCH[4]};"
     fi
@@ -173,10 +177,11 @@ for _f in claude codex; do
 done
 unset _f _t _k _cur
 
-AI_MIN_CLAUDE_VERSION="2.1.286"  # first Claude Code version knowing claude-sonnet-5-5 (and its advisor pairing)
+AI_MIN_CLAUDE_VERSION="2.1.293"  # first Claude Code version knowing claude-haiku-5-5 (list price, 1M context)
+AI_MIN_CLAUDE_FOR="claude-haiku-5-5"  # the model that sets this minimum (named by loomy doctor)
 AI_MIN_CODEX_VERSION="0.155.0"   # Codex CLI version checked with the gpt-6-* models
 
-# Public prices in $ per million tokens: "input output cache-read" (checked on 2026-09-23).
+# Public prices in $ per million tokens: "input output cache-read" (checked on 2026-10-08).
 # Used to estimate the cost when the tool doesn't report it (Codex).
 ai_price() {
   # Downloaded catalog prices first (model prefix, as below).
@@ -187,15 +192,39 @@ ai_price() {
   done
   case "$1" in
     claude-opus-5-5*) echo "4 20 0.20" ;;
+    claude-sonnet-5-5*) echo "2 10 0.10" ;;
     claude-sonnet-5*) echo "2 10 0.20" ;;
     claude-haiku-4-5*) echo "1 5 0.10" ;;
-    claude-haiku-5-5*) echo "1 5 0.10" ;;   # provisional (Haiku 4.5's price) until the real one is published
+    claude-haiku-5-5*) echo "0.10 0.50 0.01" ;;   # prompts up to 100K tokens (ai_price_long beyond)
     gpt-6-astra*) echo "10 50 1.00" ;;
     gpt-6.1-sol*) echo "2 10 0.10" ;;
     gpt-6-sol*) echo "2 10 0.20" ;;
     gpt-6-luna*) echo "0.10 0.50 0.01" ;;
     *) echo "" ;;
   esac
+}
+
+# ai_price_long <model>: "<prompt tokens> input output cache-read" when the model has a dearer rate for a request
+# whose prompt (input + cache writes + cache reads) is longer than that; empty otherwise. The whole request pays it.
+ai_price_long() {
+  local e
+  local IFS=';'
+  for e in $AI_PRICES_LONG_EXTRA; do
+    [[ -n "$e" && "$1" == "${e%%=*}"* ]] && { echo "${e#*=}"; return 0; }
+  done
+  case "$1" in
+    claude-haiku-5-5*) echo "100000 0.50 2.50 0.05" ;;
+    *) echo "" ;;
+  esac
+}
+# ai_price_long_list: "model=prompt-tokens …" for every model with a long-prompt rate (read by the usage counter).
+ai_price_long_list() {
+  local e out=""
+  local IFS=';'
+  for e in $AI_PRICES_LONG_EXTRA claude-haiku-5-5=100000; do
+    [[ -n "$e" ]] && out="$out ${e%%=*}=$(echo "${e#*=}" | cut -d' ' -f1)"
+  done
+  echo "${out# }"
 }
 
 AI_ROLES="lead architect debugger security reviewer developer executor explorer documenter"
@@ -353,8 +382,11 @@ _ai_base() {
   case "$1:$2" in
     claude:lead|claude:architect|claude:debugger|claude:security) echo "TOP high" ;;
     claude:reviewer) echo "MID high" ;;
-    claude:developer|claude:executor) echo "MID medium" ;;
-    claude:explorer) echo "FAST low" ;;
+    claude:developer) echo "MID medium" ;;
+    # Haiku 5.5 (2026-10-07): AA index 38 at high, like Luna at max, and 33% on Terminal-Bench (Luna 13%), for about
+    # $0.08 per task; bounded tickets leave Sonnet. On Haiku 4.5 the executor stays on Sonnet (see ai_route).
+    claude:executor) echo "FAST high" ;;
+    claude:explorer) echo "FAST medium" ;;
     claude:documenter) echo "MID low" ;;
     codex:lead|codex:architect|codex:security) echo "TOP high" ;;
     codex:debugger) echo "MID xhigh" ;;
@@ -390,10 +422,8 @@ ai_route() {
         developer)
           if [[ "$family" == "claude" ]]; then tier="TOP"; effort="medium"
           else effort="$(ai_effort_shift "$effort" 1 max)"; fi ;;
-        executor)
-          if [[ "$family" == "claude" ]]; then effort="high"
-          else tier="MID"; effort="high"; fi ;;
-        explorer) effort="medium" ;;
+        executor) tier="MID"; effort="high" ;;
+        explorer) effort="high" ;;
       esac ;;
   esac
   cap="max"
@@ -412,6 +442,10 @@ ai_route() {
     codex:MID) R_MODEL="$AI_MODEL_CODEX_MID" ;;
     codex:FAST) R_MODEL="$AI_MODEL_CODEX_FAST" ;;
   esac
+  # Haiku 4.5 (Haiku 5.5 unavailable on this machine) is not good enough for code tickets: Sonnet, as before 0.14.
+  if [[ "$family:$role:$tier" == "claude:executor:FAST" && "$R_MODEL" == claude-haiku-4-5* ]]; then
+    tier="MID"; R_MODEL="$AI_MODEL_CLAUDE_MID"; (( R_EFFORT_SET )) || effort="medium"
+  fi
   R_FAMILY="$family"; R_TIER="$tier"; R_EFFORT="$effort"
 }
 

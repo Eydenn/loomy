@@ -22,6 +22,17 @@ _lp_templates() {
   if [[ "$(_lp_doc_lang "$1")" == fr && -d "$base/fr/templates" ]]; then echo "$base/fr/templates"; else echo "$base/templates"; fi
 }
 
+# _lp_agent_untouched <subagent> <generated>: true when the subagent differs from the generated one only by its model
+# and effort lines, and its model is one Loomy routes (a chain of the catalog or the built-in one).
+_lp_agent_untouched() {
+  local m chains
+  diff -q <(grep -vE '^(model|effort):' "$1") <(grep -vE '^(model|effort):' "$2") >/dev/null 2>&1 || return 1
+  m="$(sed -n 's/^model:[[:space:]]*//p' "$1" | head -1 | tr -d '[:space:]')"
+  [[ -n "$m" ]] || return 1
+  chains=" $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST claude-haiku-4-5 claude-sonnet-5 claude-opus-5 claude-opus-4-8 "
+  [[ "$chains" == *" $m "* ]]
+}
+
 # loomy_project_migrate <root>: .ai/ (Loomy before 0.9) → .loomy/docs/, references updated in the agents' files.
 loomy_project_migrate() {
   local r="$1" f
@@ -136,7 +147,7 @@ _lp_ensure_block() {
 
 # loomy_project_repair <root>: creates what is missing among the pieces Loomy owns; LP_DONE lists what was done.
 loomy_project_repair() {
-  local r="$1" tpl docs f route lead tmpd n
+  local r="$1" tpl docs f route lead tmpd n u dest
   LP_DONE=()
   [[ -f "$r/.loomy/brief.md" ]] || return 0
   loomy_project_migrate "$r"
@@ -156,18 +167,25 @@ loomy_project_repair() {
     fi
     LP_DONE+=(".loomy/docs/AI_$f.md")
   done
-  # Role subagents for a Claude lead: only the missing ones (a customised subagent stays as it is).
+  # Role subagents for a Claude lead: the missing ones are added; an untouched one follows the routing (new model,
+  # loomy effort). Untouched: same text as generated apart from its model and effort lines, and a model Loomy routes
+  # (a hand-written "model: opus" or "inherit", or any other change, keeps the subagent as it is).
   ai_detect_env "$r" 2>/dev/null || true
   lead="${AI_ENV#hybrid-}"
   if [[ "$lead" == claude ]]; then
     tmpd="$(mktemp -d "${TMPDIR:-/tmp}/loomy-agents.XXXXXX")" || tmpd=""
     if [[ -n "$tmpd" ]] && bash "$route" --root "$r" claude-agents "$tmpd" >/dev/null 2>&1; then
-      mkdir -p "$r/.claude/agents"; n=0
+      mkdir -p "$r/.claude/agents"; n=0; u=0
       for f in "$tmpd"/*.md; do
-        [[ -f "$f" && ! -e "$r/.claude/agents/$(basename "$f")" ]] || continue
-        cp "$f" "$r/.claude/agents/"; n=$(( n + 1 ))
+        [[ -f "$f" ]] || continue
+        dest="$r/.claude/agents/$(basename "$f")"
+        if [[ ! -e "$dest" ]]; then cp "$f" "$dest"; n=$(( n + 1 ))
+        elif [[ -f "$dest" && ! -L "$dest" ]] && ! cmp -s "$f" "$dest" && _lp_agent_untouched "$dest" "$f"; then
+          cp "$f" "$dest"; u=$(( u + 1 ))
+        fi
       done
       (( n > 0 )) && LP_DONE+=(".claude/agents/: $n subagent(s)")
+      (( u > 0 )) && LP_DONE+=(".claude/agents/: $u subagent(s) moved to the current routing")
     fi
     [[ -n "$tmpd" ]] && rm -rf "$tmpd"
   fi

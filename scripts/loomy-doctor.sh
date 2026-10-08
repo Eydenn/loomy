@@ -111,7 +111,7 @@ if ai_has_claude; then
   if ai_version_ge "${v:-0.0.0}" "$AI_MIN_CLAUDE_VERSION"; then
     HAS_C=1; ui_ok "claude $v" "Claude Code · $(command -v claude | sed "s|^$HOME|~|")"
   else
-    ui_warn "claude $v" "$(t "too old for %s (≥ %s)" "$AI_MODEL_CLAUDE_TOP" "$AI_MIN_CLAUDE_VERSION")"
+    ui_warn "claude $v" "$(t "too old for %s (≥ %s)" "$AI_MIN_CLAUDE_FOR" "$AI_MIN_CLAUDE_VERSION")"
     HAS_C=1
     if (( FIX )) && ai_repair_tool claude; then ui_ok "claude $(ai_tool_state claude | cut -d' ' -f2)" "$(t "repaired")"
     else (( FIX )) || ui_info "$(t "fix: %s" "loomy doctor --fix")"; missing_ideal "$(t "Claude Code up to date")"; fi

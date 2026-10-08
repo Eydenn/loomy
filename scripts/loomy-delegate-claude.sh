@@ -154,7 +154,15 @@ T_IN="$(ai_json_num "$OUT" input_tokens)"
 T_CACHED="$(ai_json_num "$OUT" cache_read_input_tokens)"
 T_CWRITE="$(ai_json_num "$OUT" cache_creation_input_tokens)"
 T_OUT="$(ai_json_num "$OUT" output_tokens)"
-COST="$(ai_json_num "$OUT" total_cost_usd)"
+COST="$(ai_json_num "$OUT" total_cost_usd)"; COST_SRC="reported"
+# A Claude Code older than the model (costBasis "unknown") prices it wrong: Loomy's estimate at list price instead.
+if grep -q '"costBasis":"unknown"' <<<"$OUT"; then
+  T_W5="$(ai_json_num "$OUT" ephemeral_5m_input_tokens)"; PRICE="$(ai_price "$MODEL")"
+  if [[ -n "$PRICE" ]]; then
+    COST="$(awk -v p="$PRICE" -v a="$T_IN" -v w="$T_CWRITE" -v f="$T_W5" -v r="$T_CACHED" -v o="$T_OUT" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + f * q[1] * 1.25 + (w - f) * q[1] * 2 + r * q[3] + o * q[2]) / 1000000 }')"
+    COST_SRC="estimate"
+  fi
+fi
 RESULT="ok"
 if [[ $STATUS -ne 0 ]] || grep -q '"is_error":true' <<<"$OUT"; then RESULT="error"; fi
 FORMAT_JSON=""
@@ -168,7 +176,7 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
   AFTER="$(git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"reported\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$MEM_RESULT"

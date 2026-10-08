@@ -1,6 +1,6 @@
 # Model catalog and routing rationale
 
-Checked on **2026-09-30** (GPT-6.1 Sol added on 2026-09-30, Claude Sonnet 5.5 on 2026-09-28; the rest as of 2026-09-23). The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
+Checked on **2026-10-08** (Claude Haiku 5.5 added on 2026-10-08, GPT-6.1 Sol on 2026-09-30, Claude Sonnet 5.5 on 2026-09-28; the rest as of 2026-09-23). The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
 Models change every few weeks: see [Updating the catalog](#updating-the-catalog).
 
 Sources are listed at the end. "AA" means Artificial Analysis (independent measurements). "Vendor" means figures published by OpenAI or Anthropic.
@@ -13,8 +13,9 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | GPT-6.1-Sol | 2 / 10 | 0.10 | about $1.50 per DeepSWE task (high) | not published yet | DeepSWE 75.2% (vendor), OSWorld 2.0 71.4% | Codex workhorse from 2026-09-30; close to Astra for a fifth of the cost |
 | GPT-6-Sol | 2 / 10 | 0.20 | $0.13 (low) → $1.06 (max) | 57 ($2.99/task) | 43% | workhorse |
 | GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1.00 | $0.82 (low) → $3.26 (max) | **62** ($7.09/task) | 59% | OpenAI's frontier model, computer use |
-| Claude Haiku 4.5 | 1 / 5 | 0.10 | not measured | not measured | not measured | fast Claude subagents |
-| Claude Sonnet 5.5 | 2 / 10 | 0.20 | $0.41 (low) → $7.60 (max); intelligence from 36 to 56 | not published yet | **70.6%** (vendor; Opus 5.5: 66.4%) | everyday work on the Claude side, 1M context, fast (171 t/s at xhigh) |
+| Claude Haiku 5.5 | 0.10 / 0.50 (prompt over 100K tokens: 0.50 / 2.50) | 0.01 (0.05) | $0.02 (low) → $0.21 (max); intelligence from 29 to 43, 38 at high for $0.08 | not published yet | 33% (AA; vendor: 39.2%) | Claude explorer and full-Claude executor from 2026-10-08 |
+| Claude Haiku 4.5 | 1 / 5 | 0.10 | intelligence 17, $0.28 | not measured | 0% | fallback for Haiku 5.5 (explorer only) |
+| Claude Sonnet 5.5 | 2 / 10 | 0.10 (since 2026-10-07) | $0.41 (low) → $7.60 (max); intelligence from 36 to 56 | not published yet | **70.6%** (vendor; Opus 5.5: 66.4%) | everyday work on the Claude side, 1M context, fast (171 t/s at xhigh) |
 | Claude Sonnet 5 | 2 / 10 | 0.20 | not yet compared with GPT-6 | not measured | not measured | fallback for Sonnet 5.5 |
 | Claude Opus 5.5 | 4 / 20 (fast 8 / 40) | 0.20 | $0.55 (low) → $5.98 (max); intelligence from 42 to **58, 1st** | not published yet | **59.6%** (vendor: 66.4%) | best reasoning and best agentic work |
 | Claude Fable 5.1 | 10 / 50 | 0.25 | $7.63 (max) | 62 | 55.8% (vendor) | replaced by Opus 5.5 |
@@ -45,6 +46,12 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
    - Consequence: it heads the Codex `mid` chain (developer, reviewer, debugger on the Codex side, the audit's cross review), GPT-6 Sol as fallback. From 0.7.2 it also takes the top tier (lead agent, architect, security on the Codex side): Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Astra stays as the top tier's fallback; to force it on a machine: `loomy config set model.codex.top gpt-6-astra` (`auto` to go back).
 9. **Sonnet 5.5 medium as the Thrifty lead agent** (test of 2026-09-29, below): same result as Opus 5.5 medium for about half the lead agent's cost, and faster. Anthropic recommends Sonnet 5.5 at `medium` for well-specified agentic work and Opus 5.5 for long work needing judgment: the architect, debugger and security roles stay on Opus.
 10. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
+11. **Claude Haiku 5.5 (2026-10-07) takes the cheap Claude work.**
+    - Price: $0.10 / $0.50, a tenth of Haiku 4.5, for a prompt up to 100K tokens; above that the whole request costs five times more ($0.50 / $2.50). Its tokenizer counts about 30% more tokens than Haiku 4.5's.
+    - AA: intelligence 34 at medium ($0.05 per task), 38 at high ($0.08), 43 at max ($0.21); Luna gets 38 at max for $0.07, so Luna stays ahead on the price/score frontier. Terminal-Bench 4.0: 33%, against 13% for Luna and 0% for Haiku 4.5. Hallucination rate 40% against 77% for Luna (it abstains more). About three times Luna's output tokens at max effort.
+    - Vendor: FrontierCode 1.1 46.4% (Luna 42.4%, Sonnet 5.5 52.1%), GDPval-AA 1620 (Luna 1437, Sonnet 5.5 1840). Anthropic recommends it for narrowly scoped tasks and sub-agent work, Sonnet and Opus staying better for complex agentic coding.
+    - Consequence: the Claude **explorer** moves from Haiku 4.5 low to Haiku 5.5 **medium** (its default effort; low drops to 29). The full-Claude **executor** moves from Sonnet 5.5 medium to Haiku 5.5 **high**: same score as Luna max, much better in the terminal, for a twentieth of Sonnet's price per token. In hybrid mode the executor stays on Luna max (cheaper per task, and no Claude quota used). The documenter stays on Sonnet (accuracy first). Max quality keeps the executor on Sonnet or Sol high. Without Haiku 5.5 on a machine, the executor goes back to Sonnet 5.5, never Haiku 4.5.
+    - Claude Code knows the model from 2.1.293 (list price, 1M context): older versions run it but report a wrong cost, so Loomy recomputes it, and `loomy doctor` asks for the update.
 
 ## Resulting role matrix (Balanced profile)
 
@@ -56,8 +63,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | Security | Opus 5.5 high | Astra high | Opus 5.5 high | Opus 5.5 high (bridge) | high-stakes judgement |
 | Reviewer | Sonnet 5.5 high | Sol high | Sol high (Codex) | Sonnet 5.5 high (Claude) | cross-family review in hybrid |
 | Developer | Sonnet 5.5 medium | Sol high | Sonnet 5 medium | Sol high | same price; stays on the main tool |
-| Executor | Sonnet 5.5 medium | Luna max | Luna max (Codex) | Luna max | DeepSWE 66.6% for $0.22 |
-| Explorer | Haiku 4.5 low | Luna low | Haiku 4.5 low | Luna low | cheap searches, on the main tool |
+| Executor | Haiku 5.5 high | Luna max | Luna max (Codex) | Luna max | Luna: DeepSWE 66.6% for $0.22; Haiku 5.5 high: Luna max level, 33% on Terminal-Bench |
+| Explorer | Haiku 5.5 medium | Luna low | Haiku 5.5 medium | Luna low | cheap searches, on the main tool |
 | Documenter | Sonnet 5.5 low | Sol low | Sonnet 5 low | Sol low | accuracy over price (Luna is wrong too often) |
 
 Profiles:
@@ -98,7 +105,8 @@ One value per line, read strictly (never executed):
 date=2026-10-15                                   # required: a catalog is only used when newer
 model.claude.mid=claude-sonnet-5-5, claude-sonnet-5   # chain: the first available model is used
 model.codex.top=gpt-6-5-astra, gpt-6-astra            # the next ones are fallbacks
-price.claude-sonnet-5-5=2 10 0.20                 # $ per million tokens: input, output, cache read
+price.claude-sonnet-5-5=2 10 0.10                 # $ per million tokens: input, output, cache read
+price_long.claude-haiku-5-5=100000 0.50 2.50 0.05 # optional: rate of a request whose prompt is longer (whole request)
 route.claude.explorer=MID low                     # optional: rebalance a role (TOP|MID|FAST tier, effort)
 ```
 
@@ -122,17 +130,13 @@ Effort is set separately, per project and per role: `loomy effort`.
 
 ### Announced models (anticipated support)
 
-A model announced but not out yet goes in the catalog as `upcoming.<tool>.<tier>=<model>`, for example `upcoming.claude.fast=claude-haiku-5-5`.
+A model announced but not out yet goes in the catalog as `upcoming.<tool>.<tier>=<model>`, for example `upcoming.claude.fast=claude-haiku-6`.
 - Loomy probes it at most once a day, in the background, with one tiny call.
 - As soon as it answers on a machine, it heads its chain there, the current model staying as its fallback. A one-line notice is shown at the next launch.
 - `loomy models` lists the announced models; `loomy doctor --live` tests them too.
 - Its routing (which roles beyond its tier) is decided once real figures are out, with the usual protocol below.
 
-Currently announced: **Claude Haiku 5.5** (confirmed by Anthropic on 2026-09-22 for "the coming weeks"; early reports say fast and cheap). Provisional price: Haiku 4.5's, until the real one is published. Roles to review once it is out:
-- the full-Claude executor, today Sonnet 5.5 medium;
-- the Claude documenter;
-- the audit writer when Codex is missing, today a local model;
-- a comparison with GPT-6-Luna as the hybrid executor.
+Currently announced: none. Claude Haiku 5.5, announced on 2026-09-22, came out on 2026-10-07 and was probed this way until then (finding 11).
 
 ### Protocol when a new model comes out
 
@@ -157,6 +161,10 @@ To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gp
 - [GPT-6 Sol vs Claude Sonnet 5 (Kingy AI)](https://kingy.ai/blog/gpt-6-sol-vs-claude-sonnet-5/)
 - [GPT-6 Sol vs Claude Opus 5.5 cost per task (Digital Applied)](https://www.digitalapplied.com/blog/gpt-6-sol-vs-claude-opus-5-5-cost-benchmarks)
 - [Claude API pricing (Anthropic)](https://platform.claude.com/docs/en/about-claude/pricing)
+- [Claude Haiku 5.5 by effort level (Artificial Analysis)](https://artificialanalysis.ai/models/claude-haiku-5-5)
+- [Claude Haiku 5.5 better than GPT-6 Luna at the same pricing (Latent Space)](https://www.latent.space/p/ainews-claude-haiku-55-better-than)
+- [Claude Haiku 5.5 price cuts and benchmarks (The Decoder)](https://the-decoder.com/claude-haiku-5-5-arrives-with-massive-price-cuts-proving-the-ai-pricing-arms-race-is-far-from-over/)
+- [Claude Haiku 5.5 as a subagent (Beam AI)](https://beam.ai/agentic-insights/claude-haiku-5-5-subagents)
 - [Claude Sonnet 5.5 at unchanged Sonnet 5 pricing (Unite.AI)](https://www.unite.ai/anthropic-releases-claude-sonnet-5-5-at-unchanged-sonnet-5-pricing/)
 - [Claude Sonnet 5.5 by effort level (Artificial Analysis)](https://artificialanalysis.ai/models/releases/claude-sonnet-5-5)
 - [Claude Sonnet 5.5 against Opus 5.5, cost per task (Roo)](https://roo.beehiiv.com/p/claude-sonnet-5-5-cost-benchmarks)

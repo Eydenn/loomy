@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.13.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.14.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -421,7 +421,7 @@ flowchart TB
   L --> RV["🔍 Relecteur<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
   L --> DV["🛠️ Développeur<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Exécutant<br/>GPT-6-Luna · max ⇄"]:::fast
-  L --> XP["🔎 Explorateur<br/>Haiku 4.5 · low"]:::fast
+  L --> XP["🔎 Explorateur<br/>Haiku 5.5 · medium"]:::fast
   L --> DO["📚 Documentaliste<br/>Sonnet 5.5 · low"]:::std
   classDef lead fill:#534AB7,stroke:#26215C,color:#FFFFFF
   classDef deep fill:#EEEDFE,stroke:#534AB7,color:#26215C
@@ -441,8 +441,8 @@ flowchart TB
 | 🔒&nbsp;Sécurité | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
 | 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
 | 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
-| ⚙️&nbsp;Exécutant | Sonnet 5.5 · medium | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
-| 🔎&nbsp;Explorateur | Haiku 4.5 · low | Luna · low | Haiku 4.5 · low | Luna · low |
+| ⚙️&nbsp;Exécutant | **Haiku 5.5 · high** | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
+| 🔎&nbsp;Explorateur | Haiku 5.5 · medium | Luna · low | Haiku 5.5 · medium | Luna · low |
 | 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
@@ -750,7 +750,6 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 
 | Statut | Prévu |
 |---|---|
-| 🔜 | **Claude Haiku 5.5** : à sa sortie, un test mesuré décide de ses rôles (déjà utilisé dès qu'il répond) |
 | 🔜 | **Windows 11 via WSL2** : Loomy tourne déjà sous Linux (testé en CI), et Claude Code comme Codex fonctionnent dans WSL2. Reste : détection de WSL dans `loomy doctor`, presse-papiers (`clip.exe`), notifications, `start --app` qui ouvre les apps de bureau Windows, fins de ligne forcées en LF, une section Windows dans la doc, puis une vérification sur un vrai Windows 11. Quelques jours |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

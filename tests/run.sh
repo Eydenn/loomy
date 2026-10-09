@@ -1004,6 +1004,373 @@ has "start: lead agent session on the other tool" "Claude Code quota at 97 %: th
 has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
 rm -f "$QC/loomy/claude-limits"
 
+section "Lead relay (quota)"
+LR="$WORK/lead-relay"; LR_BIN="$WORK/lead-relay-bin"; LR_LOG="$WORK/lead-relay.log"
+mkdir -p "$LR/.loomy/logs" "$LR_BIN"
+cat >"$LR/.loomy/brief.md" <<'BRIEF'
+---
+name: "Lead relay"
+ai_mode: ORCHESTRATED
+ai_lead: claude
+budget: equilibre
+---
+BRIEF
+printf 'phase=build\n' >"$LR/.loomy/state"
+relay_codex_quota() {
+  local pct="$1"
+  printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":%s.0,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' \
+    "$pct" "$(( $(date +%s) + 200000 ))" >"$QX/sessions/2026/09/28/r.jsonl"
+  rm -f "$QC/loomy/codex-limits"
+}
+relay_state_active() {
+  printf 'master=claude\nacting=codex\nsince=%s\nreason=test relay\nresume_at=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >"$LR/.loomy/failover"
+}
+lead_relay_decide() {
+  local dry="${1:-}" no_switch="${2:-}"
+  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_NO_SWITCH="$no_switch" bash -c '
+    source "$1/scripts/lib/models.sh"
+    source "$1/scripts/lib/failover.sh"
+    lf_decide "$2" claude "${3:-}"
+    [[ -n "$LF_NOTE" ]] && printf "LF_NOTE=%s\n" "$LF_NOTE"
+    exit 0
+  ' _ "$REPO" "$LR" "$dry"
+}
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
+: >"$LR/.loomy/logs/events.jsonl"
+got="$(lead_relay_decide)"
+[[ "$got" == "claude normal" ]] && ok "lead relay: unsaturated master stays normal" || ko "lead relay: unsaturated decision was $got"
+[[ ! -e "$LR/.loomy/failover" ]] && ok "lead relay: normal decision writes no state" || ko "lead relay: normal decision wrote state"
+
+LR_RESET=$(( $(date +%s) + 3600 ))
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
+got="$(lead_relay_decide)"
+[[ "$got" == "codex handover" ]] && ok "lead relay: 97% Claude hands lead to Codex" || ko "lead relay: handover decision was $got"
+file_has "lead relay: state records Claude as master" "$LR/.loomy/failover" '^master=claude$'
+file_has "lead relay: state records Codex as acting lead" "$LR/.loomy/failover" '^acting=codex$'
+file_has "lead relay: state records Claude quota reason" "$LR/.loomy/failover" '^reason=5 h 97 %$'
+file_has "lead relay: state records Claude reset time" "$LR/.loomy/failover" "^resume_at=$LR_RESET$"
+file_has "lead relay: handover event is journaled" "$LR/.loomy/logs/events.jsonl" '"type":"lead_failover"'
+
+rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
+got="$(lead_relay_decide --dry)"
+[[ "$got" == "codex handover" ]] && ok "lead relay: dry decision matches handover" || ko "lead relay: dry decision was $got"
+[[ ! -e "$LR/.loomy/failover" ]] && ok "lead relay: dry handover writes no state" || ko "lead relay: dry handover wrote state"
+[[ ! -s "$LR/.loomy/logs/events.jsonl" ]] && ok "lead relay: dry handover writes no event" || ko "lead relay: dry handover wrote an event"
+
+rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
+qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+  source "$1/scripts/lib/models.sh"
+  source "$1/scripts/lib/failover.sh"
+  lf_decide "$2" claude --dry >/dev/null
+  lf_apply "$2"
+  lf_apply "$2"
+' _ "$REPO" "$LR"
+[[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl" 2>/dev/null || true)" == 1 ]] \
+  && ok "lead relay: repeated apply journals one handover" || ko "lead relay: repeated apply journal count was $(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl" 2>/dev/null || true)"
+[[ -f "$LR/.loomy/failover" && "$(wc -l <"$LR/.loomy/failover" | tr -d ' ')" == 5 && ! -e "$LR/.loomy/failover.lock" ]] \
+  && ok "lead relay: repeated apply keeps one state and releases the lock" || ko "lead relay: repeated apply state or lock is wrong"
+got="$(lead_relay_decide)"
+[[ "$got" == "codex continue" && -f "$LR/.loomy/failover" ]] \
+  && ok "lead relay: active Codex relay continues while Claude is saturated" || ko "lead relay: active state decision was $got"
+
+rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
+mkdir "$LR/.loomy/failover.lock"
+touch -t 200001010000 "$LR/.loomy/failover.lock"
+qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+  source "$1/scripts/lib/models.sh"
+  source "$1/scripts/lib/failover.sh"
+  lf_decide "$2" claude --dry >/dev/null
+  lf_apply "$2"
+' _ "$REPO" "$LR"
+[[ -f "$LR/.loomy/failover" && ! -e "$LR/.loomy/failover.lock" \
+  && "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl" 2>/dev/null || true)" == 1 ]] \
+  && ok "lead relay: stale lock older than 30 seconds is broken" || ko "lead relay: stale lock was not recovered"
+
+rm -f "$QC/loomy/claude-limits"
+got="$(lead_relay_decide)"
+[[ "$got" == "claude return" && ! -e "$LR/.loomy/failover" ]] \
+  && ok "lead relay: missing Claude quota returns the lead and clears state" || ko "lead relay: quota return was $got"
+file_has "lead relay: return event is journaled" "$LR/.loomy/logs/events.jsonl" '"type":"lead_return"'
+
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
+relay_state_active "$(( $(date +%s) - 1 ))"
+: >"$LR/.loomy/logs/events.jsonl"
+got="$(lead_relay_decide)"
+[[ "$got" == "claude return" && ! -e "$LR/.loomy/failover" ]] \
+  && ok "lead relay: expired resume time returns the lead" || ko "lead relay: expired resume decision was $got"
+
+relay_codex_quota 90
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+rm -f "$LR/.loomy/failover"
+got="$(lead_relay_decide)"
+[[ "$got" == *"claude normal"* && "$got" == *"LF_NOTE=no other tool with room left"* ]] \
+  && ok "lead relay: no room on Codex leaves Claude in place" || ko "lead relay: no-room decision was $got"
+
+printf 'plan_claude=pro\nplan_codex=api\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+rm -f "$LR/.loomy/failover"
+got="$(lead_relay_decide)"
+[[ "$got" == *"claude normal"* && "$got" == *"LF_NOTE=the other tool is on a pay-per-use plan"* ]] \
+  && ok "lead relay: API destination keeps Claude with pay-per-use note" || ko "lead relay: API destination decision was $got"
+
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
+printf 'plan_claude=api\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+got="$(lead_relay_decide)"
+[[ "$got" == "claude normal" ]] && ok "lead relay: Claude API plan is not relayed" || ko "lead relay: API plan decision was $got"
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=off\n' >"$QC/loomy/config"
+relay_state_active "$(( $(date +%s) + 3600 ))"
+got="$(lead_relay_decide)"
+[[ "$got" == "claude normal" && ! -e "$LR/.loomy/failover" ]] \
+  && ok "lead relay: lead_failover off clears state and keeps Claude" || ko "lead relay: off decision was $got"
+printf 'lead_failover=auto\n' >>"$QC/loomy/config"
+relay_state_active "$(( $(date +%s) + 3600 ))"
+got="$(lead_relay_decide "" 1)"
+[[ "$got" == "claude normal" && ! -e "$LR/.loomy/failover" ]] \
+  && ok "lead relay: LOOMY_NO_SWITCH clears state and keeps Claude" || ko "lead relay: no-switch decision was $got"
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=95\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 90
+got="$(lead_relay_decide)"
+[[ "$got" == "codex handover" ]] && ok "lead relay: quota_room 95 admits Codex at 90%" || ko "lead relay: quota_room decision was $got"
+
+relay_state_active "$(( $(date +%s) + 3600 ))"
+lead_relay_env() {
+  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" AI_ROUTE_ENV="${1:-}" bash -c '
+    source "$1/scripts/lib/models.sh"
+    ai_detect_env "$2"
+    printf "%s|%s|%s\n" "$AI_LEAD" "$AI_LEAD_MASTER" "$AI_ENV"
+  ' _ "$REPO" "$LR"
+}
+got="$(lead_relay_env)"
+[[ "$got" == "codex|claude|hybrid-codex" ]] && ok "lead relay: active relay sets acting lead and hybrid environment" || ko "lead relay: detected environment was $got"
+got="$(lead_relay_env hybrid-claude)"
+[[ "$got" == "codex|claude|hybrid-claude" ]] && ok "lead relay: AI_ROUTE_ENV override still wins" || ko "lead relay: route override was $got"
+
+cat >"$LR_BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  --version)
+    [[ -n "${STUB_BROKEN_VERSION:-}" ]] && exit 1
+    echo "2.1.300 (Claude Code)"; exit 0 ;;
+esac
+if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
+if [[ "${STUB_SATURATE:-1}" == "1" ]]; then
+  mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/loomy"
+  printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits"
+fi
+exit 0
+STUB
+chmod +x "$LR_BIN/claude"
+
+LR_APP_BIN="$WORK/lead-relay-app-bin"; LR_APP_OPEN_LOG="$WORK/lead-relay-app-open.log"
+mkdir -p "$LR_APP_BIN"
+cat >"$LR_APP_BIN/uname" <<'STUB'
+#!/usr/bin/env bash
+echo Darwin
+STUB
+cat >"$LR_APP_BIN/open" <<'STUB'
+#!/usr/bin/env bash
+[[ "${1:-}" == "-Ra" ]] && exit 0
+printf '%s\n' "$*" >>"$LR_APP_OPEN_LOG"
+STUB
+chmod +x "$LR_APP_BIN/uname" "$LR_APP_BIN/open"
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
+rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"; : >"$LR_APP_OPEN_LOG"
+if qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" \
+  LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --app >"$OUT" 2>&1; then
+  grep -q '^codex://' "$LR_APP_OPEN_LOG" 2>/dev/null && ok "start --app: opens the acting Codex app" || ko "start --app: app link $(cat "$LR_APP_OPEN_LOG" 2>/dev/null)"
+  file_has "start --app: applies the lead relay state" "$LR/.loomy/failover" '^acting=codex$'
+  file_has "start --app: journals the lead relay" "$LR/.loomy/logs/events.jsonl" '"type":"lead_failover"'
+  has "start --app: explains the terminal-only chain" "automatic chain only runs in the terminal"
+else ko "start --app: command failed"; fi
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
+: >"$LR/.loomy/logs/events.jsonl"; : >"$LR_LOG"
+if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+  LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
+  LR_ORDER="$(awk -F '\t' '$1 == "claude" && $2 !~ /^--version/ || $1 == "codex" && $2 !~ /^--version/ { printf "%s%s", sep, $1; sep = " " } END { print "" }' "$LR_LOG")"
+  [[ "$LR_ORDER" == "claude codex" ]] && ok "start chain: Claude session hands off to Codex" || ko "start chain: session order was $LR_ORDER"
+  grep -q 'You are temporarily the lead agent in place of Claude Code' "$LR_LOG" \
+    && ok "start chain: Codex receives the temporary lead prompt" || ko "start chain: temporary lead prompt missing"
+  has "start chain: takeover is announced" "takes over"
+  file_has "start chain: Codex relay state remains active" "$LR/.loomy/failover" '^acting=codex$'
+else ko "start chain: command failed"; fi
+
+rm -f "$QC/loomy/claude-limits"; : >"$LR_LOG"
+if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+  LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
+  grep -q 'You are the lead agent again' "$LR_LOG" \
+    && ok "start chain: returning Claude receives the lead-again prompt" || ko "start chain: lead-again prompt missing"
+  [[ ! -e "$LR/.loomy/failover" ]] && ok "start chain: return clears the relay state" || ko "start chain: return state remains"
+else ko "start chain: return command failed"; fi
+
+rm -f "$LR/.loomy/failover" "$QC/loomy/claude-limits"; : >"$LR_LOG"
+if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+  LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
+  LR_COUNT="$(awk -F '\t' '$1 == "claude" && $2 !~ /^--version/ || $1 == "codex" && $2 !~ /^--version/ { n++ } END { print n + 0 }' "$LR_LOG")"
+  [[ "$LR_COUNT" == "1" ]] && ok "start chain: no saturation starts one Claude session" || ko "start chain: no-saturation session count was $LR_COUNT"
+  hasnt "start chain: no takeover without saturation" "takes over"
+else ko "start chain: no-saturation command failed"; fi
+
+# Alternate the two quotas: Claude saturates on every call; the Codex wrapper clears Claude's reading after each call,
+# so each finished session triggers the opposite relay and exercises the six-session chain bound.
+LR_BOUND_BIN="$WORK/lead-relay-bound-bin"; LR_BOUND_LOG="$WORK/lead-relay-bound.log"
+mkdir -p "$LR_BOUND_BIN"; cp "$LR_BIN/claude" "$LR_BOUND_BIN/claude"
+cat >"$LR_BOUND_BIN/codex" <<'STUB'
+#!/usr/bin/env bash
+set -u
+if [[ "${1:-}" == "--version" ]]; then STUB_LOG= "${LOOMY_TEST_CODEX_STUB:?}" "$@"; exit $?; fi
+if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'codex\t%s\n' "$*") >>"$STUB_LOG"; fi
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits"
+STUB_LOG= "${LOOMY_TEST_CODEX_STUB:?}" "$@"
+STUB
+chmod +x "$LR_BOUND_BIN/codex"
+relay_codex_quota 20
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"; : >"$LR_BOUND_LOG"
+if qenv env PATH="$LR_BOUND_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_BOUND_LOG" \
+  LOOMY_CODEX_BIN="$LR_BOUND_BIN/codex" LOOMY_TEST_CODEX_STUB="$HERE/stubs/codex" \
+  LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
+  LR_ORDER="$(awk -F '\t' '$1 == "claude" || ($1 == "codex" && $2 !~ /^--version/) { printf "%s%s", sep, $1; sep = " " } END { print "" }' "$LR_BOUND_LOG")"
+  LR_COUNT="$(awk -F '\t' '$1 == "claude" || ($1 == "codex" && $2 !~ /^--version/) { n++ } END { print n + 0 }' "$LR_BOUND_LOG")"
+  [[ "$LR_COUNT" -le 6 && "$LR_COUNT" == "6" && "$LR_ORDER" == "claude codex claude codex claude codex" ]] \
+    && ok "start chain: alternating quota changes stop at six sessions" || ko "start chain: bound count=$LR_COUNT order=$LR_ORDER"
+else ko "start chain: alternating quota command failed"; fi
+
+LR_USER_CONFIG="$WORK/lead-relay-user-config"
+fails "config rejects invalid lead_failover" 2 env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set lead_failover maybe
+has "config invalid lead_failover explains accepted values" '^lead_failover: auto or off$'
+fails "config rejects quota_room below 1" 2 env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set quota_room 0
+has "config invalid quota_room explains range" '^quota_room: a percentage \(1 to 100\)$'
+run "config accepts lead_failover auto" env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set lead_failover auto
+run "config accepts lead_failover off" env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set lead_failover off
+run "config accepts quota_room 1" env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set quota_room 1
+run "config accepts quota_room 100" env XDG_CONFIG_HOME="$LR_USER_CONFIG" "$LOOMY" config set quota_room 100
+
+# BEGIN lead relay part B standalone coverage.
+# Prompt-hook notices, session context, displays, handoff reader and inner-session banner.
+relay_set_brief() {
+  cat >"$LR/.loomy/brief.md" <<BRIEF
+---
+name: "Lead relay"
+ai_mode: $2
+ai_lead: $1
+budget: equilibre
+---
+BRIEF
+}
+relay_active_claude() {
+  printf 'master=codex\nacting=claude\nsince=%s\nreason=%s\nresume_at=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "5 h 96 %" "$1" >"$LR/.loomy/failover"
+}
+relay_prompt_hook() {
+  local no_switch="${1:-}"
+  echo '{}' | qenv env LOOMY_LANG=en LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_NO_SWITCH="$no_switch" \
+    bash "$REPO/scripts/loomy-context.sh" --hook prompt --root "$LR"
+}
+relay_record_return() {
+  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+    source "$1/scripts/lib/models.sh"
+    source "$1/scripts/lib/failover.sh"
+    lf_start "$2" codex claude "5 h 96 %" "$3"
+    lf_end "$2"
+  ' _ "$REPO" "$LR" "$1"
+}
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_set_brief claude ORCHESTRATED
+relay_codex_quota 20
+printf 'five_hour_pct=92\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$QC/loomy/claude-limits"
+rm -f "$LR/.loomy/failover" "$LR/.loomy/relay.notice"
+relay_prompt_hook >"$OUT" 2>&1
+has "prompt hook: emits UserPromptSubmit additionalContext JSON" '^\{"hookSpecificOutput":\{"hookEventName":"UserPromptSubmit","additionalContext":'
+has "prompt hook: 92% notice includes HANDOFF instructions" '\[Loomy\] Claude Code quota at 92 %.*HANDOFF\.md'
+has "prompt hook: near-quota notice keeps the ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+relay_prompt_hook >"$OUT" 2>&1
+hasnt "prompt hook: immediate repeat is throttled" '\[Loomy\] Claude Code quota at'
+printf 'prepare %s\n' "$(( $(date +%s) - 700 ))" >"$LR/.loomy/relay.notice"
+relay_prompt_hook >"$OUT" 2>&1
+has "prompt hook: notice returns after 10-minute throttle" '\[Loomy\] Claude Code quota at 92 %'
+
+printf 'plan_claude=api\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=off\n' >"$QC/loomy/config"
+printf 'five_hour_pct=80\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$QC/loomy/claude-limits"
+relay_codex_quota 90
+rm -f "$LR/.loomy/failover"
+relay_prompt_hook 1 >"$OUT" 2>&1
+hasnt "prompt hook: silent with no-switch, failover off, API plan and full Codex quota" '\[Loomy\] Claude Code quota at'
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_set_brief codex ORCHESTRATED
+relay_codex_quota 20
+relay_active_claude "$(( $(date +%s) - 1 ))"
+rm -f "$LR/.loomy/relay.notice"
+relay_prompt_hook >"$OUT" 2>&1
+has "prompt hook: expired Codex reset announces lead return" '\[Loomy\] Codex has quota again and takes the lead back'
+relay_codex_quota 96
+relay_active_claude "$(( $(date +%s) + 3600 ))"
+rm -f "$LR/.loomy/relay.notice"
+relay_prompt_hook >"$OUT" 2>&1
+hasnt "prompt hook: future Codex reset suppresses return notice at 96%" '\[Loomy\] Codex has quota again and takes the lead back'
+
+relay_active_claude "$(( $(date +%s) + 3600 ))"
+relay_prompt_hook >"$OUT" 2>&1
+has "prompt hook: acting Claude lead retains ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+rm -f "$LR/.loomy/failover" "$QC/loomy/claude-limits"
+relay_prompt_hook >"$OUT" 2>&1
+hasnt "prompt hook: Codex lead without relay has no ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_active_claude "$(( $(date +%s) + 3600 ))"
+run "session start: active relay explains temporary Claude lead" qenv env LOOMY_NO_REPAIR=1 bash -c \
+  'bash "$1/scripts/loomy-context.sh" --hook start --root "$2" </dev/null' _ "$REPO" "$LR"
+has "session start: active relay names Claude in place of Codex" 'Temporary lead: Claude Code in place of Codex'
+run "session start: lf_start and lf_end record return" relay_record_return "$(( $(date +%s) - 1 ))"
+run "session start: Codex receives back-as-lead context" qenv env LOOMY_NO_REPAIR=1 bash -c \
+  'bash "$1/scripts/loomy-context.sh" --hook start --root "$2" --tool codex </dev/null' _ "$REPO" "$LR"
+has "session start: Codex sees back-as-lead line" 'Back as lead agent'
+run "session start: Claude does not receive Codex back-as-lead context" qenv env LOOMY_NO_REPAIR=1 bash -c \
+  'bash "$1/scripts/loomy-context.sh" --hook start --root "$2" --tool claude </dev/null' _ "$REPO" "$LR"
+hasnt "session start: Claude omits Codex back-as-lead line" 'Back as lead agent'
+
+relay_active_claude "$(( $(date +%s) + 3600 ))"
+run "status: compact view shows active temporary lead" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR" --compact
+has "status: Claude Code is shown in place of Codex" '⇄ Lead: Claude Code in place of Codex'
+rm -f "$LR/.loomy/failover"
+run "status: inactive relay has no lead line" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR" --compact
+hasnt "status: no relay line without active failover" '⇄ Lead'
+relay_active_claude "$(( $(date +%s) + 3600 ))"
+run "status line: active relay renders acting Claude" qenv bash -c \
+  'echo "{}" | env LOOMY_PROJECT_ROOT="$1" LOOMY_LANG=en bash "$2/scripts/loomy-statusline.sh"' _ "$LR" "$REPO"
+has "status line: shows ⇄ claude during relay" '⇄ claude'
+
+mkdir -p "$LR/.loomy/docs"
+printf 'From: Claude\nTo: Codex\n' >"$LR/.loomy/docs/HANDOFF.md"
+run "HANDOFF reader: English From/To keys render in full status" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR"
+has "HANDOFF reader: English Claude → Codex" 'Claude → Codex'
+printf 'De : Claude\nVers : Codex\n' >"$LR/.loomy/docs/HANDOFF.md"
+run "HANDOFF reader: French De/Vers keys render in full status" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR"
+has "HANDOFF reader: French Claude → Codex" 'Claude → Codex'
+
+file_has "start: dedicated tmux agent command sets LOOMY_START_INNER=1" "$REPO/scripts/loomy-start.sh" \
+  'agent=.*env LOOMY_START_INNER=1 bash.*loomy-start\.sh'
+file_has "start: dedicated tmux session runs the inner agent command" "$REPO/scripts/loomy-start.sh" \
+  'tmux new-session.*[$]agent; tmux kill-session'
+run "start: inner print suppresses banner logo" qenv env LOOMY_START_INNER=1 COLUMNS=80 LINES=24 \
+  LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --print
+hasnt "start: inner print has no banner logo line" '▀▄'
+run "start: normal print renders banner logo" qenv env COLUMNS=80 LINES=24 \
+  LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --print
+has "start: normal print includes banner logo line" '▀▄'
+# END lead relay part B standalone coverage.
+
 section "Codex CLI discovery"
 CA="$WORK/apps/ChatGPT.app/Contents/Resources/codex-cli"; mkdir -p "$CA/bin" "$WORK/stalebin"
 printf '{ "layoutVersion": 1, "entrypoint": "bin/codex" }\n' >"$CA/codex-package.json"

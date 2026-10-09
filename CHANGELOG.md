@@ -2,7 +2,24 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.15.0 — 2026-10-09
+
+### Added
+- **Lead relay when a subscription runs out**: the lead set in the brief never changes, the other tool stands in for it until it has room again (ADR-0006).
+  - At 90 % (switch threshold minus 5) a Claude Code lead is told at each message (at most every 10 minutes) to finish the step, write `.loomy/docs/HANDOFF.md` and `STATE.md`, commit and end the session. Codex has no per-message hook: its lead is warned by `loomy watch` and at session start.
+  - At 95 %, if the other tool is installed on a subscription plan and below `quota_room` (80 %), the terminal `loomy start` chain hands the lead over with a relay prompt (5 seconds to cancel with Ctrl+C, `LOOMY_CHAIN_DELAY` to change it; 6 sessions at most per chain). Routing follows the acting lead. `loomy start --app` opens one session and records the relay without chaining; a later `loomy start` returns the lead when its quota allows.
+  - Once the lead is below 80 % or its window has reset, the acting lead is told the same way and the lead takes back over with a return prompt.
+  - An API master never relays, and an API tool cannot receive the lead. `loomy config set lead_failover off` or `LOOMY_NO_SWITCH=1` disables relays; new keys `lead_failover` and `quota_room`.
+  - State in `.loomy/failover`, shown by `loomy status`, `loomy watch` and the status line (⇄), journal events `lead_failover` and `lead_return`.
+
+### Changed
+- `loomy status` reads the English keys of `HANDOFF.md` (From, To) as well as the French ones.
+- The dedicated tmux session prints the banner once.
+- The orchestrator reminder also reaches Claude when it stands in for a Codex lead.
+
 ## 0.14.1 — 2026-10-08
+
+Not published on its own: shipped with 0.15.0.
 
 ### Changed
 - **The setup contract template moved to `bootstrap/START.md`** (`fr/bootstrap/START.md` in French). A project still gets its `START.md` at its root; only the copy shipped with Loomy moved. At the root of Loomy's own repository it read as an unfinished setup, which kept Loomy from being initialised on itself. Loomy now uses its own orchestrated method for its development; its AI files live in a separate private repository.

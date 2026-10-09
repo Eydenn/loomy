@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.14.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.0-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -375,6 +375,14 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 - pas d'aller-retour : une délégation basculée ne rebascule jamais, et rien ne bouge quand les deux outils sont épuisés.
 
 Seuil : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour ne jamais basculer.
+
+**Relais de l'agent principal quand un forfait s'épuise.** L'agent principal défini dans le brief ne change jamais ; l'autre outil le remplace seulement pour un temps :
+- à 90 % (seuil de bascule moins 5), un agent principal Claude Code est prévenu à chaque message (au plus toutes les 10 minutes) de terminer l'étape, d'écrire `.loomy/docs/HANDOFF.md` et `STATE.md`, de committer et de terminer la session ; Codex n'a pas de hook par message, donc un agent principal Codex n'est prévenu que par `loomy watch` et au démarrage de la session ;
+- à 95 %, si l'autre outil est installé, dispose d'un abonnement et reste sous 80 %, la chaîne terminale de `loomy start` l'ouvre comme agent principal avec un prompt de relais (5 secondes pour annuler avec Ctrl+C, 6 sessions au plus par chaîne) ; `loomy start --app` enregistre et ouvre une session sans chaîne, et un prochain `loomy start` rend la main à l'agent principal dès que son quota le permet ; le routage suit l'agent principal en place pendant ce temps ;
+- dès que l'agent principal repasse sous 80 %, ou que sa fenêtre est remise à zéro, l'agent en place en est prévenu de la même façon et l'agent principal reprend la main avec un prompt de retour ;
+- un agent principal sur un forfait API ne relaie jamais, et un outil API ne peut pas recevoir le lead ; `loomy config set lead_failover off` ou `LOOMY_NO_SWITCH=1` désactive les relais ; `quota_room` (80 par défaut) fixe la part sous laquelle un outil a de la marge.
+
+Le relais est gardé dans `.loomy/failover`, affiché par `loomy status` et `loomy watch` (⇄), et journalisé (`lead_failover`, `lead_return`).
 
 D'où viennent les chiffres, sans réseau ni identifiants :
 - **Codex** écrit son quota dans ses propres journaux de session (`~/.codex/sessions`) ; Loomy lit le dernier relevé.

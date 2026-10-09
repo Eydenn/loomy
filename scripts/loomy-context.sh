@@ -40,11 +40,25 @@ if [[ "$fp_hook" == "prompt" ]]; then
   p_lead="${p_lead#"${p_lead%%[![:space:]]*}"}"; p_lead="${p_lead//\"/}"
   # An unfinished setup is said at every message, whatever the mode: work must not go on over it.
   p_unfinished=0; [[ -f "$P_ROOT/START.md" ]] && p_unfinished=1
-  p_orch=0; [[ "$p_mode" == "ORCHESTRATED" && "$p_lead" != "codex" ]] && p_orch=1
-  (( p_unfinished || p_orch )) || exit 0
+  # The reminder goes to a Claude lead: the brief's, or Claude standing in for a Codex lead during a quota relay.
+  p_orch=0; p_acting=""
+  if [[ -f "$P_ROOT/.loomy/failover" ]]; then
+    while IFS= read -r fp_line; do case "$fp_line" in acting=*) p_acting="${fp_line#acting=}" ;; esac; done <"$P_ROOT/.loomy/failover"
+  fi
+  [[ "$p_mode" == "ORCHESTRATED" && "${p_acting:-$p_lead}" != "codex" ]] && p_orch=1
+  # Lead relay (see lib/failover.sh): only worth the libraries when a relay is active or the Claude quota is high
+  # (cheap look at the saved limits, 50 % as a loose floor: the real threshold is checked by lf_prompt_notice).
+  p_try=0
+  if [[ -f "$P_ROOT/.loomy/failover" ]]; then p_try=1
+  elif [[ -r "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits" ]]; then
+    while IFS= read -r fp_line; do
+      case "$fp_line" in *_pct=*) fp_v="${fp_line#*=}"; if [[ "$fp_v" =~ ^[0-9]+$ ]] && (( fp_v >= 50 )); then p_try=1; fi ;; esac
+    done <"${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits"
+  fi
+  (( p_unfinished || p_orch || p_try )) || exit 0
   # shellcheck source=lib/i18n.sh
   source "$SCRIPT_DIR/lib/i18n.sh" 2>/dev/null || tv() { printf -v "$1" '%s' "$2"; }
-  p_msg=""; p_orch_msg=""
+  p_msg=""; p_orch_msg=""; p_relay=""
   if (( p_unfinished )); then
     tv p_msg "[Loomy] The Loomy setup of this project is not finished (START.md is still there). Before any other work, resume it where it stopped (phase in .loomy/state), or tell the user it has to be finished first and ask them."
   fi
@@ -52,6 +66,15 @@ if [[ "$fp_hook" == "prompt" ]]; then
     tv p_orch_msg "[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/loomy-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/loomy-delegate-codex.sh. Do the work yourself only when the routing keeps it on the lead."
     p_msg="${p_msg:+$p_msg }$p_orch_msg"
   fi
+  if (( p_try )); then
+    # This hook only exists for Claude Code (.claude/settings.json), so the tool is claude. Codex has no per-prompt
+    # hook: its session learns about the relay at its start only (lf_context_lines).
+    # shellcheck source=lib/models.sh
+    source "$SCRIPT_DIR/lib/models.sh" 2>/dev/null && source "$SCRIPT_DIR/lib/failover.sh" 2>/dev/null \
+      && p_relay="$(lf_prompt_notice "$P_ROOT" claude 2>/dev/null)" || p_relay=""
+    p_msg="${p_msg:+$p_msg }$p_relay"
+  fi
+  [[ -n "$p_msg" ]] || exit 0
   # JSON string: the message has no control characters, only backslashes and quotes need escaping.
   p_msg="${p_msg//\\/\\\\}"; p_msg="${p_msg//\"/\\\"}"
   printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$p_msg"
@@ -72,6 +95,8 @@ source "$SCRIPT_DIR/lib/project.sh"
 source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
+# shellcheck source=lib/failover.sh
+source "$SCRIPT_DIR/lib/failover.sh"
 
 HOOK=""; ROOT=""; TOOL="claude"
 while [[ $# -gt 0 ]]; do
@@ -183,6 +208,8 @@ else
   t "- Brief (.loomy/brief.md): mode %s, lead %s, profile %s, risk %s. Role routing: .loomy/scripts/loomy-route.sh; delegations: .loomy/scripts/loomy-delegate-claude.sh and loomy-delegate-codex.sh." "$(brief ai_mode)" "$(brief ai_lead)" "$(brief budget)" "$(brief risk)"; echo
 fi
 J="$(ai_journal_file "$ROOT")"
+# Temporary lead relay (quota): who leads now, or that the master is back.
+lf_context_lines "$ROOT" "$TOOL"
 # Shared memory (.loomy/memory/): the work state kept by the lead agent and the latest results, in short. It is what
 # carries the thread from one session to the next, after a compaction, and between Claude Code and Codex.
 # Cost: only when the conversation doesn't already hold it (new session, /clear, after a compaction; not when a

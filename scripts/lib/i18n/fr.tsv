@@ -2154,3 +2154,31 @@ remove the hook by hand	retire le hook à la main
 The app link could not be built	Le lien vers l'app n'a pas pu être construit
 useful to create the project's GitHub repository and send feedback	utile pour créer le dépôt GitHub du projet et envoyer des retours
 Latest release not found (offline or GitHub API limit): try again later.	Dernière release introuvable (hors ligne ou limite de l'API GitHub) : réessaie plus tard.
+      lead_failover (auto by default: when the lead's quota runs out, the other tool leads until it has room again; off: never),	      lead_failover (auto par défaut : quand le quota du lead est épuisé, l'autre outil mène jusqu'à ce que le lead ait de nouveau de la marge ; off : jamais),
+      quota_room (80 by default: the lead tool takes the lead back once its quota is below this share),	      quota_room (80 par défaut : l'outil lead reprend la main dès que son quota passe sous cette part),
+lead_failover: auto or off	lead_failover : auto ou off
+quota_room: a percentage (1 to 100)	quota_room : un pourcentage (1 à 100)
+no other tool with room left	aucun autre outil avec de la marge
+the other tool is on a pay-per-use plan	l'autre outil est sur un forfait à l'usage
+The automatic chain only runs in the terminal; the master takes the lead back on the next loomy start if its quota allows.	La chaîne automatique fonctionne uniquement dans le terminal ; l'agent principal reprend la main au prochain loomy start si son quota le permet.
+temporary lead	lead temporaire
+lead back	lead repris
+quota back	quota revenu
+%s leads for now in place of %s (quota %s)	%s mène pour l'instant à la place de %s (quota %s)
+%s takes the lead back	%s reprend la main
+%s led while its quota was low	%s a mené pendant que son quota était bas
+%s quota at %s	quota de %s à %s
+→ %s takes over (%s) in %s s — Ctrl+C to stop	→ %s prend le relais (%s) dans %s s — Ctrl+C pour arrêter
+You are temporarily the lead agent in place of %s (quota %s, back around %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s.	Tu es temporairement l'agent lead à la place de %s (quota %s, retour vers %s). Lis d'abord .loomy/docs/HANDOFF.md s'il existe et .loomy/memory/STATE.md, puis poursuis le travail en cours. Avant de terminer, mets à jour STATE.md et HANDOFF.md pour %s.
+You are temporarily the lead agent in place of %s (quota %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s.	Tu es temporairement l'agent lead à la place de %s (quota %s). Lis d'abord .loomy/docs/HANDOFF.md s'il existe et .loomy/memory/STATE.md, puis poursuis le travail en cours. Avant de terminer, mets à jour STATE.md et HANDOFF.md pour %s.
+You are the lead agent again; %s led while your quota was low (since %s). Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue.	Tu es de nouveau l'agent lead ; %s a mené pendant que ton quota était bas (depuis %s). Lis .loomy/docs/HANDOFF.md et .loomy/memory/STATE.md, vérifie son travail (git log depuis), puis poursuis.
+Lead: %s in place of %s (quota %s, back around %s)	Lead : %s à la place de %s (quota %s, retour vers %s)
+Lead: %s in place of %s (quota %s)	Lead : %s à la place de %s (quota %s)
+Temporary lead	Lead temporaire
+Lead back	Lead repris
+The lead agent set in the brief has quota again and leads.	L'agent lead du brief a de nouveau du quota et mène.
+[Loomy] %s has quota again and takes the lead back: finish the current step, write .loomy/docs/HANDOFF.md and update STATE.md for it, commit if allowed, then tell the user to end this session (/exit): Loomy hands back automatically.	[Loomy] %s a de nouveau du quota et reprend la main : termine l'étape en cours, écris .loomy/docs/HANDOFF.md et mets à jour STATE.md pour lui, commit si c'est permis, puis dis à l'utilisateur de terminer cette session (/exit) : Loomy lui rend la main automatiquement.
+[Loomy] %s quota at %s %%: finish the current step, write .loomy/docs/HANDOFF.md (From, To, Done, Next) and update .loomy/memory/STATE.md, commit if the brief allows it, then tell the user to end this session (/exit): Loomy continues on %s automatically, and %s takes the lead back once its quota allows.	[Loomy] quota de %s à %s %% : termine l'étape en cours, écris .loomy/docs/HANDOFF.md (From, To, Done, Next) et mets à jour .loomy/memory/STATE.md, commit si le brief le permet, puis dis à l'utilisateur de terminer cette session (/exit) : Loomy continue automatiquement sur %s, et %s reprend la main dès que son quota le permet.
+- Temporary lead: %s in place of %s since %s (quota %s); %s takes the lead back once its quota allows (around %s). Read .loomy/docs/HANDOFF.md first.	- Lead temporaire : %s à la place de %s depuis %s (quota %s) ; %s reprend la main dès que son quota le permet (vers %s). Lis d'abord .loomy/docs/HANDOFF.md.
+- Temporary lead: %s in place of %s since %s (quota %s); %s takes the lead back once its quota allows. Read .loomy/docs/HANDOFF.md first.	- Lead temporaire : %s à la place de %s depuis %s (quota %s) ; %s reprend la main dès que son quota le permet. Lis d'abord .loomy/docs/HANDOFF.md.
+- Back as lead agent: %s led during your quota pause; read .loomy/docs/HANDOFF.md and check its commits.	- De retour comme agent lead : %s a mené pendant la pause de ton quota ; lis .loomy/docs/HANDOFF.md et vérifie ses commits.

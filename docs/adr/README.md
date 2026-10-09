@@ -9,5 +9,6 @@ Short records of the decisions that shape Loomy. Each one states the context, th
 | [0003](0003-model-catalog-as-data.md) | Model catalog as data | Accepted (2026-09-25) |
 | [0004](0004-official-skills-only.md) | Official skills only | Accepted (2026-10-06) |
 | [0005](0005-versions-stay-0x-until-joint-validation.md) | Versions stay 0.x until joint validation | Accepted (2026-09-24) |
+| [0006](0006-temporary-lead-relay.md) | Temporary lead relay when a subscription runs out | Accepted (2026-10-09) |
 
 A new decision gets the next number; a superseded one keeps its file and changes its status.

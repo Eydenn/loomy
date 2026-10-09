@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.14.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.0-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -375,6 +375,14 @@ Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 - no ping-pong: a switched delegation never switches back, and nothing moves when both tools are exhausted.
 
 Threshold: `loomy config set quota_switch 90` (a percentage), or `off` to never switch.
+
+**Lead relay when a subscription runs out.** The lead set in the brief never changes; the other tool only stands in for it for a while:
+- at 90 % (switch threshold minus 5), a Claude Code lead is told at each message (at most every 10 minutes) to finish the step, write `.loomy/docs/HANDOFF.md` and `STATE.md`, commit and end the session; Codex has no per-message hook, so a Codex lead is warned by `loomy watch` and at session start only;
+- at 95 %, if the other tool is installed on a subscription plan and below 80 %, the terminal `loomy start` chain opens it as lead with a relay prompt (5 seconds to cancel with Ctrl+C, at most 6 sessions per chain); `loomy start --app` records and opens one session without chaining, and a later `loomy start` returns the lead once its quota allows; routing follows the acting lead meanwhile;
+- once the lead is below 80 % again, or its window has reset, the acting lead is told the same way and the lead takes back over with a return prompt;
+- an API master never relays, and an API tool cannot receive the lead; `loomy config set lead_failover off` or `LOOMY_NO_SWITCH=1` disables relays; `quota_room` (80 by default) sets the share below which a tool has room.
+
+The relay is kept in `.loomy/failover`, shown by `loomy status` and `loomy watch` (⇄), and journaled (`lead_failover`, `lead_return`).
 
 Where the figures come from, without network or credentials:
 - **Codex** writes its quota into its own session logs (`~/.codex/sessions`); Loomy reads the latest reading.

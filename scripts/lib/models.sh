@@ -566,12 +566,17 @@ ai_env_for() {
 
 # ai_detect_env <racine-du-projet>
 # Reads mode, main tool and budget from .loomy/brief.md and sets AI_ENV, AI_ENV_NOTE, AI_PROFILE, AI_MODE, AI_LEAD.
-# Honours the AI_ROUTE_ENV / AI_ROUTE_PROFILE overrides.
+# Honours the AI_ROUTE_ENV / AI_ROUTE_PROFILE overrides. AI_LEAD_MASTER is the brief's lead (AI_LEAD is the acting one
+# during a relay).
 ai_detect_env() {
   local root="$1" brief
   brief="$root/.loomy/brief.md"
   AI_MODE="$(_ai_brief_get "$brief" ai_mode)"; AI_MODE="${AI_MODE:-SOLO}"
   AI_LEAD="$(_ai_brief_get "$brief" ai_lead)"
+  AI_LEAD_MASTER="$AI_LEAD"
+  # Temporary lead relay (quota): the acting tool leads, so the roles route around it. The brief is unchanged.
+  if ! declare -F lf_active >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/failover.sh" 2>/dev/null || true; fi
+  if declare -F lf_active >/dev/null 2>&1 && lf_active "$root"; then AI_LEAD_MASTER="$(lf_get "$root" master)"; AI_LEAD="$(lf_get "$root" acting)"; fi
   AI_PROFILE="${AI_ROUTE_PROFILE:-$(_ai_brief_get "$brief" budget)}"
   AI_PROFILE="${AI_PROFILE:-equilibre}"
   ai_env_for "$AI_MODE" "$AI_LEAD"

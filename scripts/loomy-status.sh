@@ -28,6 +28,8 @@ source "$SCRIPT_DIR/lib/phases.sh"
 source "$SCRIPT_DIR/lib/sessionlog.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
+# shellcheck source=lib/failover.sh
+source "$SCRIPT_DIR/lib/failover.sh"
 
 PHASES="brief discover interview propose approve build verify document commit retire done"
 
@@ -174,7 +176,7 @@ if (( WATCH )); then
   NAME_W="$(brief_get name 2>/dev/null || true)"; NAME_W="${NAME_W:-$(basename "$ROOT")}"
   J="$(ai_journal_file "$ROOT")"
   tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; tried_resize=0; tree_mode=""
-  p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
+  p_relay=0; p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
   while true; do
@@ -186,7 +188,11 @@ if (( WATCH )); then
       read -r n_done n_err <<<"$(awk 'index($0, "\"type\":\"delegation\",") { n++; if (index($0, "\"status\":\"ok\"") == 0) e++ } END { print n + 0, e + 0 }' "$J")"
     fi
     sess="$(ai_session_state "$ROOT" 2>/dev/null || true)"; sess="${sess%%|*}"
+    relay=0; lf_active "$ROOT" && relay=1
     if (( ! first )); then
+      # Lead relay (quota): one notification when it starts, one when the master takes the lead back.
+      if (( relay && ! p_relay )); then watch_notify "⇄ $(t "Temporary lead")" "$(lf_status_text "$ROOT")"
+      elif (( ! relay && p_relay )); then watch_notify "⇄ $(t "Lead back")" "$(t "The lead agent set in the brief has quota again and leads.")"; fi
       if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
         hl_phase=$(( now + 8 ))
         if [[ "$phase" == "done" ]] && [[ "$MISSION" == "audit" ]]; then watch_notify "✦ $(t "Audit done")" "$(t "The report and the fix plan are ready in the audit folder.")"
@@ -215,7 +221,7 @@ if (( WATCH )); then
       done
       first_q=0
     fi
-    first=0; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
+    first=0; p_relay=$relay; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     # ---- image
     _ui_term_size; size="--full"
     if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
@@ -403,6 +409,10 @@ else
     ui_rail "${C_DIM}${UI_FIT}${C_RESET}"
   fi
 fi
+
+# Temporary lead relay (quota), compact and full views.
+relay_txt="$(lf_status_text "$ROOT")"
+[[ -z "$relay_txt" ]] || ui_rail "${C_YELLOW}⇄ ${relay_txt}${C_RESET}"
 
 # ---------------------------------------------------------------- brief
 if [[ -f "$BRIEF" && "$COMPACT" != "1" ]]; then
@@ -612,7 +622,7 @@ else
   ui_rail "${C_DIM}○ .claude/agents/${C_RESET}"
 fi
 if [[ -f "$ROOT/.loomy/docs/HANDOFF.md" ]]; then
-  ui_warn ".loomy/docs/HANDOFF.md" "$(t "active handoff:") $(sed -n 's/^De *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1) → $(sed -n 's/^Vers *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1)"
+  ui_warn ".loomy/docs/HANDOFF.md" "$(t "active handoff:") $(sed -nE 's/^(De|From) *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1) → $(sed -nE 's/^(Vers|To) *: *//p' "$ROOT/.loomy/docs/HANDOFF.md" | head -1)"
 fi
 
 fi

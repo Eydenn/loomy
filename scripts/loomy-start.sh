@@ -24,6 +24,8 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 # shellcheck source=lib/phases.sh
 source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/failover.sh
+source "$SCRIPT_DIR/lib/failover.sh"
 
 ROOT=""; MODE="menu"; WATCH=""
 while [[ $# -gt 0 ]]; do
@@ -52,64 +54,90 @@ fi
 
 loomy_project_register "$ROOT"
 # ---------------------------------------------------------------- project and lead agent
-ai_detect_env "$ROOT"
-ai_resolve lead "$AI_ENV" "$AI_PROFILE"
-TOOL="$R_FAMILY"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
-# The lead tool's subscription quota nearly exhausted, the other tool available with room left: this session runs
-# on the other tool, with its lead agent model (the brief is unchanged; the next start goes back once it resets).
-SWITCHED_FROM=""
-if [[ "${LOOMY_NO_SWITCH:-}" != "1" ]] && sw="$(ai_switch_family "$TOOL")" && [[ -n "$sw" ]]; then
-  SWITCHED_FROM="$TOOL"; SWITCH_STATE="$(ai_quota_state "$TOOL")"
-  ai_route lead "$sw" "$AI_PROFILE"
-  TOOL="$sw"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"; AI_LEAD="$sw"
-fi
 PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
 NAME="$(_ai_brief_get "$BRIEF" name)"
 
+tool_name() { if [[ "$1" == "codex" ]]; then echo "Codex"; else echo "Claude Code"; fi; }
 
-# Prompt of the new session, depending on progress.
-if [[ -f "$ROOT/START.md" && ( -z "$PHASE" || "$PHASE" == "brief" || "$PHASE" == "discover" ) ]]; then
-  PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="$(t "bootstrap start")"
-elif [[ -f "$ROOT/START.md" ]]; then
-  PROMPT="$(t "Resume this project's setup by following START.md, where it stopped: phase \"%s\". First run .loomy/scripts/loomy-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on." "$(loomy_phase_label "$PHASE")")"
-  KIND="$(t "resuming at phase %s" "$(loomy_phase_label "$PHASE")")"
-else
-  PROMPT="$(t "Resume work on this project: run .loomy/scripts/loomy-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .loomy/docs/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/loomy-route.sh.")"
-  KIND="$(t "everyday work (bootstrap done)")"
-fi
+# resolve_session: who leads this session (the brief's lead, or the other tool during a quota relay), its model, prompt
+# and commands. Nothing is recorded here (lf_decide --dry): lf_apply does it when the session really starts.
+# The relay is temporary: the brief is unchanged and the master takes the lead back once it has room.
+resolve_session() {
+  local master since=""
+  ai_detect_env "$ROOT"
+  if lf_active "$ROOT"; then master="$(lf_get "$ROOT" master)"
+  else ai_resolve lead "$AI_ENV" "$AI_PROFILE"; master="$R_FAMILY"; fi
+  lf_decide "$ROOT" "$master" --dry >/dev/null
+  AI_LEAD="$LF_LEAD"
+  if [[ -z "${AI_ROUTE_ENV:-}" ]]; then ai_env_for "$AI_MODE" "$LF_LEAD"; fi
+  ai_resolve lead "$AI_ENV" "$AI_PROFILE"
+  TOOL="$R_FAMILY"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
 
-# Previous session on this machine: Claude stores its conversations per folder, Codex records each session's folder.
-HAS_SESSION=0
-if [[ "$TOOL" == "claude" ]]; then
-  enc="$(printf '%s' "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')"
-  if ls "$HOME/.claude/projects/$enc/"*.jsonl >/dev/null 2>&1; then HAS_SESSION=1; fi
-  ADVISOR="$(ai_advisor_for "$MODEL" "$AI_PROFILE")"
-  ADV_ARGS=(); [[ -n "$ADVISOR" ]] && ADV_ARGS=(--advisor "$ADVISOR")
-  NEW_CMD=(claude --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"} "$PROMPT")
-  RESUME_CMD=(claude --continue --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"})
-  CLI_OK=0; ai_has_claude && CLI_OK=1
-  INSTALL="curl -fsSL https://claude.ai/install.sh | bash"
-else
-  if [[ -d "$HOME/.codex/sessions" ]] && grep -rlqF "\"cwd\":\"$ROOT\"" "$HOME/.codex/sessions" 2>/dev/null; then HAS_SESSION=1; fi
-  CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"
-  NEW_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT")
-  RESUME_CMD=("$CODEX" resume --last -m "$MODEL" -c "model_reasoning_effort=$EFFORT")
-  CLI_OK=0; ai_has_codex && CLI_OK=1
-  INSTALL="curl -fsSL https://chatgpt.com/codex/install.sh | sh"
-fi
-tool_label="Claude Code"; [[ "$TOOL" == "codex" ]] && tool_label="Codex"
+  # Prompt of the new session, depending on progress.
+  if [[ -f "$ROOT/START.md" && ( -z "$PHASE" || "$PHASE" == "brief" || "$PHASE" == "discover" ) ]]; then
+    PROMPT="$(ai_start_prompt "$AI_MODE" "$AI_LEAD")"; KIND="$(t "bootstrap start")"
+  elif [[ -f "$ROOT/START.md" ]]; then
+    PROMPT="$(t "Resume this project's setup by following START.md, where it stopped: phase \"%s\". First run .loomy/scripts/loomy-context.sh for the context (phase, expectations, latest delegations). Start by summarizing where we are and what remains, then wait for my approval before going on." "$(loomy_phase_label "$PHASE")")"
+    KIND="$(t "resuming at phase %s" "$(loomy_phase_label "$PHASE")")"
+  else
+    PROMPT="$(t "Resume work on this project: run .loomy/scripts/loomy-context.sh for the context, read AGENTS.md (or CLAUDE.md) and .loomy/docs/AI_WORKFLOW.md, summarize the current state of the repository and suggest what comes next. Delegate each role according to .loomy/scripts/loomy-route.sh.")"
+    KIND="$(t "everyday work (bootstrap done)")"
+  fi
+  case "$LF_KIND" in
+    handover)
+      if [[ "$LF_RESUME_AT" =~ ^[0-9]+$ ]]; then
+        PROMPT="$(t "You are temporarily the lead agent in place of %s (quota %s, back around %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s." "$(tool_name "$LF_MASTER")" "$LF_REASON" "$(lf_time "$LF_RESUME_AT")" "$(tool_name "$LF_MASTER")")"
+      else
+        PROMPT="$(t "You are temporarily the lead agent in place of %s (quota %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s." "$(tool_name "$LF_MASTER")" "$LF_REASON" "$(tool_name "$LF_MASTER")")"
+      fi
+      KIND="$(t "temporary lead")" ;;
+    return)
+      since="$(ai_ts_epoch "$LF_SINCE")"; [[ -n "$since" ]] && since="$(lf_time "$since")"
+      PROMPT="$(t "You are the lead agent again; %s led while your quota was low (since %s). Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue." "$(tool_name "$LF_ACTING")" "${since:-?}")"
+      KIND="$(t "lead back")" ;;
+  esac
+
+  # Previous session on this machine: Claude stores its conversations per folder, Codex records each session's folder.
+  HAS_SESSION=0; ADVISOR=""
+  if [[ "$TOOL" == "claude" ]]; then
+    local enc; enc="$(printf '%s' "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')"
+    if ls "$HOME/.claude/projects/$enc/"*.jsonl >/dev/null 2>&1; then HAS_SESSION=1; fi
+    ADVISOR="$(ai_advisor_for "$MODEL" "$AI_PROFILE")"
+    ADV_ARGS=(); [[ -n "$ADVISOR" ]] && ADV_ARGS=(--advisor "$ADVISOR")
+    NEW_CMD=(claude --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"} "$PROMPT")
+    RESUME_CMD=(claude --continue --model "$MODEL" --effort "$EFFORT" ${ADV_ARGS[@]+"${ADV_ARGS[@]}"})
+    CLI_OK=0; ai_has_claude && CLI_OK=1
+    INSTALL="curl -fsSL https://claude.ai/install.sh | bash"
+  else
+    if [[ -d "$HOME/.codex/sessions" ]] && grep -rlqF "\"cwd\":\"$ROOT\"" "$HOME/.codex/sessions" 2>/dev/null; then HAS_SESSION=1; fi
+    CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"
+    NEW_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT")
+    RESUME_CMD=("$CODEX" resume --last -m "$MODEL" -c "model_reasoning_effort=$EFFORT")
+    CLI_OK=0; ai_has_codex && CLI_OK=1
+    INSTALL="curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+  fi
+  tool_label="$(tool_name "$TOOL")"
+}
+resolve_session
 short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $MODEL --effort $EFFORT${ADVISOR:+ --advisor $ADVISOR}"; else echo "codex${1:+ $1} -m $MODEL -c model_reasoning_effort=$EFFORT"; fi; }
 
 # ---------------------------------------------------------------- affichage
-ui_clear
-ui_banner "$(t "Start or resume")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
+# LOOMY_START_INNER: set by the dedicated tmux session's own run of this script, whose banner is already printed.
+if [[ -z "${LOOMY_START_INNER:-}" ]]; then
+  ui_clear
+  ui_banner "$(t "Start or resume")" "${C_RESET}${C_TITLE}${NAME:-$(basename "$ROOT")}${C_RESET}${C_DIM} · ${ROOT/#$HOME/~}"
+fi
 ui_section "SESSION"
 ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
 ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
-if [[ -n "$SWITCHED_FROM" ]]; then
-  from_label="Claude Code"; [[ "$SWITCHED_FROM" == "codex" ]] && from_label="Codex"
-  ui_warn "$(t "%s quota at %s: this session runs on %s" "$from_label" "$SWITCH_STATE" "$tool_label")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$from_label")"
-fi
+case "$LF_KIND" in
+  handover)
+    ui_warn "$(t "%s quota at %s: this session runs on %s" "$(tool_name "$LF_MASTER")" "$(ai_quota_state "$LF_MASTER")" "$tool_label")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$(tool_name "$LF_MASTER")")" ;;
+  continue)
+    ui_warn "$(t "%s leads for now in place of %s (quota %s)" "$tool_label" "$(tool_name "$LF_MASTER")" "$LF_REASON")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$(tool_name "$LF_MASTER")")" ;;
+  return) ui_ok "$(t "%s takes the lead back" "$tool_label")" "$(t "%s led while its quota was low" "$(tool_name "$LF_ACTING")")" ;;
+  *) if [[ -n "$LF_NOTE" ]]; then ui_warn "$(t "%s quota at %s" "$(tool_name "$LF_MASTER")" "$(ai_quota_state "$LF_MASTER")")" "$LF_NOTE"; fi ;;
+esac
 if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "a previous session exists on this machine")${C_RESET}"
 else ui_kv "Session" "${C_DIM}$(t "no previous session on this machine")${C_RESET}"; fi
 # Lead agent model missing from Codex's local catalog (renamed or removed): warn before launching.
@@ -173,7 +201,8 @@ start_with_watch() {
       n=2; while tmux has-session -t "=$name-$n" 2>/dev/null; do n=$(( n + 1 )); done
       name="$name-$n"
     fi
-    agent="$(printf '%q ' "${AGENT_CMD[@]}")"
+    # The dedicated session runs the whole chain (relay included): this script again, without tracking of its own.
+    agent="$(printf '%q ' env LOOMY_START_INNER=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" "--$MODE" --no-watch)"
     # tmux that can't start (container, no terminal): the session opens alone rather than failing.
     if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name" 2>/dev/null \
        || ! tmux has-session -t "=$name" 2>/dev/null; then
@@ -272,7 +301,15 @@ open_in_app() {
 case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
   app)
-    if open_in_app; then ui_end "$(t "session in the app · live tracking: loomy watch")"; exit 0; fi
+    if open_in_app; then
+      case "$LF_KIND" in
+        handover|return)
+          lf_apply "$ROOT"
+          ui_info "$(t "The automatic chain only runs in the terminal; the master takes the lead back on the next loomy start if its quota allows.")" ;;
+      esac
+      ui_end "$(t "session in the app · live tracking: loomy watch")"
+      exit 0
+    fi
     MODE="new" ;;
   print)
     print_cmds
@@ -292,13 +329,39 @@ fi
 # LOOMY_START_WATCH=0 (scripts, tests) or start_watch no: the session alone.
 [[ -z "$WATCH" && "${LOOMY_START_WATCH:-}" == "0" ]] && WATCH=0
 [[ -z "$WATCH" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && WATCH=0 || WATCH=1; }
-if [[ "$MODE" == "resume" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); fi
+if [[ "$MODE" == "resume" && "$LF_KIND" != "handover" && "$LF_KIND" != "return" ]]; then AGENT_CMD=("${RESUME_CMD[@]}"); else AGENT_CMD=("${NEW_CMD[@]}"); MODE=new; fi
 WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start --watch)")"
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
 ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
-# Codex has no per-project hooks: the session is recorded here. After exec, Codex keeps this pid.
-if [[ "$TOOL" == "codex" ]]; then
-  ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
-fi
-ui_exec "${AGENT_CMD[@]}"
+lf_apply "$ROOT"
+
+# Session chain (6 sessions at most): the agent runs as a child; when it ends and the lead relay is due (its tool's
+# quota ran out, or the master has room again), the other tool takes over after a short delay.
+UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM
+CHAIN_STOP=0; trap 'CHAIN_STOP=1' INT
+CHAIN_MAX=6; CHAIN_N=0
+while :; do
+  CHAIN_N=$(( CHAIN_N + 1 ))
+  # Codex has no per-project hooks: the session is recorded here (this script's pid lives as long as the session).
+  if [[ "$TOOL" == "codex" ]]; then
+    ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
+  fi
+  rc=0; "${AGENT_CMD[@]}" || rc=$?
+  if [[ "$TOOL" == "codex" ]]; then
+    ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"codex\",\"pid\":$$"
+  fi
+  (( CHAIN_STOP )) && break
+  (( CHAIN_N >= CHAIN_MAX )) && break
+  resolve_session
+  [[ "$LF_KIND" == "handover" || "$LF_KIND" == "return" ]] || break
+  (( CLI_OK )) || break
+  why="$LF_REASON"; [[ "$LF_KIND" == "return" ]] && why="$(t "quota back")"
+  delay="${LOOMY_CHAIN_DELAY:-5}"; [[ "$delay" =~ ^[0-9]+$ ]] || delay=5
+  printf '%s\n' "$(t "→ %s takes over (%s) in %s s — Ctrl+C to stop" "$tool_label" "$why" "$delay")"
+  if (( delay > 0 )); then sleep "$delay" || true; fi
+  (( CHAIN_STOP )) && break
+  lf_apply "$ROOT"
+  AGENT_CMD=("${NEW_CMD[@]}")
+done
+exit "$rc"

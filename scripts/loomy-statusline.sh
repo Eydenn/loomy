@@ -54,6 +54,14 @@ if [[ -n "$R" && -f "$R/.loomy/state" ]]; then
     [[ "${run:-0}" -gt 0 ]] 2>/dev/null && seg="${seg:+$seg · }⟳ $run"
   fi
 fi
+# Temporary lead relay (quota): the acting tool (state file read with builtins, this refreshes often).
+if [[ -n "$R" && -f "$R/.loomy/failover" ]]; then
+  fm=""; fa=""
+  while IFS= read -r fl; do
+    case "$fl" in master=*) fm="${fl#master=}" ;; acting=*) fa="${fl#acting=}" ;; esac
+  done <"$R/.loomy/failover"
+  [[ -n "$fa" && "$fa" != "$fm" ]] && seg="${seg:+$seg · }⇄ $fa"
+fi
 user_cmd="$(cat "$CFG/statusline-user" 2>/dev/null || true)"
 if [[ -n "$user_cmd" ]]; then
   tmpo="$(mktemp "${TMPDIR:-/tmp}/loomy-sl.XXXXXX" 2>/dev/null)" || tmpo=""

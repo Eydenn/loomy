@@ -1759,6 +1759,7 @@ _t_fr() {
     'before a plan, when an error repeats, before done') _T='avant un plan, quand une erreur se répète, avant de terminer' ;;
     'done %s') _T='terminé %s' ;;
     'idle') _T='au repos' ;;
+    'working') _T='en cours' ;;
     'session log') _T='journal de session' ;;
     'roles') _T='rôles' ;;
     'delegations') _T='délégations' ;;
@@ -1795,6 +1796,9 @@ _t_fr() {
     'effort by profile') _T='effort selon le profil' ;;
     'back to the lead agent') _T='retour à l'\''orchestrateur' ;;
     'review + verify') _T='relit + vérifie' ;;
+    'reviews + checks') _T='revues + vérifications' ;;
+    'waiting for %s role') _T='attend %s rôle' ;;
+    'waiting for %s roles') _T='attend %s rôles' ;;
     'on call') _T='de garde' ;;
     'before a plan') _T='avant un plan' ;;
     'reads the whole') _T='lit toute la' ;;
@@ -2225,5 +2229,9 @@ _t_fr() {
     'off routing') _T='hors routage' ;;
     '%s: request or model') _T='%s : request ou model' ;;
     'lost') _T='perdu' ;;
+    'planned') _T='prévu' ;;
+    'Earlier work') _T='Travail antérieur' ;;
+    'request') _T='demande' ;;
+    'model + effort') _T='modèle + effort' ;;
   esac
 }

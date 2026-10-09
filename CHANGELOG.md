@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.15.2 — 2026-10-10
+
+### Fixed
+- **`loomy watch` and `loomy tree` only show what really runs**.
+  - Diagram boxes show the real tool, model and effort of each role's running or last delegation in the current lead session; a role not run yet shows its routed model dimmed as planned.
+  - The orchestrator line comes from the live lead session, never pairing one tool with another tool's model; unknown effort falls back to the routed effort.
+  - The lead box shows working, idle or closed, never an open session and a done phase together.
+  - Tasks appear as short titles, without `GOAL:` / `SCOPE:` ticket text; durations use hours from one hour onward; role labels are not cut.
+  - Delegations without a request are grouped under **Earlier work**.
+  - A delegation whose process died without an end is shown as interrupted (⊘), with a fixed duration when journal evidence is available (otherwise —), instead of failed.
+
 ## 0.15.1 — 2026-10-09
 
 ### Changed

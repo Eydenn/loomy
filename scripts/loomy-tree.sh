@@ -15,40 +15,59 @@ fi
 
 # Live reducer: kept in the watch process, updated only from complete new JSON lines.
 loomy_live_init() {
-  LV_OFFSET=0; LV_FILE_KEY=""; LV_SEQ=0; LV_SESSION_SEQ=0; LV_SESSION=""; LV_SESSION_PID=0; LV_SESSION_TOOL=""; LV_SESSION_OPEN=0; LV_ACTIVITY=0; LV_USAGE=0; LV_SESSION_MODEL=""; LV_SESSION_EFFORT=""; LV_META_READY=0
+  LV_SELECTION=""; LV_SELECTED_SEQ=0; LV_ROLE_WIDTH=12; LV_OFFSET=0; LV_FILE_KEY=""; LV_SEQ=0; LV_SESSION_SEQ=0; LV_SESSION=""; LV_SESSION_PID=0; LV_SESSION_TOOL=""; LV_SESSION_OPEN=0; LV_ACTIVITY=0; LV_USAGE=0; LV_SESSION_MODEL=""; LV_SESSION_EFFORT=""; LV_META_READY=0
   LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=()
-  LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_END_SEQ=()
+  LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=()
   LV_REQ_ID=(); LV_REQ_TEXT=(); LV_REQ_TS=(); LV_REQ_SID=(); LV_REQUEST=-1
   LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=()
 }
 
 # loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
 loomy_live_poll() {
-  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope key off i found
-  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope; do
+  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid key off i found selection selected attributed
+  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid; do
     case "$kind" in
       RESET) loomy_live_init; continue ;;
       OFFSET) LV_FILE_KEY="$ts"; LV_OFFSET="$id"; continue ;;
+      SELECT) LV_SELECTION="$ts"; LV_SELECTED_SEQ="$id"; continue ;;
     esac
     LV_SEQ=$(( LV_SEQ + 1 ))
+    for (( i=0; i<${#LV_ID[@]}; i++ )); do
+      [[ -z "$sid" || "${LV_SID[i]:-}" == "$sid" ]] || continue
+      attributed=0
+      [[ -z "$id" || "$id" != "${LV_ID[i]}" ]] || attributed=1
+      [[ -z "$agentid" || -z "${LV_AGENT_ID[i]:-}" || "$agentid" != "${LV_AGENT_ID[i]}" ]] || attributed=1
+      if [[ "$kind" == pid_dead || "$kind" == process_dead || "$kind" == delegation_pid_dead ]]; then
+        [[ -z "$pid" || "$pid" != "${LV_PID[i]}" ]] || attributed=1
+      fi
+      if (( attributed )) && [[ "$kind" != delegation_start && "$ts" =~ ^[0-9]+$ ]] && (( ts > 0 )); then
+        LV_EVENT_TS[i]="$ts"
+        if [[ "${LV_STATUS[i]:-}" == interrupted ]]; then loomy_live_interrupted_duration "$i"; LV_END_SEQ[i]=$LV_SEQ; fi
+      fi
+      if [[ "$kind" == subagent_link && "$id" == "${LV_ID[i]}" && -n "$agentid" ]]; then LV_AGENT_ID[i]="$agentid"; fi
+    done
     case "$kind:$event" in
-      session:start) key=$LV_FILE_KEY; off=$LV_OFFSET; i=$LV_SEQ; loomy_live_init; LV_FILE_KEY=$key; LV_OFFSET=$off; LV_SEQ=$i; LV_SESSION_SEQ=$LV_SEQ; LV_SESSION="$sid"; LV_SESSION_PID="$pid"; LV_SESSION_TOOL="$tool"; LV_SESSION_MODEL="$model"; LV_SESSION_EFFORT="$effort"; LV_SESSION_OPEN=1; LV_REQUEST=-1 ;;
-      session:end) [[ -n "$sid" && "$sid" != "$LV_SESSION" ]] || LV_SESSION_OPEN=0 ;;
+      session:start) (( LV_SEQ == LV_SELECTED_SEQ )) || continue
+        selection=$LV_SELECTION; selected=$LV_SELECTED_SEQ; key=$LV_FILE_KEY; off=$LV_OFFSET; i=$LV_SEQ; loomy_live_init; LV_FILE_KEY=$key; LV_OFFSET=$off; LV_SEQ=$i; LV_SELECTION=$selection; LV_SELECTED_SEQ=$selected; LV_SESSION_SEQ=$LV_SEQ; LV_SESSION="$sid"; LV_SESSION_PID="$pid"; LV_SESSION_TOOL="$tool"; LV_SESSION_MODEL="$model"; LV_SESSION_EFFORT="$effort"; LV_SESSION_OPEN=1; LV_REQUEST=-1 ;;
+      session:end)
+        [[ "$tool" == "$LV_SESSION_TOOL" ]] || continue
+        if [[ -n "$sid" ]]; then [[ "$sid" != "$LV_SESSION" ]] || LV_SESSION_OPEN=0
+        elif [[ "$pid" == "$LV_SESSION_PID" ]]; then LV_SESSION_OPEN=0; fi ;;
       usage:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_USAGE=$(( LV_USAGE + ${cost:-0} ))
-        if [[ "$scope" == lead ]]; then LV_ACTIVITY=$ts; LV_SESSION_MODEL="$model"; [[ -z "$effort" ]] || LV_SESSION_EFFORT="$effort"; fi ;;
+        if [[ "$scope" == lead && "$tool" == "$LV_SESSION_TOOL" ]]; then LV_ACTIVITY=$ts; LV_SESSION_MODEL="$model"; [[ -z "$effort" ]] || LV_SESSION_EFFORT="$effort"; fi ;;
       request:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_ACTIVITY=$ts
-        LV_REQ_ID+=("$id"); LV_REQ_TEXT+=("$excerpt"); LV_REQ_TS+=("$ts"); LV_REQ_SID+=("$sid"); LV_REQUEST=$(( ${#LV_REQ_ID[@]} - 1 )) ;;
+        ai_task_title "$excerpt" 90; LV_REQ_ID+=("$id"); LV_REQ_TEXT+=("$AI_TASK_TITLE"); LV_REQ_TS+=("$ts"); LV_REQ_SID+=("$sid"); LV_REQUEST=$(( ${#LV_REQ_ID[@]} - 1 )) ;;
       delegation_start:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         found=-1
         for (( i=0; i<${#LV_ID[@]}; i++ )); do [[ "${LV_ID[i]}" != "$id" ]] || found=$i; done
         (( found < 0 )) || continue
         LV_ID+=("$id"); LV_ROLE+=("$role"); LV_MODEL+=("$model"); LV_EFFORT+=("$effort"); LV_TASK+=("$task"); LV_PID+=("$pid"); LV_TS+=("$ts"); LV_SID+=("$sid")
-        LV_REQ+=("$LV_REQUEST"); LV_START_SEQ+=("$LV_SEQ"); LV_FIN+=(0); LV_DURATION+=(0); LV_COST+=(0); LV_STATUS+=(""); LV_OUTCOME+=(""); LV_END_SEQ+=(0)
+        LV_REQ+=("$LV_REQUEST"); LV_START_SEQ+=("$LV_SEQ"); LV_FIN+=(0); LV_DURATION+=(0); LV_COST+=(0); LV_STATUS+=(""); LV_OUTCOME+=(""); LV_END_SEQ+=(0); LV_EVENT_TS+=(""); LV_AGENT_ID+=(""); LV_HAS_START+=(1)
         found=$(( ${#LV_ID[@]} - 1 )); LV_TOOL[found]="$tool"; LV_BRIDGE[found]="$bridge"; LV_REQUESTED[found]="$requested"; LV_OFF[found]="$offroute"; loomy_live_cache_row "$found" ;;
       delegation:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
@@ -57,7 +76,7 @@ loomy_live_poll() {
         for (( i=0; i<${#LV_ID[@]}; i++ )); do [[ "${LV_ID[i]}" != "$id" ]] || found=$i; done
         if (( found < 0 )); then
           # Older logs may contain an end without its start: still part of this session's recap.
-          found=${#LV_ID[@]}; LV_ID+=("$id"); LV_ROLE+=("$role"); LV_MODEL+=("$model"); LV_EFFORT+=("$effort"); LV_TASK+=("$task"); LV_PID+=(0); LV_TS+=("$ts"); LV_SID+=("$sid"); LV_REQ+=("$LV_REQUEST"); LV_START_SEQ+=("$LV_SEQ")
+          found=${#LV_ID[@]}; LV_ID+=("$id"); LV_ROLE+=("$role"); LV_MODEL+=("$model"); LV_EFFORT+=("$effort"); LV_TASK+=("$task"); LV_PID+=(0); LV_TS+=("$ts"); LV_SID+=("$sid"); LV_REQ+=("$LV_REQUEST"); LV_START_SEQ+=("$LV_SEQ"); LV_EVENT_TS+=(""); LV_AGENT_ID+=(""); LV_HAS_START+=(0)
         fi
         [[ -z "$model" ]] || LV_MODEL[found]="$model"
         [[ -z "$effort" ]] || LV_EFFORT[found]="$effort"
@@ -70,25 +89,56 @@ loomy_live_poll() {
         loomy_live_cache_row "$found"
         LV_FIN[found]=1; LV_DURATION[found]="$duration"; LV_COST[found]="$cost"; LV_STATUS[found]="$status"; LV_OUTCOME[found]="$outcome"; LV_END_SEQ[found]=$LV_SEQ ;;
     esac
-  done < <(perl -MJSON::PP -MTime::Local=timegm -e '
-    my ($file,$key,$off)=@ARGV; open my $f,"<",$file or exit;
+  done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL"'
+    binmode STDOUT, ":encoding(UTF-8)";
+
+    my ($file,$key,$off,$selection,$preferred)=@ARGV; open my $f,"<",$file or exit;
     my @st=stat($f); my $k="$st[0]:$st[1]";
-    if ($k ne $key || $st[7]<$off) { print "RESET\n"; $off=0 }
-    seek $f,$off,0; my $pos=$off;
+    my (@rows,%sessions,%lead_context); my ($seq,$context)=(0,"");
     while (my $l=<$f>) {
-      last unless $l =~ /\n$/; $pos=tell($f);
+      last unless $l =~ /\n$/;
       my $d=eval { decode_json($l) }; next unless ref($d) eq "HASH";
-      next unless ($d->{type}//"") =~ /^(session|request|delegation_start|delegation|usage)$/;
+      my $type=$d->{type}//""; next if ref($type) || $type eq "";
+      ++$seq;
+      if ($type eq "session") {
+        my $id=($d->{tool}//"")."|".($d->{session} || "pid".($d->{pid}//0));
+        if (($d->{event}//"") eq "start") { $sessions{$id}={%$d,seq=>$seq}; $context=$id; $lead_context{$d->{tool}//""}=$id }
+        elsif ($sessions{$id}) { $sessions{$id}{ended}=1 }
+      }
+      my $owner=$context;
+      if ($type eq "usage" && ($d->{scope}//"") eq "lead") { $owner=$lead_context{$d->{tool}//$d->{family}//""}//$context }
+      push @rows,[$d,tell($f),$owner,$seq];
+    }
+    my @starts=sort { $b->{seq}<=>$a->{seq} } values %sessions;
+    my @alive=grep { !$_->{ended} && ($_->{pid}//0)>1 && (kill(0,$_->{pid}) || $! == EPERM) } @starts;
+    my ($chosen)=grep { ($_->{tool}//"") eq $preferred } @alive;
+    $chosen //= $alive[0] // $starts[0];
+    my $chosen_seq=$chosen ? $chosen->{seq} : 0;
+    my $token="$k:$chosen_seq";
+    if ($k ne $key || $st[7]<$off || $token ne $selection) { print "RESET\n"; $off=0 }
+    print "SELECT|$token|$chosen_seq\n";
+    my $pos=$off;
+    for my $row (@rows) {
+      my ($d,$end,$ctx,$n)=@$row; next if $end<=$off; $pos=$end;
+      # Sessionless lead usage belongs to the nearest start, never to another tool or session.
+      if ($n>$chosen_seq && $d->{type} eq "usage" && ($d->{scope}//"") eq "lead" && !($d->{session}//"")) {
+        my $owner=$sessions{$ctx};
+        if ($chosen && (!$owner || $owner->{seq}!=$chosen_seq)) { print "IGNORE\n"; next }
+      }
+      for my $field (qw(task excerpt)) {
+        next unless defined $d->{$field};
+        $d->{$field}=ai_title($d->{$field});
+      }
       my @t=($d->{ts}//"") =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z$/;
       my $ep=@t ? eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } : 0;
-      $d->{tool}//=$d->{family}//($d->{bridge} eq "subagent" ? "claude" : "") if defined $d->{bridge};
+      $d->{tool}//=$d->{family}//(($d->{bridge}//"") eq "subagent" ? "claude" : "");
       $d->{cost_usd}=int(($d->{cost_usd}//0)*1000000+0.5);
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
-      my @v=($d->{type},$ep//0,map { $d->{$_}//"" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope));
+      my @v=($d->{type}//"",$ep//0,map { $d->{$_}//"" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id));
       for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
-  ' "$file" "$LV_FILE_KEY" "$LV_OFFSET" 2>/dev/null)
+  ' "$file" "$LV_FILE_KEY" "$LV_OFFSET" "${LV_SELECTION:-}" "${AI_LEAD:-}" 2>/dev/null)
 }
 
 loomy_live_subagent_timeout_elapsed() {
@@ -99,8 +149,30 @@ loomy_live_subagent_timeout_elapsed() {
   [[ "$age" > "$limit" ]]
 }
 
+# Interrupted durations use journal evidence; a bridge can fall back to the next start in its lead session.
+loomy_live_interrupted_duration() {
+  local i="$1" end="" next=-1 j seq="${LV_START_SEQ[$1]:-0}" elapsed
+  if [[ "${LV_EVENT_TS[i]:-}" =~ ^[0-9]+$ ]] && (( LV_EVENT_TS[i] > 0 )); then end="${LV_EVENT_TS[i]}"
+  elif [[ "${LV_BRIDGE[i]:-}" != subagent && -n "${LV_SID[i]:-}" ]]; then
+    for (( j=0; j<${#LV_ID[@]}; j++ )); do
+      [[ "${LV_HAS_START[j]:-0}" == 1 && "${LV_SID[j]:-}" == "${LV_SID[i]}" ]] || continue
+      (( ${LV_START_SEQ[j]:-0} > seq )) || continue
+      if (( next < 0 )) || (( ${LV_START_SEQ[j]} < ${LV_START_SEQ[next]} )); then next=$j; fi
+    done
+    (( next < 0 )) || end="${LV_TS[next]:-}"
+  fi
+  if [[ "$end" =~ ^[0-9]+$ ]] && (( end > 0 )) && (( ${LV_TS[i]:-0} > 0 )); then
+    elapsed=$(( end - ${LV_TS[i]:-0} )); (( elapsed >= 0 )) || elapsed=0; LV_DURATION[i]="$elapsed"
+  else LV_DURATION[i]="—"
+  fi
+}
+
 loomy_live_states() {
   local i pid age parent_pid parent_alive
+  # EPERM still proves that a process exists (notably in the Codex sandbox). Check all pids in one fork.
+  LV_ALIVE_PIDS="$(perl -MErrno=EPERM -e '
+    print "|"; for my $p (@ARGV) { next unless $p =~ /^\d+$/ && $p>1; print "$p|" if kill(0,$p) || $! == EPERM }
+  ' "$LV_SESSION_PID" ${LV_PID[@]+"${LV_PID[@]}"})"
   LV_RUNNING=(); LV_FINISHED=()
   for (( i=0; i<${#LV_ID[@]}; i++ )); do
     (( ${LV_START_SEQ[i]:-0} >= LV_SESSION_SEQ )) || continue
@@ -110,23 +182,27 @@ loomy_live_states() {
         parent_pid="$pid"
         if [[ -n "${LV_SID[i]:-}" && "${LV_SID[i]}" == "$LV_SESSION" && "${LV_SESSION_PID:-0}" =~ ^[0-9]+$ ]] && (( LV_SESSION_PID > 1 )); then parent_pid="$LV_SESSION_PID"; fi
         parent_alive=0
-        if [[ "$parent_pid" =~ ^[0-9]+$ ]] && (( parent_pid > 1 )) && kill -0 "$parent_pid" 2>/dev/null; then parent_alive=1; fi
+        if [[ "$parent_pid" =~ ^[0-9]+$ ]] && (( parent_pid > 1 )) && [[ "$LV_ALIVE_PIDS" == *"|$parent_pid|"* ]]; then parent_alive=1; fi
         if [[ -n "${LV_SID[i]:-}" && "${LV_SID[i]}" == "$LV_SESSION" && "$LV_SESSION_OPEN" == 0 ]] || (( ! parent_alive )); then
-          LV_STATUS[i]=unknown; LV_OUTCOME[i]=unknown
+          LV_STATUS[i]=interrupted; LV_OUTCOME[i]=interrupted
         elif (( parent_alive )); then
           age=$(( LV_NOW - ${LV_TS[i]:-0} )); (( age >= 0 )) || age=0
           if (( ${LV_TS[i]:-0} > 0 )) && loomy_live_subagent_timeout_elapsed "$age"; then LV_STATUS[i]=lost; LV_OUTCOME[i]=lost
           else LV_RUNNING+=("$i"); continue; fi
         fi
-      elif [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) && kill -0 "$pid" 2>/dev/null; then LV_RUNNING+=("$i"); continue
+      elif [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) && [[ "$LV_ALIVE_PIDS" == *"|$pid|"* ]]; then LV_RUNNING+=("$i"); continue
       else LV_STATUS[i]=interrupted; LV_OUTCOME[i]=interrupted
       fi
-      LV_FIN[i]=1; LV_DURATION[i]=$(( LV_NOW - ${LV_TS[i]:-0} )); (( LV_DURATION[i] >= 0 )) || LV_DURATION[i]=0; LV_END_SEQ[i]=$LV_SEQ
+      LV_FIN[i]=1; LV_END_SEQ[i]=$LV_SEQ
+      if [[ "${LV_STATUS[i]}" == interrupted ]]; then loomy_live_interrupted_duration "$i"
+      else LV_DURATION[i]=$(( LV_NOW - ${LV_TS[i]:-0} )); (( LV_DURATION[i] >= 0 )) || LV_DURATION[i]=0; fi
+    elif [[ "${LV_STATUS[i]:-}" == interrupted && "${LV_DURATION[i]:-}" == "—" ]]; then
+      loomy_live_interrupted_duration "$i"
     fi
     if (( ${LV_START_SEQ[i]:-0} >= LV_SESSION_SEQ )) && [[ -z "${LV_SID[i]}" || -z "$LV_SESSION" || "${LV_SID[i]}" == "$LV_SESSION" ]]; then LV_FINISHED+=("$i"); fi
   done
   LV_ACTIVE=0
-  if (( LV_SESSION_OPEN )) && [[ "$LV_SESSION_PID" =~ ^[0-9]+$ ]] && (( LV_SESSION_PID > 1 )) && kill -0 "$LV_SESSION_PID" 2>/dev/null; then
+  if (( LV_SESSION_OPEN )) && [[ "$LV_SESSION_PID" =~ ^[0-9]+$ ]] && (( LV_SESSION_PID > 1 )) && [[ "$LV_ALIVE_PIDS" == *"|$LV_SESSION_PID|"* ]]; then
     (( LV_ACTIVITY > 0 && LV_NOW - LV_ACTIVITY < 120 )) && LV_ACTIVE=1
   fi
   return 0
@@ -138,7 +214,7 @@ loomy_live_line() {
   if (( ${#plain} > LV_WIDTH )); then printf '%s…%s\n' "${plain:0:$(( LV_WIDTH - 1 ))}" "$C_RESET"
   else printf '%s\n' "$text"; fi
 }
-loomy_live_time() { local d="${1%.*}"; [[ "$d" =~ ^[0-9]+$ ]] || d=0; printf -v LV_TIME '%d:%02d' $(( d / 60 )) $(( d % 60 )); }
+loomy_live_time() { ai_display_duration "$1"; LV_TIME="$AI_DURATION"; }
 loomy_live_short_model() { LV_SHORT="${1#claude-}"; LV_SHORT="${LV_SHORT#gpt-}"; }
 
 # Cache static columns once per event, never fork per role on timer ticks.
@@ -150,7 +226,8 @@ loomy_live_cache_row() {
     executor) label=Executor ;; explorer) label=Explorer ;; documenter) label=Documenter ;; *) label="${LV_ROLE[i]}" ;;
   esac
   tv label "$label"; LV_LABEL[i]="$label"
-  case "$tool" in claude) tool=Claude ;; codex) tool=Codex ;; *)
+  ai_task_title "${LV_TASK[i]}" 90; LV_TASK[i]="$AI_TASK_TITLE"
+  case "$tool" in claude|Claude) tool=Claude ;; codex|Codex) tool=Codex ;; *)
     case "${LV_MODEL[i]}" in claude-*) tool=Claude ;; gpt-*) tool=Codex ;; *) tool='?' ;; esac ;;
   esac
   LV_TOOL[i]="$tool"
@@ -163,51 +240,56 @@ loomy_live_cache_row() {
   LV_FLAGS[i]="$flags"
 }
 loomy_live_row() {
-  local i="$1" finished="$2" mark elapsed text outcome="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" wrap_flags=0 task="" room
-  label="${LV_LABEL[i]}"
+  local i="$1" finished="$2" mark elapsed text outcome="" suffix="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" wrap_flags=0 wrap_outcome=0 task="" room
+  _ui_pad "${LV_LABEL[i]}" "$LV_ROLE_WIDTH"; label="$UI_PADDED"
   if (( finished )); then
     elapsed="${LV_DURATION[i]:-0}"; mark=✓; outcome="${LV_OUTCOME[i]:-done}"; color="$C_GREEN"
-    [[ "${LV_STATUS[i]}" == ok || "$outcome" == unknown || "$outcome" == lost ]] || outcome=failed
-    case "$outcome" in blocked) mark=■; color="$C_YELLOW" ;; partial) mark=△; color="$C_YELLOW" ;; failed|interrupted) mark=✗; color="$C_RED" ;; unknown) mark='?'; color="$C_DIM" ;; lost) mark="! $(t 'lost')"; color="$C_YELLOW" ;; esac
+    [[ "${LV_STATUS[i]}" == ok || "$outcome" == unknown || "$outcome" == lost || "$outcome" == interrupted ]] || outcome=failed
+    case "$outcome" in blocked) mark=■; color="$C_YELLOW" ;; partial) mark=△; color="$C_YELLOW" ;; failed) mark=✗; color="$C_RED" ;; interrupted) mark=⊘; suffix=" · $(t 'interrupted')"; color="$C_DIM$C_RED" ;; unknown) mark='?'; color="$C_DIM" ;; lost) mark="! $(t 'lost')"; color="$C_YELLOW" ;; esac
   else elapsed=$(( LV_NOW - ${LV_TS[i]:-0} )); (( elapsed >= 0 )) || elapsed=0; mark="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"; fi
-  loomy_live_time "$elapsed"
+  if [[ "$elapsed" == "—" ]]; then LV_TIME="—"; else loomy_live_time "$elapsed"; fi
   (( LV_WIDTH < 65 )) || model=" ${LV_MODELSHORT[i]}"
   (( LV_WIDTH < 52 )) || bars=" ${LV_BAR[i]}"
-  printf -v text '  %s %-12.12s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
+  printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
   LV_ROW_LINES=1
   if (( LV_WIDTH >= 80 )) && [[ -n "${LV_TASK[i]}" ]]; then
     task="${LV_TASK[i]}"
-    room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
+    room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
     if (( LV_WIDTH >= 99 && room < 30 )); then
       # At 100 columns, keep at least 30 columns for the task before dropping optional detail.
       if [[ -n "$model" ]]; then model=" ${LV_MODELSHORT[i]:0:8}"; fi
-      printf -v text '  %s %-12.12s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-      room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
+      printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
+      room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
       if (( room < 30 )) && [[ -n "$bars" ]]; then
         bars=""
-        printf -v text '  %s %-12.12s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
+        printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
+        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
       fi
       if (( room < 30 )) && [[ -n "$model" ]]; then
         model=""
-        printf -v text '  %s %-12.12s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
+        printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
+        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
       fi
     fi
-    if (( ${#task} > room )); then
-      if (( room > 1 )); then task="${task:0:$(( room - 1 ))}…"; else task=""; fi
-    fi
+    ai_task_title "$task" "$room"; task="$AI_TASK_TITLE"
     [[ -z "$task" ]] || text="$text  $task"
+    if [[ -n "$suffix" ]]; then
+      if (( ${#text} + ${#suffix} <= LV_WIDTH )); then text="$text$suffix"; else wrap_outcome=1; fi
+    fi
     if [[ -n "$flags" ]]; then
       if (( ${#text} + 1 + ${#flags} <= LV_WIDTH )); then text="$text $flags"; else wrap_flags=1; fi
     fi
   else
+    if [[ -n "$suffix" ]]; then
+      if (( ${#text} + ${#suffix} <= LV_WIDTH )); then text="$text$suffix"; else wrap_outcome=1; fi
+    fi
     if [[ -n "$flags" ]]; then
       if (( ${#text} + 1 + ${#flags} <= LV_WIDTH )); then text="$text $flags"; else wrap_flags=1; fi
     fi
   fi
   loomy_live_line "$color$text$C_RESET"
-  if (( wrap_flags )); then loomy_live_line "   $flags"; LV_ROW_LINES=2; fi
+  if (( wrap_outcome )); then loomy_live_line "   $suffix"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
+  if (( wrap_flags )); then loomy_live_line "   $flags"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
 }
 
 # Resolve the lead/header only when watched state changes, not once per timer tick.
@@ -217,7 +299,10 @@ loomy_live_metadata() {
   LV_LEAD_TOOL="$R_FAMILY"; LV_LEAD_MODEL="$R_MODEL"; LV_LEAD_EFFORT="$R_EFFORT"; LV_RELAY=""
   if [[ -f "$ROOT/.loomy/failover" ]]; then
     while IFS= read -r line; do case "$line" in master=*) master="${line#*=}" ;; acting=*) acting="${line#*=}" ;; esac; done <"$ROOT/.loomy/failover"
-    [[ -z "$acting" || "$acting" == "$master" ]] || { LV_LEAD_TOOL="$acting"; LV_RELAY="⇄ "; }
+    [[ -z "$acting" || "$acting" == "$master" ]] || {
+      ai_resolve lead "$acting" "$AI_PROFILE"
+      LV_LEAD_TOOL="$R_FAMILY"; LV_LEAD_MODEL="$R_MODEL"; LV_LEAD_EFFORT="$R_EFFORT"; LV_RELAY="⇄ "
+    }
   fi
   [[ ! -f "$state" ]] || while IFS= read -r line; do case "$line" in phase=*) phase="${line#*=}" ;; esac; done <"$state"
   LV_PHASE="$phase"; LV_PHASE_LABEL="$(loomy_phase_label "$phase")"
@@ -232,9 +317,9 @@ loomy_live_header() {
   phase="$LV_PHASE_LABEL"; [[ "$LV_PHASE" != "done" ]] || { tv phase "Lead agent"; phase="$phase $state"; }
   LV_HEADER="$LV_NAME · $phase${LV_QUOTA:+ · $LV_QUOTA} · ${LV_CLOCK:-} ↻"
   tv tool Orchestrator
-  local leadtool="${LV_SESSION_TOOL:-$LV_LEAD_TOOL}" model="${LV_SESSION_MODEL:-$LV_LEAD_MODEL}"
-  if [[ -n "$LV_RELAY" && "$leadtool" != "$LV_LEAD_TOOL" ]]; then
-    leadtool="$LV_LEAD_TOOL"; model="$LV_LEAD_MODEL"; word="$LV_LEAD_EFFORT"
+  local leadtool="$LV_LEAD_TOOL" model="$LV_LEAD_MODEL"
+  if (( LV_SESSION_SEQ > 0 )); then
+    leadtool="$LV_SESSION_TOOL"; model="${LV_SESSION_MODEL:-?}"; word="${LV_SESSION_EFFORT:-$LV_LEAD_EFFORT}"
   fi
   word="${word/medium/med}"
   case "$leadtool" in claude) leadtool=Claude ;; codex) leadtool=Codex ;; esac
@@ -252,8 +337,8 @@ loomy_live_group_title() {
     if (( req >= 0 )); then
       title="${LV_REQ_TEXT[req]}"; [[ -n "$title" ]] || tv title "request %s" "$(( req + 1 ))"
       loomy_live_time "$(( LV_NOW - ${LV_REQ_TS[req]} ))"; age="$LV_TIME"
-    else tv title "Session work"; age=""; fi
-    title="$title${age:+ · $age}"
+    else tv title "Earlier work"; age=""; fi
+    ai_task_title "$title" "$(( LV_WIDTH - 3 - ${#age} - 3 ))"; title="$AI_TASK_TITLE${age:+ · $age}"
   fi
   loomy_live_line "┌─ $title"
 }
@@ -263,6 +348,11 @@ loomy_live_render() {
   local i j k key count total=0 cost=$LV_USAGE footer emitted=0 used=0 group_seen="|" indices=() d
   _ui_term_size; LV_WIDTH=$(( UI_COLS - 1 )); LV_HEIGHT=$UI_ROWS
   (( LV_META_READY )) || loomy_live_metadata
+  LV_ROLE_WIDTH=0
+  for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"} ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
+    (( ${#LV_LABEL[i]} <= LV_ROLE_WIDTH )) || LV_ROLE_WIDTH=${#LV_LABEL[i]}
+  done
+  (( LV_ROLE_WIDTH >= 12 )) || LV_ROLE_WIDTH=12
   loomy_live_header
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || { loomy_live_line "$LV_HEADER"; }
   loomy_live_line "$LV_LEAD_LINE"
@@ -280,7 +370,7 @@ loomy_live_render() {
     loomy_live_line "└─"
   done
   (( ${#LV_RUNNING[@]} )) || { loomy_live_line "  $(t "No roles running")"; used=$(( used + 1 )); }
-  for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do d="${LV_DURATION[i]%.*}"; total=$(( total + ${d:-0} )); cost=$(( cost + ${LV_COST[i]:-0} )); done
+  for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do d="${LV_DURATION[i]%.*}"; [[ "$d" =~ ^[0-9]+$ ]] && total=$(( total + d )); cost=$(( cost + ${LV_COST[i]:-0} )); done
   printf -v cost '%d.%04d' $(( cost / 1000000 )) $(( cost % 1000000 / 100 ))
   loomy_live_time "$total"
   loomy_live_line "$(t "SESSION") · $(t "%s finished" "${#LV_FINISHED[@]}") · $LV_TIME · ~\$$cost"
@@ -319,8 +409,34 @@ loomy_live_keys() {
   else t "[o] orchestrator [v] group by model [l] log [q] quit"; fi
 }
 
+# Both tree layouts and watch use the read-side display formatter with the existing reveal cursor.
+loomy_tree_log_enable() {
+  _ai_session_events() { ai_journal_display_events "$1"; }
+}
+
+# One role selection for both classic layouts: latest running, else latest completed this session.
+loomy_tree_role() {
+  local i best=-1
+  RS_K=idle; RS_I=-1
+  for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
+    [[ "${LV_ROLE[i]}" == "$1" ]] || continue
+    if (( best < 0 )) || (( ${LV_END_SEQ[i]} > ${LV_END_SEQ[best]} )); then best=$i; fi
+  done
+  if (( best >= 0 )); then RS_K=last; RS_I=$best; fi
+  best=-1
+  for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do
+    [[ "${LV_ROLE[i]}" == "$1" ]] || continue
+    if (( best < 0 )) || (( ${LV_START_SEQ[i]} > ${LV_START_SEQ[best]} )); then best=$i; fi
+  done
+  if (( best >= 0 )); then RS_K=run; RS_I=$best; fi
+  if (( RS_I >= 0 )); then
+    R_MODEL="${LV_MODEL[RS_I]:-?}"; R_EFFORT="${LV_EFFORT[RS_I]:-?}"; R_FAMILY="${LV_TOOL[RS_I]}"
+    RS_EL=$(( LV_NOW - ${LV_TS[RS_I]} )); RS_ST="${LV_STATUS[RS_I]}"; RS_OC="${LV_OUTCOME[RS_I]}"; RS_DUR="${LV_DURATION[RS_I]}"
+  fi
+}
+
 # Watch sources only the reducer; ordinary loomy tree keeps its architectural diagram.
-if [[ "${1:-}" == --library ]]; then return 0; fi
+if [[ "${1:-}" == --library ]]; then loomy_tree_log_enable; return 0; fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ui.sh
@@ -335,6 +451,7 @@ source "$SCRIPT_DIR/lib/phases.sh"
 source "$SCRIPT_DIR/lib/usage.sh"
 # shellcheck source=lib/sessionlog.sh
 source "$SCRIPT_DIR/lib/sessionlog.sh"
+loomy_tree_log_enable
 
 ROOT=""; LIVE=0
 while [[ $# -gt 0 ]]; do
@@ -352,48 +469,32 @@ J="$(ai_journal_file "$ROOT")"
 TICK="${LOOMY_TICK:-0}"
 now_s="$(date +%s)"
 ai_detect_env "$ROOT"
-if (( LIVE )) || [[ -n "${LOOMY_NO_HEADER:-}" ]]; then
-  loomy_live_init; loomy_live_poll "$J"; LV_NOW="$now_s"; LV_CLOCK="$(date +%H:%M:%S)"; loomy_live_states; loomy_live_render; exit 0
-fi
+loomy_live_init; loomy_live_poll "$J"; LV_NOW="$now_s"; LV_CLOCK="$(date +%H:%M:%S)"; loomy_live_states; loomy_live_metadata
+if (( LIVE )); then loomy_live_render; exit 0; fi
 
-dur() { local d="${1%.*}"; if (( d >= 60 )); then printf '%d min %02d s' $(( d / 60 )) $(( d % 60 )); else printf '%d s' "$d"; fi; }
+dur() { if [[ "$1" == "—" ]]; then printf '—'; else ai_display_duration "$1"; printf '%s' "$AI_DURATION"; fi; }
 hm() { local e; e="$(ai_ts_epoch "$1")"; [[ -n "$e" ]] && { date -r "$e" +%H:%M:%S 2>/dev/null || date -d "@$e" +%H:%M:%S; }; }
 color_of() { case "$1" in TOP) printf '%s' "$C_MAGENTA" ;; FAST) printf '%s' "$C_GREEN" ;; *) printf '%s' "$C_CYAN" ;; esac; }
 
-# ---------------------------------------------------------------- state per role, from the log
-# Per role: running (a delegation started whose process is alive), or the last finished one.
-# (computed below only for the list rendering; the diagram reads the log in its own single pass)
-
-# ---------------------------------------------------------------- lead and advisor
-ai_resolve lead "$AI_ENV" "$AI_PROFILE"
-L_MODEL="$R_MODEL"; L_EFFORT="$R_EFFORT"; L_FAM="$R_FAMILY"
-ADV=""; [[ "$L_FAM" == "claude" ]] && ADV="$(ai_advisor_for "$L_MODEL" "$AI_PROFILE")"
-sess="$(ai_session_state "$ROOT" 2>/dev/null || echo none)"
-case "$sess" in
-  open*) s_txt="${C_GREEN}● $(t "session open")${C_RESET}" ;;
-  closed*) s_txt="${C_DIM}○ $(t "session closed")${C_RESET}" ;;
-  *) s_txt="${C_DIM}○ $(t "no session")${C_RESET}" ;;
-esac
-phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1)"
+# ---------------------------------------------------------------- lead and advisor, from the same live session
+L_MODEL="$LV_LEAD_MODEL"; L_EFFORT="$LV_LEAD_EFFORT"; L_FAM="$LV_LEAD_TOOL"
+if (( LV_SESSION_SEQ > 0 )); then L_MODEL="${LV_SESSION_MODEL:-?}"; L_EFFORT="${LV_SESSION_EFFORT:-$LV_LEAD_EFFORT}"; L_FAM="$LV_SESSION_TOOL"; fi
+ADV=""; [[ "$L_FAM" == claude ]] && ADV="$(ai_advisor_for "$L_MODEL" "$AI_PROFILE")"
+sess=closed; (( LV_SESSION_OPEN )) && [[ "$LV_ALIVE_PIDS" == *"|$LV_SESSION_PID|"* ]] && sess=open
+s_txt="${C_DIM}○ $(t "session closed")${C_RESET}"
+(( LV_SESSION_SEQ > 0 )) || s_txt="${C_DIM}○ $(t "no session")${C_RESET}"
+if [[ "$sess" == open ]]; then
+  if (( LV_ACTIVE || ${#LV_RUNNING[@]} > 0 )); then lead_state="$(t "working")"; else lead_state="$(t "idle")"; fi
+  s_txt="${C_GREEN}● $(t "session open") · $lead_state${C_RESET}"
+fi
+phase="$LV_PHASE"
 for mf in audit task; do
   p="$(sed -n 's/^phase=//p' "$ROOT/.loomy/$mf.state" 2>/dev/null | head -1)"
   if [[ -n "$p" && "$p" != "done" ]]; then loomy_phases_mode "$mf"; phase="$p"; MISSION="$mf"; break; fi
 done
-
+# Bootstrap completion does not describe current delegations.
+if (( ${#LV_RUNNING[@]} > 0 )) && [[ "$phase" == "done" ]]; then phase=""; fi
 a_n=0; a_last=""; a_tok=0
-# role_state <role>: "run|<elapsed s>|<task>", "last|<status>|<outcome>|<duration>" or "idle".
-role_state() {
-  local run last pid ts task lts lst ldur loc
-  run="$(printf '%s\n' "$STATES" | awk -F'|' -v r="$1" '$1 == "RUN" && $2 == r' | tail -1)"
-  if [[ -n "$run" ]]; then
-    IFS='|' read -r _ _ pid ts task <<<"$run"
-    if [[ -n "$pid" && "$pid" != "0" ]] && kill -0 "$pid" 2>/dev/null; then
-      echo "run|$(( now_s - $(ai_ts_epoch "$ts" || echo "$now_s") ))|$task"; return 0
-    fi
-  fi
-  last="$(printf '%s\n' "$STATES" | awk -F'|' -v r="$1" '$1 == "LAST" && $2 == r' | tail -1)"
-  if [[ -n "$last" ]]; then IFS="|" read -r _ _ lts lst ldur _ loc _ _ <<<"$last"; echo "last|$lst|$loc|$ldur|$lts"; else echo "idle"; fi
-}
 
 # ---------------------------------------------------------------- diagram (wide terminals)
 _ui_term_size
@@ -419,7 +520,7 @@ if (( DIAGRAM )); then
   tv TR_3 "lead"
   tv TR_4 "routing"
   tv TR_5 "roles"
-  tv TR_6 "by profile"
+  tv TR_6 "model + effort"
   tv TR_7 "advisor"
   tv TR_8 "main session"
   tv TR_9 "plans + decides"
@@ -430,9 +531,8 @@ if (( DIAGRAM )); then
   tv TR_14 "standard"
   tv TR_15 "fast"
   tv TR_16 "delegate to roles"
-  tv TR_17 "effort by profile"
+  tv TR_17 "model + effort"
   tv TR_18 "back to the lead agent"
-  tv TR_19 "review + verify"
   tv TR_20 "on call"
   tv TR_21 "before a plan"
   tv TR_22 "reads the whole"
@@ -453,6 +553,7 @@ if (( DIAGRAM )); then
   tv TR_37 "session log"
   tv TR_38 "log empty for now"
   tv TR_39 "live: loomy watch, then t"
+  tv TR_40 "no session"
   # Redrawn every second: helpers that write into variables instead of starting subprocesses.
   _tz="$(date +%z)"; TZOFF=$(( (10#${_tz:1:2} * 3600 + 10#${_tz:3:2} * 60) * ${_tz:0:1}1 ))
   ts2ep() {   # ISO UTC timestamp → EP (epoch), by calendar arithmetic
@@ -462,47 +563,23 @@ if (( DIAGRAM )); then
   }
   hms() { local x; ts2ep "$1"; x=$(( (EP + TZOFF) % 86400 )); printf -v HMS '%02d:%02d:%02d' $(( x / 3600 )) $(( x % 3600 / 60 )) $(( x % 60 )); }
   toklbl() { local n="${1%.*}"; n="${n:-0}"; if (( n >= 1000000 )); then printf -v TOK '%d.%dM' $(( n / 1000000 )) $(( n % 1000000 / 100000 )); elif (( n >= 1000 )); then printf -v TOK '%d.%dk' $(( n / 1000 )) $(( n % 1000 / 100 )); else TOK="$n"; fi; }
-  # One pass over the log: running and last delegation per role, delegations per tier, advisor consultations.
-  RS_ROLE=(); RS_KIND=(); RS_A=(); RS_B=(); RS_C=(); RS_D=(); n_tot=0; T_TOP=0; T_MID=0; T_FAST=0
+  # Tier counts use the reducer; advisor consultations are separate journal events.
+  n_tot=${#LV_FINISHED[@]}; T_TOP=0; T_MID=0; T_FAST=0
+  for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
+    case " ${LV_MODEL[i]} " in
+      " $AI_MODEL_CLAUDE_TOP "|" $AI_MODEL_CODEX_TOP ") T_TOP=$(( T_TOP + 1 )) ;;
+      " $AI_MODEL_CLAUDE_MID "|" $AI_MODEL_CODEX_MID ") T_MID=$(( T_MID + 1 )) ;;
+      " $AI_MODEL_CLAUDE_FAST "|" $AI_MODEL_CODEX_FAST ") T_FAST=$(( T_FAST + 1 )) ;;
+    esac
+  done
   if [[ -s "$J" ]]; then
-    while IFS='|' read -r kind a b c d e; do
-      case "$kind" in
-        RUN|LAST) RS_ROLE+=("$a"); RS_KIND+=("$kind"); RS_A+=("$b"); RS_B+=("$c"); RS_C+=("$d"); RS_D+=("$e") ;;
-        TOT) n_tot="$a"; T_TOP="$b"; T_MID="$c"; T_FAST="$d" ;;
-        ADV) a_n="$a"; a_tok="$b"; a_last="$c" ;;
-      esac
-    done < <(awk -v ta=" $AI_MODEL_CLAUDE_TOP $AI_MODEL_CODEX_TOP " -v tb=" $AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_MID " -v tc=" $AI_MODEL_CLAUDE_FAST $AI_MODEL_CODEX_FAST " '
-      function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
-      function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      /"type":"delegation_start"/ { id = field("id"); srole[id] = field("role"); sts[id] = field("ts"); spid[id] = num("pid"); stask[id] = substr(field("task"), 1, 50); order[++n] = id }
-      /"type":"delegation",/ { id = field("id"); fin[id] = 1; r = field("role"); m = " " field("model") " "
-        last[r] = field("status") "|" field("outcome") "|" num("duration_s") "|" field("ts"); tot++
-        if (index(ta, m)) t1++; else if (index(tb, m)) t2++; else if (index(tc, m)) t3++ }
-      /"type":"advisor"/ { an += num("calls"); at += num("tokens_in"); al = field("ts") }
-      END {
-        for (i = 1; i <= n; i++) { id = order[i]; if (!(id in fin)) print "RUN|" srole[id] "|" spid[id] "|" sts[id] "|" stask[id] "|" }
-        for (r in last) print "LAST|" r "|" last[r]
-        print "TOT|" tot + 0 "|" t1 + 0 "|" t2 + 0 "|" t3 + 0 "||"
-        print "ADV|" an + 0 "|" at + 0 "|" al "|||" }' "$J")
+    read -r a_n a_tok a_last <<<"$(awk '
+      function num(k) { if (match($0, "\"" k "\":[0-9]+")) { return substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 3) + 0 } return 0 }
+      /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
   fi
-  # role_state_fast <role>: RS_K (run, last or idle) and its fields, without subprocess.
-  role_state_fast() {
-    local i n=${#RS_ROLE[@]}
-    RS_K="idle"
-    for (( i = n - 1; i >= 0; i-- )); do
-      [[ "${RS_ROLE[i]}" == "$1" ]] || continue
-      if [[ "${RS_KIND[i]}" == "RUN" ]]; then
-        if [[ -n "${RS_A[i]}" && "${RS_A[i]}" != "0" ]] && kill -0 "${RS_A[i]}" 2>/dev/null; then
-          ts2ep "${RS_B[i]}"; RS_EL=$(( now_s - EP )); RS_K="run"; return 0
-        fi
-      elif [[ "$RS_K" == "idle" ]]; then
-        RS_K="last"; RS_ST="${RS_A[i]}"; RS_OC="${RS_B[i]}"; RS_DUR="${RS_C[i]}"
-      fi
-    done
-  }
   (( W > 140 )) && W=140
   K_LEAD="$C_YELLOW"; K_ROUTE="$C_GREEN"; K_ROLE="$C_CYAN"; K_ADV="$C_MAGENTA"; K_DIM="$C_DIM"; K_TXT=""; K_B="$C_BOLD"
-  bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; *) BARS="▮▮▮▮" ;; esac; }
+  bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; xhigh|max|ultra) BARS="▮▮▮▮" ;; *) BARS="" ;; esac; }
   eff_short() { case "$1" in medium) EFS="med" ;; *) EFS="$1" ;; esac; }
   color_tier() { case "$1" in TOP) CT="$C_MAGENTA" ;; FAST) CT="$C_GREEN" ;; *) CT="$C_CYAN" ;; esac; }
   action_of() {
@@ -532,13 +609,9 @@ if (( DIAGRAM )); then
   # Roles shown as boxes: running ones first, then the most recently used, then the usual workers.
   pick=""
   run_roles=""; last_roles=""; n_run=0
-  for (( i = 0; i < ${#RS_ROLE[@]}; i++ )); do
-    if [[ "${RS_KIND[i]}" == RUN ]]; then
-      if [[ -n "${RS_A[i]}" && "${RS_A[i]}" != 0 ]] && kill -0 "${RS_A[i]}" 2>/dev/null; then run_roles="$run_roles ${RS_ROLE[i]}"; n_run=$(( n_run + 1 )); fi
-    else last_roles="$last_roles ${RS_D[i]}|${RS_ROLE[i]}"; fi
-  done
-  # Most recent first (one sort for the whole frame).
-  [[ -n "$last_roles" ]] && last_roles="$(printf '%s\n' $last_roles | sort -r | cut -d'|' -f2)"
+  for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do run_roles="$run_roles ${LV_ROLE[i]}"; n_run=$(( n_run + 1 )); done
+  for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do last_roles="$last_roles ${LV_END_SEQ[i]}|${LV_ROLE[i]}"; done
+  [[ -n "$last_roles" ]] && last_roles="$(printf '%s\n' $last_roles | sort -rn | cut -d'|' -f2)"
   for r in $run_roles $last_roles developer reviewer executor explorer architect $AI_ROLES; do
     case " $pick " in *" $r "*) continue ;; esac
     case " $AI_ROLES " in *" $r "*) [[ "$r" != "lead" ]] && pick="$pick $r" ;; esac
@@ -577,10 +650,14 @@ if (( DIAGRAM )); then
   lk="$K_LEAD"; [[ "$sess" == open* ]] && (( (TICK / 2) % 2 )) && lk="${C_BOLD}${C_YELLOW}"
   cv_box "$MX" "$MY" "$MW" 6 "$lk"
   cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$NM_LEAD · ${TR_8}"
-  cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "${TR_9}"
+  cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "$LV_RELAY$L_FAM · ${TR_9}"
   bars "$L_EFFORT"; cv_center "$MX" $(( MY + 3 )) "$MW" "$K_TXT" "effort $BARS $L_EFFORT"
-  PH_LBL=""; [[ -n "$phase" ]] && PH_LBL="$(loomy_phase_label "$phase")"
-  if [[ "$sess" == open* ]]; then sk="$C_GREEN"; st_txt="● ${TR_10}"; else sk="$K_DIM"; st_txt="○ ${TR_11}"; fi
+  PH_LBL=""; [[ -n "$phase" && "$phase" != "done" ]] && PH_LBL="$(loomy_phase_label "$phase")"
+  if [[ "$sess" == open* ]]; then sk="$C_GREEN"; st_txt="● ${TR_10}"; else sk="$K_DIM"; st_txt="○ ${TR_11}"; (( LV_SESSION_SEQ > 0 )) || st_txt="○ ${TR_40}"; fi
+  if [[ "$sess" == open* ]]; then
+    if (( LV_ACTIVE || ${#LV_RUNNING[@]} > 0 )); then lead_state="$(t "working")"; else lead_state="$(t "idle")"; fi
+    st_txt="$st_txt · $lead_state"
+  fi
   cv_center "$MX" $(( MY + 4 )) "$MW" "$sk" "$st_txt${PH_LBL:+ · $PH_LBL}"
   # Connector lead → routing, with a travelling dot.
   cv_vline "$mcx" $(( MY + 6 )) $(( MY + 7 )) "$K_DIM"
@@ -619,23 +696,26 @@ if (( DIAGRAM )); then
     c=$(( bx[b] + BW / 2 )); r="${SHOWN[b]}"
     cv_put "$c" $(( SY + 2 )) "$K_DIM" "●"; cv_put "$c" $(( SY + 3 )) "$K_DIM" "▼"
     ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
-    role_state_fast "$r"
+    loomy_tree_role "$r"
     bk="$K_ROLE"; stl=""; stk="$K_DIM"
     case "$RS_K" in
       run) el="$RS_EL"; (( el < 0 )) && el=0
             if (( (TICK + b) % 2 )); then bk="${C_BOLD}${C_CYAN}"; else bk="$C_CYAN"; fi
-            w_run=""; tv w_run "running"; printf -v stl '%s %s %d:%02d' "${UI_SPIN[$(( TICK % 4 ))]}" "$w_run" $(( el / 60 )) $(( el % 60 )); stk="$C_YELLOW"
+            w_run=""; tv w_run "running"; loomy_live_time "$el"; stl="${UI_SPIN[$(( TICK % 4 ))]} $w_run $LV_TIME"; stk="$C_YELLOW"
             # The dot travels down the arrow of a working role.
             cv_put "$c" $(( SY + 2 + (TICK + b) % 2 )) "$C_YELLOW" "●" ;;
       last) d0="${RS_DUR%.*}"; d0="${d0:-0}"
-            if [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
+            if [[ "$RS_OC" == interrupted ]]; then w="$(t "interrupted")"; stl="⊘ $w"; stk="$C_DIM$C_RED"
+            elif [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
             elif [[ "$RS_OC" == "partial" ]]; then tv w "partial"; stl="△ $w"; stk="$C_YELLOW"
             elif [[ "$RS_OC" == "blocked" ]]; then tv w "blocked"; stl="■ $w"; stk="$C_YELLOW"
-            else tv w "done"; printf -v stl '✓ %s %d:%02d' "$w" $(( d0 / 60 )) $(( d0 % 60 )); stk="$C_GREEN"; fi ;;
-      *) tv w "idle"; stl="· $w" ;;
+            else tv w "done"; loomy_live_time "$d0"; stl="✓ $w $LV_TIME"; stk="$C_GREEN"; fi ;;
+      *) tv w "planned"; stl="· $w" ;;
     esac
     cv_box "${bx[b]}" "$BY" "$BW" 9 "$bk"
-    role_lbl "$r"; color_tier "$R_TIER"; bars "$R_EFFORT"; eff_short "$R_EFFORT"; action_of "$r"
+    role_lbl "$r"; color_tier "$R_TIER"; [[ "$RS_K" != idle ]] || CT="$K_DIM"; bars "$R_EFFORT"; eff_short "$R_EFFORT"; action_of "$r"
+    if [[ "$RS_K" == idle ]]; then role_tool="$R_FAMILY"; else role_tool="${LV_TOOL[RS_I]}"; fi
+    cv_center "${bx[b]}" $(( BY + 1 )) "$BW" "$CT" "$role_tool"
     cv_center "${bx[b]}" $(( BY + 2 )) "$BW" "${C_BOLD}" "$RL"
     cv_center "${bx[b]}" $(( BY + 3 )) "$BW" "$CT" "$R_MODEL"
     cv_center "${bx[b]}" $(( BY + 4 )) "$BW" "$K_DIM" "effort $BARS $EFS"
@@ -652,7 +732,10 @@ if (( DIAGRAM )); then
   BKY=$(( MGY + 3 )); BKW=38; BKX=$(( CC - BKW / 2 ))
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
   cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
-  cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "${TR_19}${PH_LBL:+ · $PH_LBL}"
+  back_state="$(t "reviews + checks")"
+  if (( n_run == 1 )); then back_state="$(t "waiting for %s role" "$n_run")"
+  elif (( n_run > 1 )); then back_state="$(t "waiting for %s roles" "$n_run")"; fi
+  cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$back_state"
   # Advisor column, linked to the lead box, the roles and the final check.
   if [[ -n "$ADV" ]]; then
     AH=$(( BKY + 4 - MY ))
@@ -662,7 +745,7 @@ if (( DIAGRAM )); then
     # The moment the advisor is most likely called now, from the phase and the last results.
     act="plan"
     case "$phase" in verify|commit|document|retire|validate|report|done) act="done" ;; esac
-    for (( i = 0; i < ${#RS_ROLE[@]}; i++ )); do [[ "${RS_KIND[i]}" == LAST ]] && { [[ "${RS_A[i]}" != ok || "${RS_B[i]}" == partial || "${RS_B[i]}" == blocked ]]; } && act="error"; done
+    for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do [[ "${LV_STATUS[i]}" != ok || "${LV_OUTCOME[i]}" == partial || "${LV_OUTCOME[i]}" == blocked ]] && act=error; done
     recent=0; if [[ -n "$a_last" ]]; then ts2ep "$a_last"; (( now_s - EP < 90 )) && recent=1; fi
     trig() {   # trig <code> <y> <label> <target x>
       local mk="◇" k="$K_DIM"
@@ -700,6 +783,9 @@ if (( DIAGRAM )); then
       cv_put 2 "$ly" "$K_DIM" "$tm"
       cv_put 12 "$ly" "$wk" "$who"
       nb=""; (( new )) && nb="$C_BOLD"
+      log_room=$(( W - 29 - ${#right} - ${#what} ))
+      ai_task_title "$left" "$log_room"; left="$AI_TASK_TITLE"
+      if [[ "$who" == lead && "$what" == "$(t "request")" ]]; then ai_task_title "$extra" "$(( W - 29 - ${#what} ))"; left="$AI_TASK_TITLE"; right=""; fi
       cv_put 24 "$ly" "$nb" "$what${left:+ · $left}"
       cv_right $(( W - 3 )) "$ly" "$K_DIM" "$right"
       (( new )) && cv_put 1 "$ly" "$C_YELLOW" "▸"
@@ -724,7 +810,6 @@ if (( DIAGRAM )); then
     cv_put "$sx" $(( PY + 1 )) "${C_BOLD}$sk" "$sv"; sx=$(( sx + ${#sv} ))
     cv_put "$sx" $(( PY + 1 )) "$K_TXT" "]"; sx=$(( sx + 3 ))
   done
-  CV_H=$(( PY + 2 ))
   cv_junctions
   printf -v cvp '%s  ' "${C_RAIL}│${C_RESET}"
   cv_print "$cvp"
@@ -733,23 +818,10 @@ if (( DIAGRAM )); then
 fi
 
 # ---------------------------------------------------------------- list rendering
-STATES="$( [[ -s "$J" ]] && awk '
-  function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
-  function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-  /"type":"delegation_start"/ { id = field("id"); srole[id] = field("role"); sts[id] = field("ts"); spid[id] = num("pid"); stask[id] = substr(field("task"), 1, 50); order[++n] = id }
-  /"type":"delegation",/ { id = field("id"); fin[id] = 1; r = field("role")
-    last[r] = field("ts") "|" field("status") "|" num("duration_s") "|" (num("tokens_in") + num("tokens_out")) "|" field("outcome") "|" field("model"); cnt[r]++ }
-  END {
-    for (i = 1; i <= n; i++) { id = order[i]; if (!(id in fin)) print "RUN|" srole[id] "|" spid[id] "|" sts[id] "|" stask[id] }
-    for (r in last) print "LAST|" r "|" last[r] "|" cnt[r] }' "$J")"
-if [[ -s "$J" ]]; then
-  read -r a_n a_tok a_last <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-    /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
-fi
 ui_section "$(t "AGENT TREE")" "$(ai_env_label "$AI_ENV") · $(t "%s profile" "$(ai_profile_label "$AI_PROFILE")")"
 (( TREE_SMALL )) && ui_rail "${C_DIM}$(t "diagram view: enlarge the window to %s × %s (now %s × %s), or key v" "$TREE_NEED_COLS" "$TREE_NEED_ROWS" "$UI_COLS" "$UI_ROWS")${C_RESET}"
 ui_rail ""
-lead_line="${C_BRAND}${C_BOLD}$(t "LEAD AGENT")${C_RESET}  $(color_of TOP)${L_MODEL}${C_RESET} · $L_EFFORT · $s_txt${phase:+ ${C_DIM}·${C_RESET} ${MISSION:+$MISSION · }$(loomy_phase_label "$phase")}"
+lead_line="${C_BRAND}${C_BOLD}$(t "LEAD AGENT")${C_RESET}  $(color_of TOP)${LV_RELAY}${L_FAM} ${L_MODEL}${C_RESET} · $L_EFFORT · $s_txt${phase:+ ${C_DIM}·${C_RESET} ${MISSION:+$MISSION · }$(loomy_phase_label "$phase")}"
 ui_rail "┏━ $lead_line"
 if [[ -n "$ADV" ]]; then
   a_n=0; a_last=""
@@ -770,35 +842,27 @@ for r in "${roles[@]}"; do
   i=$(( i + 1 ))
   ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
   branch="┣"; (( i == n_roles )) && branch="┗"
-  run="$(printf '%s\n' "$STATES" | awk -F'|' -v r="$r" '$1 == "RUN" && $2 == r' | tail -1)"
-  state=""; conn="━━"
-  if [[ -n "$run" ]]; then
-    IFS='|' read -r _ _ pid ts task <<<"$run"
-    if [[ -n "$pid" && "$pid" != "0" ]] && kill -0 "$pid" 2>/dev/null; then
-      n_run=$(( n_run + 1 ))
-      el=$(( now_s - $(ai_ts_epoch "$ts" || echo "$now_s") )); (( el < 0 )) && el=0
-      # A pulse travels along the branch while the role works.
-      case $(( TICK % 3 )) in 0) conn="•━" ;; 1) conn="━•" ;; *) conn="━━" ;; esac
-      state="${C_YELLOW}${UI_SPIN[$(( TICK % 4 ))]} $(t "running") $(( el / 60 )):$(printf '%02d' $(( el % 60 )))${C_RESET} ${C_DIM}${task}${C_RESET}"
-      mark="${C_YELLOW}●${C_RESET}"
-    fi
-  fi
-  if [[ -z "$state" ]]; then
-    last="$(printf '%s\n' "$STATES" | awk -F'|' -v r="$r" '$1 == "LAST" && $2 == r' | tail -1)"
-    if [[ -n "$last" ]]; then
-      IFS="|" read -r _ _ lts lst ldur ltok loc _ lcnt <<<"$last"
-      mark="${C_GREEN}✓${C_RESET}"; [[ "$lst" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
-      [[ "$lst" == "ok" && "$loc" == "partial" ]] && mark="${C_YELLOW}△${C_RESET}"
-      [[ "$lst" == "ok" && "$loc" == "blocked" ]] && mark="${C_YELLOW}■${C_RESET}"
-      state="${C_DIM}$(t "done %s" "$(hm "$lts" | cut -c1-5)") · $(dur "$ldur") · $(ai_tokens_label "${ltok%.*}") tk · ×${lcnt}${C_RESET}"
-    else
-      mark="${C_DIM}○${C_RESET}"; state="${C_DIM}$(t "idle")${C_RESET}"
-    fi
-  fi
+  loomy_tree_role "$r"
+  state=""; conn="━━"; mark="${C_DIM}○${C_RESET}"
+  if [[ "$RS_K" == run ]]; then
+    n_run=$(( n_run + 1 )); loomy_live_time "$RS_EL"
+    state="${C_YELLOW}${UI_SPIN[$(( TICK % 4 ))]} $(t "running") $LV_TIME${C_RESET} ${C_DIM}${LV_TASK[RS_I]}${C_RESET}"
+    mark="${C_YELLOW}●${C_RESET}"
+  elif [[ "$RS_K" == last ]]; then
+    mark="${C_GREEN}✓${C_RESET}"
+    if [[ "$RS_OC" == interrupted ]]; then mark="${C_DIM}${C_RED}⊘${C_RESET}"
+    elif [[ "$RS_ST" != ok ]]; then mark="${C_RED}✗${C_RESET}"; fi
+    [[ "$RS_OC" == partial ]] && mark="${C_YELLOW}△${C_RESET}"
+    [[ "$RS_OC" == blocked ]] && mark="${C_YELLOW}■${C_RESET}"
+    outcome_word="${RS_OC:-done}"; [[ "$RS_ST" == ok || "$RS_OC" == interrupted ]] || outcome_word=failed
+    if [[ "$outcome_word" == interrupted ]]; then state="${C_DIM}${C_RED}$(t "$outcome_word") · $(dur "$RS_DUR")${C_RESET}"
+    else state="${C_DIM}$(t "$outcome_word") · $(dur "$RS_DUR")${C_RESET}"; fi
+  else state="${C_DIM}$(t "planned")${C_RESET}"; fi
   _ui_pad "$(ai_role_label "$r")" 16; rl="$UI_PADDED"
   _ui_pad "$R_MODEL" 18; ml="$UI_PADDED"
   _ui_pad "$R_EFFORT" 7; el_="$UI_PADDED"
-  ui_rail "${branch}${conn} ${mark} ${C_BOLD}${rl}${C_RESET}$(color_of "$R_TIER")${ml}${C_RESET}${el_}${state}"
+  model_color="$(color_of "$R_TIER")"; [[ "$RS_K" != idle ]] || model_color="$C_DIM"
+  ui_rail "${branch}${conn} ${mark} ${C_BOLD}${rl}${C_RESET}${model_color}${ml}${C_RESET}${el_}${state}"
 done
 
 # ---------------------------------------------------------------- session log

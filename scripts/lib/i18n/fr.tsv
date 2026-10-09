@@ -1754,6 +1754,7 @@ last %s	dernière %s
 before a plan, when an error repeats, before done	avant un plan, quand une erreur se répète, avant de terminer
 done %s	terminé %s
 idle	au repos
+working	en cours
 session log	journal de session
 roles	rôles
 delegations	délégations
@@ -1790,6 +1791,9 @@ delegate to roles	délègue aux rôles
 effort by profile	effort selon le profil
 back to the lead agent	retour à l'orchestrateur
 review + verify	relit + vérifie
+reviews + checks	revues + vérifications
+waiting for %s role	attend %s rôle
+waiting for %s roles	attend %s rôles
 on call	de garde
 before a plan	avant un plan
 reads the whole	lit toute la
@@ -2220,3 +2224,7 @@ For this task the sandbox is read-only: don't modify any file.	Pour cette tâche
 off routing	hors routage
 %s: request or model	%s : request ou model
 lost	perdu
+planned	prévu
+Earlier work	Travail antérieur
+request	demande
+model + effort	modèle + effort

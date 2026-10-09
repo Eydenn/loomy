@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.15.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.2-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -335,7 +335,7 @@ Tout se passe dans le terminal, sans dépendance. `loomy start` ouvre le suivi e
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
 | `loomy status` | Instantané : phases, délégations, coûts, quotas, Git | — |
-| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t état, q quitter) | `N` |
+| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t agents/diagramme, q quitter) | `N` |
 | `loomy tree` | Arbre des agents : orchestrateur, conseiller et rôles en direct | — |
 | `loomy start` | Session et suivi en direct côte à côte | `--no-watch` |
 | `loomy log` | Journal lisible des phases, délégations et sessions | `--raw` `--since AAAA-MM-JJ` `--csv` |
@@ -343,7 +343,7 @@ Tout se passe dans le terminal, sans dépendance. `loomy start` ouvre le suivi e
 Chaque commande en détail : [docs/COMMANDS.fr.md](docs/COMMANDS.fr.md).
 
 **Ce qui est en direct.** Les lancements sont détectés toutes les 250 ms ; les chronos en cours avancent chaque seconde :
-- les **délégations**, via les bridges et les sous-agents natifs Claude, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec ou interruption. L'usage des sous-agents natifs n'est compté qu'une fois ;
+- les **délégations**, via les bridges et les sous-agents natifs Claude, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec et ⊘ interruption. L'usage des sous-agents natifs n'est compté qu'une fois ;
 - le **regroupement** par demande ou modèle se change avec `v` et se mémorise dans `watch_group` (`request` par défaut ; `loomy config set watch_group model` le change). Les extraits des demandes viennent du hook de message Claude et respectent `LOOMY_JOURNAL_TASKS=0` ; ⚑ signale une demande explicite et ⇢ un écart au routage ;
 - **l'orchestrateur** s'ouvre avec `o` dans une app de bureau disponible, sinon dans une fenêtre de terminal séparée avec session et suivi côte à côte ;
 - la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ;
@@ -586,7 +586,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
 | `loomy status` | Instantané : phases, délégations, coûts, quotas, Git | — |
-| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t état, q quitter) | `N` |
+| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t agents/diagramme, q quitter) | `N` |
 | `loomy tree` | Arbre des agents : orchestrateur, conseiller et rôles en direct | — |
 | `loomy log` | Journal lisible des phases, délégations et sessions | `--raw` `--since AAAA-MM-JJ` `--csv` |
 | `loomy stats` | Tokens, coût et quotas par rôle, modèle et jour | `--days N` `--since AAAA-MM-JJ` |

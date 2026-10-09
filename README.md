@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.15.1-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.2-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -335,7 +335,7 @@ Everything happens in the terminal, with no dependency. `loomy start` opens live
 | Command | What it does | Main options |
 |---|---|---|
 | `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
-| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t status, q quit) | `N` |
+| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t agents/diagram, q quit) | `N` |
 | `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
 | `loomy start` | Session and live tracking side by side | `--no-watch` |
 | `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
@@ -343,7 +343,7 @@ Everything happens in the terminal, with no dependency. `loomy start` opens live
 Each command in detail: [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **What is live.** Starts are polled every 250 ms; running timers tick every second:
-- **delegations**, through bridges and native Claude subagents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed or interrupted. Native subagent usage is counted only once;
+- **delegations**, through bridges and native Claude subagents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed and ⊘ interrupted. Native subagent usage is counted only once;
 - **grouping** by request or model switches with `v` and is saved in `watch_group` (`request` by default; `loomy config set watch_group model` changes it). Request excerpts come from Claude's prompt hook and obey `LOOMY_JOURNAL_TASKS=0`; ⚑ marks an explicit request and ⇢ a routing difference;
 - **the orchestrator** opens with `o` in an available desktop app, falling back to a separate terminal window with session and tracking side by side;
 - the **phase** changes when the lead agent records it (`START.md` asks it to at each step);
@@ -586,7 +586,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | Command | What it does | Main options |
 |---|---|---|
 | `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
-| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t status, q quit) | `N` |
+| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t agents/diagram, q quit) | `N` |
 | `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
 | `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
 | `loomy stats` | Tokens, cost and quotas by role, model and day | `--days N` `--since YYYY-MM-DD` |

@@ -183,16 +183,70 @@ live_view_tests() {
   [[ "$lost_count" == 1 ]] && ok "lost is shown once in the session recap" || ko "lost appears $lost_count times in the recap"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"ended","pid":%s}\n' "$nowz" "$$" >"$ended/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation_start","session":"ended","id":"ended-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n{"ts":"%s","type":"session","event":"end","tool":"claude","session":"ended","pid":%s}\n' "$recentz" "$$" "$nowz" "$$" >>"$ended/.loomy/logs/events.jsonl"
-  run "ended lead session closes native start as unknown" env LOOMY_SUBAGENT_MAX_S=10 NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$ended" --once
-  has "ended session shows unknown glyph" '\? Developer'
-  if perl -0777 -e 'local $/; my $s=<>; exit(index($s,"\e[2m  ? Developer") >= 0 ? 0 : 1)' "$OUT"; then ok "unknown glyph is dim"; else ko "unknown glyph is not dim"; fi
+  run "ended lead session interrupts native start" env LOOMY_SUBAGENT_MAX_S=10 NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$ended" --once
+  has "ended session shows interrupted glyph and outcome" '⊘ Developer.*· interrupted'
+  if perl -0777 -e 'local $/; my $s=<>; exit($s =~ /\e\[2m\e\[31m  ⊘ Developer/ ? 0 : 1)' "$OUT"; then ok "interrupted native row is dim red"; else ko "interrupted native row is not dim red"; fi
+  run "French ended session uses interrupted label" env LOOMY_UI_LANG=fr COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$ended" --once
+  has "French interrupted label" '⊘ Développeur.*· interrompu'
+  run "diagram closed session shows only its closed state" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$ended"
+  has "diagram lead: closed session label" 'session closed'
+  hasnt "diagram lead: closed session omits done" 'session closed.*done'
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"recent","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"recent","id":"recent-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n' "$nowz" "$$" "$recentz" "$$" >"$recent/.loomy/logs/events.jsonl"
   run "recent native async start remains in progress" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$recent" --once
   awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$WORK/recent-progress.txt"
   grep -q Developer "$WORK/recent-progress.txt" && ok "recent native agent remains in progress" || ko "recent native agent missing from progress"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"dead","pid":99999999}\n{"ts":"%s","type":"delegation_start","session":"dead","id":"dead-parent-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n' "$nowz" "$recentz" "$$" >"$dead/.loomy/logs/events.jsonl"
-  run "dead lead pid closes native start as unknown" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$dead" --once
-  has "dead lead pid shows unknown glyph" '\? Developer'
+  run "dead lead pid interrupts native start" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$dead" --once
+  has "dead lead pid shows interrupted glyph and outcome" '⊘ Developer.*· interrupted'
+  local bridge_dead="$WORK/live-bridge-dead" readside="$WORK/live-read-side" rsj="$WORK/live-read-side/.loomy/logs/events.jsonl"
+  mkdir -p "$bridge_dead/.loomy/logs" "$readside/.loomy/logs"
+  cp "$lv/.loomy/brief.md" "$bridge_dead/.loomy/brief.md"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"bridge-live","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"bridge-live","id":"bridge-dead","pid":99999999,"bridge":"codex","role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Bridge lost before completion"}\n' "$nowz" "$$" "$nowz" >"$bridge_dead/.loomy/logs/events.jsonl"
+  run "dead bridge is interrupted in live recap" env NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$bridge_dead" --once
+  has "dead bridge recap uses interrupted glyph and outcome" '⊘ Developer.*· interrupted'
+  awk '/^SESSION/{a=1} a' "$OUT" >"$bridge_dead/recap.txt"
+  grep -q '⊘ Developer.*· interrupted' "$bridge_dead/recap.txt" && ok "interrupted delegation remains visible in recap" || ko "interrupted delegation missing from recap"
+  if perl -0777 -e 'local $/; my $s=<>; exit($s =~ /\e\[2m\e\[31m[^\n]*⊘ Developer/ ? 0 : 1)' "$OUT"; then ok "interrupted bridge row is dim red"; else ko "interrupted bridge row is not dim red"; fi
+  local layout="$WORK/live-interrupted-layout" base_epoch next_epoch own_epoch link_epoch stop_epoch last_epoch end_epoch done_epoch basez nextz ownz linkz stopz lastz endz donez
+  mkdir -p "$layout/.loomy/logs"; cp "$lv/.loomy/brief.md" "$layout/.loomy/brief.md"
+  base_epoch="$(perl -MTime::Local=timegm -e 'print timegm(0,0,0,1,0,2026)')"; next_epoch=$(( base_epoch + 37 )); own_epoch=$(( base_epoch + 40 )); link_epoch=$(( base_epoch + 50 )); stop_epoch=$(( base_epoch + 64 )); last_epoch=$(( base_epoch + 70 )); end_epoch=$(( base_epoch + 80 )); done_epoch=$(( base_epoch + 90 ))
+  basez="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$base_epoch")"
+  nextz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$next_epoch")"
+  ownz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$own_epoch")"
+  linkz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$link_epoch")"
+  stopz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$stop_epoch")"
+  lastz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$last_epoch")"
+  endz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$end_epoch")"
+  donez="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($ARGV[0]))' "$done_epoch")"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"stable","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"stable","id":"interrupted","pid":99999999,"bridge":"codex","role":"developer","family":"codex","model":"gpt-6-luna","effort":"high","task":"Interrupted task"}\n{"ts":"%s","type":"delegation_start","session":"stable","id":"next","pid":99999998,"bridge":"codex","role":"debugger","family":"codex","model":"gpt-6-luna","effort":"medium","task":"Next task"}\n{"ts":"%s","type":"delegation_start","session":"stable","id":"own","pid":%s,"bridge":"subagent","role":"reviewer","family":"claude","model":"claude-sonnet-5-5","effort":"low","task":"Native task"}\n{"ts":"%s","type":"subagent_link","session":"stable","id":"own","agent_id":"native-a"}\n{"ts":"%s","type":"subagent_stop","session":"stable","agent_id":"native-a"}\n{"ts":"%s","type":"delegation_start","session":"stable","id":"last","pid":99999997,"bridge":"codex","role":"architect","family":"codex","model":"gpt-6-luna","effort":"medium","task":"Last task"}\n{"ts":"%s","type":"session","event":"end","tool":"claude","session":"stable","pid":%s}\n{"ts":"%s","type":"delegation","session":"stable","id":"complete","role":"developer","family":"codex","model":"gpt-6-luna","effort":"high","status":"ok","outcome":"done","duration_s":12,"task":"Completed task"}\n' "$basez" "$$" "$basez" "$nextz" "$ownz" "$$" "$linkz" "$stopz" "$lastz" "$endz" "$$" "$donez" >"$layout/.loomy/logs/events.jsonl"
+  run "interrupted rows keep outcome after aligned task columns" env COLUMNS=100 LINES=30 NO_COLOR= LOOMY_FORCE_COLOR=1 bash "$REPO/scripts/loomy-tree.sh" --root "$layout" --once
+  has "interrupted status column contains only glyph" '⊘ Developer.*Interrupted task · interrupted'
+  cp "$OUT" "$layout/frame.txt"
+  run "interrupted role and task columns align with completed row" perl -MEncode=decode -e '
+    use utf8; my ($role_done,$role_interrupted,$task_done,$task_interrupted);
+    while (<>) { my $s=decode("UTF-8",$_); $s =~ s/\e\[[0-9;]*[[:alpha:]]//g;
+      if ($s =~ /^  ✓ Developer/) { $role_done=index($s,"Developer"); $task_done=index($s,"Completed task") }
+      if ($s =~ /^  ⊘ Developer/) { $role_interrupted=index($s,"Developer"); $task_interrupted=index($s,"Interrupted task"); die if $s =~ /^  ⊘ interrupted/ }
+    }
+    die unless defined($role_done) && defined($role_interrupted) && defined($task_done) && defined($task_interrupted);
+    die unless $role_done==$role_interrupted && $task_done==$task_interrupted;
+  ' "$layout/frame.txt"
+  file_has "bridge without an endpoint shows an em dash" "$layout/frame.txt" '⊘ Architect.*—'
+  run "interrupted own-event and fallback durations stay fixed five seconds apart" bash -c '
+    source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/usage.sh"; source "$1/scripts/lib/phases.sh"; source "$1/scripts/loomy-tree.sh" --library
+    duration_at() { loomy_live_init; loomy_live_poll "$3"; LV_NOW="$1"; loomy_live_states; printf "%s:%s" "${LV_DURATION[0]}" "${LV_DURATION[2]}"; }
+    one="$(duration_at "$(( $2 + 100 ))" unused "$4")"; two="$(duration_at "$(( $2 + 105 ))" unused "$4")"
+    test "$one:$two" = "37:24:37:24"
+  ' _ "$REPO" "$base_epoch" unused "$layout/.loomy/logs/events.jsonl"
+  run "dead bridge uses interrupted state in the diagram" env NO_COLOR= LOOMY_FORCE_COLOR=1 LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$bridge_dead"
+  has "diagram interrupted box shows glyph and label" '⊘ interrupted'
+  if perl -0777 -e 'local $/; my $s=<>; exit($s =~ /\e\[2m\e\[31m[^\n]*⊘ interrupted/ ? 0 : 1)' "$OUT"; then ok "diagram interrupted state is dim red"; else ko "diagram interrupted state is not dim red"; fi
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"read-side","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"read-side","id":"dead-bridge","pid":99999999,"bridge":"codex","role":"developer","family":"codex","model":"gpt-6-luna"}\n{"ts":"%s","type":"delegation_start","session":"read-side","id":"closed-native","pid":%s,"bridge":"subagent","role":"reviewer","family":"claude","model":"claude-sonnet-5-5"}\n{"ts":"%s","type":"session","event":"end","tool":"claude","session":"read-side","pid":%s}\n{"ts":"%s","type":"delegation","id":"failed-final","role":"debugger","family":"codex","model":"gpt-6-luna","status":"error","outcome":"failed"}\n' "$nowz" "$$" "$nowz" "$nowz" "$$" "$nowz" "$$" "$nowz" >"$rsj"
+  run "journal reader classifies orphan starts without changing final failures" bash -c '
+    source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
+    ai_journal_display_events "$2" >"$3"
+    grep -q "|developer|interrupted|" "$3" && grep -q "|reviewer|interrupted|" "$3" && grep -q "|debugger|failed|" "$3"
+  ' _ "$REPO" "$rsj" "$readside/events.txt"
   run "invalid native timeout uses the default" env LOOMY_SUBAGENT_MAX_S=invalid bash -c 'source "$1/scripts/loomy-tree.sh" --library; test "$LOOMY_SUBAGENT_MAX_S" = 7200' _ "$REPO"
   # Legacy Task, unknown role, escaped payload, and session fallback.
   printf '%s' '{"session_id":"live","tool_use_id":"native-2","tool_name":"Task","tool_input":{"subagent_type":"Explore","description":"Inspect \"hooks\"\ncarefully"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
@@ -284,11 +338,114 @@ live_view_tests() {
   run "French live role labels" env LOOMY_UI_LANG=fr COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
   has "translated role labels" 'Développeur.*Claude'
   has "translated routing legend" '⚑ demandé · ⇢ hors routage'
+  # A relay must have an acting session, with its own recorded model rather than the master's routing.
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"acting","pid":%s,"model":"gpt-6.1-sol","effort":"high"}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
   printf 'master=claude\nacting=codex\n' >"$demo/.loomy/failover"
   run "relay frame: acting tool and model" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
   has "relay: acting lead marker" 'Orchestrator.*⇄ Codex.*6[.-]'
   hasnt "relay: Claude model on Codex lead" 'Orchestrator.*Codex.*opus'
   rm -f "$demo/.loomy/failover"
+  local routed="$WORK/live-routed-effort" rj
+  mkdir -p "$routed/.loomy/logs"
+  cp "$lv/.loomy/brief.md" "$routed/.loomy/brief.md"; cp "$lv/.loomy/state" "$routed/.loomy/state"
+  printf 'lead=high\n' >"$routed/.loomy/efforts"
+  rj="$routed/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"routed-effort","pid":%s}\n' "$nowz" "$$" >"$rj"
+  run "lead: missing session effort falls back to routed effort" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$routed" --once
+  has "lead: live header shows routed high effort" '^Orchestrator · Claude \? high'
+  hasnt "lead: live header never shows unknown effort" '^Orchestrator .* \? ·'
+  run "lead: diagram shows routed effort and open idle state" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$routed"
+  has "lead: diagram shows routed high effort" 'effort ▮▮▮▯ high'
+  has "diagram lead: open session is idle" 'session open · idle'
+  hasnt "diagram lead: open session omits done" 'session open.*done'
+  has "diagram back box: idle roles show reviews and checks" 'reviews \+ checks'
+  local running="$WORK/live-running-only" rnj usage_only="$WORK/live-usage-only" unj
+  mkdir -p "$running/.loomy/logs" "$usage_only/.loomy/logs"
+  cp "$lv/.loomy/brief.md" "$running/.loomy/brief.md"; cp "$lv/.loomy/state" "$running/.loomy/state"
+  cp "$lv/.loomy/brief.md" "$usage_only/.loomy/brief.md"; cp "$lv/.loomy/state" "$usage_only/.loomy/state"
+  rnj="$running/.loomy/logs/events.jsonl"; unj="$usage_only/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"running-only","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"running-only","id":"running-role","pid":%s,"bridge":"codex","role":"developer","family":"codex","model":"gpt-6-luna","effort":"low"}\n' "$nowz" "$$" "$nowz" "$$" >"$rnj"
+  run "diagram lead works while a role runs without prompt activity" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$running"
+  has "diagram role-only activity shows working" 'session open · working'
+  has "diagram role-only activity waits for the role" 'waiting for 1 role'
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"usage-only","pid":%s}\n{"ts":"%s","type":"usage","session":"usage-only","tool":"claude","scope":"lead","model":"claude-sonnet-5-5"}\n' "$nowz" "$$" "$nowz" >"$unj"
+  run "diagram lead works after recent usage without running roles" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$usage_only"
+  has "diagram usage-only activity shows working" 'session open · working'
+  has "diagram usage-only activity has no waiting roles" 'reviews \+ checks'
+  # Truthful classic boxes, request hook readback, titles, durations and complete French labels.
+  local polish="$WORK/live-polish" pj
+  mkdir -p "$polish/.loomy/logs"
+  cp "$lv/.loomy/brief.md" "$polish/.loomy/brief.md"; cp "$lv/.loomy/state" "$polish/.loomy/state"
+  pj="$polish/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"previous","pid":99999999}\n' "$oldz" >"$pj"
+  printf '{"ts":"%s","type":"delegation","id":"stale","session":"previous","role":"security","family":"claude","model":"claude-stale","effort":"low","status":"ok"}\n' "$oldz" >>"$pj"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"polish","pid":%s,"model":"claude-opus-5-5","effort":"max"}\n' "$nowz" "$$" >>"$pj"
+  printf '{"ts":"%s","type":"delegation","id":"earlier","session":"polish","role":"explorer","family":"codex","model":"gpt-6-luna","effort":"medium","duration_s":3780,"status":"ok","task":"GOAL: Map the journal. SCOPE: hidden details"}\n' "$nowz" >>"$pj"
+  printf '%s\n' '{"session_id":"polish","prompt":"TASK: Clean the labels. SCOPE: private implementation"}' | bash "$REPO/scripts/loomy-context.sh" --root "$polish" --hook prompt >/dev/null
+  printf '{"ts":"%s","type":"delegation","id":"dev-last","session":"polish","role":"developer","family":"codex","model":"gpt-6.1-sol","effort":"low","duration_s":1,"status":"ok"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"delegation","id":"doc","session":"polish","role":"documenter","family":"codex","model":"gpt-6.1-sol","effort":"low","duration_s":1,"status":"ok","task":"OBJECTIF : Write the docs\\nSCOPE: hidden detail"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"delegation_start","id":"dev-run","session":"polish","pid":%s,"role":"developer","family":"codex","model":"gpt-6-astra","effort":"high","task":"GOAL: Polish every visible label with complete words and truthful delegation metadata for every request in this journal. SCOPE: invisible"}\n' "$nowz" "$$" >>"$pj"
+  run "polish: live request groups" env LOOMY_WATCH_GROUP=request COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
+  has "prompt hook: recorded request is read as its title" '^┌─ Clean the labels\.'
+  has "legacy delegation: Earlier work group" '^┌─ Earlier work'
+  has "lead: recorded tool, model and effort" '^Orchestrator · Claude opus-5-5 max'
+  has "duration: role above an hour" 'Explorer.*1 h 03'
+  has "duration: session total above an hour" '^SESSION · 3 finished · 1 h 03'
+  has "title: leading GOAL stripped" 'Developer.*Polish every visible label'
+  has "title: first sentence only" 'Explorer.*Map the journal\.'
+  has "title: first line only" 'Documenter.*Write the docs'
+  hasnt "titles: ticket labels and scope absent" 'GOAL:|TASK:|OBJECTIF|SCOPE:|hidden detail|invisible'
+  run "title helper: ellipsis at a complete word" bash -c 'source "$1/scripts/lib/journal.sh"; ai_task_title "Alpha beta gamma delta" 12; test "$AI_TASK_TITLE" = "Alpha beta…"; ai_task_title "unbreakable word" 5; test "$AI_TASK_TITLE" = "…"; ai_display_duration 3599; test "$AI_DURATION" = 59:59; ai_display_duration 3600; test "$AI_DURATION" = "1 h 00"' _ "$REPO"
+  run "polish: classic diagram" env COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$polish"
+  sed -n '28,36p' "$OUT" >"$polish/boxes.txt"
+  grep -q 'gpt-6-astra.*gpt-6.1-sol.*gpt-6-luna' "$polish/boxes.txt" && ok "diagram: actual running and last completed models" || ko "diagram: delegation models missing"
+  grep -q 'effort.*high.*effort.*low.*effort.*med' "$polish/boxes.txt" && ok "diagram: actual running and completed efforts" || ko "diagram: effort differs from delegation"
+  grep -q 'planned' "$polish/boxes.txt" && ok "diagram: unused role is planned" || ko "diagram: planned state missing"
+  has "diagram: effort label permits recorded overrides" 'delegate to roles · model \+ effort'
+  has "diagram lead: running role makes open session working" 'session open · working'
+  hasnt "diagram lead: working session omits done" 'session open.*done'
+  has "diagram: return waits for running roles" 'waiting for 1 role'
+  hasnt "diagram: running return does not show reviews and checks" 'reviews \+ checks'
+  grep -q claude-stale "$polish/boxes.txt" && ko "diagram: stale session model" || ok "diagram: no stale session model"
+  hasnt "diagram log: task titles strip ticket labels" 'GOAL:|TASK:|OBJECTIF|SCOPE:|invisible|hidden detail'
+  run "polish: planned model is dimmed" env NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$polish"
+  cp "$OUT" "$polish/planned.txt"
+  run "diagram: planned model has dim ANSI colour" perl -e 'local $/; my $s=<>; die unless $s =~ /\e\[2m[^\e\n]*gpt-6.1-sol/' "$polish/planned.txt"
+  run "polish: French full labels and durations" env LOOMY_UI_LANG=fr LOOMY_WATCH_GROUP=request COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
+  cp "$OUT" "$polish/french.txt"
+  run "French: role column aligns Unicode labels" perl -MEncode=decode -e 'use utf8; my ($col,$n); while (<>) { my $s=decode("UTF-8",$_); next unless $s =~ /^  . (?:Développeur|Documentaliste|Explorateur)\s+Codex/; my $c=index($s,"Codex"); $col //= $c; die if $c!=$col; ++$n } die unless ($n//0)>=3' "$polish/french.txt"
+  cp "$polish/french.txt" "$OUT"
+  has "French: longest labels are whole" 'Documentaliste.*Codex'
+  has "French: Explorer is whole" 'Explorateur.*Codex.*1 h 03'
+  has "French: earlier work translated" '^┌─ Travail antérieur'
+  hasnt "French: no clipped role words" 'Documentalis |Explorate '
+  run "French: diagram lead and return labels" env LOOMY_UI_LANG=fr LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$polish"
+  has "French diagram: active lead session is working" 'session ouverte · en cours'
+  has "French diagram: running role is awaited" 'attend 1 rôle'
+  run "polish: tight French labels" env LOOMY_UI_LANG=fr COLUMNS=45 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
+  has "tight French: longest label remains whole" 'Documentaliste.*Codex'
+  cp "$OUT" "$polish/tight.txt"
+  run "tight French: no line wraps" perl -MEncode=decode -e 'while (<>) {chomp; die if length(decode("UTF-8",$_))>44}' "$polish/tight.txt"
+  # A newer dead start cannot replace the living lead; concurrent tool usage stays paired.
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"concurrent","pid":%s,"model":"gpt-6-luna","effort":"low"}\n' "$nowz" "$$" >>"$pj"
+  printf '{"ts":"%s","type":"usage","tool":"claude","scope":"lead","model":"claude-sonnet-5-5"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"usage","tool":"codex","scope":"lead","model":"gpt-6.1-sol"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"dead-newest","pid":99999999,"model":"claude-dead"}\n' "$nowz" >>"$pj"
+  run "lead: brief preference among living sessions" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
+  has "lead: preferred living session and matching usage" '^Orchestrator · Claude sonnet-5-5 max'
+  has "lead: concurrent session preserves roles" 'Developer.*Codex.*6-astra'
+  hasnt "lead: dead start and other tool model rejected" '^Orchestrator.*(claude-dead|6.1-sol|6-luna)'
+  printf 'master=claude\nacting=codex\n' >"$polish/.loomy/failover"
+  run "lead: live acting session during relay" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
+  has "lead: relay uses acting tool and its usage model" '^Orchestrator · ⇄ Codex 6.1-sol low'
+  hasnt "lead: relay never uses Claude model" '^Orchestrator.*Codex.*sonnet'
+  # End the acting session and let incremental selection return to the preferred living lead.
+  run "lead: incremental reselection after acting session ends" bash -c '
+    source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/loomy-tree.sh" --library
+    AI_LEAD=codex; loomy_live_init; loomy_live_poll "$2"; test "$LV_SESSION" = concurrent || exit 1
+    printf "{\"ts\":\"%s\",\"type\":\"session\",\"event\":\"end\",\"tool\":\"codex\",\"session\":\"concurrent\"}\n" "$3" >>"$2"
+    AI_LEAD=claude; loomy_live_poll "$2"; test "$LV_SESSION:$LV_SESSION_MODEL" = polish:claude-sonnet-5-5
+  ' _ "$REPO" "$pj" "$nowz"
   # Legacy native completions with repeated figures also count only their usage event.
   cat >"$costs/.loomy/logs/events.jsonl" <<'JSON'
 {"ts":"2026-10-09T10:00:00Z","type":"usage","family":"claude","scope":"subagent","model":"claude-sonnet-5-5","tokens_in":100,"tokens_out":20,"cost_usd":1.25}
@@ -325,6 +482,8 @@ JSON
     cat >"$WORK/watch.exp" <<'EXPECT'
 set timeout 15
 log_user 0
+# The spawned PTY's window size does not follow the COLUMNS/LINES environment overrides.
+set stty_init "rows $env(LINES) columns $env(COLUMNS)"
 spawn bash $env(LIVE_REPO)/scripts/loomy-status.sh --root $env(LIVE_PROJECT) --watch
 expect {
   -re {group by request} {}
@@ -337,12 +496,24 @@ expect {
   timeout {exit 3}
   eof {exit 4}
 }
+send "t"
+expect {
+  -re {LOOMY AGENT TREE} {}
+  timeout {exit 5}
+  eof {exit 6}
+}
+send "t"
+expect {
+  -re {IN PROGRESS} {}
+  timeout {exit 7}
+  eof {exit 8}
+}
 send "q"
 expect eof
 catch wait result
 exit [lindex $result 3]
 EXPECT
-    run "real terminal: v toggles without Enter and q quits" env LIVE_REPO="$REPO" LIVE_PROJECT="$demo" COLUMNS=100 LINES=30 expect "$WORK/watch.exp"
+    run "real terminal: v toggles, t opens the diagram, q quits" env LIVE_REPO="$REPO" LIVE_PROJECT="$demo" COLUMNS=170 LINES=60 expect "$WORK/watch.exp"
     run "real terminal: v choice persists" bash -c 'source "$1/scripts/lib/config.sh"; test "$(loomy_config_get watch_group)" = request' _ "$REPO"
   else ko "real terminal: expect unavailable"; fi
   if [[ -n "$LIVE_ARTIFACTS" ]]; then mkdir -p "$LIVE_ARTIFACTS"; cp "$lv/"*-frame.txt "$LIVE_ARTIFACTS/"; fi

@@ -165,6 +165,87 @@ ai_task_excerpt() {
   printf '%s' "$1" | tr '\n' ' ' | cut -c1-200
 }
 
+# Read-side titles shared by the live reducer and the session log; journal entries stay untouched.
+AI_TITLE_PERL='use utf8;
+  sub ai_title {
+    my ($s)=@_; $s //= "";
+    $s =~ s/^\s*(?:GOAL|TASK|OBJECTIF)\s*:\s*//i;
+    $s =~ s/\bSCOPE\s*:.*//is;
+    $s =~ s/[\r\n].*//s;
+    $s =~ s/([.!?])(?:\s|$).*/$1/s;
+    $s =~ s/\s+/ /g; $s =~ s/^\s+|\s+$//g;
+    return $s;
+  }
+'
+
+# ai_task_title <normalized title> <columns>: truncate only at a word boundary.
+ai_task_title() {
+  local title="$1" width="$2" cut
+  AI_TASK_TITLE="$title"
+  if (( width < 2 )); then AI_TASK_TITLE=""; return 0; fi
+  if (( ${#title} > width )); then
+    cut="${title:0:$(( width - 1 ))}"
+    # A space just beyond the cut already completes the last word.
+    if [[ "${title:$(( width - 1 )):1}" != ' ' ]]; then
+      if [[ "$cut" == *' '* ]]; then cut="${cut% *}"; else cut=""; fi
+    fi
+    cut="${cut% }"; AI_TASK_TITLE="${cut}…"
+  fi
+}
+
+ai_display_duration() {
+  local d="${1%.*}"
+  [[ "$d" =~ ^[0-9]+$ ]] || d=0
+  if (( d >= 3600 )); then printf -v AI_DURATION '%d h %02d' $(( d / 3600 )) $(( d % 3600 / 60 ))
+  else printf -v AI_DURATION '%d:%02d' $(( d / 60 )) $(( d % 60 )); fi
+}
+
+# Tree/watch opt into this formatter; ai_session_log_rows keeps its existing reveal cursor.
+ai_journal_display_events() {
+  tail -n 400 "$1" | perl -MJSON::PP -MErrno=EPERM -e "$AI_TITLE_PERL"'
+    binmode STDOUT, ":encoding(UTF-8)";
+    sub duration { my $d=int($_[0]//0); return $d>=3600 ? sprintf("%d h %02d",$d/3600,$d%3600/60) : sprintf("%d:%02d",$d/60,$d%60) }
+    sub alive { my $p=$_[0]//0; return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
+    sub session_key { my $e=$_[0]; return ($e->{tool}//$e->{family}//"")."|".($e->{session} || "pid".($e->{pid}//0)) }
+    my (@events,%done,%sessions);
+    while (<STDIN>) { my $e=eval { decode_json($_) }; push @events,$e if ref($e) eq "HASH" }
+    for my $e (@events) {
+      if (($e->{type}//"") eq "session") {
+        my $key=session_key($e);
+        if (($e->{event}//"") eq "start") { $sessions{$key}={%$e,ended=>0} }
+        elsif ($sessions{$key}) { $sessions{$key}{ended}=1 }
+      }
+      $done{$e->{id}}=1 if ($e->{type}//"") eq "delegation" && defined $e->{id};
+    }
+    for my $e (@events) {
+      next unless ref($e) eq "HASH";
+      my ($ty,$who,$what,$extra)=($e->{type}//"","","","");
+      my $model=$e->{model}//""; my $role=$e->{role}//"";
+      if ($ty eq "delegation_start") {
+        my $bridge=$e->{bridge}//""; my $interrupted=0;
+        if (!($e->{id}//"") || !$done{$e->{id}}) {
+          if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
+          else { $interrupted=!alive($e->{pid}) }
+        }
+        $who=$role; $what=$interrupted ? "interrupted" : "start"; $extra="$model · ".ai_title($e->{task})
+      }
+      elsif ($ty eq "delegation") {
+        $who=$role; my $oc=$e->{outcome}//"";
+        $what=($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed";
+        $extra=duration($e->{duration_s})." · $model"; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
+      }
+      elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }
+      elsif ($ty eq "advisor") { $who="advisor"; $what="consulted"; $extra=($e->{calls}//0)." × $model · ".int(($e->{tokens_in}//0)/1000)."k" }
+      elsif ($ty =~ /^(task_|audit_)?phase$/) { $who="phase"; $what=$e->{phase}//""; ($extra=$ty)=~s/_?phase$// }
+      elsif ($ty eq "session") { $who="session"; $what=$e->{event}//""; $extra=$e->{tool}//"" }
+      elsif ($ty eq "skill") { $who="skills"; $what=$e->{event}//""; $extra=($e->{name}//"")." · ".substr($e->{reason}//"",0,52) }
+      elsif ($ty eq "usage" && ($e->{scope}//"") eq "lead") { $who="lead"; $what="replied"; $extra=($e->{messages}//0)." msg · $model" }
+      else { next }
+      my @row=($e->{ts}//"",$who,$what,$extra); for (@row) { s/[\x00-\x1f|]/ /g } print join("|",@row),"\n";
+    }
+  '
+}
+
 # ai_session_state <root>: "open|<local time>|<tool>", "closed|<time>|<tool>" or "none".
 # A session is open when it started, hasn't ended, and its process (Claude Code or Codex) is still running.
 # ai_ts_epoch <ISO UTC timestamp>: seconds since 1970 (macOS or GNU date), empty when unreadable.

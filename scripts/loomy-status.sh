@@ -230,7 +230,7 @@ if (( WATCH )); then
   while IFS='|' read -r now dirty key LV_CLOCK <&8; do
     # ---- what changed since the previous frame
     LV_NOW="$now"
-    if (( dirty )); then loomy_live_poll "$J"; loomy_live_metadata; fi
+    if (( dirty )); then loomy_live_metadata; loomy_live_poll "$J"; fi
     old_active=$LV_ACTIVE; old_finished=${#LV_FINISHED[@]}
     if (( dirty || now != state_tick )); then loomy_live_states; state_tick=$now; fi
     [[ "$old_active:${old_finished}" == "$LV_ACTIVE:${#LV_FINISHED[@]}" ]] || force_frame=1
@@ -286,6 +286,8 @@ if (( WATCH )); then
       last_frame="$stamp"; force_frame=0; tick="$now"
       if [[ "$view" == tree ]]; then
         frame="$(LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
+      elif [[ "$view" == diagram ]]; then
+        frame="$(LOOMY_TREE=diagram LOOMY_NO_HEADER=1 LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
       else
         extra=(); [[ "$view" == log ]] && extra=(--journal)
         frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
@@ -315,7 +317,7 @@ if (( WATCH )); then
       q|Q) break ;;
       c|C) [[ "$view" == "status" ]] && { if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi; } ;;
       l|L) if [[ "$view" == "log" ]]; then view="tree"; else view="log"; fi ;;
-      t|T) if [[ "$view" == "tree" ]]; then view="status"; else view="tree"; fi ;;
+      t|T) if [[ "$view" == tree ]]; then view=diagram; else view=tree; fi ;;
       v|V) if [[ "$LV_GROUP" == model ]]; then LV_GROUP=request; else LV_GROUP=model; fi
         loomy_config_set watch_group "$LV_GROUP"; force_frame=1 ;;
       o|O) bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator >/dev/null 2>&1 || true ;;

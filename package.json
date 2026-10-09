@@ -1,6 +1,6 @@
 {
   "name": "loomy",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "Your AI development team, orchestrated: Claude Code and Codex on your projects, each request routed to the model that does it reliably for the least cost, cross reviews, official skills, shared memory and live tracking in the terminal.",
   "private": true,
   "license": "Apache-2.0",

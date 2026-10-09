@@ -3,7 +3,7 @@
 #   loomy-status.sh                 prints the status
 #   loomy-status.sh set <phase>     records the current bootstrap phase (used by the agents)
 #   loomy-status.sh --audit set <phase>   records the phase of the running audit (loomy audit)
-#   loomy-status.sh --watch [N]     refreshes every N seconds (1 by default); q c l s (see the footer)
+#   loomy-status.sh --watch [N]     live agents and timers every second; o v l q (see the footer)
 #   --compact / --full           tight view (for a narrow pane) or full view; watch picks one from the terminal size
 #   loomy-status.sh --root <dir>    works on another project folder
 set -euo pipefail
@@ -37,7 +37,6 @@ ROOT=""
 CMD="show"
 PHASE_ARG=""
 WATCH=0
-INTERVAL=1
 COMPACT=""
 JOURNAL_VIEW=0
 TREE_VIEW=0
@@ -48,7 +47,7 @@ TASKM=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
-    --watch|-w) WATCH=1; if [[ "${2:-}" =~ ^[0-9]+$ ]]; then INTERVAL="$2"; shift; fi ;;
+    --watch|-w) WATCH=1; if [[ "${2:-}" =~ ^[0-9]+$ ]]; then shift; fi ;;
     --compact) COMPACT=1 ;;
     --journal) JOURNAL_VIEW=1 ;;
     --tree) TREE_VIEW=1 ;;
@@ -168,114 +167,162 @@ watch_notify() {
   return 0
 }
 
+# One persistent sampler waits on the terminal and watches cheap local file signatures.
+# Foreground stty avoids the SIGTTIN/stty race of a background Bash read -s.
+loomy_watch_feed() {
+  exec perl -MIO::Select -MTime::HiRes=time,stat -e '
+    my ($root,$cfg,$terminal)=@ARGV; $|=1;
+    my $tty; open $tty,"<","/dev/tty" if $terminal;
+    my $select=IO::Select->new; $select->add($tty) if $tty;
+    my @files=("$root/.loomy/logs/events.jsonl",map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts));
+    push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
+    my ($last,$buf)=("","");
+    while (1) {
+      my $key="";
+      if ($tty && $select->can_read(0.25)) { my $n=sysread($tty,my $input,32); last unless defined $n; $buf.=$input if $n }
+      elsif (!$tty) { select undef,undef,undef,0.25 }
+      if ($buf =~ s/^\e\[A//) { $key="up" }
+      elsif ($buf =~ s/^\e\[B//) { $key="down" }
+      elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
+      my $sig="";
+      for my $f (@files) {
+        my @s=stat($f); $sig.=join(":",@s[0,1,7,9]).";";
+        # Small state/config files may be rewritten with the same size within one second.
+        if ($f !~ /events\.jsonl$/ && open my $h,"<",$f) { local $/; $sig.=<$h>//""; close $h }
+      }
+      if ($tty) { my $size=""; ioctl($tty,$^O eq "darwin" ? 0x40087468 : 0x5413,$size); $sig.=$size }
+      my $now=int(time); my @t=localtime($now); my $clock=sprintf "%02d:%02d:%02d",@t[2,1,0];
+      print join("|",$now,($sig ne $last ? 1 : 0),$key,$clock),"\n"; $last=$sig;
+    }
+  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1"
+}
+
 if (( WATCH )); then
   ui_screen_begin
-  trap 'UI_PAGE_L=(); _ui_restore; exit 0' INT TERM
+  KEY_READER=""; WATCH_STTY=""
+  watch_cleanup() {
+    # Process substitutions inherit EXIT on Bash 3.2; only the watch owns the terminal.
+    (( BASH_SUBSHELL == 0 )) || return 0
+    [[ -z "$KEY_READER" ]] || { kill "$KEY_READER" 2>/dev/null || true; wait "$KEY_READER" 2>/dev/null || true; }
+    exec 8<&-
+    UI_PAGE_L=(); _ui_restore
+    [[ -z "$WATCH_STTY" ]] || stty "$WATCH_STTY" 2>/dev/null || true
+  }
+  trap 'watch_cleanup; exit 0' INT TERM
+  trap watch_cleanup EXIT
   printf '\033[?25l' >&2
-  stty -echo </dev/tty 2>/dev/null || true
+  terminal=0
+  if [[ -t 0 ]]; then
+    terminal=1; WATCH_STTY="$(stty -g 2>/dev/null || true)"
+    stty -echo -icanon min 1 time 0 2>/dev/null || true
+  fi
+  exec 8< <(loomy_watch_feed "$terminal")
+  KEY_READER=$!
   NAME_W="$(brief_get name 2>/dev/null || true)"; NAME_W="${NAME_W:-$(basename "$ROOT")}"
   J="$(ai_journal_file "$ROOT")"
-  tick=0; wtop=0; view="status"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; tried_resize=0; tree_mode=""
+  # shellcheck source=loomy-tree.sh
+  source "$SCRIPT_DIR/loomy-tree.sh" --library
+  loomy_live_init
+  state_tick=0; tick=0; wtop=0; view="tree"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; last_frame=""; force_frame=1
   p_relay=0; p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
-  while true; do
-    now="$(date +%s)"
+  while IFS='|' read -r now dirty key LV_CLOCK <&8; do
     # ---- what changed since the previous frame
-    phase="$(sed -n 's/^phase=//p' "$STATE" 2>/dev/null | head -1 || true)"
-    n_done=0; n_err=0
-    if [[ -s "$J" ]]; then
-      read -r n_done n_err <<<"$(awk 'index($0, "\"type\":\"delegation\",") { n++; if (index($0, "\"status\":\"ok\"") == 0) e++ } END { print n + 0, e + 0 }' "$J")"
-    fi
-    sess="$(ai_session_state "$ROOT" 2>/dev/null || true)"; sess="${sess%%|*}"
-    relay=0; lf_active "$ROOT" && relay=1
-    if (( ! first )); then
-      # Lead relay (quota): one notification when it starts, one when the master takes the lead back.
-      if (( relay && ! p_relay )); then watch_notify "⇄ $(t "Temporary lead")" "$(lf_status_text "$ROOT")"
-      elif (( ! relay && p_relay )); then watch_notify "⇄ $(t "Lead back")" "$(t "The lead agent set in the brief has quota again and leads.")"; fi
-      if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
-        hl_phase=$(( now + 8 ))
-        if [[ "$phase" == "done" ]] && [[ "$MISSION" == "audit" ]]; then watch_notify "✦ $(t "Audit done")" "$(t "The report and the fix plan are ready in the audit folder.")"
-        elif [[ "$phase" == "done" ]] && [[ "$MISSION" == "task" ]]; then watch_notify "✦ $(t "Task done")" "$(t "Duration, delegations and cost in loomy watch.")"
-        elif [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Project ready")" "$(t "Bootstrap done: what comes next happens with the lead agent (loomy start).")"
-        else watch_notify "Phase $(loomy_phase_index "$phase")/$N_PH · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
-      fi
-      if (( n_done > p_done )); then hl_deleg_n=$(( n_done - p_done )); hl_deleg_until=$(( now + 8 )); fi
-      if (( n_err > p_err )); then watch_notify "$(t "Delegation failed")" "$(t "See the details in loomy watch (key l) or loomy log.")"; fi
-      if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
-        if [[ -n "$MISSION" ]]; then watch_notify "$(t "Session closed")" "$(t "In progress: %s to resume it." "$(m_text resume)")"
-        else watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"; fi
-      fi
-    fi
-    # Subscription quota: read every 15 s; a notification when it crosses 80 %, then 95 %.
-    if (( now >= q_next )); then
-      q_next=$(( now + 15 ))
-      for fam in claude codex; do
-        loomy_on_plan "$fam" || continue
-        qm="$(ai_quota_max "$fam")"; ql=0; [[ -n "$qm" ]] && { (( qm >= 80 )) && ql=1; (( qm >= 95 )) && ql=2; }
-        pv="p_ql_$fam"
-        if (( ! first_q && ql > ${!pv} )); then
-          watch_notify "$(t "%s quota at %s %%" "$( [[ "$fam" == codex ]] && echo Codex || echo Claude)" "$qm")" "$(sw="$(ai_switch_family "$fam")"; if [[ -n "$sw" ]]; then t "Its roles go to %s until it resets." "$( [[ "$sw" == codex ]] && echo Codex || echo Claude)"; elif (( ql == 2 )); then t "Almost exhausted: the next tasks may be cut off until it resets."; else t "Keep an eye on it: loomy stats shows what consumed it."; fi)"
+    LV_NOW="$now"
+    if (( dirty )); then loomy_live_poll "$J"; loomy_live_metadata; fi
+    old_active=$LV_ACTIVE; old_finished=${#LV_FINISHED[@]}
+    if (( dirty || now != state_tick )); then loomy_live_states; state_tick=$now; fi
+    [[ "$old_active:${old_finished}" == "$LV_ACTIVE:${#LV_FINISHED[@]}" ]] || force_frame=1
+    phase="$LV_PHASE"
+    if (( dirty || now >= q_next )); then
+      n_done=$LV_DONE; n_err=$LV_ERRORS
+      sess=closed; (( LV_ACTIVE )) && sess=open
+      relay=0; [[ -z "$LV_RELAY" ]] || relay=1
+      if (( ! first )); then
+        # Lead relay (quota): one notification when it starts, one when the master takes the lead back.
+        if (( relay && ! p_relay )); then watch_notify "⇄ $(t "Temporary lead")" "$(lf_status_text "$ROOT")"
+        elif (( ! relay && p_relay )); then watch_notify "⇄ $(t "Lead back")" "$(t "The lead agent set in the brief has quota again and leads.")"; fi
+        if [[ "$phase" != "$p_phase" && -n "$phase" ]]; then
+          hl_phase=$(( now + 8 ))
+          if [[ "$phase" == "done" ]] && [[ "$MISSION" == "audit" ]]; then watch_notify "✦ $(t "Audit done")" "$(t "The report and the fix plan are ready in the audit folder.")"
+          elif [[ "$phase" == "done" ]] && [[ "$MISSION" == "task" ]]; then watch_notify "✦ $(t "Task done")" "$(t "Duration, delegations and cost in loomy watch.")"
+          elif [[ "$phase" == "done" ]]; then watch_notify "✦ $(t "Project ready")" "$(t "Bootstrap done: what comes next happens with the lead agent (loomy start).")"
+          else watch_notify "Phase $(loomy_phase_index "$phase")/$N_PH · $(loomy_phase_label "$phase")" "$(loomy_you_now "$phase" "$(ai_session_state "$ROOT" 2>/dev/null || true)")"; fi
         fi
-        printf -v "$pv" '%s' "$ql"
-      done
-      first_q=0
+        if (( n_done > p_done )); then hl_deleg_n=$(( n_done - p_done )); hl_deleg_until=$(( now + 8 )); fi
+        if (( n_err > p_err )); then watch_notify "$(t "Delegation failed")" "$(t "See the details in loomy watch (key l) or loomy log.")"; fi
+        if [[ "$p_sess" == "open" && "$sess" == "closed" && "$phase" != "done" ]]; then
+          if [[ -n "$MISSION" ]]; then watch_notify "$(t "Session closed")" "$(t "In progress: %s to resume it." "$(m_text resume)")"
+          else watch_notify "$(t "Lead agent session closed")" "$(t "Bootstrap in progress: loomy start to resume it.")"; fi
+        fi
+      fi
+      # Subscription quota: read every 15 s; a notification when it crosses 80 %, then 95 %.
+      if (( now >= q_next )); then
+        q_next=$(( now + 15 ))
+        for fam in claude codex; do
+          loomy_on_plan "$fam" || continue
+          qm="$(ai_quota_max "$fam")"; ql=0; [[ -n "$qm" ]] && { (( qm >= 80 )) && ql=1; (( qm >= 95 )) && ql=2; }
+          pv="p_ql_$fam"
+          if (( ! first_q && ql > ${!pv} )); then
+            watch_notify "$(t "%s quota at %s %%" "$( [[ "$fam" == codex ]] && echo Codex || echo Claude)" "$qm")" "$(sw="$(ai_switch_family "$fam")"; if [[ -n "$sw" ]]; then t "Its roles go to %s until it resets." "$( [[ "$sw" == codex ]] && echo Codex || echo Claude)"; elif (( ql == 2 )); then t "Almost exhausted: the next tasks may be cut off until it resets."; else t "Keep an eye on it: loomy stats shows what consumed it."; fi)"
+          fi
+          printf -v "$pv" '%s' "$ql"
+        done
+        first_q=0
+      fi
+      first=0; p_relay=$relay; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     fi
-    first=0; p_relay=$relay; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     # ---- image
-    _ui_term_size; size="--full"
-    if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-    # The compact view only shortens the status screen (the tree and the log have their own layout): c is offered there only.
-    keys="q $(t "quit")"; [[ "$view" == "status" ]] && keys="$keys · c $( [[ "$size" == "--compact" ]] && t "full view" || t "compact view")"
-    keys="$keys · l $( [[ "$view" == "log" ]] && t "status" || t "log") · t $( [[ "$view" == "tree" ]] && t "status" || t "tree")"
-    [[ "$view" == "tree" ]] && keys="$keys · v $( [[ "${tree_mode:-}" == "list" ]] && t "diagram" || t "list")"
-    [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · s $(t "session")"
-    hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
-    hl_p=0; (( now < hl_phase )) && hl_p=1
-    extra=(); [[ "$view" == "log" ]] && extra=(--journal); [[ "$view" == "tree" ]] && extra=(--tree)
-    # Agent tree in a window too small for the diagram: one request to the terminal to grow (Terminal.app, iTerm2;
-    # not tmux), unless loomy config set watch_resize no.
-    if [[ "$view" == "tree" ]] && (( ! tried_resize )) && [[ -z "${TMUX:-}" && "${tree_mode:-auto}" != "list" ]] \
-       && [[ "$(loomy_config_get watch_resize 2>/dev/null || true)" != "no" ]] \
-       && { [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" || "${TERM_PROGRAM:-}" == "iTerm.app" ]]; } && (( UI_ROWS < 64 || UI_COLS < 124 )); then
-      tried_resize=1; printf '\033[8;%d;%dt' "$(( UI_ROWS < 64 ? 64 : UI_ROWS ))" "$(( UI_COLS < 128 ? 128 : UI_COLS ))" >/dev/tty 2>/dev/null || true
-      sleep 0.3; _ui_term_size
+    timer=""; (( ${#LV_RUNNING[@]} == 0 )) || timer="$now"
+    stamp="$timer:$LV_SEQ:$view:$phase:$COMPACT:$LV_GROUP"
+    if [[ "$stamp" != "$last_frame" ]] || (( force_frame || dirty )); then
+      _ui_term_size; size="--full"
+      if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
+      keys="$(loomy_live_keys)"
+      hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
+      hl_p=0; (( now < hl_phase )) && hl_p=1
+      # Redraw only changed state, user navigation, or running timers.
+      last_frame="$stamp"; force_frame=0; tick="$now"
+      if [[ "$view" == tree ]]; then
+        frame="$(LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
+      else
+        extra=(); [[ "$view" == log ]] && extra=(--journal)
+        frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+          "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
+      fi
+      # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
+      # even in a terminal that ignores turning off automatic wrap.
+      frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"
+      UI_PAGE_L=()
+      while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
+      if [[ "$UI_SCREEN" == "1" ]]; then
+        # Keep the banner/logo; redraw its clock only with a meaningful frame.
+        loomy_live_header
+        LV_HEADER="$(printf '%s\n' "$LV_HEADER" | ui_clip "$(( UI_COLS - 4 ))")"
+        ui_header "$LV_HEADER" ""
+        _ui_term_size; _ui_chrome
+        (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
+        UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
+        ui_banner "$LV_HEADER" ""; wtop=$UI_BODY_START
+      else
+        printf '%s\n' "$frame" >&2
+      fi
     fi
-    frame="$(LOOMY_TREE="${tree_mode:-${LOOMY_TREE:-}}" LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
-      "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
-    # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
-    # even in a terminal that ignores turning off automatic wrap.
-    frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"
-    UI_PAGE_L=()
-    while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
-    if [[ "$UI_SCREEN" == "1" ]]; then
-      # App frame: header (project, time), body shown from the top (↑↓ to scroll), footer (keys).
-      ui_header "$NAME_W" "$(t "live tracking") · $(date '+%H:%M:%S')"
-      ui_cursor_anim_start
-      _ui_term_size; _ui_chrome
-      (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
-      UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
-      _ui_page_draw; wtop=$UI_BODY_START
-    else
-      printf '%s\n' "$frame" >&2
-    fi
-    tick=$(( tick + 1 ))
-    key=""
-    if [[ -t 0 ]]; then read -rsn1 -t "$INTERVAL" key </dev/tty || true; else sleep "$INTERVAL"; fi
-    # Arrows (ESC [ A / B sequence): body scrolling.
-    if [[ "$key" == $'\033' ]]; then
-      k3=""; read -rsn1 -t 1 _ </dev/tty || true; read -rsn1 -t 1 k3 </dev/tty || true
-      case "$k3" in A) wtop=$(( wtop - 1 )) ;; B) wtop=$(( wtop + 1 )) ;; esac
-      (( wtop < 0 )) && wtop=0
-    fi
+    case "$key" in up) wtop=$(( wtop - 1 )) ;; down) wtop=$(( wtop + 1 )) ;; esac
+    (( wtop >= 0 )) || wtop=0
     case "$key" in
       q|Q) break ;;
       c|C) [[ "$view" == "status" ]] && { if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi; } ;;
-      l|L) if [[ "$view" == "log" ]]; then view="status"; else view="log"; fi ;;
+      l|L) if [[ "$view" == "log" ]]; then view="tree"; else view="log"; fi ;;
       t|T) if [[ "$view" == "tree" ]]; then view="status"; else view="tree"; fi ;;
-      v|V) [[ "$view" == "tree" ]] && { if [[ "${tree_mode:-}" == "list" ]]; then tree_mode="diagram"; else tree_mode="list"; fi; } ;;
+      v|V) if [[ "$LV_GROUP" == model ]]; then LV_GROUP=request; else LV_GROUP=model; fi
+        loomy_config_set watch_group "$LV_GROUP"; force_frame=1 ;;
+      o|O) bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator >/dev/null 2>&1 || true ;;
+
       s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT"; } ;;
     esac
+    [[ -z "$key" ]] || force_frame=1
     # Tracking opened by loomy start --watch: it closes with the agent session.
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
   done

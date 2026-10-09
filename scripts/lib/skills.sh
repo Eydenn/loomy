@@ -184,10 +184,23 @@ _sk_lock_write() {
 }
 
 # _sk_gitignore <root> <entry>: the entry in .gitignore once (created when missing, a newline added when needed).
+# Inserted before Loomy's managed history block when there is one: the block stays last (the project repair would
+# otherwise move it back below, changing .gitignore after every skill install).
 _sk_gitignore() {
-  local f="$1/.gitignore"
+  local f="$1/.gitignore" tmp
   [[ -L "$f" ]] && return 0
   grep -qxF "$2" "$f" 2>/dev/null && return 0
+  if grep -q '^# >>> Loomy: local history' "$f" 2>/dev/null; then
+    tmp="$f.loomy-$$"
+    # Above the blank line that separates the block, so the block keeps its exact layout.
+    awk -v e="$2" '
+      held { if (!done && /^# >>> Loomy: local history/) { print e; done = 1 } print hl; held = 0 }
+      !done && /^$/ { hl = $0; held = 1; next }
+      !done && /^# >>> Loomy: local history/ { print e; print ""; done = 1 }
+      { print }
+      END { if (held) print hl }' "$f" >"$tmp" && mv "$tmp" "$f" && return 0
+    rm -f "$tmp"
+  fi
   if [[ -s "$f" && -n "$(tail -c1 "$f")" ]]; then printf '\n' >>"$f"; fi
   printf '%s\n' "$2" >>"$f"
 }

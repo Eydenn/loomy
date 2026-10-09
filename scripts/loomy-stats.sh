@@ -50,6 +50,7 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
     if (first == "" || ts < first) first = ts; if (ts > last) last = ts
     f = field("family"); plan = (f == "codex" ? px : pc) + 0
     ti = num("tokens_in"); tc = num("tokens_cached"); to = num("tokens_out"); c = num("cost_usd"); day = substr(ts, 1, 10)
+    if (ty == "delegation" && (field("bridge") == "subagent" || field("cost_in") == "usage")) { ti=0; tc=0; to=0; c=0 }
     m = field("model"); md[m] = plan
     mi[m] += ti; mc[m] += tc; mo[m] += to; mv[m] += c
     dt[day] += ti + to; if (plan) dp[day] += c; else da[day] += c
@@ -140,7 +141,7 @@ for fam in claude codex; do
     ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · ${q:-${C_DIM}$(ai_quota_hint "$fam")${C_RESET}}"
     # What this month's work would have cost through the API, next to the plan's price.
     month_val="$(ai_journal_all "$ROOT" | awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$(date -u +%Y-%m)" '
-      (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) {
+      (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) && !/"bridge":"subagent"|"cost_in":"usage"/ {
         if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
       END { printf "%.2f", c }')"
     monthly="$(loomy_plan_monthly "$fam")"

@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.15.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.1-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -281,13 +281,13 @@ Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jam
 
 ## 🔒 Fichiers IA : versionnés, locaux ou privés
 
-Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt.
+Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt. Quel que soit le mode, l'historique et les fichiers de travail de Loomy (journaux, mémoire, tâches, audits, revues…) n'entrent jamais dans le dépôt du projet.
 
 Le questionnaire propose aussi de **créer le dépôt GitHub** du projet, privé ou public. Son nom, tiré du nom du projet, est à valider ou à modifier. En mode dépôt privé séparé, le nom du dépôt des fichiers IA (`<dépôt>-ai`) l'est aussi, et les deux sont confirmés ensemble. Un dépôt existant qui porte un autre nom est signalé, avec la commande pour le renommer ; Loomy ne renomme rien lui-même.
 
 | Mode | Pour qui | Ce qui se passe |
 |---|---|---|
-| **Versionnés** | dépôt privé *(défaut)* | ils sont dans le dépôt : tu les retrouves partout, les agents en ligne les lisent |
+| **Versionnés** | dépôt privé *(défaut)* | les règles et la doc des agents sont dans le dépôt : tu les retrouves partout, les agents en ligne les lisent (historique et fichiers de travail restent locaux) |
 | **Locaux** | dépôt public, sans sauvegarde | exclus via `.git/info/exclude` (invisible dans le dépôt) ; perdus si tu changes de machine |
 | **Dépôt privé séparé** | dépôt public *(recommandé)* | exclus du projet et sauvegardés dans un dépôt GitHub privé `<projet>-ai`, qui ne suit que ces fichiers |
 
@@ -335,17 +335,19 @@ Tout se passe dans le terminal, sans dépendance. `loomy start` ouvre le suivi e
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
 | `loomy status` | Instantané : phases, délégations, coûts, quotas, Git | — |
-| `loomy watch` | Suivi en direct (touches t arbre, l journal, c resserré, s session) | `N` |
+| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t état, q quitter) | `N` |
 | `loomy tree` | Arbre des agents : orchestrateur, conseiller et rôles en direct | — |
 | `loomy start` | Session et suivi en direct côte à côte | `--no-watch` |
 | `loomy log` | Journal lisible des phases, délégations et sessions | `--raw` `--since AAAA-MM-JJ` `--csv` |
 
 Chaque commande en détail : [docs/COMMANDS.fr.md](docs/COMMANDS.fr.md).
 
-**Ce qui est en direct.** L'écran relit le projet toutes les 2 secondes :
-- les **délégations** à Claude ou Codex s'affichent dès leur lancement, avec leur chrono, puis leur coût à la fin ; une délégation interrompue disparaît d'elle-même ;
+**Ce qui est en direct.** Les lancements sont détectés toutes les 250 ms ; les chronos en cours avancent chaque seconde :
+- les **délégations**, via les bridges et les sous-agents natifs Claude, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec ou interruption. L'usage des sous-agents natifs n'est compté qu'une fois ;
+- le **regroupement** par demande ou modèle se change avec `v` et se mémorise dans `watch_group` (`request` par défaut ; `loomy config set watch_group model` le change). Les extraits des demandes viennent du hook de message Claude et respectent `LOOMY_JOURNAL_TASKS=0` ; ⚑ signale une demande explicite et ⇢ un écart au routage ;
+- **l'orchestrateur** s'ouvre avec `o` dans une app de bureau disponible, sinon dans une fenêtre de terminal séparée avec session et suivi côte à côte ;
 - la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ;
-- le travail que l'orchestrateur fait lui-même, dans sa session, n'est pas journalisé : c'est dans sa session que tu le suis.
+- le travail que l'orchestrateur fait lui-même se suit dans sa session ; les événements de message et d'usage alimentent la vue sans exposer sa conversation complète.
 
 Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de Git automatiquement. `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
 
@@ -511,7 +513,7 @@ Chaque agent part de zéro, volontairement ; le fil du travail est gardé dans `
 | Quoi | Où | Écrit par |
 |---|---|---|
 | La tâche et le résultat complet de chaque délégation | `.loomy/memory/delegations/` (hors de Git : les constats peuvent être sensibles) | les ponts et le hook des sous-agents Claude, automatiquement |
-| L'état du travail : fait, en cours, décisions, suite | `.loomy/memory/STATE.md` (versionné avec les fichiers IA) | l'orchestrateur, après chaque étape importante |
+| L'état du travail : fait, en cours, décisions, suite | `.loomy/memory/STATE.md` (local, jamais versionné ; conservé dans le dépôt privé en mode privé) | l'orchestrateur, après chaque étape importante |
 
 - **Redonnée au début d'une session**, Claude Code comme Codex, et après un compactage : l'état du travail, puis les résultats que l'orchestrateur n'y a pas encore repris. Quand la session précédente s'est tenue dans l'autre outil, l'orchestrateur est prévenu de reprendre à partir de là.
 - **Pensée pour le coût.** Rien n'est ajouté à chaque message, ni à la reprise d'une session (la conversation la contient déjà). Le bloc est plafonné (40 lignes d'état, 4 résultats d'une ligne chacun) puis mis en cache par l'outil : quelques centaines de tokens par nouvelle session, au lieu de dizaines de milliers pour tout réexplorer. `STATE.md` est écrit en anglais et en style télégraphique, quelle que soit la langue de la documentation : le moins de tokens pour tous les modèles. Pour transmettre des constats à un rôle, l'orchestrateur lui indique le fichier au lieu de le recopier.
@@ -584,7 +586,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
 | `loomy status` | Instantané : phases, délégations, coûts, quotas, Git | — |
-| `loomy watch` | Suivi en direct (touches t arbre, l journal, c resserré, s session) | `N` |
+| `loomy watch` | Agents en direct (v demande/modèle, o orchestrateur, l journal, t état, q quitter) | `N` |
 | `loomy tree` | Arbre des agents : orchestrateur, conseiller et rôles en direct | — |
 | `loomy log` | Journal lisible des phases, délégations et sessions | `--raw` `--since AAAA-MM-JJ` `--csv` |
 | `loomy stats` | Tokens, coût et quotas par rôle, modèle et jour | `--days N` `--since AAAA-MM-JJ` |

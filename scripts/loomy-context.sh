@@ -10,7 +10,6 @@
 # Never blocks a session: if anything goes wrong, it stays silent.
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------------------------------------------------------------- UserPromptSubmit hook: fast path
 # loomy-capability: hook-prompt   (marker read by the project relays and by loomy init: a Loomy without it must
@@ -24,12 +23,41 @@ for fp_a in "$@"; do
   case "$fp_prev" in --hook) fp_hook="$fp_a" ;; --root) fp_root="$fp_a" ;; esac
   fp_prev="$fp_a"
 done
+# Tool hooks may be configured without a matcher: ordinary tools cost only builtins.
+fp_input=""
+if [[ "$fp_hook" == "agent-start" || "$fp_hook" == "agent-return" || "$fp_hook" == "agent-failure" || "$fp_hook" == "prompt" ]]; then
+  if [[ ! -t 0 ]]; then
+    while IFS= read -r fp_line || [[ -n "$fp_line" ]]; do fp_input="$fp_input$fp_line"; done
+  fi
+  if [[ "$fp_hook" != "prompt" ]]; then
+    fp_re='"tool_name"[[:space:]]*:[[:space:]]*"(Agent|Task)"'
+    [[ "$fp_input" =~ $fp_re ]] || exit 0
+    [[ -z "${LOOMY_DELEGATION:-}" ]] || exit 0
+  fi
+fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ "$fp_hook" == "prompt" ]]; then
   # The payload is read to its end with a builtin (a long pasted prompt must not block the writer).
-  if [[ ! -t 0 ]]; then while IFS= read -r fp_line || [[ -n "$fp_line" ]]; do :; done; fi
   [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0   # session started by a bridge (claude -p): no orchestrator there
   P_ROOT="${fp_root:-${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-$PWD}}}"
   [[ -f "$P_ROOT/.loomy/brief.md" ]] || exit 0
+  # Only the journal helpers: no model libraries on the prompt path.
+  # shellcheck source=lib/journal.sh
+  source "$SCRIPT_DIR/lib/journal.sh"
+  if ai_journal_enabled "$P_ROOT" && ai_journal_prepare "$P_ROOT"; then
+    fp_event="$(printf '%s' "$fp_input" | perl -MJSON::PP -MPOSIX=strftime -e '
+      local $/; my $d = eval { decode_json(<STDIN>) }; exit unless ref($d) eq "HASH";
+      my $excerpt = defined($ENV{LOOMY_JOURNAL_TASKS}) && $ENV{LOOMY_JOURNAL_TASKS} eq "0" ? "" : substr($d->{prompt} // "", 0, 60);
+      $excerpt =~ s/[\x00-\x1f]/ /g;
+      print JSON::PP->new->utf8->canonical->encode({type=>"request", ts=>strftime("%Y-%m-%dT%H:%M:%SZ", gmtime), id=>"r".time."-".$$, session=>$d->{session_id}//"", excerpt=>$excerpt});
+    ' 2>/dev/null)"
+    if [[ -n "$fp_event" ]]; then
+      perl -MFcntl=O_WRONLY,O_APPEND,O_NOFOLLOW -e '
+        sysopen my $f,$ARGV[0],O_WRONLY|O_APPEND|O_NOFOLLOW or exit;
+        flock $f,2 or exit; print $f $ARGV[1]."\n";
+      ' "$P_ROOT/.loomy/logs/events.jsonl" "$fp_event" 2>/dev/null
+    fi
+  fi
   # Front matter read line by line (ai_mode, ai_lead): no sed, no subshell.
   p_mode=""; p_lead=""; p_n=0
   while IFS= read -r fp_line; do
@@ -115,20 +143,25 @@ ROOT="$(cd "${ROOT:-$(ai_project_root)}" 2>/dev/null && pwd -P)" || exit 0
 
 # ---------------------------------------------------------------- hooks: session opening and closing
 if [[ -n "$HOOK" ]]; then
-  input=""; [[ -t 0 ]] || input="$(cat 2>/dev/null || true)"
+  input="${fp_input:-}"; if [[ "$HOOK" != "agent-start" && "$HOOK" != "agent-return" && "$HOOK" != "agent-failure" && ! -t 0 ]]; then input="$(cat 2>/dev/null || true)"; fi
   # Session started by a Loomy bridge (claude -p): already logged as a delegation, cost included.
   [[ -n "${LOOMY_DELEGATION:-}" ]] && exit 0
+  if [[ "$HOOK" == "agent-start" ]]; then ai_journal_agent_start "$ROOT" "$input" "$PPID"; exit 0; fi
+  if [[ "$HOOK" == "agent-return" ]]; then ai_journal_agent_return "$ROOT" "$input"; exit 0; fi
+  if [[ "$HOOK" == "agent-failure" ]]; then ai_journal_agent_return "$ROOT" "$input" failure; exit 0; fi
   # End of a lead agent turn, end of a native subagent: real cost read from the transcript, nothing to print.
   if [[ "$HOOK" == "stop" || "$HOOK" == "subagent" ]]; then
     jget() { printf '%s' "$input" | sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | head -1; }
     if [[ "$HOOK" == "stop" ]]; then ai_usage_record "$ROOT" "$(jget transcript_path)" lead
     else
+      usage_offset=0; [[ ! -f "$ROOT/.loomy/logs/events.jsonl" ]] || usage_offset="$(wc -c <"$ROOT/.loomy/logs/events.jsonl" | tr -d ' ')"
       ai_usage_record "$ROOT" "$(jget agent_transcript_path)" subagent "$(jget agent_type)"
       # Shared memory: what the subagent was asked and what it answered.
       mem="$(loomy_memory_from_transcript "$(jget agent_transcript_path)")"
       if [[ -n "${mem#$'\t'}" ]]; then
         loomy_memory_save "$ROOT" "$(jget agent_id)" "$(jget agent_type)" "subagent" ok "$(printf '%s' "${mem%%$'\t'*}" | tr '\037' '\n')" "$(printf '%s' "${mem#*$'\t'}" | tr '\037' '\n')"
       fi
+      ai_journal_agent_stop "$ROOT" "$input" "$usage_offset" "${mem#*$'\t'}"
     fi
     exit 0
   fi

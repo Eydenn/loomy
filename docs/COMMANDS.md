@@ -140,7 +140,7 @@ Snapshot: phases, running delegations, activity, cost per model, subscriptions, 
 loomy watch [N]
 ```
 
-🖥️ The same screen refreshed every second (or every N seconds): running delegation with spinner, timer and estimated progress, highlighted changes, notification (macOS) and bell on each phase, failure or end of bootstrap. A session log at the bottom scrolls as events arrive, the newest highlighted. Keys: `q` quit, `c` compact or full view (status screen: brief hidden, fewer delegations and log lines), `l` journal, `t` agent tree, `s` open the session. Compact view in a small terminal
+🖥️ Live project agents: the orchestrator, then **IN PROGRESS** (native Claude subagents and bridges), then **SESSION**, containing only finished roles from the current lead session. Starts are polled every 250 ms; timers tick every second, including when an older refresh interval `N` is supplied. `v` switches grouping by request/model and saves `watch_group` (`request` by default). Prompt excerpts obey `LOOMY_JOURNAL_TASKS=0`. Keys: `o` open the acting orchestrator in its desktop app, or a separate terminal with tracking; `v` grouping; `l` journal; `q` quit. `t` switches to the status snapshot; `c` adjusts that snapshot; arrows scroll. Rows show the translated role, tool, actual model, effort word and four-cell bar, elapsed time, task and completion outcome; explicit requests and routing overrides are flagged. Narrow panes drop task, model and bar in that order, keeping the tool and effort word; routing annotations move to an indented continuation when needed. The banner shows the lead state once setup is done; active means a live lead process with a prompt or usage event in the last two minutes. The view redraws on journal/state changes, or every second for running timers; at rest the clock holds at the last refresh. Native subagent costs come from usage events only, while bridges retain their own costs.
 
 ### `loomy tree`
 
@@ -148,7 +148,7 @@ loomy watch [N]
 loomy tree
 ```
 
-🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. Also key `t` of `loomy watch`. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes, the other roles summed up beside the final check, grouped by model, with what each one does), otherwise as a list; `v` switches, `loomy config set tree_view auto|diagram|list` chooses
+🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. `loomy tree --once` prints a single frame of the live watch view. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes), otherwise as a list; `loomy config set tree_view auto|diagram|list` chooses
 
 ### `loomy log`
 
@@ -207,7 +207,7 @@ Role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all
 ### `loomy delegate codex <role> "…"`
 
 ```bash
-loomy delegate codex <role> "…"
+loomy delegate codex <role> [options] "…"
 ```
 
 Hands a role to Codex (executor, developer, documenter can write; the others are read-only)
@@ -215,10 +215,12 @@ Hands a role to Codex (executor, developer, documenter can write; the others are
 ### `loomy delegate claude <role> "…"`
 
 ```bash
-loomy delegate claude <role> "…"
+loomy delegate claude <role> [options] "…"
 ```
 
 Hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer)
+
+Options before the task text (they win over `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`): `--model <id>` (letters, digits, `. _ -`; for Claude a `claude-*` id or `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (override the role's sandbox; on Claude, `--write` is refused outside a quota failover), `--why "reason"` (for example `user request`). Any option or variable used marks the delegation `requested` in the journal; what differs from the project's routing (tool, model, effort, sandbox) is listed in `off_routing`, and `why` keeps the reason (hidden by `LOOMY_JOURNAL_TASKS=0`). Example: `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
 
 ### `loomy models`
 
@@ -267,7 +269,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Checks prerequisites (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model)
+Checks prerequisites and reports Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model)
 
 ### `loomy config`
 

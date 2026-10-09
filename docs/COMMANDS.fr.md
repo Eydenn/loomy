@@ -140,7 +140,7 @@ Instantané : phases, délégations en cours, activité, coûts par modèle, for
 loomy watch [N]
 ```
 
-🖥️ Le même écran rafraîchi chaque seconde (ou toutes les N secondes) : délégation en cours avec toupie, chrono et avancement estimé, nouveautés mises en évidence, notification (macOS) et bip à chaque phase, échec ou fin de bootstrap. Un journal de session en bas défile au fil des événements, le plus récent mis en évidence. Touches : `q` quitter, `c` vue resserrée ou complète (écran de statut : brief masqué, moins de délégations et de lignes de journal), `l` journal, `t` arbre des agents, `s` ouvrir la session. Vue resserrée d'office dans un petit terminal
+🖥️ Agents du projet en direct : l'orchestrateur, puis **EN COURS** (sous-agents Claude natifs et passerelles), puis **SESSION**, avec uniquement les rôles terminés de la session courante. Les démarrages sont détectés toutes les 250 ms ; les chronos avancent chaque seconde, même avec un ancien intervalle `N`. `v` bascule le regroupement par demande/modèle et mémorise `watch_group` (`request` par défaut). Les extraits respectent `LOOMY_JOURNAL_TASKS=0`. Touches : `o` ouvre l'orchestrateur actif dans son application, ou un terminal séparé avec suivi ; `v` regroupement ; `l` journal ; `q` quitter. `t` bascule vers le statut ; `c` ajuste ce statut ; flèches pour défiler. Chaque ligne montre le rôle traduit, l'outil, le modèle réel, le mot et la barre d'effort, le chrono, la tâche et le résultat ; les demandes explicites et écarts au routage sont signalés. Une fenêtre étroite retire dans l'ordre la tâche, le modèle et la barre, en conservant l'outil et le mot d'effort ; les annotations de routage passent sur une ligne indentée si nécessaire. Après la configuration, le bandeau affiche l'état de l'orchestrateur : actif si son processus vit et qu'une demande ou un événement d'usage date de moins de deux minutes. Le rendu change avec le journal ou les fichiers d'état, ou chaque seconde pour les chronos en cours ; au repos, l'horloge reste à l'heure du dernier rendu. Le coût d'un sous-agent natif provient uniquement de son usage, celui d'une passerelle reste dans sa délégation.
 
 ### `loomy tree`
 
@@ -148,7 +148,7 @@ loomy watch [N]
 loomy tree
 ```
 
-🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. Aussi touche `t` de `loomy watch`. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées ; jusqu'à quatre boîtes de rôles, les autres résumés à côté de la vérification finale, groupés par modèle, avec ce que fait chacun), sinon en liste ; `v` bascule, `loomy config set tree_view auto|diagram|list` choisit
+🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. `loomy tree --once` affiche une frame de la vue live. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées ; jusqu'à quatre boîtes de rôles), sinon en liste ; `loomy config set tree_view auto|diagram|list` choisit
 
 ### `loomy log`
 
@@ -207,7 +207,7 @@ Matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-a
 ### `loomy delegate codex <role> "…"`
 
 ```bash
-loomy delegate codex <rôle> "…"
+loomy delegate codex <rôle> [options] "…"
 ```
 
 Confie un rôle à Codex (exécutant, développeur, documentaliste en écriture ; les autres en lecture seule)
@@ -215,10 +215,12 @@ Confie un rôle à Codex (exécutant, développeur, documentaliste en écriture 
 ### `loomy delegate claude <role> "…"`
 
 ```bash
-loomy delegate claude <rôle> "…"
+loomy delegate claude <rôle> [options] "…"
 ```
 
 Confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur)
+
+Options avant le texte de la tâche (elles l'emportent sur `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`) : `--model <id>` (lettres, chiffres, `. _ -` ; pour Claude un id `claude-*` ou `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (remplace le sandbox du rôle ; sur Claude, `--write` est refusé hors basculement de quota), `--why "raison"` (par exemple `user request`). Une option ou une variable utilisée marque la délégation `requested` dans le journal ; ce qui s'écarte du routage du projet (outil, modèle, effort, sandbox) est listé dans `off_routing`, et `why` garde la raison (masquée par `LOOMY_JOURNAL_TASKS=0`). Exemple : `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
 
 ### `loomy models`
 
@@ -267,7 +269,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Vérifie les prérequis (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle)
+Vérifie les prérequis et signale les fichiers d'historique de Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle)
 
 ### `loomy config`
 

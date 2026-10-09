@@ -2,6 +2,24 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.15.1 — 2026-10-09
+
+### Changed
+- **Loomy's history and work files are never versioned in the project repository, whatever the AI-files mode**.
+  - One managed block in `.gitignore` (markers `# >>> Loomy: local history and work files, never versioned` / `# <<< Loomy`) lists them: logs, memory (including `STATE.md`), `HANDOFF.md`, phase state, tasks, audits, reviews, assessment, previous brief, relay state, private repository, temporary files.
+  - Written by `loomy init`, and added to existing projects at their next `loomy` command or session start, replacing the older single lines.
+  - `loomy doctor` reports history files already committed; `--fix` removes them from Git (they are kept on disk).
+  - In private mode only `STATE.md` and `HANDOFF.md` are kept in the private repository, for continuity between machines.
+
+### Added
+- **Live native Claude subagents in `loomy watch`**, alongside bridge delegations: running roles appear first, followed by a recap of finished roles from the current lead session only.
+  - `v` groups by request or model; the choice is saved in `watch_group` (`request` by default). Claude's prompt hook records request excerpts, respecting `LOOMY_JOURNAL_TASKS=0`.
+  - `o` opens the orchestrator in an available desktop app, falling back to a separate terminal window with session and tracking side by side.
+  - Rows show the recorded model, updated from actual usage when available, effort, elapsed time and task; finished outcomes use ✓ done, △ partial, ■ blocked and ✗ failed or interrupted. Native subagent usage is counted only once.
+  - Subagents of the same role running in parallel are matched to their own end; one whose end never arrives is closed as unknown when its lead session ends, or shown as lost after `LOOMY_SUBAGENT_MAX_S` (2 h), never left running. The journal and its folder are private (0600 / 0700).
+- **Delegation overrides**: `loomy delegate` and both bridges accept `--model`, `--effort`, `--write`, `--read-only` and `--why` before the task text; options take precedence over model/effort environment variables. Codex permissions can override the role's default; Claude remains read-only outside a quota failover and refuses `--write` there.
+  - The journal records `requested`, `off_routing` (tool, model, effort or sandbox differences) and `why`; live rows mark explicit requests with ⚑ and routing differences with ⇢.
+
 ## 0.15.0 — 2026-10-09
 
 ### Added

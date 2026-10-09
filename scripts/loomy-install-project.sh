@@ -10,6 +10,8 @@ source "$SCRIPT_DIR/lib/ui.sh"
 source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
 
 usage() {
   i18n_lines <<'EOF'
@@ -162,10 +164,8 @@ RELAIS
   cp "$LOOMY_ROOT/VERSION" "$L/VERSION"
   install_claude_hooks
   install_codex_hooks
-  # The activity log contains the text of delegated tasks: it stays local.
-  if ! grep -qxF '.loomy/logs/' "$TARGET/.gitignore" 2>/dev/null; then
-    printf '\n# Loomy: local activity log\n.loomy/logs/\n' >>"$TARGET/.gitignore"
-  fi
+  # History and work files (activity log, memory, delegations…) are never versioned in the project repository.
+  loomy_gitignore_sync "$TARGET"
 }
 
 # Project Claude Code hooks: at each session opening, the Loomy context (phase, expectations, delegations) is
@@ -174,6 +174,7 @@ LOOMY_HOOK_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" -
 LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook end'
 # End of a lead agent turn and end of a subagent: real cost read from the session transcript.
 LOOMY_HOOK_STOP='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook stop'
+LOOMY_HOOK_AGENT_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook agent-start'
 LOOMY_HOOK_SUB='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook subagent'
 # Before each prompt: a one-line routing reminder, silent unless the project is ORCHESTRATED (long sessions forget it).
 LOOMY_HOOK_PROMPT='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook prompt'
@@ -183,13 +184,14 @@ LOOMY_STATUSLINE="sh -c 'd=\${CLAUDE_PROJECT_DIR:-\$PWD}; while [ \"\$d\" != / ]
 
 # _hooks_json: Loomy's "hooks" block, as JSON.
 _hooks_json() {
-  local s e t u w
+  local s e t u w a
   s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
   t="$(printf '%s' "$LOOMY_HOOK_STOP" | sed 's/"/\\"/g')"; u="$(printf '%s' "$LOOMY_HOOK_SUB" | sed 's/"/\\"/g')"
   w="$(printf '%s' "$LOOMY_HOOK_PROMPT" | sed 's/"/\\"/g')"
+  a="$(printf '%s' "$LOOMY_HOOK_AGENT_START" | sed 's/"/\\"/g')"
   local sl; sl="$(printf '%s' "$LOOMY_STATUSLINE" | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '{\n  "statusLine": { "type": "command", "command": "%s", "padding": 0 },\n' "$sl"
-  printf '  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "UserPromptSubmit": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u" "$w"
+  printf '  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "UserPromptSubmit": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ],\n    "PreToolUse": [\n      { "matcher": "Agent|Task", "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u" "$w" "$a"
 }
 
 # Codex runs its hooks from the session folder: the command walks up to the Loomy project.
@@ -247,26 +249,13 @@ PYS
 # install_claude_hooks: the project's .claude/settings.json: Loomy hooks and status line, merged with an existing
 # file (nothing removed, an existing status line kept); an unreadable file is left as is.
 install_claude_hooks() {
-  local f="$TARGET/.claude/settings.json" merger
+  local f="$TARGET/.claude/settings.json"
   mkdir -p "$TARGET/.claude"
   remember_user_statusline
-  # Already complete: every hook (the prompt one arrived in a later version, so an older install is completed) and a status line.
-  if [[ -f "$f" ]] && grep -q 'loomy-context.sh" --hook subagent' "$f" && grep -q 'loomy-context.sh" --hook prompt' "$f" && grep -qE 'loomy-statusline.sh|"statusLine"' "$f"; then return 0; fi
-  merger='import json, os, sys
-path, start, end, stop, sub, prompt, status = sys.argv[1:8]
-data = json.load(open(path)) if os.path.exists(path) else {}
-hooks = data.setdefault("hooks", {})
-for event, cmd, t in (("SessionStart", start, 20), ("SessionEnd", end, 3), ("Stop", stop, 10), ("SubagentStop", sub, 10), ("UserPromptSubmit", prompt, 5)):
-    groups = hooks.setdefault(event, [])
-    if not any(h.get("command") == cmd for g in groups for h in g.get("hooks", [])):
-        groups.append({"hooks": [{"type": "command", "command": cmd, "timeout": t}]})
-if "statusLine" not in data:
-    data["statusLine"] = {"type": "command", "command": status, "padding": 0}
-tmp = path + ".loomy-tmp"
-with open(tmp, "w") as out:
-    json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")
-os.replace(tmp, path)'
-  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$LOOMY_HOOK_START" "$LOOMY_HOOK_END" "$LOOMY_HOOK_STOP" "$LOOMY_HOOK_SUB" "$LOOMY_HOOK_PROMPT" "$LOOMY_STATUSLINE" 2>/dev/null; then return 0; fi
+  # The same idempotent merge is available to session-start project repair.
+  # shellcheck source=lib/hooks.sh
+  source "$LOOMY_ROOT/scripts/lib/hooks.sh"
+  if loomy_claude_hooks_merge "$TARGET"; then return 0; fi
   if [[ ! -f "$f" ]]; then _hooks_json >"$f"; return 0; fi
   _hooks_json >"$L/claude-hooks.json"
   ui_warn "$(t "existing .claude/settings.json left unchanged")" "$(t "add the hooks from .loomy/claude-hooks.json to it")"
@@ -419,4 +408,4 @@ ui_section "$(t "NEXT STEP")"
 ui_rail "${C_BRAND}1${C_RESET}  $(t "Fill in the project brief:") ${C_BOLD}${brief_cmd}${C_RESET}"
 ui_rail "${C_BRAND}2${C_RESET}  $(t "Start the lead agent:") ${C_BOLD}loomy start${C_RESET}"
 loomy_project_register "$TARGET" 2>/dev/null || true
-ui_end "$(t "START.md, .loomy/ and one .gitignore line added; nothing else is changed")"
+ui_end "$(t "START.md, .loomy/ and one .gitignore block added; nothing else is changed")"

@@ -15,6 +15,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 # Settings inherited from the calling session (a Loomy project, a bridge, a routed role) must not leak in: the tests
 # would act on that project instead of their own folders.
+LIVE_ARTIFACTS="${LOOMY_TEST_LIVE_ARTIFACTS:-}"
 TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the cleanup below
 for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
@@ -63,6 +64,420 @@ fails() {
 has() { if grep -qE -- "$2" "$OUT"; then ok "$1"; else ko "$1 (pattern missing: $2)"; fi; }
 hasnt() { if grep -qE -- "$2" "$OUT"; then ko "$1 (pattern present: $2)"; else ok "$1"; fi; }
 file_has() { if grep -qE -- "$3" "$2" 2>/dev/null; then ok "$1"; else ko "$1 (pattern missing from ${2##*/}: $3)"; fi; }
+
+delegation_options_tests() {
+  section "Delegation options"
+  local op="$WORK/delegation-options" J first
+  mkdir -p "$op"; git -C "$op" init -q
+  run "delegation options: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
+  git -C "$op" add -A && git -C "$op" commit -qm "initialize delegation options fixture"
+  J="$op/.loomy/logs/events.jsonl"; mkdir -p "${J%/*}"; : >"$J"
+  delegation_pair_has() {
+    local desc="$1" req="$2" off="$3" why="$4" effort="$5" sandbox="$6" files="$7" task="$8"
+    if perl -MJSON::PP -e '
+      my ($path,$want_req,$want_off,$want_why,$want_effort,$want_sandbox,$want_files,$want_task)=@ARGV;
+      open my $f,"<",$path or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2;
+      die unless $e[0]{type} eq "delegation_start" && $e[1]{type} eq "delegation";
+      for my $e (@e) {
+        die "requested mismatch" unless (($e->{requested} ? "true" : "false") eq $want_req);
+        die "off-routing/why mismatch: ".($e->{off_routing}//"")."/".($e->{why}//"") unless (($e->{off_routing}//"") eq $want_off && ($e->{why}//"") eq $want_why);
+        die "effort/sandbox: expected $want_effort/$want_sandbox, got ".($e->{effort}//"")."/".($e->{sandbox}//"") unless (($e->{effort}//"") eq $want_effort && ($e->{sandbox}//"") eq $want_sandbox);
+        die "task mismatch: ".($e->{task}//"") unless (($e->{task}//"") eq $want_task);
+      }
+      die if $want_files ne "skip" && ($e[1]{files_changed}//-1) != $want_files;
+    ' "$J" "$req" "$off" "$why" "$effort" "$sandbox" "$files" "$task"; then ok "$desc"; else ko "$desc"; fi
+  }
+
+  run "codex: requested write with routing overrides" bash -c 'cd "$1" && STUB_WRITE=1 "$2" delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "design it"' _ "$op" "$LOOMY"
+  first="$(head -n 1 "$OUT")"
+  if [[ "$first" == *"requested (user request)"* && "$first" == *"off routing: tool,sandbox"* ]]; then ok "codex: first stderr line explains requested and off routing"; else ko "codex: requested/off-routing banner missing"; fi
+  delegation_pair_has "codex: both journal events and write result" true tool,sandbox "user request" high workspace-write 1 "design it"
+
+  : >"$J"
+  run "claude: explicit alias and effort" bash -c 'cd "$1" && LOOMY_BRIDGE_OK=1 "$2" delegate claude architect --model opus --effort max --why x "design it"' _ "$op" "$LOOMY"
+  delegation_pair_has "claude: model and effort are off routing" true model,effort x max read-only 0 "design it"
+
+  : >"$J"
+  run "codex: environment effort is requested" bash -c 'cd "$1" && DELEGATE_CODEX_EFFORT=low "$2" delegate codex architect "environment effort"' _ "$op" "$LOOMY"
+  delegation_pair_has "codex: environment effort recorded" true tool,effort "" low read-only 0 "environment effort"
+
+  : >"$J"
+  run "codex: option overrides environment effort" bash -c 'cd "$1" && DELEGATE_CODEX_EFFORT=low "$2" delegate codex architect --effort high "option wins"' _ "$op" "$LOOMY"
+  delegation_pair_has "codex: option wins over environment effort" true tool "" high read-only 0 "option wins"
+
+  : >"$J"
+  run "codex: plain call" bash -c 'cd "$1" && "$2" delegate codex architect "plain call"' _ "$op" "$LOOMY"
+  delegation_pair_has "codex: plain call is unrequested" false tool "" high read-only 0 "plain call"
+
+  fails "codex: model with spaces rejected" 2 bash -c 'cd "$1" && "$2" delegate codex architect --model "a b" task' _ "$op" "$LOOMY"
+  fails "claude: Codex model rejected" 2 bash -c 'cd "$1" && "$2" delegate claude architect --model gpt-5 task' _ "$op" "$LOOMY"
+  fails "claude: write refused without failover" 2 bash -c 'cd "$1" && "$2" delegate claude architect --write task' _ "$op" "$LOOMY"
+  fails "delegation: invalid effort rejected" 2 bash -c 'cd "$1" && "$2" delegate codex architect --effort impossible task' _ "$op" "$LOOMY"
+  fails "delegation: unknown option rejected" 2 bash -c 'cd "$1" && "$2" delegate codex architect --opt task' _ "$op" "$LOOMY"
+  fails "delegation: option without value rejected" 2 bash -c 'cd "$1" && "$2" delegate codex architect --model' _ "$op" "$LOOMY"
+  run "claude: write accepted during Codex failover" bash -c 'cd "$1" && LOOMY_FAILOVER_FROM=codex "$2" delegate claude executor --write "failover write"' _ "$op" "$LOOMY"
+
+  : >"$J"
+  if (cd "$op" && env LOOMY_UI_LANG=fr "$LOOMY" delegate codex architect --model gpt-6.1-sol --why raison "tâche") >"$WORK/fr.out" 2>"$WORK/fr.err"; then
+    if grep -q 'demandé.*hors routage' "$WORK/fr.err"; then ok "delegation: French stderr translates requested and off routing"; else ko "delegation: French banner translation missing"; fi
+  else ko "delegation: French bridge failed"; fi
+
+  : >"$J"
+  run "delegation: task and why privacy" bash -c 'cd "$1" && LOOMY_JOURNAL_TASKS=0 "$2" delegate codex architect --why SECRET-WHY SECRET-TASK' _ "$op" "$LOOMY"
+  if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
+}
+
+# ------------------------------------------------------------------ live native agents and watch
+live_view_tests() {
+  section "Live view"
+  local lv="$WORK/live" nowz before
+  mkdir -p "$lv/.loomy/logs" "$lv/.claude/agents"
+  printf -- '---\nname: Live demo\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$lv/.loomy/brief.md"
+  printf 'phase=done\n' >"$lv/.loomy/state"
+  printf -- '---\nname: developer\nmodel: claude-sonnet-5-5\neffort: high\n---\n' >"$lv/.claude/agents/developer.md"
+  nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"live","pid":%s}\n' "$nowz" "$$" >"$lv/.loomy/logs/events.jsonl"
+  printf '%s\n' '{"session_id":"live","prompt":"Make the agents visible, with a \"live\" timer"}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook prompt >"$OUT"
+  file_has "prompt: request and escaped excerpt" "$lv/.loomy/logs/events.jsonl" '"type":"request"'
+  before="$(wc -c <"$lv/.loomy/logs/events.jsonl")"
+  printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"ignored"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  [[ "$(wc -c <"$lv/.loomy/logs/events.jsonl")" == "$before" ]] && ok "ordinary tools: no event" || ko "ordinary tools: event written"
+  printf '%s' '{"session_id":"live","tool_use_id":"native-1","tool_name":"Agent","tool_input":{"subagent_type":"loomy-developer","description":"Add native live tracking","run_in_background":true}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  file_has "native start: role, model and effort from front matter" "$lv/.loomy/logs/events.jsonl" '"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","effort":"high"'
+  file_has "native start: default is unrequested and routing differences are computed" "$lv/.loomy/logs/events.jsonl" '"id":"native-1".*"requested":false,"off_routing":"effort"'
+  file_has "native start: id and session" "$lv/.loomy/logs/events.jsonl" '"id":"native-1","session":"live","pid":[0-9]+'
+  run "live frame by request" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
+  has "live: request group and task" 'Make the agents visible|Add native live tracking'
+  has "live: in-progress header" 'IN PROGRESS'
+  awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$lv/running.txt"
+  grep -q Developer "$lv/running.txt" && ok "native running in progress" || ko "native missing from progress"
+  awk '/^SESSION/{a=1} a' "$OUT" >"$lv/finished.txt"
+  grep -q Developer "$lv/finished.txt" && ko "running agent in recap" || ok "running agent excluded from recap"
+  printf '%s' '{"session_id":"live","tool_use_id":"native-1","tool_name":"Agent","tool_response":{"agentId":"a1","isAsync":true}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-return
+  printf '%s\n' '{"type":"user","message":{"content":"Add native live tracking"}}' '{"type":"assistant","message":{"id":"msg_native","model":"claude-sonnet-5-5","usage":{"input_tokens":100,"output_tokens":20},"content":[{"type":"text","text":"STATUS: done\nSUMMARY: live tracking works"}]}}' >"$lv/transcript.jsonl"
+  printf '{"session_id":"live","agent_type":"developer","agent_id":"a1","agent_transcript_path":"%s"}' "$lv/transcript.jsonl" | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook subagent
+  file_has "native stop: closes the original id" "$lv/.loomy/logs/events.jsonl" '"type":"delegation","agent_id":"a1".*"duration_s":[0-9]+.*"id":"native-1".*"outcome":"done".*"tokens_in":0.*"tokens_out":0'
+  file_has "native stop: cost belongs to usage" "$lv/.loomy/logs/events.jsonl" '"cost_in":"usage"'
+  file_has "native stop: existing usage retained" "$lv/.loomy/logs/events.jsonl" '"type":"usage".*"scope":"subagent"'
+  [[ -n "$(find "$lv/.loomy/memory/delegations" -name '*.md' -print 2>/dev/null)" ]] && ok "native stop: memory retained" || ko "native stop: no memory"
+  printf '{"session_id":"live","agent_type":"developer","agent_id":"a1","agent_transcript_path":"%s"}' "$lv/transcript.jsonl" | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook subagent
+  [[ "$(grep -c '"type":"delegation",' "$lv/.loomy/logs/events.jsonl")" == 1 ]] && ok "duplicate stop: no duplicate completion" || ko "duplicate completion"
+  run "live completed frame" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
+  awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$lv/running.txt"
+  grep -q Developer "$lv/running.txt" && ko "finished agent still in progress" || ok "finished excluded from progress"
+  has "finished appears in session recap" '✓ Developer'
+  local lost="$WORK/live-lost" ended="$WORK/live-ended" recent="$WORK/live-recent" dead="$WORK/live-dead" oldz recentz f
+  nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  oldz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime(time-20))')"
+  recentz="$(perl -MPOSIX=strftime -e 'print strftime("%Y-%m-%dT%H:%M:%SZ",gmtime(time-2))')"
+  for f in "$lost" "$ended" "$recent" "$dead"; do mkdir -p "$f/.loomy/logs"; cp "$lv/.loomy/brief.md" "$f/.loomy/brief.md"; done
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"lost","pid":%s}\n' "$nowz" "$$" >"$lost/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation_start","session":"lost","id":"orphan","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true,"task":"background task"}\n' "$oldz" "$$" >>"$lost/.loomy/logs/events.jsonl"
+  run "old native async start is lost in the session recap" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lost" --once
+  has "lost native agent appears in recap" '^  ! lost Developer'
+  has "lost native agent is counted in session" '^SESSION · 1 finished'
+  awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$WORK/lost-progress.txt"
+  grep -q Developer "$WORK/lost-progress.txt" && ko "lost native agent remains in progress" || ok "lost native agent removed from progress"
+  local lost_count
+  lost_count="$(awk '/^SESSION/{a=1} a' "$OUT" | grep -o 'lost' | wc -l | tr -d ' ')"
+  [[ "$lost_count" == 1 ]] && ok "lost is shown once in the session recap" || ko "lost appears $lost_count times in the recap"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"ended","pid":%s}\n' "$nowz" "$$" >"$ended/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation_start","session":"ended","id":"ended-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n{"ts":"%s","type":"session","event":"end","tool":"claude","session":"ended","pid":%s}\n' "$recentz" "$$" "$nowz" "$$" >>"$ended/.loomy/logs/events.jsonl"
+  run "ended lead session closes native start as unknown" env LOOMY_SUBAGENT_MAX_S=10 NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$ended" --once
+  has "ended session shows unknown glyph" '\? Developer'
+  if perl -0777 -e 'local $/; my $s=<>; exit(index($s,"\e[2m  ? Developer") >= 0 ? 0 : 1)' "$OUT"; then ok "unknown glyph is dim"; else ko "unknown glyph is not dim"; fi
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"recent","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"recent","id":"recent-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n' "$nowz" "$$" "$recentz" "$$" >"$recent/.loomy/logs/events.jsonl"
+  run "recent native async start remains in progress" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$recent" --once
+  awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$WORK/recent-progress.txt"
+  grep -q Developer "$WORK/recent-progress.txt" && ok "recent native agent remains in progress" || ko "recent native agent missing from progress"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"dead","pid":99999999}\n{"ts":"%s","type":"delegation_start","session":"dead","id":"dead-parent-agent","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","background":true}\n' "$nowz" "$recentz" "$$" >"$dead/.loomy/logs/events.jsonl"
+  run "dead lead pid closes native start as unknown" env LOOMY_SUBAGENT_MAX_S=10 COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$dead" --once
+  has "dead lead pid shows unknown glyph" '\? Developer'
+  run "invalid native timeout uses the default" env LOOMY_SUBAGENT_MAX_S=invalid bash -c 'source "$1/scripts/loomy-tree.sh" --library; test "$LOOMY_SUBAGENT_MAX_S" = 7200' _ "$REPO"
+  # Legacy Task, unknown role, escaped payload, and session fallback.
+  printf '%s' '{"session_id":"live","tool_use_id":"native-2","tool_name":"Task","tool_input":{"subagent_type":"Explore","description":"Inspect \"hooks\"\ncarefully"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  file_has "legacy Task: unknown role preserved" "$lv/.loomy/logs/events.jsonl" '"role":"Explore".*"model":"claude-opus'
+  printf '%s' '{"session_id":"live","prompt":"Second request"}' | env LOOMY_JOURNAL_TASKS=0 bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook prompt >/dev/null
+  file_has "prompt privacy: empty excerpt" "$lv/.loomy/logs/events.jsonl" '"excerpt":"".*"type":"request"'
+  printf '%s' '{"session_id":"live","tool_use_id":"native-3","tool_name":"Agent","tool_input":{"subagent_type":"developer","description":"Second role"}}' | env LOOMY_JOURNAL_TASKS=0 bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  file_has "delegation privacy: empty task" "$lv/.loomy/logs/events.jsonl" '"id":"native-3".*"task":""'
+  printf '%s' '{"session_id":"live","tool_use_id":"native-4","tool_name":"Agent","tool_input":{"subagent_type":"developer","model":"claude-opus-5-5","description":"Lead-selected model"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  file_has "native explicit model: real model and requested mark" "$lv/.loomy/logs/events.jsonl" '"id":"native-4".*"model":"claude-opus-5-5".*"requested":true,"off_routing":"model,effort"'
+  printf '%s' '{"session_id":"live","tool_use_id":"native-5","tool_name":"Agent","tool_input":{"subagent_type":"architect","model":"claude-opus-5-5","description":"Explicitly requested routed model"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
+  file_has "native explicit routed model: requested with empty off routing" "$lv/.loomy/logs/events.jsonl" '"id":"native-5".*"model":"claude-opus-5-5".*"requested":true,"off_routing":""'
+  run "group by request: private request numbered" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
+  has "request grouping: numbered second prompt" 'request 2'
+  cp "$OUT" "$lv/request-frame.txt"
+  run "watch_group saved" bash -c 'source "$1/scripts/lib/config.sh"; loomy_config_set watch_group model; test "$(loomy_config_get watch_group request)" = model' _ "$REPO"
+  run "group by model from configuration" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
+  has "model grouping: running count" '┌─ claude-sonnet-5-5 · 1 running'
+  has "model grouping: separate session" '^SESSION · 1 finished'
+  cp "$OUT" "$lv/model-frame.txt"
+  run "compact 45 columns" env COLUMNS=45 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
+  hasnt "compact: no bar or task column" '▮|▯|Second role'
+  cp "$OUT" "$lv/compact-frame.txt"
+  perl -MEncode=decode -e 'my ($f,$w)=@ARGV; open my $h,"<",$f or die; while (<$h>) {chomp; exit 1 if length(decode("UTF-8",$_))>$w}' "$lv/compact-frame.txt" 44 && ok "compact: no wrapping" || ko "compact wraps"
+  if [[ -n "$LIVE_ARTIFACTS" ]]; then mkdir -p "$LIVE_ARTIFACTS"; cp "$lv/"*-frame.txt "$LIVE_ARTIFACTS/"; fi
+  # Incremental reader: unchanged offsets, partial writes, truncate/rotate, and lead lifetime.
+  run "incremental reader and lead liveness" bash -c '
+    source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/usage.sh"; source "$1/scripts/lib/phases.sh"; source "$1/scripts/loomy-tree.sh" --library
+    loomy_live_init; loomy_live_poll "$2/.loomy/logs/events.jsonl"; a=$LV_OFFSET; n=$LV_SEQ
+    loomy_live_poll "$2/.loomy/logs/events.jsonl"; test "$a:$n" = "$LV_OFFSET:$LV_SEQ" || exit 1
+    printf "%s" "{\"type\":\"request\",\"id\":\"partial\"" >>"$2/.loomy/logs/events.jsonl"
+    loomy_live_poll "$2/.loomy/logs/events.jsonl"; test "$a" = "$LV_OFFSET" || exit 1
+    printf "%s\n" "}" >>"$2/.loomy/logs/events.jsonl"; loomy_live_poll "$2/.loomy/logs/events.jsonl"; test "$LV_SEQ" = "$(( n + 1 ))" || exit 1
+    LV_NOW=$(date +%s); LV_PID[1]=99999999; LV_BRIDGE[1]=codex; loomy_live_states; test "${LV_STATUS[1]}" = interrupted || exit 1
+    printf "{}\n" >"$2/.loomy/logs/events.jsonl"; loomy_live_poll "$2/.loomy/logs/events.jsonl"; test "$LV_SEQ" = 0
+  ' _ "$REPO" "$lv"
+  printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"echo user"}]}]},"statusLine":{"command":"user status"}}' >"$lv/.claude/settings.json"
+  run "hooks merge twice" bash -c 'source "$1/scripts/lib/hooks.sh"; loomy_claude_hooks_merge "$2"; loomy_claude_hooks_merge "$2"' _ "$REPO" "$lv"
+  run "hook merge idempotent, user hooks kept" perl -MJSON::PP -e 'local $/; my $d=decode_json(<>); my $g=$d->{hooks}{PreToolUse}; die unless @$g==2 && $g->[0]{hooks}[0]{command} eq "echo user" && $g->[1]{matcher} eq "Agent|Task" && $g->[1]{hooks}[0]{command}=~/--hook agent-start/ && $d->{statusLine}{command} eq "user status"' "$lv/.claude/settings.json"
+  # Resolver and terminal launcher use functions/stubs: never a real open.
+  run "orchestrator app vs terminal, acting lead" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/loomy-start.sh" --open-library
+    uname() { echo Darwin; }; open() { [[ "${AVAILABLE:-}" == "$2" ]]; }
+    AVAILABLE=Claude; loomy_orchestrator_target "$2"; test "$LOOMY_OPEN_TARGET:$LOOMY_OPEN_APP" = app:Claude || exit 1
+    AVAILABLE=""; loomy_orchestrator_target "$2"; test "$LOOMY_OPEN_TARGET" = terminal || exit 1
+    printf "master=claude\nacting=codex\n" >"$2/.loomy/failover"
+    AVAILABLE=Codex; loomy_orchestrator_target "$2"; test "$LOOMY_OPEN_TOOL:$LOOMY_OPEN_APP" = codex:Codex || exit 1
+    AVAILABLE=ChatGPT; loomy_orchestrator_target "$2"; test "$LOOMY_OPEN_APP" = ChatGPT || exit 1
+    AVAILABLE=""; TMUX=stub; SCRIPT_DIR="$1/scripts"; tmux() { printf "%s\n" "$*" >"$LIVE_ROOT/opened.txt"; }; LIVE_ROOT="$2"; export TMUX
+    loomy_open_orchestrator "$2"; grep -q "new-window.*--resume.*--watch" "$2/opened.txt"
+  ' _ "$REPO" "$lv"
+  # An explicit Codex override and a native Claude task remain readable in both groupings.
+  local demo="$WORK/live-frames" costs="$WORK/live-costs"
+  mkdir -p "$demo/.loomy/logs" "$costs/.loomy/logs"
+  cp "$lv/.loomy/brief.md" "$demo/.loomy/brief.md"; cp "$lv/.loomy/state" "$demo/.loomy/state"
+  cp "$lv/.loomy/brief.md" "$costs/.loomy/brief.md"
+  printf '{"ts":"%s","type":"delegation","id":"old","role":"security","status":"error","outcome":"blocked","task":"Stale failure"}\n' "$nowz" >"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"frames","pid":%s}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"request","session":"frames","id":"r1","excerpt":"Improve live tracking"}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation_start","session":"frames","id":"arch","pid":%s,"role":"architect","family":"codex","model":"gpt-6-astra","effort":"max","task":"Review watch clarity","requested":true,"off_routing":"tool,model"}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation_start","session":"frames","id":"dev","pid":%s,"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","effort":"medium","task":"Implement live view"}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","session":"frames","id":"review","role":"reviewer","family":"codex","model":"gpt-6-luna","effort":"high","status":"ok","outcome":"partial","duration_s":83,"task":"Check terminal keys","cost_usd":0.03}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","session":"frames","id":"done","role":"explorer","family":"codex","model":"gpt-6-luna","effort":"medium","status":"ok","outcome":"done","duration_s":12,"task":"Map the working tree"}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","session":"frames","id":"blocked","role":"security","family":"codex","model":"gpt-6-luna","effort":"high","status":"ok","outcome":"blocked","duration_s":34,"task":"Inspect the trust boundary"}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","session":"frames","id":"failed","role":"debugger","family":"codex","model":"gpt-6-luna","effort":"high","status":"error","outcome":"failed","duration_s":8,"task":"Reproduce the failure"}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
+  sed -i.bak 's/Review watch clarity/Review watch clarity and preserve at least thirty readable task columns/' "$demo/.loomy/logs/events.jsonl" && rm -f "$demo/.loomy/logs/events.jsonl.bak"
+  run "request frame: override metadata and task" env LOOMY_WATCH_GROUP=request COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
+  has "override: tool, real model, word, task and short flags" 'Architect.*Codex.*6-astra.*▮▮▮▮ max.*Review watch clarity and preserve.*⚑ ⇢ tool,model'
+  has "native: Claude, med word and task" 'Developer.*Claude.*sonnet-5-5.*▮▮▯▯ med.*Implement live view'
+  has "completion: partial uses triangle and keeps task" '△ Reviewer.*high.*1:23  Check terminal keys'
+  has "completion: done uses check" '✓ Explorer.*0:12  Map the working tree'
+  has "completion: blocked uses square" '■ Security.*Inspect the trust boundary'
+  has "completion: failed uses cross" '✗ Debugger.*Reproduce the failure'
+  hasnt "current session: old failure dropped" 'Stale failure|Done.*open'
+  cp "$OUT" "$lv/request-frame.txt"
+  run "request task has 30 columns at 100 columns" perl -MEncode=decode -e 'use utf8; my $found=0; while (<>) { my $s=decode("UTF-8", $_); if ($s =~ /Architect/ && $s =~ /⇢ tool,model/) { $found=1; die unless $s =~ /max\s+\d+:\d\d  (.*?) ⚑ ⇢ tool,model/; die if length($1)<30 || length($s)>100; } } exit($found ? 0 : 1)' "$lv/request-frame.txt"
+  if awk '/^SESSION/{a=1} a' "$lv/request-frame.txt" | grep -q '◐'; then ko "finished recap never uses the running glyph"; else ok "finished recap never uses the running glyph"; fi
+  if [[ "$(grep -o '⚑ requested · ⇢ off routing' "$lv/request-frame.txt" | wc -l | tr -d ' ')" == 1 ]]; then ok "footer legend appears once"; else ko "footer legend missing or duplicated"; fi
+  run "model frame: two tool families" env LOOMY_WATCH_GROUP=model COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
+  has "model grouping: explicit model" '┌─ gpt-6-astra · 1 running'
+  cp "$OUT" "$lv/model-frame.txt"
+  run "compact frame: tool and effort words retained" env LOOMY_WATCH_GROUP=request COLUMNS=45 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
+  has "compact: Codex max retained" 'Architect.*Codex.*max'
+  has "compact: routing annotations retained" '⚑ ⇢ tool,model'
+  has "compact: Claude med retained" 'Developer.*Claude.*med'
+  hasnt "compact: model, bar and task dropped" '6-astra|sonnet-5-5|▮|▯|Implement live view'
+  cp "$OUT" "$lv/compact-frame.txt"
+  run "compact frame: no line wraps" perl -MEncode=decode -e 'while (<>) {chomp; die if length(decode("UTF-8",$_))>44}' "$lv/compact-frame.txt"
+  run "French live role labels" env LOOMY_UI_LANG=fr COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
+  has "translated role labels" 'Développeur.*Claude'
+  has "translated routing legend" '⚑ demandé · ⇢ hors routage'
+  printf 'master=claude\nacting=codex\n' >"$demo/.loomy/failover"
+  run "relay frame: acting tool and model" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
+  has "relay: acting lead marker" 'Orchestrator.*⇄ Codex.*6[.-]'
+  hasnt "relay: Claude model on Codex lead" 'Orchestrator.*Codex.*opus'
+  rm -f "$demo/.loomy/failover"
+  # Legacy native completions with repeated figures also count only their usage event.
+  cat >"$costs/.loomy/logs/events.jsonl" <<'JSON'
+{"ts":"2026-10-09T10:00:00Z","type":"usage","family":"claude","scope":"subagent","model":"claude-sonnet-5-5","tokens_in":100,"tokens_out":20,"cost_usd":1.25}
+{"ts":"2026-10-09T10:00:00Z","type":"delegation","id":"native","bridge":"subagent","family":"claude","role":"developer","model":"claude-sonnet-5-5","status":"ok","duration_s":12,"tokens_in":100,"tokens_out":20,"cost_usd":1.25}
+{"ts":"2026-10-09T10:00:00Z","type":"delegation","id":"bridge","bridge":"codex","family":"codex","role":"architect","model":"gpt-6-astra","status":"ok","duration_s":12,"tokens_in":50,"tokens_out":10,"cost_usd":0.75}
+JSON
+  run "stats: native usage counted once, bridge cost retained" bash "$REPO/scripts/loomy-stats.sh" --root "$costs"
+  has "stats: input and output once" '150 in.*30 out'
+  has "stats: total cost once" 'API cost.*\$2.00'
+  run "tree session: native usage counted once" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$costs" --once
+  has "tree: usage plus bridge cost" 'SESSION.*\$2.0000'
+  run "lead: active only with recent activity, alive process" bash -c '
+    source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/loomy-tree.sh" --library
+    loomy_live_init; LV_SESSION_OPEN=1; LV_SESSION_PID=$$; LV_NOW=200; LV_ACTIVITY=0; loomy_live_states; test "$LV_ACTIVE" = 0 || exit 1
+    LV_ACTIVITY=81; loomy_live_states; test "$LV_ACTIVE" = 1 || exit 1
+    LV_ACTIVITY=80; loomy_live_states; test "$LV_ACTIVE" = 0 || exit 1
+    LV_ACTIVITY=199; LV_SESSION_PID=99999999; loomy_live_states; test "$LV_ACTIVE" = 0
+  ' _ "$REPO"
+  printf '%s\n' '{"hooks":{"PreToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"echo user"}]}]},"statusLine":{"command":"user status"}}' >"$lv/.claude/settings.json"
+  run "project repair: old settings gain hooks once" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/project.sh"
+    loomy_project_repair "$2"; cp "$2/.claude/settings.json" "$2/settings-once.json"
+    loomy_project_repair "$2"; cmp "$2/settings-once.json" "$2/.claude/settings.json"
+  ' _ "$REPO" "$lv"
+  run "project repair: user hooks preserved" perl -MJSON::PP -e 'local $/; my $d=decode_json(<>); my $g=$d->{hooks}{PreToolUse}; die unless @$g==2 && $g->[0]{hooks}[0]{command} eq "echo user" && $g->[1]{matcher} eq "Agent|Task" && $d->{statusLine}{command} eq "user status"' "$lv/.claude/settings.json"
+  run "hooks repair: no rewrite when unchanged" bash -c '
+    source "$1/scripts/lib/hooks.sh"; ln "$2/.claude/settings.json" "$2/settings-link.json"; loomy_claude_hooks_merge "$2"
+    test "$2/settings-link.json" -ef "$2/.claude/settings.json"
+  ' _ "$REPO" "$lv"
+  run "config set watch_group request" "$LOOMY" config set watch_group request
+  run "config set watch_group model" "$LOOMY" config set watch_group model
+  fails "config set watch_group rejects unknown" 2 "$LOOMY" config set watch_group bogus
+  if command -v expect >/dev/null 2>&1; then
+    cat >"$WORK/watch.exp" <<'EXPECT'
+set timeout 15
+log_user 0
+spawn bash $env(LIVE_REPO)/scripts/loomy-status.sh --root $env(LIVE_PROJECT) --watch
+expect {
+  -re {group by request} {}
+  timeout {exit 1}
+  eof {exit 2}
+}
+send "v"
+expect {
+  -re {group by model} {}
+  timeout {exit 3}
+  eof {exit 4}
+}
+send "q"
+expect eof
+catch wait result
+exit [lindex $result 3]
+EXPECT
+    run "real terminal: v toggles without Enter and q quits" env LIVE_REPO="$REPO" LIVE_PROJECT="$demo" COLUMNS=100 LINES=30 expect "$WORK/watch.exp"
+    run "real terminal: v choice persists" bash -c 'source "$1/scripts/lib/config.sh"; test "$(loomy_config_get watch_group)" = request' _ "$REPO"
+  else ko "real terminal: expect unavailable"; fi
+  if [[ -n "$LIVE_ARTIFACTS" ]]; then mkdir -p "$LIVE_ARTIFACTS"; cp "$lv/"*-frame.txt "$LIVE_ARTIFACTS/"; fi
+  rm -f "$XDG_CONFIG_HOME/loomy/config"
+}
+# ------------------------------------------------------------------ release review regressions
+release_defects_tests() {
+  section "Release defects"
+  local rd="$WORK/release-defects" perm="$WORK/journal-private" qcfg="$WORK/model-failover-config" qhome="$WORK/model-failover-codex" from to model
+  mkdir -p "$rd/.loomy" "$rd/.claude" "$perm/.loomy" "$qcfg/loomy" "$qhome/sessions"
+  printf -- '---\nname: Review\nai_mode: SOLO\nai_lead: claude\nbudget: equilibre\n---\n' >"$rd/.loomy/brief.md"
+  cp "$rd/.loomy/brief.md" "$perm/.loomy/brief.md"
+  printf 'shared ignore\n' >"$rd/target"; chmod 640 "$rd/target"; ln -s target "$rd/.gitignore"
+  run "gitignore repair refuses symlink" bash -c '
+    source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"
+    test "$LP_GI_CHANGED" = 0 && test -L "$2/.gitignore" && test "$(cat "$2/target")" = "shared ignore" || exit 1
+    perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0640'\'' "$2/target"
+  ' _ "$REPO" "$rd"
+  run "journal created private under umask 022" bash -c '
+    umask 022; source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"request\""
+    perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0700 && ((stat($ARGV[1]))[2]&0777)==0600'\'' "$2/.loomy/logs" "$2/.loomy/logs/events.jsonl"
+  ' _ "$REPO" "$perm"
+  chmod 755 "$perm/.loomy/logs"; chmod 644 "$perm/.loomy/logs/events.jsonl"
+  run "fast prompt tightens existing journal permissions" bash -c '
+    umask 022; printf "%s" "{\"session_id\":\"private\",\"prompt\":\"secret excerpt\"}" | bash "$1/scripts/loomy-context.sh" --root "$2" --hook prompt
+    perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0700 && ((stat($ARGV[1]))[2]&0777)==0600'\'' "$2/.loomy/logs" "$2/.loomy/logs/events.jsonl"
+    grep -q "secret excerpt" "$2/.loomy/logs/events.jsonl"
+  ' _ "$REPO" "$perm"
+  run "fast prompt creates private journal" bash -c '
+    umask 022; printf "%s" "{\"prompt\":\"first request\"}" | bash "$1/scripts/loomy-context.sh" --root "$2" --hook prompt
+    perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0700 && ((stat($ARGV[1]))[2]&0777)==0600'\'' "$2/.loomy/logs" "$2/.loomy/logs/events.jsonl"
+  ' _ "$REPO" "$rd"
+  run "journal writer tightens existing files and archives" bash -c '
+    umask 022; mkdir -p "$2/.loomy/logs/archive"; echo old >"$2/.loomy/logs/archive/events-2020-01.jsonl"
+    chmod 755 "$2/.loomy/logs" "$2/.loomy/logs/archive"; chmod 644 "$2/.loomy/logs/events.jsonl"
+    source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"request\""
+    perl -e '\''for (@ARGV) { die unless ((stat($_))[2]&0777)==(-d $_ ? 0700 : 0600) }'\'' "$2/.loomy/logs" "$2/.loomy/logs/events.jsonl" "$2/.loomy/logs/archive" "$2/.loomy/logs/archive/events-2020-01.jsonl"
+  ' _ "$REPO" "$perm"
+  run "prompt and journal refuse linked file, directory and metadata without chmod of targets" bash -c '
+    source "$1/scripts/lib/journal.sh"; umask 022
+    for kind in file directory metadata archive parent; do
+      p="$2/link-$kind"; mkdir -p "$p/.loomy/logs" "$p/target-dir"; cp "$2/.loomy/brief.md" "$p/.loomy/brief.md"
+      echo untouched >"$p/target"; chmod 644 "$p/target"; chmod 755 "$p/target-dir"
+      case "$kind" in
+        file) ln -s "$p/target" "$p/.loomy/logs/events.jsonl" ;;
+        directory) rmdir "$p/.loomy/logs"; ln -s "$p/target-dir" "$p/.loomy/logs" ;;
+        metadata) ln -s "$p/target" "$p/.loomy/logs/month" ;;
+        archive) ln -s "$p/target-dir" "$p/.loomy/logs/archive" ;;
+        parent) mv "$p/.loomy" "$p/target-dir/loomy"; ln -s "$p/target-dir/loomy" "$p/.loomy" ;;
+      esac
+      ai_journal_write "$p" "\"type\":\"request\""
+      printf "%s" "{\"prompt\":\"must not write\"}" | bash "$1/scripts/loomy-context.sh" --root "$p" --hook prompt
+      test "$(cat "$p/target")" = untouched || exit 1
+      perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0644 && ((stat($ARGV[1]))[2]&0777)==0755'\'' "$p/target" "$p/target-dir" || exit 1
+      test ! -e "$p/target-dir/events.jsonl" || exit 1
+    done
+  ' _ "$REPO" "$perm"
+  run "same-role agents reverse finish with stable identities, tasks, durations and no duplicate" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
+    ai_journal_agent_start "$2" '\''{"session_id":"reverse","tool_use_id":"t1","tool_input":{"subagent_type":"developer","description":"first task","run_in_background":true}}'\'' $$
+    ai_journal_agent_start "$2" '\''{"session_id":"reverse","tool_use_id":"t2","tool_input":{"subagent_type":"developer","description":"second task","run_in_background":true}}'\'' $$
+    perl -MJSON::PP -MPOSIX=strftime -i -pe '\''my $d=decode_json($_); if (($d->{type}//"") eq "delegation_start") {$d->{ts}=strftime("%Y-%m-%dT%H:%M:%SZ",gmtime(time-($d->{id} eq "t1" ? 100 : 30))); $_=encode_json($d)."\n"}'\'' "$2/.loomy/logs/events.jsonl"
+    for n in 1 2; do ai_journal_agent_return "$2" "{\"session_id\":\"reverse\",\"tool_use_id\":\"t$n\",\"tool_response\":{\"agentId\":\"a$n\",\"isAsync\":true}}"; done
+    for n in 2 2; do ai_journal_agent_stop "$2" '\''{"session_id":"reverse","agent_type":"developer","agent_id":"a2"}'\'' 0 "STATUS: done" & done
+    wait
+    for n in 2 1 2; do ai_journal_agent_stop "$2" "{\"session_id\":\"reverse\",\"agent_type\":\"developer\",\"agent_id\":\"a$n\"}" 0 "STATUS: done"; done
+    ai_journal_agent_return "$2" '\''{"session_id":"reverse","tool_use_id":"t2","tool_response":{"agentId":"a2"}}'\''
+    perl -MJSON::PP -e '\''my @e=grep { $_->{type} eq "delegation" && ($_->{session}//"") eq "reverse" } map { decode_json($_) } <>; die unless @e==2 && $e[0]{id} eq "t2" && $e[0]{task} eq "second task" && $e[1]{id} eq "t1" && $e[1]{task} eq "first task"; for (@e) { my $want=$_->{id} eq "t1" ? 100 : 30; die unless $_->{duration_s}>=$want && $_->{duration_s}<$want+10 && $_->{outcome} eq "done" }'\'' "$2/.loomy/logs/events.jsonl"
+  ' _ "$REPO" "$rd"
+  run "stop before return waits for identity, foreground fallback and background launch stay distinct" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
+    for id in pending foreground background failed async; do
+      bg=false; test "$id" = background && bg=true
+      ai_journal_agent_start "$2" "{\"session_id\":\"fallback\",\"tool_use_id\":\"$id\",\"tool_input\":{\"subagent_type\":\"developer\",\"description\":\"$id task\",\"run_in_background\":$bg}}" $$
+    done
+    ai_journal_agent_stop "$2" '\''{"session_id":"fallback","agent_type":"developer","agent_id":"unmapped"}'\'' 0 "STATUS: partial"
+    ! grep -q '\''"type":"delegation".*"session":"fallback"'\'' "$2/.loomy/logs/events.jsonl" || exit 1
+    ai_journal_agent_return "$2" '\''{"session_id":"fallback","tool_use_id":"pending","tool_response":{"agentId":"unmapped","isAsync":true}}'\''
+    ai_journal_agent_return "$2" '\''{"session_id":"fallback","tool_use_id":"foreground","tool_response":{"agentId":"fg","content":[{"text":"STATUS: done"}]}}'\''
+    ai_journal_agent_return "$2" '\''{"session_id":"fallback","tool_use_id":"background","tool_response":{"agentId":"bg","isAsync":true}}'\''
+    ai_journal_agent_return "$2" '\''{"session_id":"fallback","tool_use_id":"async","tool_response":{"agentId":"auto-bg","isAsync":true}}'\''
+    printf '\''%s'\'' '\''{"session_id":"fallback","tool_use_id":"failed","tool_name":"Agent","error":"launch failed"}'\'' | bash "$1/scripts/loomy-context.sh" --root "$2" --hook agent-failure
+    ai_journal_agent_stop "$2" '\''{"session_id":"fallback","agent_type":"developer","agent_id":"fg"}'\'' 0 "STATUS: done"
+    perl -MJSON::PP -e '\''my @e=grep { $_->{type} eq "delegation" && ($_->{session}//"") eq "fallback" } map { decode_json($_) } <>; die unless @e==3; my %e=map { $_->{id}=>$_ } @e; die unless $e{pending}{outcome} eq "partial" && $e{foreground}{outcome} eq "done" && $e{failed}{status} eq "error" && !$e{background} && !$e{async}'\'' "$2/.loomy/logs/events.jsonl"
+    ai_journal_agent_stop "$2" '\''{"session_id":"fallback","agent_type":"developer","agent_id":"bg"}'\'' 0 "STATUS: done"
+    ai_journal_agent_stop "$2" '\''{"session_id":"fallback","agent_type":"developer","agent_id":"auto-bg"}'\'' 0 "STATUS: done"
+    perl -MJSON::PP -e '\''my @e=grep { $_->{type} eq "delegation" && ($_->{session}//"") eq "fallback" } map { decode_json($_) } <>; die unless @e==5'\'' "$2/.loomy/logs/events.jsonl"
+  ' _ "$REPO" "$rd"
+  printf '%s\n' '{"hooks":{"PostToolUse":[{"matcher":"Read","hooks":[{"type":"command","command":"echo user"}]}]},"statusLine":{"command":"user status"}}' >"$rd/.claude/settings.json"
+  chmod 640 "$rd/.claude/settings.json"
+  run "repair migrates completion hooks once, settings style/mode and user hooks preserved" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/project.sh"
+    loomy_project_repair "$2"; cp "$2/.claude/settings.json" "$2/settings-first"
+    loomy_project_repair "$2"; cmp "$2/settings-first" "$2/.claude/settings.json" || exit 1
+    perl -MJSON::PP -e '\''local $/; my $p=shift; open my $f,"<",$p or die; my $s=<$f>; my $d=decode_json($s); die unless ((stat($p))[2]&0777)==0640 && $s =~ /^  "hooks": \{/m && $d->{statusLine}{command} eq "user status"; my $g=$d->{hooks}{PostToolUse}; die unless @$g==2 && $g->[0]{hooks}[0]{command} eq "echo user" && $g->[1]{matcher} eq "Agent|Task"; for my $event (qw(PostToolUse PostToolUseFailure)) { die unless scalar(grep { $_->{matcher} eq "Agent|Task" } @{$d->{hooks}{$event}})==1 }'\'' "$2/.claude/settings.json"
+  ' _ "$REPO" "$rd"
+  # CLI doubles only, with isolated subscription quotas: the requested model is substituted by the destination routing.
+  printf 'plan_claude=pro\nplan_codex=business\n' >"$qcfg/loomy/config"
+  for from in codex claude; do
+    if [[ "$from" == codex ]]; then
+      to=claude; model=gpt-6-astra
+      printf '{"type":"event_msg","payload":{"rate_limits":{"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >"$qhome/sessions/r.jsonl"
+      printf 'five_hour_pct=20\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
+    else
+      to=codex; model=opus
+      printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' "$(( $(date +%s) + 3600 ))" >"$qhome/sessions/r.jsonl"
+      printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
+    fi
+    : >"$rd/.loomy/logs/events.jsonl"
+    run "$from model-only quota failover" env XDG_CONFIG_HOME="$qcfg" CODEX_HOME="$qhome" bash -c 'cd "$1"; "$2" delegate "$3" reviewer --model "$4" "model-only request"' _ "$rd" "$LOOMY" "$from" "$model"
+    has "$from failover banner explains requested model and actual destination" "requested \($model\)"
+    run "$from failover preserves requested metadata in both events" perl -MJSON::PP -e '
+      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die; my @e=map { decode_json($_) } <$f>; die unless @e==2;
+      for (@e) { die unless $_->{requested} && $_->{requested_model} eq $model && $_->{family} eq $family && $_->{model} ne $model }
+    ' "$rd/.loomy/logs/events.jsonl" "$model" "$to"
+  done
+}
+if [[ "${1:-}" == --section && "${2:-}" == 'Release defects' ]]; then
+  release_defects_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+
+if [[ "${1:-}" == --section && "${2:-}" == 'Delegation options' ]]; then
+  delegation_options_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+live_view_tests
+if [[ "${1:-}" == --section && "${2:-}" == 'Live view' ]]; then
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+
+release_defects_tests
 
 # ------------------------------------------------------------------ syntaxe
 section "Syntax and static analysis"
@@ -187,7 +602,7 @@ done
 ok "control plane files copied"
 file_has "brief: complete front matter" "$PROJ/.loomy/brief.md" "^push_after_commit: "
 file_has "initial phase: discovery" "$PROJ/.loomy/state" "^phase=discover$"
-file_has ".gitignore: log excluded" "$PROJ/.gitignore" "^\.loomy/logs/$"
+file_has ".gitignore: managed history block installed" "$PROJ/.gitignore" "^# >>> Loomy: local history and work files, never versioned$"
 has "next step: terminal tracking" "loomy watch|loomy-status.sh --watch"
 if [[ ! -f "$XDG_CONFIG_HOME/loomy/config" ]] || ! grep -q '^plan_' "$XDG_CONFIG_HOME/loomy/config"; then ok "--yes saves no plan"; else ko "--yes saved a plan"; fi
 fails "second init outside a terminal: guides without changing anything" 1 "$LOOMY" init "$PROJ" --no-wizard
@@ -541,11 +956,11 @@ run "sync of the first machine after the second" "$LOOMY" privacy --root "$PV" s
 # A tracked AI file that disappears (START.md archived at the end of the setup): its deletion must be committed.
 echo "# start" >"$PV/START.md"
 run "privacy sync with START.md" "$LOOMY" privacy --root "$PV" sync
-git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" ls-files >"$OUT" 2>&1
 has "sync: START.md tracked by the private repository" "^START.md$"
 mkdir -p "$PV/.loomy/docs/bootstrap" && mv "$PV/START.md" "$PV/.loomy/docs/bootstrap/START.md"
 run "privacy sync after START.md was archived" "$LOOMY" privacy --root "$PV" sync
-git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" ls-files >"$OUT" 2>&1
 hasnt "sync: removed START.md no longer tracked" "^START.md$"
 has "sync: archived START.md tracked" "^.loomy/docs/bootstrap/START.md$"
 [[ -z "$(git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" diff --name-only)" ]] && ok "sync: private repository working tree clean" || ko "sync: private repository still dirty"
@@ -555,6 +970,353 @@ fails "sync outside private mode refused" 1 "$LOOMY" privacy --root "$PV" sync
 # Project in a subfolder: patterns anchored on the subfolder.
 run "privacy local in a subfolder" "$LOOMY" privacy --root "$MONO/apps/site" local
 file_has "subfolder: prefixed pattern" "$MONO/.git/info/exclude" "^/apps/site/AGENTS.md$"
+
+# ------------------------------------------------------------------ history and work files stay out of Git
+section "History never versioned"
+
+# A fresh project in Git gets the managed block; only its history and local work files are ignored.
+HIST="$WORK/history-git"; mkdir -p "$HIST"; git -C "$HIST" init -q
+run "history: init in a Git repository" "$LOOMY" init "$HIST" --yes --no-clipboard
+HIST_BEGIN="# >>> Loomy: local history and work files, never versioned"
+HIST_END="# <<< Loomy"
+if [[ "$(grep -Fxc "$HIST_BEGIN" "$HIST/.gitignore")" == 1 && "$(grep -Fxc "$HIST_END" "$HIST/.gitignore")" == 1 ]]; then
+  ok "history: managed block markers appear once"
+else
+  ko "history: managed block markers missing or duplicated"
+fi
+awk -v begin="$HIST_BEGIN" -v end="$HIST_END" '$0 == begin { inside = 1 } inside { print } $0 == end { inside = 0 }' \
+  "$HIST/.gitignore" >"$WORK/history-block.txt"
+bad=""
+for p in .loomy/logs/ .loomy/memory/ .loomy/docs/HANDOFF.md .loomy/tasks/ .loomy/audits/ .loomy/assessment.md; do
+  grep -qxF "$p" "$WORK/history-block.txt" || bad="$bad $p"
+done
+if [[ -z "$bad" ]]; then ok "history: managed block covers logs, memory, handoff, tasks, audits and assessment"; else ko "history: missing ignore patterns:$bad"; fi
+mkdir -p "$HIST/.loomy/logs" "$HIST/.loomy/memory" "$HIST/.loomy/tasks" "$HIST/.loomy/audits/a" "$HIST/.loomy/docs"
+touch "$HIST/.loomy/logs/x" "$HIST/.loomy/memory/STATE.md" "$HIST/.loomy/tasks/t.md" \
+  "$HIST/.loomy/audits/a/r.md" "$HIST/.loomy/docs/HANDOFF.md"
+git -C "$HIST" status --porcelain --ignored --untracked-files=all >"$OUT" 2>&1
+bad=""
+for p in .loomy/logs/x .loomy/memory/STATE.md .loomy/tasks/t.md .loomy/audits/a/r.md .loomy/docs/HANDOFF.md; do
+  grep -qxF "!! $p" "$OUT" || bad="$bad $p"
+done
+if [[ -z "$bad" ]]; then ok "history: logs, memory, tasks, audits and HANDOFF show ignored in Git status"; else ko "history: files not ignored in Git status:$bad"; fi
+if grep -qxF '?? .loomy/docs/AI_WORKFLOW.md' "$OUT" && grep -qxF '?? .loomy/brief.md' "$OUT"; then
+  ok "history: AI_WORKFLOW.md and brief.md remain visible in Git status"
+else
+  ko "history: AI_WORKFLOW.md or brief.md is missing or ignored in Git status"
+fi
+
+# No Git repository and no pre-existing .gitignore: syncing must leave the file absent.
+source "$REPO/scripts/lib/project.sh"
+HIST_NG="$WORK/history-no-git"; mkdir -p "$HIST_NG"
+loomy_gitignore_sync "$HIST_NG"
+if [[ "$LP_GI_CHANGED" == 0 && ! -e "$HIST_NG/.gitignore" ]]; then
+  ok "history: no .gitignore created outside Git"
+else
+  ko "history: .gitignore created outside Git"
+fi
+
+# Upgrade the older one-line rules without touching user rules; the operation is idempotent and repairs edits.
+HIST_UP="$WORK/history-upgrade"; mkdir -p "$HIST_UP"; git -C "$HIST_UP" init -q
+cat >"$HIST_UP/.gitignore" <<'EOF'
+node_modules/
+
+# Loomy: local activity log
+.loomy/logs/
+
+# Loomy: delegation results (shared memory, may hold sensitive findings)
+.loomy/memory/delegations/
+EOF
+loomy_gitignore_sync "$HIST_UP"
+if [[ "$LP_GI_CHANGED" == 1 && "$(grep -Fxc "$HIST_BEGIN" "$HIST_UP/.gitignore")" == 1 \
+  && "$(grep -Fxc "$HIST_END" "$HIST_UP/.gitignore")" == 1 ]] \
+  && grep -qxF 'node_modules/' "$HIST_UP/.gitignore" \
+  && [[ "$(grep -Fxc '.loomy/logs/' "$HIST_UP/.gitignore")" == 1 ]] \
+  && ! grep -qF '# Loomy: local activity log' "$HIST_UP/.gitignore" \
+  && ! grep -qF '# Loomy: delegation results (shared memory, may hold sensitive findings)' "$HIST_UP/.gitignore" \
+  && ! grep -qxF '.loomy/memory/delegations/' "$HIST_UP/.gitignore"; then
+  ok "history: upgrade removes legacy lines, keeps node_modules and installs one block"
+else
+  ko "history: upgrade did not preserve or replace the old rules correctly"
+fi
+cp "$HIST_UP/.gitignore" "$WORK/history-upgrade.before"
+loomy_gitignore_sync "$HIST_UP"
+if [[ "$LP_GI_CHANGED" == 0 ]] && cmp -s "$WORK/history-upgrade.before" "$HIST_UP/.gitignore"; then
+  ok "history: second sync leaves .gitignore unchanged"
+else
+  ko "history: second sync changed .gitignore or reported a change"
+fi
+sed 's#^\.loomy/audits/$#.loomy/audits-edited/#' "$HIST_UP/.gitignore" >"$WORK/history-upgrade.edited"
+mv "$WORK/history-upgrade.edited" "$HIST_UP/.gitignore"
+loomy_gitignore_sync "$HIST_UP"
+if [[ "$LP_GI_CHANGED" == 1 ]] && grep -qxF '.loomy/audits/' "$HIST_UP/.gitignore" \
+  && ! grep -qxF '.loomy/audits-edited/' "$HIST_UP/.gitignore"; then
+  ok "history: edited managed block is rewritten"
+else
+  ko "history: edited managed block was not restored"
+fi
+
+# The doctor reports tracked history without changing it; --fix removes only index entries and keeps files.
+HIST_D="$WORK/history-doctor"; mkdir -p "$HIST_D"; git -C "$HIST_D" init -q
+run "history: doctor fixture initialized" "$LOOMY" init "$HIST_D" --yes --no-clipboard
+mkdir -p "$HIST_D/.loomy/logs" "$HIST_D/.loomy/memory"
+touch "$HIST_D/.loomy/memory/STATE.md" "$HIST_D/.loomy/logs/events.jsonl" "$HIST_D/.loomy/task.state"
+git -C "$HIST_D" add -f -- .loomy/memory/STATE.md .loomy/logs/events.jsonl .loomy/task.state \
+  && git -C "$HIST_D" commit -qm "track local history for doctor test"
+"$LOOMY" doctor --root "$HIST_D" >"$OUT" 2>&1 || true
+has "history: doctor reports tracked history files" "Loomy history file\(s\) tracked by Git"
+if [[ "$(git -C "$HIST_D" ls-files -- .loomy/memory/STATE.md .loomy/logs/events.jsonl .loomy/task.state | wc -l | tr -d ' ')" == 3 ]]; then
+  ok "history: doctor without --fix keeps files tracked"
+else
+  ko "history: doctor without --fix untracked files"
+fi
+"$LOOMY" doctor --fix --root "$HIST_D" >"$OUT" 2>&1 || true
+if [[ -z "$(git -C "$HIST_D" ls-files -- .loomy/memory/STATE.md .loomy/logs/events.jsonl .loomy/task.state)" \
+  && -f "$HIST_D/.loomy/memory/STATE.md" && -f "$HIST_D/.loomy/logs/events.jsonl" && -f "$HIST_D/.loomy/task.state" ]]; then
+  ok "history: doctor --fix removes tracked history from the index and keeps files"
+else
+  ko "history: doctor --fix did not untrack the files or removed them from disk"
+fi
+git -C "$HIST_D" status --porcelain -- .loomy/memory/STATE.md .loomy/logs/events.jsonl .loomy/task.state >"$OUT" 2>&1
+bad=""
+for p in .loomy/memory/STATE.md .loomy/logs/events.jsonl .loomy/task.state; do
+  grep -qxF "D  $p" "$OUT" || bad="$bad $p"
+done
+if [[ -z "$bad" ]]; then ok "history: doctor --fix shows index deletions in Git status"; else ko "history: index deletions missing from Git status:$bad"; fi
+
+# Reuse the private-mode project and local bare origin from the AI files visibility section. When this section is
+# run by itself, seed the same small fixture here.
+if [[ -z "${PV:-}" || ! -d "${PV:-}/.loomy/ai.git" || -z "${BARE:-}" || ! -d "${BARE:-}" ]]; then
+  PV="$WORK/history-private"; BARE="$WORK/history-private-origin.git"
+  mkdir -p "$PV"; git -C "$PV" init -q
+  run "history: private fixture initialized" "$LOOMY" init "$PV" --yes --no-clipboard
+  git -C "$PV" add -A && git -C "$PV" commit -qm "initialize private history fixture"
+  git init --bare -q -b main "$BARE"
+  run "history: private fixture origin created" "$LOOMY" privacy --root "$PV" private --remote "$BARE"
+fi
+mkdir -p "$PV/.loomy/memory/delegations" "$PV/.loomy/logs" "$PV/.loomy/tasks" "$PV/.loomy/docs"
+touch "$PV/.loomy/memory/STATE.md" "$PV/.loomy/docs/HANDOFF.md" "$PV/.loomy/logs/events.jsonl" \
+  "$PV/.loomy/memory/delegations/result.md" "$PV/.loomy/tasks/t.md"
+run "history: private fixture synced" "$LOOMY" privacy --root "$PV" private --remote "$BARE"
+git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+if grep -qxF '.loomy/memory/STATE.md' "$OUT" && grep -qxF '.loomy/docs/HANDOFF.md' "$OUT"; then
+  ok "history: private sync force-adds STATE.md and HANDOFF.md"
+else
+  ko "history: private sync missed STATE.md or HANDOFF.md"
+fi
+if grep -qE '^\.loomy/(logs/|memory/delegations/|tasks/|ai\.git|state$)' "$OUT"; then
+  ko "history: private sync tracks a history or work file"
+else
+  ok "history: private sync omits logs, delegations, tasks, companion and state"
+fi
+printf 'previously tracked history\n' >"$PV/.loomy/logs/old.jsonl"
+git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" add -f -- .loomy/logs/old.jsonl \
+  && git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" commit -qm "track legacy history for sync test"
+if git --git-dir="$PV/.loomy/ai.git" --work-tree="$PV" ls-files -- .loomy/logs/old.jsonl | grep -qxF '.loomy/logs/old.jsonl'; then
+  ok "history: legacy history is tracked before the next private sync"
+else
+  ko "history: legacy history fixture was not tracked"
+fi
+run "history: private sync after legacy history was tracked" "$LOOMY" privacy --root "$PV" sync
+git --git-dir="$PV/.loomy/ai.git" ls-files >"$OUT" 2>&1
+if ! grep -qxF '.loomy/logs/old.jsonl' "$OUT" && [[ -f "$PV/.loomy/logs/old.jsonl" ]]; then
+  ok "history: private sync drops previously tracked history and keeps it on disk"
+else
+  ko "history: private sync kept the legacy history tracked or removed the file"
+fi
+
+# Loomy's own checkout keeps all orchestration files outside its versioned tree.
+git -C "$REPO" ls-files >"$OUT" 2>&1
+if ! grep -qE '^(\.loomy/|\.claude/|\.codex/|AGENTS\.md$|CLAUDE\.md$|START\.md$)' "$OUT"; then
+  ok "history: Loomy repository tracks no private AI files"
+else
+  ko "history: Loomy repository tracks an AI file ($(grep -E '^(\.loomy/|\.claude/|\.codex/|AGENTS\.md$|CLAUDE\.md$|START\.md$)' "$OUT" | head -1))"
+fi
+
+section "History block hardening"
+
+HIST_HARD_BEGIN="# >>> Loomy: local history and work files, never versioned"
+HIST_HARD_END="# <<< Loomy"
+bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_history_block' \
+  _ "$REPO" >"$WORK/history-hardening.expected-block"
+
+# An orphan BEGIN marker and surrounding user rules survive; a complete managed block is appended.
+HIST_HARD_MISSING="$WORK/history-missing-end"; mkdir -p "$HIST_HARD_MISSING"; git -C "$HIST_HARD_MISSING" init -q
+printf 'node_modules/\n%s\n.env\nfoo\n' "$HIST_HARD_BEGIN" >"$HIST_HARD_MISSING/.gitignore"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_MISSING" >"$OUT" 2>&1; then
+  has "history block: missing END marker is repaired" '^1$'
+else
+  ko "history block: missing END marker sync failed"
+fi
+file_has "history block: missing END keeps node_modules" "$HIST_HARD_MISSING/.gitignore" '^node_modules/$'
+file_has "history block: missing END keeps .env" "$HIST_HARD_MISSING/.gitignore" '^\.env$'
+file_has "history block: missing END keeps foo" "$HIST_HARD_MISSING/.gitignore" '^foo$'
+HIST_HARD_BLOCK_LINE="$(grep -nFx "$HIST_HARD_BEGIN" "$HIST_HARD_MISSING/.gitignore" | tail -n 1 | cut -d: -f1)"
+tail -n "+$HIST_HARD_BLOCK_LINE" "$HIST_HARD_MISSING/.gitignore" >"$WORK/history-missing-end.actual"
+if cmp -s "$WORK/history-hardening.expected-block" "$WORK/history-missing-end.actual"; then
+  ok "history block: missing END appends a complete block"
+else
+  ko "history block: missing END appended an incomplete block"
+fi
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_MISSING" >"$OUT" 2>&1; then
+  has "history block: missing END repair is idempotent" '^0$'
+else
+  ko "history block: second missing END sync failed"
+fi
+
+# A negation after a valid block moves ahead of it, so the managed ignore rule wins.
+HIST_HARD_NEGATION="$WORK/history-negation"; mkdir -p "$HIST_HARD_NEGATION"; git -C "$HIST_HARD_NEGATION" init -q
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"' \
+  _ "$REPO" "$HIST_HARD_NEGATION" >"$OUT" 2>&1; then
+  ok "history block: negation fixture synchronized"
+else
+  ko "history block: negation fixture sync failed"
+fi
+printf '%s\n' '!.loomy/audit.md' >>"$HIST_HARD_NEGATION/.gitignore"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_NEGATION" >"$OUT" 2>&1; then
+  has "history block: negation after the block triggers repair" '^1$'
+else
+  ko "history block: negation repair sync failed"
+fi
+HIST_HARD_NEG_LINE="$(grep -nFx '!.loomy/audit.md' "$HIST_HARD_NEGATION/.gitignore" | cut -d: -f1)"
+HIST_HARD_NEG_BEGIN="$(grep -nFx "$HIST_HARD_BEGIN" "$HIST_HARD_NEGATION/.gitignore" | tail -n 1 | cut -d: -f1)"
+if [[ "$HIST_HARD_NEG_LINE" -lt "$HIST_HARD_NEG_BEGIN" \
+  && "$(tail -n 1 "$HIST_HARD_NEGATION/.gitignore")" == "$HIST_HARD_END" ]] \
+  && git -C "$HIST_HARD_NEGATION" check-ignore -q -- .loomy/audit.md; then
+  ok "history block: negation precedes the final block and audit.md stays ignored"
+else
+  ko "history block: negation still overrides the managed ignore rule"
+fi
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_NEGATION" >"$OUT" 2>&1; then
+  has "history block: negation repair is idempotent" '^0$'
+else
+  ko "history block: third negation sync failed"
+fi
+
+# A user line after the block is retained and the block is moved back to the end.
+HIST_HARD_TRAILING="$WORK/history-trailing-line"; mkdir -p "$HIST_HARD_TRAILING"; git -C "$HIST_HARD_TRAILING" init -q
+cp "$WORK/history-hardening.expected-block" "$HIST_HARD_TRAILING/.gitignore"
+printf 'z/\n' >>"$HIST_HARD_TRAILING/.gitignore"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_TRAILING" >"$OUT" 2>&1; then
+  has "history block: trailing user line moves the block" '^1$'
+else
+  ko "history block: trailing user line sync failed"
+fi
+HIST_HARD_TRAILING_BEGIN="$(grep -nFx "$HIST_HARD_BEGIN" "$HIST_HARD_TRAILING/.gitignore" | tail -n 1 | cut -d: -f1)"
+HIST_HARD_Z_LINE="$(grep -nFx 'z/' "$HIST_HARD_TRAILING/.gitignore" | cut -d: -f1)"
+tail -n "+$HIST_HARD_TRAILING_BEGIN" "$HIST_HARD_TRAILING/.gitignore" >"$WORK/history-trailing-line.actual"
+if [[ "$HIST_HARD_Z_LINE" -lt "$HIST_HARD_TRAILING_BEGIN" \
+  && "$(tail -n 1 "$HIST_HARD_TRAILING/.gitignore")" == "$HIST_HARD_END" ]] \
+  && cmp -s "$WORK/history-hardening.expected-block" "$WORK/history-trailing-line.actual"; then
+  ok "history block: z/ is preserved before the complete block at EOF"
+else
+  ko "history block: z/ was lost or the block is not last"
+fi
+
+# Git glob pathspecs recurse only where the managed patterns intend them to.
+HIST_HARD_GLOB="$WORK/history-glob-pathspecs"; mkdir -p "$HIST_HARD_GLOB/.loomy/docs" "$HIST_HARD_GLOB/.loomy/logs"
+git -C "$HIST_HARD_GLOB" init -q
+touch "$HIST_HARD_GLOB/.loomy/docs/tutorial.state" "$HIST_HARD_GLOB/.loomy/state" \
+  "$HIST_HARD_GLOB/.loomy/logs/x" "$HIST_HARD_GLOB/.loomy/a.state"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"' \
+  _ "$REPO" "$HIST_HARD_GLOB" >"$OUT" 2>&1; then
+  ok "history block: glob fixture synchronized"
+else
+  ko "history block: glob fixture sync failed"
+fi
+run "history block: glob fixture files staged" git -C "$HIST_HARD_GLOB" add -f -- \
+  .loomy/docs/tutorial.state .loomy/state .loomy/logs/x .loomy/a.state
+run "history block: glob fixture committed" git -C "$HIST_HARD_GLOB" commit -qm "track history glob fixtures"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_history_tracked "$2"' \
+  _ "$REPO" "$HIST_HARD_GLOB" >"$OUT" 2>&1; then
+  if [[ "$(cat "$OUT")" == $'.loomy/a.state\n.loomy/logs/x\n.loomy/state' ]]; then
+    ok "history block: glob pathspecs report only intended tracked paths"
+  else
+    ko "history block: glob pathspecs returned unexpected tracked paths"
+  fi
+else
+  ko "history block: glob pathspec lookup failed"
+fi
+
+# Temporary files are ignored at the Loomy root and below it; similarly named files are not.
+HIST_HARD_TMP="$WORK/history-tmp-patterns"; mkdir -p "$HIST_HARD_TMP/.loomy/sub"; git -C "$HIST_HARD_TMP" init -q
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"' \
+  _ "$REPO" "$HIST_HARD_TMP" >"$OUT" 2>&1; then
+  ok "history block: temporary file fixture synchronized"
+else
+  ko "history block: temporary file fixture sync failed"
+fi
+touch "$HIST_HARD_TMP/.loomy/state.tmp" "$HIST_HARD_TMP/.loomy/sub/q.tmp.12" "$HIST_HARD_TMP/.loomy/tmp.x"
+run "history block: check-ignore prints temporary files" git -C "$HIST_HARD_TMP" check-ignore -- .loomy/state.tmp .loomy/sub/q.tmp.12
+has "history block: root temporary file is ignored" '^\.loomy/state\.tmp$'
+has "history block: nested suffixed temporary file is ignored" '^\.loomy/sub/q\.tmp\.12$'
+fails "history block: tmp.x is not ignored" 1 git -C "$HIST_HARD_TMP" check-ignore -q -- .loomy/tmp.x
+
+# The doctor removes tracked history from the index while keeping it on disk; a locked index must report the failure.
+HIST_HARD_DOCTOR_OK="$WORK/history-doctor-ok"; mkdir -p "$HIST_HARD_DOCTOR_OK"; git -C "$HIST_HARD_DOCTOR_OK" init -q
+run "history block: doctor success fixture initialized" "$LOOMY" init "$HIST_HARD_DOCTOR_OK" --yes --no-clipboard
+mkdir -p "$HIST_HARD_DOCTOR_OK/.loomy/logs" "$HIST_HARD_DOCTOR_OK/.loomy/memory"
+touch "$HIST_HARD_DOCTOR_OK/.loomy/logs/events.jsonl" "$HIST_HARD_DOCTOR_OK/.loomy/memory/STATE.md"
+run "history block: doctor success fixture staged" git -C "$HIST_HARD_DOCTOR_OK" add -f -- .loomy/logs/events.jsonl .loomy/memory/STATE.md
+run "history block: doctor success fixture committed" git -C "$HIST_HARD_DOCTOR_OK" commit -qm "track history for doctor success"
+"$LOOMY" doctor --fix --root "$HIST_HARD_DOCTOR_OK" >"$OUT" 2>&1 || true
+has "history block: doctor --fix reports untracked history" 'history files untracked'
+if [[ -z "$(git -C "$HIST_HARD_DOCTOR_OK" ls-files -- .loomy/logs/events.jsonl .loomy/memory/STATE.md)" \
+  && -f "$HIST_HARD_DOCTOR_OK/.loomy/logs/events.jsonl" && -f "$HIST_HARD_DOCTOR_OK/.loomy/memory/STATE.md" ]]; then
+  ok "history block: doctor --fix untracks files and keeps them on disk"
+else
+  ko "history block: doctor --fix failed to untrack files or removed them"
+fi
+
+HIST_HARD_DOCTOR_LOCK="$WORK/history-doctor-lock"; mkdir -p "$HIST_HARD_DOCTOR_LOCK"; git -C "$HIST_HARD_DOCTOR_LOCK" init -q
+run "history block: doctor lock fixture initialized" "$LOOMY" init "$HIST_HARD_DOCTOR_LOCK" --yes --no-clipboard
+mkdir -p "$HIST_HARD_DOCTOR_LOCK/.loomy/logs" "$HIST_HARD_DOCTOR_LOCK/.loomy/memory"
+touch "$HIST_HARD_DOCTOR_LOCK/.loomy/logs/events.jsonl" "$HIST_HARD_DOCTOR_LOCK/.loomy/memory/STATE.md"
+run "history block: doctor lock fixture staged" git -C "$HIST_HARD_DOCTOR_LOCK" add -f -- .loomy/logs/events.jsonl .loomy/memory/STATE.md
+run "history block: doctor lock fixture committed" git -C "$HIST_HARD_DOCTOR_LOCK" commit -qm "track history for doctor lock"
+touch "$HIST_HARD_DOCTOR_LOCK/.git/index.lock"
+"$LOOMY" doctor --fix --root "$HIST_HARD_DOCTOR_LOCK" >"$OUT" 2>&1 || true
+has "history block: doctor --fix reports history still tracked" 'still tracked by Git'
+hasnt "history block: failed doctor fix omits success message" 'history files untracked'
+rm -f "$HIST_HARD_DOCTOR_LOCK/.git/index.lock"
+
+# CRLF is preserved for both original user rules and every line in the managed block.
+HIST_HARD_CRLF="$WORK/history-crlf"; mkdir -p "$HIST_HARD_CRLF"
+printf 'a\r\nb\r\n' >"$HIST_HARD_CRLF/.gitignore"
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_CRLF" >"$OUT" 2>&1; then
+  has "history block: first CRLF sync reports a change" '^1$'
+else
+  ko "history block: first CRLF sync failed"
+fi
+if bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_gitignore_sync "$2"; printf "%s\n" "$LP_GI_CHANGED"' \
+  _ "$REPO" "$HIST_HARD_CRLF" >"$OUT" 2>&1; then
+  has "history block: second CRLF sync is idempotent" '^0$'
+else
+  ko "history block: second CRLF sync failed"
+fi
+if [[ "$(tr -d '\r' <"$HIST_HARD_CRLF/.gitignore" | grep -Fxc "$HIST_HARD_BEGIN")" == 1 ]]; then
+  ok "history block: CRLF BEGIN marker appears exactly once"
+else
+  ko "history block: CRLF BEGIN marker count is wrong"
+fi
+if awk 'substr($0, length($0), 1) != "\r" { exit 1 } END { if (NR < 2) exit 1 }' "$HIST_HARD_CRLF/.gitignore" \
+  && [[ "$(tail -c 2 "$HIST_HARD_CRLF/.gitignore" | od -An -tx1 | tr -d ' \n')" == "0d0a" ]]; then
+  ok "history block: CRLF lines keep CRLF endings through EOF"
+else
+  ko "history block: managed block does not keep CRLF endings"
+fi
+if awk 'NR == 1 && $0 != "a\r" { exit 1 } NR == 2 && $0 != "b\r" { exit 1 } END { if (NR < 2) exit 1 }' \
+  "$HIST_HARD_CRLF/.gitignore"; then
+  ok "history block: original CRLF user lines are unchanged"
+else
+  ko "history block: original CRLF user lines changed"
+fi
 
 # ------------------------------------------------------------------ session continuity
 section "Continuity (context, hooks, sessions, home)"
@@ -770,6 +1532,8 @@ if tail -1 "$J" | grep -qE '"cost_usd":[0-9]+\.[0-9]+,'; then ok "log: cost writ
 n_before="$(wc -l <"$J")"
 run "LOOMY_JOURNAL=0 turns the log off" env LOOMY_JOURNAL=0 "$LOOMY" delegate claude explorer "x"
 [[ "$(wc -l <"$J")" == "$n_before" ]] && ok "nothing written with LOOMY_JOURNAL=0" || ko "log written despite LOOMY_JOURNAL=0"
+
+delegation_options_tests
 
 section "Live tracking"
 run "status with delegations from both families" "$LOOMY" status
@@ -1728,6 +2492,12 @@ grep -q '"type":"advisor".*"model":"claude-opus-5-5","calls":1,"tokens_in":35648
 has "tree: lead agent" "LEAD AGENT"
 has "tree: every role with its model" "Executor.*gpt-6-luna"
 has "tree: session log and status line" "session log"
+TREE_OUTCOME="$WORK/tree-outcome"; mkdir -p "$TREE_OUTCOME/.loomy/logs"
+printf -- '---\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$TREE_OUTCOME/.loomy/brief.md"
+printf '{"ts":"%s","type":"delegation","id":"partial","role":"reviewer","family":"codex","model":"gpt-6.1-sol","effort":"high","status":"ok","outcome":"partial","duration_s":12}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$TREE_OUTCOME/.loomy/logs/events.jsonl"
+COLUMNS=100 LINES=40 LOOMY_TREE=list bash "$REPO/scripts/loomy-tree.sh" --root "$TREE_OUTCOME" >"$OUT" 2>&1
+has "tree: finished partial uses triangle" "△ Reviewer"
+hasnt "tree: finished partial never uses running glyph" "◐ Reviewer"
 bash "$REPO/scripts/loomy-status.sh" --root "$DW" --tree >"$OUT" 2>&1
 has "tree: shown by the status view (key t of watch)" "AGENT TREE"
 # Wide terminal: the tree is drawn as a diagram (boxes, links, routing layer, framed session log).
@@ -1739,8 +2509,8 @@ has "tree diagram: roles side by side" "│ .*executor.*│ .*│"
 has "tree diagram: back to the lead agent" "back to the lead agent"
 has "tree diagram: framed session log" "┤ session log ├"
 hasnt "tree diagram: no error" "syntax error|bad substitution|command not found"
-has "tree diagram: roles without a box grouped by model" "  [A-Z][A-Z0-9 .-]* ╌╌╌"
-has "tree diagram: each one with what it does" "· (architect|debugger|security|documenter) +(designs the plan|finds the cause|checks the risks|writes the docs)"
+hasnt "tree diagram: removed other-model list" "  [A-Z][A-Z0-9 .-]* ╌╌╌"
+hasnt "tree diagram: removed other-role actions" "· (architect|debugger|security|documenter) +(designs the plan|finds the cause|checks the risks|writes the docs)"
 hasnt "tree diagram: no bare role count when there is room" "\+[0-9]+ roles · loomy route"
 COLUMNS=216 LINES=64 bash "$REPO/scripts/loomy-tree.sh" --root "$DW" </dev/null >"$OUT" 2>&1
 hasnt "tree diagram: four role boxes at most, even in a wide window" "│ +documenter +│"
@@ -1977,7 +2747,7 @@ others=""; for f in "$REPO"/scripts/*.sh; do case "${f##*/}" in loomy-*) ;; *) o
 SM="$WORK/memoire"; fresh_init "$SM"
 printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"
 [[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
-grep -qxF '.loomy/memory/delegations/' "$SM/.gitignore" && ok "memory: delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
+grep -qxF '.loomy/memory/' "$SM/.gitignore" && ok "memory: shared state and delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
 (cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
 MF="$(ls "$SM"/.loomy/memory/delegations/*-executor-*.md 2>/dev/null | head -1)"
 [[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/delegations" 2>&1))"

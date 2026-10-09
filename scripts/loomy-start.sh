@@ -9,6 +9,80 @@
 #   loomy-start.sh --app        opens the session in the desktop app (Claude: on this folder, prompt filled in; Codex:
 #                            prompt filled in) and live tracking in a terminal window (loomy config set start_in app)
 #   loomy-start.sh --root <dir> works on another project folder
+
+# Private watch launcher; deletes itself when started.
+watch_script() {
+  local f until=""
+  f="$(mktemp "${TMPDIR:-/tmp}/loomy-watch-XXXXXXXX")" || return 1
+  [[ -n "${1:-}" ]] && until=" --until-exit $1"
+  printf '#!/bin/bash\nrm -f -- "$0"\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane%s\n' "$SCRIPT_DIR/loomy-status.sh" "$ROOT" "$until" >"$f"
+  chmod u+x "$f"; echo "$f"
+}
+
+# url_encode <text>: percent-encoded for a URL query.
+url_encode() {
+  perl -e 'use bytes; my $s=$ARGV[0]; $s =~ s/([^A-Za-z0-9_.~-])/sprintf("%%%02X",ord($1))/ge; print $s' "$1"
+}
+
+# open_in_app: the desktop app on this project (deep links the apps declare themselves), then live tracking in a
+# Terminal window. The app can't open its own terminal panel on loomy watch: the window stands next to it.
+open_in_app() {
+  local url w
+  if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
+  local ep ef
+  ep="$(url_encode "$PROMPT")"; ef="$(url_encode "$ROOT")"
+  [[ -n "$ep" && -n "$ef" ]] || { ui_warn "$(t "The app link could not be built")" "$(t "opening in the terminal")"; return 1; }
+  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$ep"
+  else url="claude://code/new?folder=$ef&q=$ep"; fi
+  if ! open "$url" >/dev/null 2>&1; then ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1; fi
+  ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
+  [[ "$TOOL" == codex ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
+  local wt="$WATCH"
+  [[ -z "$wt" && "${LOOMY_START_WATCH:-}" == "0" ]] && wt=0
+  [[ -z "$wt" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && wt=0 || wt=1; }
+  if (( wt )) && command -v osascript >/dev/null 2>&1; then
+    w="$(watch_script)"
+    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
+    else ui_info "$(t "live tracking: loomy watch")"; fi
+  fi
+  return 0
+}
+
+# Resolution is separate from opening so watch can test it without launching any app.
+loomy_orchestrator_target() {
+  local app
+  ai_detect_env "$1"; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
+  LOOMY_OPEN_TOOL="$R_FAMILY"; LOOMY_OPEN_TARGET=terminal; LOOMY_OPEN_APP=""
+  [[ "$(uname -s)" == Darwin ]] || return 0
+  if [[ "$LOOMY_OPEN_TOOL" == claude ]]; then
+    if open -Ra Claude >/dev/null 2>&1; then LOOMY_OPEN_APP=Claude; fi
+  else
+    for app in Codex ChatGPT; do if open -Ra "$app" >/dev/null 2>&1; then LOOMY_OPEN_APP="$app"; break; fi; done
+  fi
+  [[ -z "$LOOMY_OPEN_APP" ]] || LOOMY_OPEN_TARGET=app
+  return 0
+}
+
+# Always launch outside the watch pane. The new terminal reuses start's watch split and resume logic.
+loomy_open_orchestrator() {
+  local root="$1" command launch
+  loomy_orchestrator_target "$root"
+  if [[ "$LOOMY_OPEN_TARGET" == app ]]; then
+    if bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only; then return 0; fi
+  fi
+  printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
+  if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
+    tmux new-window -c "$root" "$command"
+  elif [[ "$(uname -s)" == Darwin ]] && command -v osascript >/dev/null 2>&1; then
+    launch="$(mktemp "${TMPDIR:-/tmp}/loomy-open-XXXXXXXX")" || return 1
+    printf '#!/bin/bash\nrm -f -- "$0"\nexec %s\n' "$command" >"$launch"
+    if ! osascript -e "tell application \"Terminal\" to do script \"/bin/bash $launch\"" >/dev/null 2>&1; then rm -f "$launch"; return 1; fi
+  else
+    return 1
+  fi
+}
+if [[ "${1:-}" == --open-library ]]; then return 0; fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +101,7 @@ source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/failover.sh
 source "$SCRIPT_DIR/lib/failover.sh"
 
-ROOT=""; MODE="menu"; WATCH=""
+ROOT=""; MODE="menu"; WATCH=""; APP_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
@@ -35,6 +109,8 @@ while [[ $# -gt 0 ]]; do
     --new|-n) MODE="new" ;;
     --print|-p) MODE="print" ;;
     --app|-a) MODE="app" ;;
+    --app-only) MODE="app"; WATCH=0; APP_ONLY=1 ;;
+    --orchestrator) MODE="orchestrator" ;;
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
     -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
@@ -45,6 +121,7 @@ done
 # Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
+if [[ "$MODE" == orchestrator ]]; then loomy_open_orchestrator "$ROOT"; exit $?; fi
 # A repository with only an audit (loomy audit), no Loomy project: start resumes the audit.
 if [[ ! -f "$BRIEF" && -f "$ROOT/.loomy/audit.md" ]]; then exec bash "$SCRIPT_DIR/loomy-audit.sh" --root "$ROOT" --resume; fi
 if [[ ! -f "$BRIEF" ]]; then
@@ -154,15 +231,7 @@ fi
 # Side by side when the terminal is wide (≥ 160 columns), otherwise one above the other (session on top, 2/3).
 # Tracking closes by itself when the agent session ends (--until-exit).
 # Small tracking launch script: it deletes itself as soon as it starts (nothing piles up in the temp folder).
-# watch_script [agent pid]: creates the script with mktemp (random name, private, never an existing file or link).
-watch_script() {
-  local f until=""
-  f="$(mktemp "${TMPDIR:-/tmp}/loomy-watch-XXXXXXXX")" || return 1
-  [[ -n "${1:-}" ]] && until=" --until-exit $1"
-  printf '#!/bin/bash\nrm -f -- "$0"\nunset LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT\nexec bash %q --root %q --watch --compact --pane%s\n' "$SCRIPT_DIR/loomy-status.sh" "$ROOT" "$until" >"$f"
-  chmod u+x "$f"; echo "$f"
-}
-
+# watch_script [agent pid] is shared with the desktop launcher above.
 start_with_watch() {
   local side=0 w agent name n
   # Agent on the left, tracking on the right; stacked only in a terminal too narrow for two columns.
@@ -268,35 +337,6 @@ fi
 # Default place to open the session: loomy config set start_in app (a choice from the menu stays a choice).
 if [[ "$MODE" == "new" && "$(loomy_config_get start_in 2>/dev/null || true)" == "app" && "${LOOMY_START_IN:-}" != "terminal" ]]; then MODE="app"; fi
 
-# url_encode <text>: percent-encoded for a URL query.
-url_encode() {
-  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1" 2>/dev/null \
-    || osascript -l JavaScript -e "function run(a) { return encodeURIComponent(a[0]) }" "$1" 2>/dev/null
-}
-
-# open_in_app: the desktop app on this project (deep links the apps declare themselves), then live tracking in a
-# Terminal window. The app can't open its own terminal panel on loomy watch: the window stands next to it.
-open_in_app() {
-  local url w
-  if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
-  local ep ef
-  ep="$(url_encode "$PROMPT")"; ef="$(url_encode "$ROOT")"
-  [[ -n "$ep" && -n "$ef" ]] || { ui_warn "$(t "The app link could not be built")" "$(t "opening in the terminal")"; return 1; }
-  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$ep"
-  else url="claude://code/new?folder=$ef&q=$ep"; fi
-  if ! open "$url" >/dev/null 2>&1; then ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1; fi
-  ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
-  [[ "$TOOL" == codex ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
-  local wt="$WATCH"
-  [[ -z "$wt" && "${LOOMY_START_WATCH:-}" == "0" ]] && wt=0
-  [[ -z "$wt" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && wt=0 || wt=1; }
-  if (( wt )) && command -v osascript >/dev/null 2>&1; then
-    w="$(watch_script)"
-    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
-    else ui_info "$(t "live tracking: loomy watch")"; fi
-  fi
-  return 0
-}
 
 case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
@@ -310,6 +350,7 @@ case "$MODE" in
       ui_end "$(t "session in the app · live tracking: loomy watch")"
       exit 0
     fi
+    (( APP_ONLY )) && exit 1
     MODE="new" ;;
   print)
     print_cmds

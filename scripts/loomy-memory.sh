@@ -3,7 +3,7 @@
 #   loomy-memory.sh              work state, then the latest results in short
 #   loomy-memory.sh -n N         the latest N results (10 by default)
 #   loomy-memory.sh show [N]     the full text of a result (the latest by default, N = rank from the latest)
-# Files: .loomy/memory/STATE.md (versioned with the AI files), .loomy/memory/delegations/ (kept out of Git).
+# Files: .loomy/memory/STATE.md (local, never versioned in the project repository; kept in the private repository in private mode), .loomy/memory/delegations/ (kept out of Git).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

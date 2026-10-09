@@ -12,6 +12,108 @@ source "$(dirname "${BASH_SOURCE[0]}")/memory.sh"
 LP_DONE=()   # what the last repair did (one short line each)
 LP_RENAME_MAP="'ai-assess'=>'loomy-assess', 'ai-audit'=>'loomy-audit', 'ai-catalog-check'=>'loomy-catalog-check', 'ai-context'=>'loomy-context', 'ai-doctor'=>'loomy-doctor', 'ai-effort'=>'loomy-effort', 'ai-feedback'=>'loomy-feedback', 'ai-home'=>'loomy-home', 'ai-local-writer'=>'loomy-local-writer', 'ai-log'=>'loomy-log', 'ai-models'=>'loomy-models', 'ai-privacy'=>'loomy-privacy', 'ai-report'=>'loomy-report', 'ai-review'=>'loomy-review', 'ai-route'=>'loomy-route', 'ai-start'=>'loomy-start', 'ai-stats'=>'loomy-stats', 'ai-status'=>'loomy-status', 'ai-statusline'=>'loomy-statusline', 'ai-task'=>'loomy-task', 'ai-tree'=>'loomy-tree', 'delegate-to-claude'=>'loomy-delegate-claude', 'delegate-to-codex'=>'loomy-delegate-codex', 'detect-ai-tools'=>'loomy-detect-tools', 'init-wizard'=>'loomy-init-wizard', 'install-into-project'=>'loomy-install-project', 'install-security-audit'=>'loomy-install-security-audit', 'create-hybrid-worktrees'=>'loomy-worktrees'"
 
+# ---- History and work files: never versioned in the project repository (whatever the AI-files mode). One list,
+# used by the managed .gitignore block, the doctor check and the private backup. Only rules and docs may be versioned.
+LOOMY_HISTORY_BEGIN="# >>> Loomy: local history and work files, never versioned"
+LOOMY_HISTORY_END="# <<< Loomy"
+LP_GI_CHANGED=0
+
+# loomy_history_paths: .gitignore patterns of the history / work / local state files, one per line.
+loomy_history_paths() {
+  cat <<'LIST'
+.loomy/logs/
+.loomy/memory/
+.loomy/docs/HANDOFF.md
+.loomy/state
+.loomy/tasks/
+.loomy/TASKS.md
+.loomy/*.state
+.loomy/**/*.tmp
+.loomy/**/*.tmp.*
+.loomy/*-prompt.txt
+.loomy/audit.md
+.loomy/audits/
+.loomy/reviews/
+.loomy/assessment.md
+.loomy/brief.previous.md
+.loomy/failover
+.loomy/failover.lock
+.loomy/relay.notice
+.loomy/ai.git/
+.loomy/restore-backup-*/
+.loomy/skills.lock.d/
+.loomy/.skills.lock.*
+LIST
+}
+
+# loomy_history_block: the managed .gitignore block.
+loomy_history_block() { echo "$LOOMY_HISTORY_BEGIN"; loomy_history_paths; echo "$LOOMY_HISTORY_END"; }
+
+# loomy_history_pathspecs: the same list as Git :(glob) pathspecs (a directory pattern becomes dir/**; a plain pathspec
+# would recurse: scripts/*.sh matches scripts/lib/x.sh), for git ls-files and git rm --cached.
+loomy_history_pathspecs() {
+  local p
+  while IFS= read -r p; do
+    if [[ "$p" == */ ]]; then printf ':(glob)%s**\n' "$p"; else printf ':(glob)%s\n' "$p"; fi
+  done < <(loomy_history_paths)
+}
+
+# loomy_gitignore_sync <root>: writes the managed block at the END of the project's .gitignore (only in a Git
+# repository or when a .gitignore exists), so that it wins over the user's earlier lines (a negation placed before it
+# cannot re-include a history file). A block is managed only when both markers are present, in order; the user's lines
+# are never removed or edited (an orphan marker stays as it is and a fresh block is appended). The older single Loomy
+# lines are dropped. CRLF files keep their line ending. LP_GI_CHANGED is 1 when the file was modified.
+loomy_gitignore_sync() {
+  local r="$1" f="$1/.gitignore" src blk tmp
+  LP_GI_CHANGED=0
+  [[ ! -L "$f" ]] || return 0
+  if [[ ! -f "$f" ]] && ! git -C "$r" rev-parse --is-inside-work-tree >/dev/null 2>&1; then return 0; fi
+  blk="$(mktemp "${TMPDIR:-/tmp}/loomy-gi.XXXXXX")" || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/loomy-gi.XXXXXX")" || { rm -f "$blk"; return 0; }
+  loomy_history_block >"$blk"
+  src="$f"; [[ -f "$f" ]] || src=/dev/null
+  awk -v blk="$blk" -v b="$LOOMY_HISTORY_BEGIN" -v e="$LOOMY_HISTORY_END" '
+    { raw[NR] = $0; l = $0; sub(/\r$/, "", l); t[NR] = l; if (!crlf && $0 ~ /\r$/) crlf = 1 }
+    END {
+      eol = crlf ? "\r" : ""
+      lb = 0
+      for (i = 1; i <= NR; i++) {
+        if (t[i] == b) lb = i
+        else if (t[i] == e && lb) { for (j = lb; j <= i; j++) del[j] = 1; lb = 0 }
+      }
+      # older single lines: comment + path, dropped with the blank line that preceded them
+      for (i = 1; i <= NR; i++) {
+        if (t[i] ~ /^# Loomy ?: (local activity log|journal d|delegation results|résultats des délégations)/) {
+          del[i] = 1
+          if (t[i + 1] == ".loomy/logs/" || t[i + 1] == ".loomy/memory/delegations/") del[i + 1] = 1
+          if (i > 1 && t[i - 1] == "" && !del[i - 1]) del[i - 1] = 1
+        }
+      }
+      n = 0
+      for (i = 1; i <= NR; i++) if (!del[i]) out[++n] = raw[i]
+      while (n > 0 && out[n] ~ /^\r?$/) n--
+      for (i = 1; i <= n; i++) print out[i]
+      if (n > 0) print eol
+      while ((getline x < blk) > 0) print x eol
+      close(blk)
+    }
+  ' "$src" >"$tmp" 2>/dev/null || true
+  if [[ -s "$tmp" ]] && ! cmp -s "$tmp" "$src" 2>/dev/null; then
+    cat "$tmp" >"$f" && LP_GI_CHANGED=1
+  fi
+  rm -f "$blk" "$tmp"
+  return 0
+}
+
+# loomy_history_tracked <root>: history / work files tracked by the project repository (one path per line).
+loomy_history_tracked() {
+  local specs=() p
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  while IFS= read -r p; do specs+=("$p"); done < <(loomy_history_pathspecs)
+  git -C "$1" ls-files -- "${specs[@]}" 2>/dev/null || true
+  return 0
+}
+
 # _lp_doc_lang <root>: fr or en, the language of the project's documents (brief: doc_language).
 _lp_doc_lang() { local l; l="$(_ai_brief_get "$1/.loomy/brief.md" doc_language 2>/dev/null)"; [[ "$l" == fr ]] && echo fr || echo en; }
 
@@ -152,6 +254,10 @@ loomy_project_repair() {
   [[ -f "$r/.loomy/brief.md" ]] || return 0
   loomy_project_migrate "$r"
   loomy_project_rename_scripts "$r"
+  # Existing projects gain missing native-agent hooks without rewriting user settings.
+  # shellcheck source=hooks.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/hooks.sh"
+  loomy_claude_hooks_merge "$r" || true
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
   route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
   mkdir -p "$docs"
@@ -193,10 +299,8 @@ loomy_project_repair() {
   if [[ ! -f "$(loomy_memory_dir "$r")/STATE.md" ]]; then
     loomy_memory_state_init "$r"; [[ -f "$(loomy_memory_dir "$r")/STATE.md" ]] && LP_DONE+=(".loomy/memory/STATE.md")
   fi
-  if { [[ -f "$r/.gitignore" ]] || git -C "$r" rev-parse --is-inside-work-tree >/dev/null 2>&1; } \
-     && ! grep -qxF '.loomy/memory/delegations/' "$r/.gitignore" 2>/dev/null; then
-    printf '\n# Loomy: delegation results (shared memory, may hold sensitive findings)\n.loomy/memory/delegations/\n' >>"$r/.gitignore"
-  fi
+  # History and work files stay out of the project repository, whatever the AI-files mode.
+  loomy_gitignore_sync "$r"; [[ "$LP_GI_CHANGED" == 1 ]] && LP_DONE+=(".gitignore: Loomy history and work files")
   # The orchestration rule where the agents read it.
   _lp_ensure_block "$r/AGENTS.md" "$r"
   _lp_ensure_block "$r/CLAUDE.md" "$r"

@@ -304,6 +304,31 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     if grep -qs '<!-- loomy:orchestration:start' "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ui_ok "$(t "orchestration rule")" "AGENTS.md / CLAUDE.md"
     else ui_warn "$(t "orchestration rule missing")" "AGENTS.md / CLAUDE.md"; missing_ideal "$(t "orchestration rule")"; p_gaps=$(( p_gaps + 1 )); fi
   fi
+  # History / work files tracked by Git (committed before the rule): reported, untracked only with --fix.
+  # shellcheck source=lib/project.sh
+  source "$SCRIPT_DIR/lib/project.sh"
+  p_tracked="$(loomy_history_tracked "$ROOT")"
+  if [[ -n "$p_tracked" ]]; then
+    p_tn="$(printf '%s\n' "$p_tracked" | grep -c . || true)"
+    ui_warn "$(t "%s Loomy history file(s) tracked by Git" "$p_tn")" "$(printf '%s\n' "$p_tracked" | head -5 | paste -sd ' ' -)"
+    if (( FIX )); then
+      loomy_gitignore_sync "$ROOT"
+      p_err=""
+      while IFS= read -r p_f; do
+        p_e="$(git -C "$ROOT" rm --cached --quiet --ignore-unmatch -- ":(literal)$p_f" 2>&1 >/dev/null | head -1)" || true
+        [[ -z "$p_err" ]] && p_err="$p_e"
+      done < <(printf '%s\n' "$p_tracked")
+      p_left="$(loomy_history_tracked "$ROOT")"
+      if [[ -z "$p_left" ]]; then
+        ui_ok "$(t "history files untracked")" "$(t "they stay on disk and leave the repository at the next commit")"
+      else
+        ui_warn "$(t "%s Loomy history file(s) still tracked by Git" "$(printf '%s\n' "$p_left" | grep -c . || true)")" "$(printf '%s\n' "$p_left" | head -5 | paste -sd ' ' -)${p_err:+ · $p_err}"
+      fi
+    else
+      ui_info "$(t "fix: %s" "loomy doctor --fix")  ($(t "git rm --cached, files kept on disk"))"
+      missing_ideal "$(t "history files out of Git")"; p_gaps=$(( p_gaps + 1 ))
+    fi
+  fi
   # --fix: what Loomy owns is completed right away (routing documents, role subagents, orchestration rule).
   if (( FIX && p_gaps )); then
     # shellcheck source=lib/project.sh

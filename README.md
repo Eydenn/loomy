@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.15.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.15.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -281,13 +281,13 @@ Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. 
 
 ## 🔒 AI files: versioned, local or private
 
-The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository.
+The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository. Whatever the mode, Loomy's history and work files (logs, memory, tasks, audits, reviews…) never go into the project repository.
 
 The questionnaire also offers to **create the project's GitHub repository**, private or public, with a name taken from the project name that you confirm or edit. In separate private repository mode, the AI files repository name (`<repo>-ai`) is confirmed too, both together. An existing repository with a different name is flagged, with the rename command; Loomy never renames anything itself.
 
 | Mode | For | What happens |
 |---|---|---|
-| **Versioned** | private repository *(default)* | they live in the repository: available everywhere, read by online agents |
+| **Versioned** | private repository *(default)* | the agents' rules and docs live in the repository: available everywhere, read by online agents (history and work files stay local) |
 | **Local** | public repository, no backup | excluded through `.git/info/exclude` (invisible in the repository); lost if you change machines |
 | **Separate private repository** | public repository *(recommended)* | excluded from the project and backed up in a private GitHub repository `<project>-ai` that tracks only these files |
 
@@ -335,17 +335,19 @@ Everything happens in the terminal, with no dependency. `loomy start` opens live
 | Command | What it does | Main options |
 |---|---|---|
 | `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
-| `loomy watch` | Live tracking (keys t tree, l log, c compact, s session) | `N` |
+| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t status, q quit) | `N` |
 | `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
 | `loomy start` | Session and live tracking side by side | `--no-watch` |
 | `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
 
 Each command in detail: [docs/COMMANDS.md](docs/COMMANDS.md).
 
-**What is live.** The screen rereads the project every 2 seconds:
-- **delegations** to Claude or Codex appear as soon as they start, with their timer, then their cost at the end; an interrupted one disappears on its own;
+**What is live.** Starts are polled every 250 ms; running timers tick every second:
+- **delegations**, through bridges and native Claude subagents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed or interrupted. Native subagent usage is counted only once;
+- **grouping** by request or model switches with `v` and is saved in `watch_group` (`request` by default; `loomy config set watch_group model` changes it). Request excerpts come from Claude's prompt hook and obey `LOOMY_JOURNAL_TASKS=0`; ⚑ marks an explicit request and ⇢ a routing difference;
+- **the orchestrator** opens with `o` in an available desktop app, falling back to a separate terminal window with session and tracking side by side;
 - the **phase** changes when the lead agent records it (`START.md` asks it to at each step);
-- work the lead agent does itself, in its session, is not journaled: you follow it in its session.
+- work the lead agent does itself is followed in its session; prompt and usage events inform the live view without exposing its full conversation.
 
 The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. `LOOMY_JOURNAL=0` disables it, `LOOMY_JOURNAL_TASKS=0` leaves task text out of it.
 
@@ -511,7 +513,7 @@ Each agent starts from zero by design; the thread of the work is kept in `.loomy
 | What | Where | Written by |
 |---|---|---|
 | The task and the full result of every delegation | `.loomy/memory/delegations/` (kept out of Git: findings can be sensitive) | the bridges and the Claude subagents' hook, automatically |
-| The work state: done, in progress, decisions, next | `.loomy/memory/STATE.md` (versioned with the AI files) | the lead agent, after each important step |
+| The work state: done, in progress, decisions, next | `.loomy/memory/STATE.md` (local, never versioned; kept in the private repository in private mode) | the lead agent, after each important step |
 
 - **Given back at the start of a session**, Claude Code or Codex, and after a compaction: the work state, then the results the lead agent hasn't taken into it yet. When the previous session ran in the other tool, the lead agent is told to pick up from there.
 - **Built for cost.** Nothing is added at each message, nor when a session is resumed (the conversation already holds it). The block is capped (40 lines of state, 4 results in one line each) and cached by the tool afterwards: a few hundred tokens per new session, instead of tens of thousands to explore again. `STATE.md` is written in English and in telegraphic style, whatever the documentation language: the fewest tokens for every model. To hand findings to a role, the lead agent points it to the file instead of copying it.
@@ -584,7 +586,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | Command | What it does | Main options |
 |---|---|---|
 | `loomy status` | Snapshot: phases, delegations, costs, quotas, Git | — |
-| `loomy watch` | Live tracking (keys t tree, l log, c compact, s session) | `N` |
+| `loomy watch` | Live agents (v request/model, o orchestrator, l log, t status, q quit) | `N` |
 | `loomy tree` | Agent tree: lead agent, advisor and roles live | — |
 | `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
 | `loomy stats` | Tokens, cost and quotas by role, model and day | `--days N` `--since YYYY-MM-DD` |

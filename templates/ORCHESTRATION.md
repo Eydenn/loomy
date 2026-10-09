@@ -28,6 +28,8 @@ Claude inspects and reports; its file editing tools are disabled. Overrides: `DE
 ```
 Roles that write modify the working tree; the script lists the changed files. Overrides: `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
+Pick the role from the intent of the work (design → architect, implementation → developer or executor, review → reviewer, and so on), not from the model the user names. When the user names a model or an effort ("a design by Sol high"), keep the role and pass them as options: `--model <id> --effort <level> --why "user request"`; add `--write` when that role must produce files (a design document, for example). The option wins over the routing and the journal records it as requested and off routing.
+
 Near the end of a subscription quota (95 % by default), a bridge may hand the role to the other tool, with the model the routing gives that role there; it says so on stderr and logs it. Nothing changes for you: same call, same kind of answer; review the result as usual.
 
 A Codex lead agent also uses `loomy-delegate-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.

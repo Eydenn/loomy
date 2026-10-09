@@ -15,11 +15,14 @@ source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
 
-ROLE="${1:-}"
-TASK="${2:-}"
+ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
+ai_delegate_opts claude "$@" || exit 2
+shift "$O_SHIFT"
+TASK="${1:-}"
 
-if [[ -z "$ROLE" || -z "$TASK" ]]; then
-  t "Usage: %s <architect|debugger|security|reviewer|explorer> \"task\"" "$0" >&2; echo >&2
+if [[ "$ROLE" == "-h" || "$ROLE" == "--help" || -z "$ROLE" || -z "$TASK" ]]; then
+  t "Usage: %s <architect|debugger|security|reviewer|explorer> [options] \"task\"" "$0" >&2; echo >&2
+  t "Options: --model <claude-* id|opus|sonnet|haiku>, --effort <low|medium|high|xhigh|max>, --write (only during a quota failover) | --read-only, --why \"reason\"; they win over the environment variables." >&2; echo >&2
   t "Old names accepted: architecture, debug, review, research." >&2; echo >&2
   t "Possible overrides: DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE" >&2; echo >&2
   exit 2
@@ -28,6 +31,11 @@ fi
 case "$ROLE" in
   review) ROLE="reviewer" ;; research) ROLE="explorer" ;; debug) ROLE="debugger" ;; architecture) ROLE="architect" ;;
 esac
+
+if [[ "$O_SANDBOX" == "write" && -z "${LOOMY_FAILOVER_FROM:-}" ]]; then
+  t "Error: --write is refused on the Claude bridge (headless claude -p is read-only by design; roles that write go through Codex or a native subagent), except during a quota failover." >&2; echo >&2
+  exit 2
+fi
 
 if ! command -v claude >/dev/null 2>&1; then
   t "Error: the Claude Code CLI ('claude') is not in the PATH. Run loomy doctor." >&2; echo >&2
@@ -71,9 +79,21 @@ esac
 # roles), on the model the routing gives it on the Codex side. Once only: a delegation that already switched stays.
 if [[ -z "${LOOMY_FAILOVER_FROM:-}" && "$(ai_switch_family claude)" == "codex" ]]; then
   t "loomy-delegate-claude: Claude quota at %s (threshold %s %%): %s handed to Codex until it resets." "$(ai_quota_state claude)" "$(ai_switch_threshold)" "$ROLE" >&2; echo >&2
-  LOOMY_FAILOVER_FROM=claude exec bash "$SCRIPT_DIR/loomy-delegate-codex.sh" "$ROLE" "$TASK"
+  # Options that mean the same on the Codex side travel along (not --model: a Claude id).
+  FWD=()
+  [[ -n "$O_EFFORT" ]] && FWD+=(--effort "$O_EFFORT")
+  [[ "$O_SANDBOX" == "write" ]] && FWD+=(--write)
+  [[ "$O_SANDBOX" == "read" ]] && FWD+=(--read-only)
+  [[ -n "$O_WHY" ]] && FWD+=(--why "$O_WHY")
+  LOOMY_REQUESTED_MODEL="${O_MODEL:-${DELEGATE_CLAUDE_MODEL:-}}" LOOMY_FAILOVER_FROM=claude exec bash "$SCRIPT_DIR/loomy-delegate-codex.sh" "$ROLE" ${FWD[@]+"${FWD[@]}"} "$TASK"
 fi
 WRITES=0; ai_role_writes "$ROLE" && WRITES=1
+case "$O_SANDBOX" in write) WRITES=1 ;; read) WRITES=0 ;; esac
+if (( WRITES )) && ! ai_role_writes "$ROLE"; then
+  ROLE_GUIDANCE="$ROLE_GUIDANCE $(t "For this task you may create or modify the files it asks for, within its scope.")"
+elif (( ! WRITES )) && ai_role_writes "$ROLE"; then
+  ROLE_GUIDANCE="$ROLE_GUIDANCE $(t "For this task the sandbox is read-only: don't modify any file.")"
+fi
 SANDBOX="read-only"; (( WRITES )) && SANDBOX="workspace-write"
 FAILOVER_JSON=""; [[ -n "${LOOMY_FAILOVER_FROM:-}" ]] && FAILOVER_JSON=",\"failover_from\":\"$LOOMY_FAILOVER_FROM\""
 
@@ -81,8 +101,12 @@ ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" claude "$AI_PROFILE"
 # Deliberately not CLAUDE_MODEL/CLAUDE_EFFORT: Claude Code exports CLAUDE_EFFORT in its own sessions.
-MODEL="${DELEGATE_CLAUDE_MODEL:-$R_MODEL}"
-EFFORT="${DELEGATE_CLAUDE_EFFORT:-$R_EFFORT}"
+MODEL="${O_MODEL:-${DELEGATE_CLAUDE_MODEL:-$R_MODEL}}"
+EFFORT="${O_EFFORT:-${DELEGATE_CLAUDE_EFFORT:-$R_EFFORT}}"
+REQUESTED=0
+[[ -n "$O_MODEL$O_EFFORT$O_SANDBOX$O_WHY${DELEGATE_CLAUDE_MODEL:-}${DELEGATE_CLAUDE_EFFORT:-}${LOOMY_REQUESTED_MODEL:-}" ]] && REQUESTED=1
+OFF_ROUTING="$(ai_delegate_off_routing "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "${LOOMY_FAILOVER_FROM:-}")"
+WHY_JSON=",\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"requested\":$([[ $REQUESTED == 1 ]] && echo true || echo false),\"off_routing\":\"$OFF_ROUTING\",\"why\":$(ai_json_str "$(ai_task_excerpt "$O_WHY")")"
 MAX_TURNS="${DELEGATE_CLAUDE_MAX_TURNS:-${CLAUDE_MAX_TURNS:-8}}"
 
 PROMPT="$ROLE_GUIDANCE
@@ -114,10 +138,10 @@ run_claude() {
 BEFORE=""
 if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then BEFORE="$(git -C "$ROOT" status --porcelain)"; fi
 
-t "loomy-delegate-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE" >&2; echo >&2
+{ t "loomy-delegate-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
 DELEG_ID="$(ai_delegation_id)"
-ai_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK"
+ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 STARTED="$(date +%s)"
 set +e
 OUT="$(run_claude "$MODEL")"
@@ -176,7 +200,7 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
   AFTER="$(git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$MEM_RESULT"

@@ -15,11 +15,14 @@ source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
 
-ROLE="${1:-}"
-TASK="${2:-}"
+ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
+ai_delegate_opts codex "$@" || exit 2
+shift "$O_SHIFT"
+TASK="${1:-}"
 
-if [[ -z "$ROLE" || -z "$TASK" ]]; then
-  t "Usage: %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> \"task\"" "$0" >&2; echo >&2
+if [[ "$ROLE" == "-h" || "$ROLE" == "--help" || -z "$ROLE" || -z "$TASK" ]]; then
+  t "Usage: %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> [options] \"task\"" "$0" >&2; echo >&2
+  t "Options: --model <id>, --effort <low|medium|high|xhigh|max>, --write | --read-only (override the role's sandbox), --why \"reason\"; they win over the environment variables." >&2; echo >&2
   t "Possible overrides: DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)" >&2; echo >&2
   exit 2
 fi
@@ -53,7 +56,13 @@ esac
 # gives that role on the Claude side (once: a delegation that already switched never switches back).
 if [[ -z "${LOOMY_FAILOVER_FROM:-}" && "$(ai_switch_family codex)" == "claude" ]]; then
   t "loomy-delegate-codex: Codex quota at %s (threshold %s %%): %s handed to Claude until it resets." "$(ai_quota_state codex)" "$(ai_switch_threshold)" "$ROLE" >&2; echo >&2
-  LOOMY_FAILOVER_FROM=codex exec bash "$SCRIPT_DIR/loomy-delegate-claude.sh" "$ROLE" "$TASK"
+  # Options that mean the same on the Claude side travel along (not --model: a Codex id).
+  FWD=()
+  [[ -n "$O_EFFORT" ]] && FWD+=(--effort "$O_EFFORT")
+  [[ "$O_SANDBOX" == "write" ]] && FWD+=(--write)
+  [[ "$O_SANDBOX" == "read" ]] && FWD+=(--read-only)
+  [[ -n "$O_WHY" ]] && FWD+=(--why "$O_WHY")
+  LOOMY_REQUESTED_MODEL="${O_MODEL:-${DELEGATE_CODEX_MODEL:-}}" LOOMY_FAILOVER_FROM=codex exec bash "$SCRIPT_DIR/loomy-delegate-claude.sh" "$ROLE" ${FWD[@]+"${FWD[@]}"} "$TASK"
 fi
 FAILOVER_JSON=""; [[ -n "${LOOMY_FAILOVER_FROM:-}" ]] && FAILOVER_JSON=",\"failover_from\":\"$LOOMY_FAILOVER_FROM\""
 
@@ -62,11 +71,22 @@ CODEX="$(ai_codex_bin)" || { t "Error: Codex CLI not found (PATH, Codex.app or C
 ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" codex "$AI_PROFILE"
-MODEL="${DELEGATE_CODEX_MODEL:-$R_MODEL}"
-EFFORT="${DELEGATE_CODEX_EFFORT:-$R_EFFORT}"
+MODEL="${O_MODEL:-${DELEGATE_CODEX_MODEL:-$R_MODEL}}"
+EFFORT="${O_EFFORT:-${DELEGATE_CODEX_EFFORT:-$R_EFFORT}}"
 
 SANDBOX="read-only"
 if ai_role_writes "$ROLE"; then SANDBOX="workspace-write"; fi
+case "$O_SANDBOX" in write) SANDBOX="workspace-write" ;; read) SANDBOX="read-only" ;; esac
+REQUESTED=0
+[[ -n "$O_MODEL$O_EFFORT$O_SANDBOX$O_WHY${DELEGATE_CODEX_MODEL:-}${DELEGATE_CODEX_EFFORT:-}${LOOMY_REQUESTED_MODEL:-}" ]] && REQUESTED=1
+OFF_ROUTING="$(ai_delegate_off_routing "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "${LOOMY_FAILOVER_FROM:-}")"
+WHY_JSON=",\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"requested\":$([[ $REQUESTED == 1 ]] && echo true || echo false),\"off_routing\":\"$OFF_ROUTING\",\"why\":$(ai_json_str "$(ai_task_excerpt "$O_WHY")")"
+# The sandbox asked for differs from the role's default: the prompt must not contradict it.
+if [[ "$SANDBOX" == "workspace-write" ]] && ! ai_role_writes "$ROLE"; then
+  GUIDANCE="$GUIDANCE $(t "For this task you may create or modify the files it asks for, within its scope.")"
+elif [[ "$SANDBOX" == "read-only" ]] && ai_role_writes "$ROLE"; then
+  GUIDANCE="$GUIDANCE $(t "For this task the sandbox is read-only: don't modify any file.")"
+fi
 
 PROMPT="$GUIDANCE
 
@@ -89,10 +109,10 @@ if [[ "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside
   BEFORE="$(git -C "$ROOT" status --porcelain)"
 fi
 
-t "loomy-delegate-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE" >&2; echo >&2
+{ t "loomy-delegate-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
 DELEG_ID="$(ai_delegation_id)"
-ai_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK"
+ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 STARTED="$(date +%s)"
 run_codex() {
   LOOMY_DELEGATION=1 "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
@@ -136,7 +156,7 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   OUTCOME="$(ai_result_outcome "$(cat "$TMP/last.txt" 2>/dev/null)")"
   FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$(cat "$TMP/last.txt" 2>/dev/null || true)"
 

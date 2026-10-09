@@ -52,3 +52,5 @@ La session principale est l'orchestrateur. Elle délègue des rôles d'une famil
 Utilise ces appels pour une relecture indépendante, une critique d'architecture, un débogage difficile, un second avis sécurité ou une recherche ciblée. L'orchestrateur reste responsable de la vérification des constats et de l'intégration finale.
 
 N'utilise pas ces appels pour des tâches triviales, des confirmations de routine ou des allers-retours répétés. Préfère un seul appel ciblé.
+
+Options des ponts, avant le texte de la tâche : choisis le rôle d'après l'intention du travail ; quand l'utilisateur nomme un modèle ou un effort, passe `--model <id> --effort <niveau> --why "user request"`, et `--write` quand le rôle doit produire des fichiers.

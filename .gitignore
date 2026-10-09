@@ -23,8 +23,27 @@ tmp/
 node_modules/
 *.tgz
 
-# Loomy: local activity log
+# >>> Loomy: local history and work files, never versioned
 .loomy/logs/
-
-# Loomy: delegation results (shared memory, may hold sensitive findings)
-.loomy/memory/delegations/
+.loomy/memory/
+.loomy/docs/HANDOFF.md
+.loomy/state
+.loomy/tasks/
+.loomy/TASKS.md
+.loomy/*.state
+.loomy/**/*.tmp
+.loomy/**/*.tmp.*
+.loomy/*-prompt.txt
+.loomy/audit.md
+.loomy/audits/
+.loomy/reviews/
+.loomy/assessment.md
+.loomy/brief.previous.md
+.loomy/failover
+.loomy/failover.lock
+.loomy/relay.notice
+.loomy/ai.git/
+.loomy/restore-backup-*/
+.loomy/skills.lock.d/
+.loomy/.skills.lock.*
+# <<< Loomy

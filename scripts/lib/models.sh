@@ -671,3 +671,74 @@ ai_upcoming_probe_daily() {
   ) >/dev/null 2>&1 &
   return 0
 }
+
+# ---------------------------------------------------------------- delegation options (bridges)
+
+# ai_delegate_opts <claude|codex> [options] "task"
+# Parses the options that come before the task text: --model <id>, --effort <level>, --write | --read-only, --why "<reason>".
+# Sets O_MODEL O_EFFORT O_SANDBOX (write|read|"") O_WHY and O_SHIFT (arguments consumed; the task is the next one).
+# Returns 2 (message on stderr) on an invalid option. Options win over the DELEGATE_* environment variables.
+ai_delegate_opts() {
+  local tool="$1"; shift
+  O_MODEL=""; O_EFFORT=""; O_SANDBOX=""; O_WHY=""; O_SHIFT=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --model|--effort|--why)
+        if [[ $# -lt 2 ]]; then t "Error: option %s needs a value." "$1" >&2; echo >&2; return 2; fi
+        case "$1" in
+          --model)
+            if ! [[ "$2" =~ ^[A-Za-z0-9._-]+$ ]]; then t "Error: invalid model '%s' (letters, digits, . _ - only)." "$2" >&2; echo >&2; return 2; fi
+            if [[ "$tool" == "claude" ]]; then
+              case "$2" in claude-*|opus|sonnet|haiku) ;; *) t "Error: invalid Claude model '%s' (a claude-* id, or opus, sonnet, haiku)." "$2" >&2; echo >&2; return 2 ;; esac
+            fi
+            O_MODEL="$2" ;;
+          --effort)
+            case "$2" in low|medium|high|xhigh|max) O_EFFORT="$2" ;;
+              *) t "Error: invalid effort '%s' (low, medium, high, xhigh, max)." "$2" >&2; echo >&2; return 2 ;; esac ;;
+          --why) O_WHY="$(printf '%s' "$2" | tr '\n\r\t' '   ' | cut -c1-200)" ;;
+        esac
+        O_SHIFT=$(( O_SHIFT + 2 )); shift 2 ;;
+      --write) O_SANDBOX="write"; O_SHIFT=$(( O_SHIFT + 1 )); shift ;;
+      --read-only) O_SANDBOX="read"; O_SHIFT=$(( O_SHIFT + 1 )); shift ;;
+      --) O_SHIFT=$(( O_SHIFT + 1 )); return 0 ;;
+      --*) t "Error: unknown option '%s'." "$1" >&2; echo >&2; return 2 ;;
+      *) return 0 ;;
+    esac
+  done
+  return 0
+}
+
+# ai_delegate_off_routing <role> <family> <model> <effort> <sandbox> [failover]
+# Needs ai_detect_env done. Prints the comma-separated list of what differs from the routing (tool,model,effort,sandbox).
+# The tool is not compared during a quota failover (the other tool is the routing's own decision then).
+ai_delegate_off_routing() {
+  local role="$1" family="$2" model="$3" effort="$4" sandbox="$5" failover="${6:-}" out="" expected
+  (
+    ai_resolve "$role" "$AI_ENV" "$AI_PROFILE"
+    [[ -z "$failover" && "$R_FAMILY" != "$family" ]] && printf 'tool,'
+    ai_route "$role" "$family" "$AI_PROFILE"
+    [[ "$R_MODEL" != "$model" ]] && printf 'model,'
+    [[ "$R_EFFORT" != "$effort" ]] && printf 'effort,'
+    expected="read-only"; ai_role_writes "$role" && expected="workspace-write"
+    [[ "$expected" != "$sandbox" ]] && printf 'sandbox,'
+    true
+  ) | { read -r out || true; printf '%s' "${out%,}"; }
+}
+
+# ai_delegate_banner_extra <requested 0|1> <why> <off_routing>: the " · requested (why) · off routing: …" tail of the
+# bridge's first stderr line (nothing when neither applies).
+ai_delegate_banner_extra() {
+  if [[ "$1" == "1" ]]; then
+    printf ' · '
+    if [[ -n "$2" ]]; then t "requested (%s)" "$2"; else t "requested"; fi
+  fi
+  if [[ -n "$3" ]]; then printf ' · '; t "off routing: %s" "$3"; fi
+  return 0
+}
+
+# ai_delegate_journal_start <root> <id> <bridge> <role> <family> <model> <effort> <sandbox> <task> <requested 0|1> <off> <why>
+# delegation_start event of the bridges: id, pid, bridge, role, family, model, effort, sandbox, then requested / off_routing / why, then task.
+ai_delegate_journal_start() {
+  local req=false; [[ "${10}" == "1" ]] && req=true
+  ai_journal_write "$1" "\"type\":\"delegation_start\",\"id\":\"$2\",\"pid\":$$,\"bridge\":\"$3\",\"role\":\"$4\",\"family\":\"$5\",\"model\":\"$6\",\"effort\":\"$7\",\"sandbox\":\"$8\",\"requested\":$req,\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"off_routing\":\"${11}\",\"why\":$(ai_json_str "$(ai_task_excerpt "${12}")"),\"task\":$(ai_json_str "$(ai_task_excerpt "$9")")"
+}

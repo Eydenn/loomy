@@ -13,6 +13,9 @@ if ! declare -F t >/dev/null 2>&1; then
   source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
 fi
 
+# shellcheck source=project.sh
+source "$(dirname "${BASH_SOURCE[0]}")/project.sh"
+
 LOOMY_AI_PATHS=".loomy START.md AGENTS.md CLAUDE.md .ai .claude .codex"
 PRIVACY_BEGIN="# >>> loomy : fichiers IA hors du dépôt (loomy privacy)"   # marker kept as is: existing exclude files use it
 PRIVACY_END="# <<< loomy"
@@ -116,12 +119,16 @@ privacy_companion_ready() { [[ -d "$(privacy_ai_git_dir "$1")" ]]; }
 
 # privacy_companion_config <root>: private repository settings (only shows its files, ignores its own folder and the log).
 privacy_companion_config() {
-  local d
+  local d p
   d="$(privacy_ai_git_dir "$1")"
   ai_git "$1" config status.showUntrackedFiles no
   ai_git "$1" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
   mkdir -p "$d/info"
+  # History and work files never go in the private repository either (STATE.md is force-added by the backup).
   grep -qxF '/.loomy/ai.git/' "$d/info/exclude" 2>/dev/null || printf '/.loomy/ai.git/\n/.loomy/logs/\n' >>"$d/info/exclude"
+  while IFS= read -r p; do
+    grep -qxF "/$p" "$d/info/exclude" 2>/dev/null || printf '/%s\n' "$p" >>"$d/info/exclude"
+  done < <(loomy_history_paths)
 }
 
 # privacy_pending <root>: number of changes not yet backed up to the private repository.

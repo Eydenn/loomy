@@ -52,3 +52,5 @@ The main session is the lead agent. It delegates roles from one model family to 
 Use these calls for an independent review, an architecture critique, hard debugging, a second security opinion or focused research. The lead agent remains responsible for checking the findings and for the final integration.
 
 Don't use these calls for trivial tasks, routine confirmations or repeated back-and-forth. Prefer a single focused call.
+
+Bridge options, before the task text: pick the role from the intent of the work; when the user names a model or effort, pass `--model <id> --effort <level> --why "user request"`, and `--write` when the role must produce files.

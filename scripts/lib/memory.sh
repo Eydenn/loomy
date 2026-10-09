@@ -5,7 +5,8 @@
 #   delegations/<date>-<time>-<role>-<id>.md   the task and the full result of each delegation (bridges and native
 #                                              Claude subagents), kept out of Git (findings can be sensitive);
 #   STATE.md                                   the work state kept by the lead agent (done, in progress, decisions,
-#                                              next), versioned with the AI files.
+#                                              next), local: never versioned in the project repository
+#                                              (kept in the private repository in private mode).
 # The start of every session (and the end of a compaction) gives the lead agent STATE.md and the latest results in
 # short. Bash 3.2.
 

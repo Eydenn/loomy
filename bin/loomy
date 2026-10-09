@@ -162,7 +162,7 @@ usage() {
   _h_cmd start "[--resume|--new|--print] [--watch]" "$(t "Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside")"
   _h_cmd effort "$(t "[<role>] [level|--reset]")" "$(t "Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max")"
   _h_cmd route "$(t "[command]")" "$(t "Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)")"
-  _h_cmd delegate "$(t "<claude|codex> <role> \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
+  _h_cmd delegate "$(t "<claude|codex> <role> [options] \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
   _h_cmd privacy "[mode|sync|restore]" "$(t "AI files visibility: versioned, local, or in a separate private repository")"
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"
   _h_group "$(t "TRACKING")"
@@ -208,7 +208,9 @@ sub_help() {
             t "      model.<claude|codex>.<top|mid|fast> (pins a model on this machine; auto: catalog's choice),"; echo
             t "      lang (fr or en: interface language; auto: system language, English by default)."; echo
             t "File: %s" "$(loomy_config_file)"; echo ;;
-    delegate) t "Usage: loomy delegate <claude|codex> <role> \"task\""; echo
+    delegate) t "Usage: loomy delegate <claude|codex> <role> [options] \"task\""; echo
+              t "options: --model <id>, --effort <low|medium|high|xhigh|max>, --write | --read-only (sandbox), --why \"reason\"."; echo
+              t "Asked options win over the environment and mark the delegation as requested (and off routing when it differs from the routing)."; echo
               t "codex : executor, developer, documenter (write in the project); reviewer, explorer, debugger, architect, security (read-only)."; echo
               t "claude: architect, debugger, security, reviewer, explorer (read-only)."; echo
               t "Every delegation is logged; track it with loomy watch."; echo ;;
@@ -333,12 +335,13 @@ case "$cmd" in
           chain.claude.top|chain.claude.mid|chain.claude.fast|chain.codex.top|chain.codex.mid|chain.codex.fast)
             [[ "$val" == "auto" || "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(,\ ?[A-Za-z0-9][A-Za-z0-9._-]*){0,2}$ ]] || { t "%s: up to three model ids separated by commas (newest first), or auto" "$key" >&2; echo >&2; exit 2; } ;;
           tree_view) [[ "$val" =~ ^(auto|diagram|list)$ ]] || { t "tree_view: auto, diagram or list" >&2; echo >&2; exit 2; } ;;
+          watch_group) [[ "$val" =~ ^(request|model)$ ]] || { t "%s: request or model" "$key" >&2; echo >&2; exit 2; } ;;
           watch_resize) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s: yes or no" "$key" >&2; echo >&2; exit 2; } ;;
           advisor) [[ "$val" =~ ^(auto|off|opus|sonnet|fable)$ ]] || { t "advisor: auto, off, opus, sonnet or fable" >&2; echo >&2; exit 2; } ;;
           models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, lead_failover, quota_room, delegation_format, start_watch, start_in, memory, skills, notify, auto_update, advisor, tree_view, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, lead_failover, quota_room, delegation_format, start_watch, start_in, memory, skills, notify, auto_update, advisor, tree_view, watch_group, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;
@@ -433,7 +436,7 @@ case "$cmd" in
     if (( n == 0 )); then ui_rail "$(install_method) ${C_DIM}${LOOMY_HOME/#$HOME/~}${C_RESET}"; ui_rail "    $(uninstall_cmd "$(install_method)" "$LOOMY_HOME" "$INVOKED")"; fi
     ui_section "$(t "IN YOUR PROJECTS")"
     ui_rail "$(t "Each project keeps its %s folder: the lead agent uses it to delegate and track phases." "${C_BOLD}.loomy/${C_RESET}")"
-    ui_rail "$(t "To remove Loomy from a project:") ${C_BOLD}rm -rf .loomy START.md${C_RESET} ${C_DIM}($(t "and the .loomy/logs/ line in .gitignore"))${C_RESET}"
+    ui_rail "$(t "To remove Loomy from a project:") ${C_BOLD}rm -rf .loomy START.md${C_RESET} ${C_DIM}($(t "and the Loomy block in .gitignore"))${C_RESET}"
     ui_rail "${C_DIM}$(t "Personal settings: %s" "$(loomy_config_file | sed "s|^$HOME|~|")")${C_RESET}"
     ui_end "$(t "run the command that matches your install")"
     ;;

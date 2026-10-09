@@ -28,6 +28,8 @@ Claude inspecte et rend compte ; ses outils de modification de fichiers sont dé
 ```
 Les rôles qui écrivent modifient le répertoire de travail ; le script liste les fichiers changés. Surcharges : `DELEGATE_CODEX_MODEL`, `DELEGATE_CODEX_EFFORT`.
 
+Choisis le rôle d'après l'intention du travail (conception → architecte, implémentation → développeur ou exécutant, relecture → relecteur, etc.), pas d'après le modèle que l'utilisateur nomme. Quand l'utilisateur nomme un modèle ou un effort (« une conception par Sol high »), garde le rôle et passe-les en options : `--model <id> --effort <niveau> --why "user request"` ; ajoute `--write` quand ce rôle doit produire des fichiers (un document de conception, par exemple). L'option l'emporte sur le routage et le journal l'enregistre comme demandée et hors routage.
+
 En fin de quota d'abonnement (95 % par défaut), un bridge peut confier le rôle à l'autre outil, avec le modèle que le routage prévoit pour ce rôle de ce côté ; il l'annonce sur stderr et le journalise. Rien ne change pour toi : même appel, même type de réponse ; vérifie le résultat comme d'habitude.
 
 Un orchestrateur Codex utilise aussi `loomy-delegate-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.

@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.16.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.16.1-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -771,7 +771,6 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 
 | Status | Planned |
 |---|---|
-| 🔜 | **0.16.1 · polish and speed**: the status line marks a manual lead relay `(manual)`; fewer subprocesses in the routing library (case-based upper-casing instead of `tr`) and in the project relays setup (no `basename` per relay); tests wait for `tmux` by polling instead of fixed pauses |
 | 🔜 | **Windows 11 through WSL2**: Loomy already runs on Linux (tested in CI), and Claude Code and Codex both run in WSL2. Remaining: WSL detection in `loomy doctor`, clipboard (`clip.exe`), notifications, `start --app` opening the Windows desktop apps, line endings forced to LF, a Windows section in the docs, then a check on a real Windows 11 machine. A few days |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

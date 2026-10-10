@@ -3,7 +3,7 @@
 #   loomy-status.sh                 prints the status
 #   loomy-status.sh set <phase>     records the current bootstrap phase (used by the agents)
 #   loomy-status.sh --audit set <phase>   records the phase of the running audit (loomy audit)
-#   loomy-status.sh --watch [N]     live agents and timers every second; o v l q (see the footer)
+#   loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)
 #   --compact / --full           tight view (for a narrow pane) or full view; watch picks one from the terminal size
 #   loomy-status.sh --root <dir>    works on another project folder
 set -euo pipefail
@@ -197,6 +197,24 @@ loomy_watch_feed() {
   ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1"
 }
 
+# Keep navigation and its labels together: the tree's list is not the live-agent list.
+watch_keys() {
+  local keys
+  keys="[o] $(t "orchestrator")"
+  if [[ "$view" == list ]]; then keys="$keys · [a] $(t "status")"
+  else keys="$keys · [a] $(t "live list")"; fi
+  if [[ "$view" == tree ]]; then keys="$keys · [t] $(t "status") · [v] $( [[ "$tree_layout" == list ]] && t "diagram" || t "list")"
+  else keys="$keys · [t] $(t "tree")"; fi
+  if [[ "$view" == list ]]; then
+    keys="$keys · [v] $( [[ "$LV_GROUP" == model ]] && t "group by request" || t "group by model")"
+  elif [[ "$view" == status ]]; then
+    keys="$keys · [c] $( [[ "$size" == --compact ]] && t "full view" || t "compact view")"
+  fi
+  keys="$keys · [l] $( [[ "$view" == log ]] && t "status" || t "log")"
+  [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · [s] $(t "session")"
+  printf '%s · [q] %s' "$keys" "$(t "quit")"
+}
+
 if (( WATCH )); then
   ui_screen_begin
   KEY_READER=""; WATCH_STTY=""
@@ -223,13 +241,19 @@ if (( WATCH )); then
   # shellcheck source=loomy-tree.sh
   source "$SCRIPT_DIR/loomy-tree.sh" --library
   loomy_live_init
-  state_tick=0; tick=0; wtop=0; view="tree"; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; last_frame=""; force_frame=1
+  _ui_term_size
+  watch_pref="$(loomy_config_get watch_view tree)"
+  state_tick=0; tick=0; wtop=0; view="tree"; tree_mode=auto; tree_layout=list; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; last_frame=""; force_frame=1
+  tree_mode="${LOOMY_TREE:-$(loomy_config_get tree_view auto)}"
+  if [[ "$watch_pref" == list || "$COMPACT" == 1 ]] || (( IN_PANE )); then view=list; fi
+  watch_note=""; note_until=0
   p_relay=0; p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
   while IFS='|' read -r now dirty key LV_CLOCK <&8; do
     # ---- what changed since the previous frame
     LV_NOW="$now"
+    if [[ -n "$watch_note" ]] && (( now >= note_until )); then watch_note=""; force_frame=1; fi
     if (( dirty )); then loomy_live_metadata; loomy_live_poll "$J"; fi
     old_active=$LV_ACTIVE; old_finished=${#LV_FINISHED[@]}
     if (( dirty || now != state_tick )); then loomy_live_states; state_tick=$now; fi
@@ -275,22 +299,24 @@ if (( WATCH )); then
     fi
     # ---- image
     timer=""; (( ${#LV_RUNNING[@]} == 0 )) || timer="$now"
-    stamp="$timer:$LV_SEQ:$view:$phase:$COMPACT:$LV_GROUP"
+    stamp="$timer:$LV_SEQ:$view:$phase:$COMPACT:$LV_GROUP:$tree_mode"
     if [[ "$stamp" != "$last_frame" ]] || (( force_frame || dirty )); then
       _ui_term_size; size="--full"
       if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
-      keys="$(loomy_live_keys)"
+      tree_layout=list
+      if [[ "$tree_mode" != list ]] && (( UI_COLS >= 124 )); then tree_layout=diagram; fi
+      keys="$(watch_keys)"
       hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
-      if [[ "$view" == tree ]]; then
+      if [[ "$view" == list ]]; then
         frame="$(LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
-      elif [[ "$view" == diagram ]]; then
-        frame="$(LOOMY_TREE=diagram LOOMY_NO_HEADER=1 LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
+      elif [[ "$view" == tree ]]; then
+        frame="$(LOOMY_TREE=$tree_mode LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
       else
         extra=(); [[ "$view" == log ]] && extra=(--journal)
-        frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR=1 LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
+        frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
           "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
       fi
       # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
@@ -303,6 +329,7 @@ if (( WATCH )); then
         loomy_live_header
         LV_HEADER="$(printf '%s\n' "$LV_HEADER" | ui_clip "$(( UI_COLS - 4 ))")"
         ui_header "$LV_HEADER" ""
+        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="$watch_note"
         _ui_term_size; _ui_chrome
         (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
         UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
@@ -316,13 +343,32 @@ if (( WATCH )); then
     case "$key" in
       q|Q) break ;;
       c|C) [[ "$view" == "status" ]] && { if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi; } ;;
-      l|L) if [[ "$view" == "log" ]]; then view="tree"; else view="log"; fi ;;
-      t|T) if [[ "$view" == tree ]]; then view=diagram; else view=tree; fi ;;
-      v|V) if [[ "$LV_GROUP" == model ]]; then LV_GROUP=request; else LV_GROUP=model; fi
-        loomy_config_set watch_group "$LV_GROUP"; force_frame=1 ;;
-      o|O) bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator >/dev/null 2>&1 || true ;;
+      l|L) if [[ "$view" == log ]]; then view=status; else view=log; fi; wtop=0 ;;
+      t|T) if [[ "$view" == tree ]]; then view=status
+        else view=tree; loomy_config_set watch_view tree; fi; wtop=0 ;;
+      a|A) if [[ "$view" == list ]]; then view=status
+        else view=list; loomy_config_set watch_view list; fi; wtop=0 ;;
+      v|V)
+        if [[ "$view" == tree ]]; then
+          if [[ "$tree_layout" == list ]]; then
+            tree_mode=diagram
+            if (( UI_COLS < 124 )); then watch_note="$(t "Diagram needs at least %s columns." 124)"; note_until=$(( now + 5 )); fi
+          else tree_mode=list; fi; wtop=0
+        elif [[ "$view" == list ]]; then
+          if [[ "$LV_GROUP" == model ]]; then LV_GROUP=request; else LV_GROUP=model; fi
+          loomy_config_set watch_group "$LV_GROUP"
+        fi ;;
+      o|O)
+        # The launcher has no ownership of the watch's screen, input or sampler.
+        watch_note=""
+        if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null >/dev/null 2>&1 8<&-; then
+          watch_note="$(t "Could not open the orchestrator; watch is still running.")"; note_until=$(( now + 5 ))
+        else
+          watch_note="$(t "Orchestrator opened.")"; note_until=$(( now + 5 ))
+        fi
+        if (( terminal )); then stty -echo -icanon min 1 time 0 2>/dev/null || true; fi ;;
 
-      s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { UI_PAGE_L=(); ui_exec bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT"; } ;;
+      s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { watch_cleanup; trap - EXIT INT TERM; exec bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT"; } ;;
     esac
     [[ -z "$key" ]] || force_frame=1
     # Tracking opened by loomy start --watch: it closes with the agent session.

@@ -505,12 +505,13 @@ W=$(( UI_COLS - 7 ))
 # Rendering: diagram (boxes and links) or list. tree_view auto (default): the diagram when the window can hold it,
 # otherwise the list. LOOMY_TREE (set by key v of loomy watch) overrides for one session.
 TREE_MODE="${LOOMY_TREE:-$(sed -n 's/^tree_view=//p' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null | tail -1)}"
-TREE_NEED_COLS=124; TREE_NEED_ROWS=57; [[ -n "${LOOMY_NO_HEADER:-}" ]] && TREE_NEED_ROWS=64
+TREE_NEED_COLS=124; TREE_NEED_ROWS=57
+[[ -z "${LOOMY_NO_HEADER:-}" ]] || TREE_NEED_ROWS="$UI_ROWS"
 DIAGRAM=0
 case "${TREE_MODE:-auto}" in
-  diagram) (( W >= 96 )) && DIAGRAM=1 ;;
+  diagram) (( UI_COLS >= TREE_NEED_COLS )) && DIAGRAM=1 ;;
   list) DIAGRAM=0 ;;
-  *) (( UI_COLS >= TREE_NEED_COLS && UI_ROWS >= TREE_NEED_ROWS )) && DIAGRAM=1 ;;
+  *) if (( UI_COLS >= TREE_NEED_COLS )) && { [[ -n "${LOOMY_NO_HEADER:-}" ]] || (( UI_ROWS >= TREE_NEED_ROWS )); }; then DIAGRAM=1; fi ;;
 esac
 TREE_SMALL=0; [[ "${TREE_MODE:-auto}" != "list" ]] && (( ! DIAGRAM )) && TREE_SMALL=1
 if (( DIAGRAM )); then

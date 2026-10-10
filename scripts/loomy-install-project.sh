@@ -123,7 +123,7 @@ NEW_V="$(cat "$LOOMY_ROOT/VERSION")"
 
 # Copy of the files managed by Loomy. Brief, phase (state) and log (logs) are never touched.
 copy_loomy_files() {
-  local d f
+  local d f name script
   mkdir -p "$L"
   # Document templates: copied, the agents read them in the project.
   for d in templates agents skills external-skills; do
@@ -157,9 +157,10 @@ _loomy_run() {
 }
 RELAIS
   for f in "$LOOMY_ROOT"/scripts/loomy-*.sh; do
+    name="${f##*/}"; script="${name%.sh}"
     printf '#!/usr/bin/env bash\n# Loomy relay: runs %s from the installed Loomy (see _loomy.sh).\n. "$(dirname "$0")/_loomy.sh" && _loomy_run %s "$@"\n' \
-      "$(basename "$f")" "$(basename "$f")" >"$L/scripts/$(basename "$f")"
-    chmod +x "$L/scripts/$(basename "$f")"
+      "$name" "$script.sh" >"$L/scripts/$name"
+    chmod +x "$L/scripts/$name"
   done
   cp "$LOOMY_ROOT/VERSION" "$L/VERSION"
   install_claude_hooks

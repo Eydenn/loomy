@@ -69,9 +69,11 @@ loomy_open_orchestrator() {
   local root="$1" command launch
   loomy_orchestrator_target "$root"
   if [[ "$LOOMY_OPEN_TARGET" == app ]]; then
-    if bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only; then return 0; fi
+    # The current lead (an active relay's acting tool, else the brief's): never a stale AI_ROUTE_ENV inherited from a
+    # tmux server or an older shell (loomy start --lead replaces it).
+    if env -u AI_ROUTE_ENV bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only </dev/null; then return 0; fi
   fi
-  printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
+  printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     tmux new-window -c "$root" "$command"
   elif [[ "$(uname -s)" == Darwin ]] && command -v osascript >/dev/null 2>&1; then
@@ -204,7 +206,8 @@ resolve_session() {
     CLI_OK=0; ai_has_claude && CLI_OK=1
     INSTALL="curl -fsSL https://claude.ai/install.sh | bash"
   else
-    if [[ -d "$HOME/.codex/sessions" ]] && grep -rlqF "\"cwd\":\"$ROOT\"" "$HOME/.codex/sessions" 2>/dev/null; then HAS_SESSION=1; fi
+    # Watch's app action starts a new thread; scanning terminal history only delays its return.
+    if (( ! APP_ONLY )) && [[ -d "$HOME/.codex/sessions" ]] && grep -rlqF "\"cwd\":\"$ROOT\"" "$HOME/.codex/sessions" 2>/dev/null; then HAS_SESSION=1; fi
     CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"
     NEW_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT")
     RESUME_CMD=("$CODEX" resume --last -m "$MODEL" -c "model_reasoning_effort=$EFFORT")

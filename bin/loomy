@@ -200,6 +200,7 @@ sub_help() {
             t "      auto_update (no: loomy no longer offers to update Loomy, Claude Code and Codex at launch),"; echo
             t "      advisor (auto: Opus advises the Thrifty Sonnet lead and the Max quality Opus lead; off, opus, sonnet or fable),"; echo
             t "      tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),"; echo
+            t "      watch_view (tree by default: diagram when the window fits it, otherwise list; list: keep the live list),"; echo
             t "      watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),"; echo
             t "      memory (off: the shared memory is no longer given at the start of sessions),"; echo
             t "      start_in (app: loomy start opens the session in the Claude or Codex desktop app, live tracking in a Terminal window),"; echo
@@ -347,13 +348,14 @@ case "$cmd" in
           chain.claude.top|chain.claude.mid|chain.claude.fast|chain.codex.top|chain.codex.mid|chain.codex.fast)
             [[ "$val" == "auto" || "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*(,\ ?[A-Za-z0-9][A-Za-z0-9._-]*){0,2}$ ]] || { t "%s: up to three model ids separated by commas (newest first), or auto" "$key" >&2; echo >&2; exit 2; } ;;
           tree_view) [[ "$val" =~ ^(auto|diagram|list)$ ]] || { t "tree_view: auto, diagram or list" >&2; echo >&2; exit 2; } ;;
+          watch_view) [[ "$val" =~ ^(tree|list)$ ]] || { t "watch_view: tree or list" >&2; echo >&2; exit 2; } ;;
           watch_group) [[ "$val" =~ ^(request|model)$ ]] || { t "%s: request or model" "$key" >&2; echo >&2; exit 2; } ;;
           watch_resize) [[ "$val" =~ ^(yes|no)$ ]] || { t "%s: yes or no" "$key" >&2; echo >&2; exit 2; } ;;
           advisor) [[ "$val" =~ ^(auto|off|opus|sonnet|fable)$ ]] || { t "advisor: auto, off, opus, sonnet or fable" >&2; echo >&2; exit 2; } ;;
           models_mode) [[ "$val" =~ ^(latest|thrifty)$ ]] || { t "models_mode: latest or thrifty" >&2; echo >&2; exit 2; } ;;
           model.claude.top|model.claude.mid|model.claude.fast|model.codex.top|model.codex.mid|model.codex.fast)
             [[ "$val" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "%s: a model id, or auto (catalog's choice)" "$key" >&2; echo >&2; exit 2; } ;;
-          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, lead_failover, quota_room, delegation_format, start_watch, start_in, memory, skills, notify, auto_update, advisor, tree_view, watch_group, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
+          *) t "Unknown key: %s (%s)" "$key" "plan_claude, plan_codex, plan_claude_price, plan_codex_price, quota_switch, lead_failover, quota_room, delegation_format, start_watch, start_in, memory, skills, notify, auto_update, advisor, tree_view, watch_view, watch_group, watch_resize, screen, lang, model.<claude|codex>.<top|mid|fast>, chain.<claude|codex>.<top|mid|fast>, models_mode" >&2; echo >&2; exit 2 ;;
         esac
         loomy_config_set "$key" "$val"; echo "$key=$val" ;;
       *) t "Usage: loomy config [list | get <key> | set <key> <value>]" >&2; echo >&2; exit 2 ;;

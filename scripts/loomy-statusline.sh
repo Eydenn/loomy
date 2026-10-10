@@ -56,11 +56,23 @@ if [[ -n "$R" && -f "$R/.loomy/state" ]]; then
 fi
 # Temporary lead relay (quota): the acting tool (state file read with builtins, this refreshes often).
 if [[ -n "$R" && -f "$R/.loomy/failover" ]]; then
-  fm=""; fa=""
+  fm=""; fa=""; fmanual=""
   while IFS= read -r fl; do
     case "$fl" in master=*) fm="${fl#master=}" ;; acting=*) fa="${fl#acting=}" ;; esac
+    case "$fl" in manual=*) fmanual="${fl#manual=}" ;; esac
   done <"$R/.loomy/failover"
-  [[ -n "$fa" && "$fa" != "$fm" ]] && seg="${seg:+$seg · }⇄ $fa"
+  if [[ -n "$fa" && "$fa" != "$fm" ]]; then
+    relay_suffix=""
+    if [[ "$fmanual" == 1 ]]; then
+      _status_lang="${LOOMY_UI_LANG:-${LOOMY_LANG:-}}"
+      if [[ -z "$_status_lang" && -f "$CFG/config" ]]; then
+        while IFS= read -r _config_line; do case "$_config_line" in lang=*) _status_lang="${_config_line#lang=}" ;; esac; done <"$CFG/config"
+      fi
+      if [[ -z "$_status_lang" || "$_status_lang" == auto ]]; then _status_lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"; fi
+      case "$_status_lang" in fr|fr_*|fr-*|fr.*|FR*) relay_suffix=" (manuel)" ;; *) relay_suffix=" (manual)" ;; esac
+    fi
+    seg="${seg:+$seg · }⇄ $fa$relay_suffix"
+  fi
 fi
 user_cmd="$(cat "$CFG/statusline-user" 2>/dev/null || true)"
 if [[ -n "$user_cmd" ]]; then

@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.16.1 — 2026-10-10
+
+### Changed
+- **`loomy watch` opens on the agent tree** when the terminal is wide enough (the tree's own list form otherwise; the compact side pane of `loomy start` keeps the live list). `t` switches tree and status, `a` opens the live list, `v` switches diagram and list in the tree (request and model grouping in the live list); the choice is remembered (`loomy config set watch_view tree|list`).
+- The status line marks a manual lead relay: `⇄ codex (manual)`.
+- Faster: the routing library no longer starts a subprocess to upper-case names (sourcing it went from about 24 ms to 8 ms), and the project relays are set up without one `basename` per relay. Tests wait for `tmux` by polling instead of fixed pauses.
+
+### Fixed
+- **Regressions of the live view (0.15.1 to 0.16.0)**: every key is back and listed in the footer for the current view (`q`, `l`, `t`, `a`, `v`, `c`, `s`, `o`, ↑↓ to scroll); the agent tree is in colour again (`NO_COLOR` still turns colours off).
+- **`o` (open the orchestrator)** no longer blocks: it used to scan the whole Codex session history first. It opens the current lead (an active relay's acting tool, else the brief's) and ignores a stale `AI_ROUTE_ENV` left in a `tmux` server, which could turn it into a bogus relay towards that tool.
+
 ## 0.16.0 — 2026-10-10
 
 ### Added

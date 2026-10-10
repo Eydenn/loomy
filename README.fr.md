@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.16.0-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.16.1-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -771,7 +771,6 @@ Ce que Loomy garantit (rien n'est poussé ni supprimé sans toi, projets existan
 
 | Statut | Prévu |
 |---|---|
-| 🔜 | **0.16.1 · finitions et rapidité** : la barre d'état signale un relais manuel du principal `(manuel)` ; moins de sous-processus dans la bibliothèque de routage (majuscules par `case` au lieu de `tr`) et dans la mise en place des relais du projet (plus de `basename` par relais) ; les tests attendent `tmux` par sondage au lieu de pauses fixes |
 | 🔜 | **Windows 11 via WSL2** : Loomy tourne déjà sous Linux (testé en CI), et Claude Code comme Codex fonctionnent dans WSL2. Reste : détection de WSL dans `loomy doctor`, presse-papiers (`clip.exe`), notifications, `start --app` qui ouvre les apps de bureau Windows, fins de ligne forcées en LF, une section Windows dans la doc, puis une vérification sur un vrai Windows 11. Quelques jours |
 | 🎯&nbsp;RC | **Release candidate : validation en conditions réelles** |
 | | Questionnaire et interface découpés en modules plus petits, tests répartis par thème |

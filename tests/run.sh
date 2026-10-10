@@ -8,7 +8,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-VERBOSE=0; [[ "${1:-}" == "-v" ]] && VERBOSE=1
+VERBOSE=0; [[ "${1:-}" == "-v" || "${3:-}" == "-v" ]] && VERBOSE=1
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-tests.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
@@ -64,6 +64,19 @@ fails() {
 has() { if grep -qE -- "$2" "$OUT"; then ok "$1"; else ko "$1 (pattern missing: $2)"; fi; }
 hasnt() { if grep -qE -- "$2" "$OUT"; then ko "$1 (pattern present: $2)"; else ok "$1"; fi; }
 file_has() { if grep -qE -- "$3" "$2" 2>/dev/null; then ok "$1"; else ko "$1 (pattern missing from ${2##*/}: $3)"; fi; }
+
+# wait_for <timeout_s> <command…>: poll a state needed by a later assertion.
+wait_for() {
+  local timeout_s="$1" attempts=0 max_attempts
+  shift
+  max_attempts=$(( timeout_s * 10 ))
+  until "$@"; do
+    (( attempts >= max_attempts )) && return 1
+    sleep 0.1
+    attempts=$(( attempts + 1 ))
+  done
+  return 0
+}
 
 delegation_options_tests() {
   section "Delegation options"
@@ -281,10 +294,281 @@ STUB
   done
 }
 
+# Real PTYs exercise the watch's sampler, frame and launcher, without opening a real app.
+watch_terminal_tests() {
+  section "Watch terminal"
+  local wt="$WORK/watch-terminal" nowz
+  mkdir -p "$wt/project/.loomy/logs" "$wt/config/loomy" "$wt/bin" "$wt/apps/Codex.app/Contents/Resources"
+  printf -- '---\nname: Watch regression\nai_mode: ORCHESTRATED\nai_lead: codex\nbudget: equilibre\n---\n' >"$wt/project/.loomy/brief.md"
+  printf 'phase=done\n' >"$wt/project/.loomy/state"
+  nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"watch-test","pid":%s,"model":"gpt-6.1-sol","effort":"high"}\n' "$nowz" "$$" >"$wt/project/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation_start","id":"run","session":"watch-test","pid":%s,"role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Fix watch"}\n' "$nowz" "$$" >>"$wt/project/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","id":"security-done","session":"watch-test","role":"security","family":"claude","model":"claude-opus-5-5","effort":"high","status":"ok","duration_s":2,"task":"Check terminal ownership"}\n' "$nowz" >>"$wt/project/.loomy/logs/events.jsonl"
+  ln -s "$HERE/stubs/codex" "$wt/apps/Codex.app/Contents/Resources/codex"
+  cat >"$wt/bin/open" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >>"$WATCH_OPEN_LOG"
+if [[ "$1" == -Ra ]]; then [[ "$2" == "${WATCH_APP:-}" ]]; exit $?; fi
+[[ "${WATCH_LAUNCH_FAIL:-0}" == 0 ]]
+STUB
+  cat >"$wt/bin/osascript" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >>"$WATCH_OPEN_LOG"
+[[ "${WATCH_LAUNCH_FAIL:-0}" == 0 ]]
+STUB
+  # The app action must not walk terminal session history before opening its new thread.
+  mkdir -p "$HOME/.codex/sessions"
+  cat >"$wt/bin/grep" <<'STUB'
+#!/bin/bash
+if [[ "$1" == -rlqF && "${3:-}" == "$HOME/.codex/sessions" ]]; then
+  echo history-scan >>"$WATCH_OPEN_LOG"; exit 1
+fi
+exec /usr/bin/grep "$@"
+STUB
+  chmod +x "$wt/bin/open" "$wt/bin/osascript" "$wt/bin/grep"
+  if ! command -v expect >/dev/null 2>&1; then ko "watch PTY: expect unavailable"; return; fi
+  cat >"$wt/watch.exp" <<'EXPECT'
+set timeout 15
+log_user 0
+# Wide diagrams exceed expect's default 2000-byte match buffer.
+match_max -d 200000
+# Preserve the raw frame for ANSI assertions and diagnostics.
+log_file -a -noappend $env(WATCH_TRANSCRIPT)
+set stty_init "rows $env(LINES) columns $env(COLUMNS)"
+proc fail {message} { puts stderr $message; exit 1 }
+proc see {pattern} {
+  global expect_out
+  expect {
+    -re $pattern { return $expect_out(0,string) }
+    timeout { fail "timeout waiting for $pattern" }
+    eof { fail "watch exited while waiting for $pattern" }
+  }
+}
+proc frame {{required ""} {absent ""}} {
+  global env
+  # A frame ends with the footer on the bottom physical row.
+  set pattern [format {\x1b\[%s;1H[^\n]*\x1b\[K} $env(LINES)]
+  global expect_out
+  set deadline [expr {[clock milliseconds] + 15000}]
+  while {1} {
+    if {[clock milliseconds] > $deadline} {fail "frame did not match $required / absent $absent"}
+    see $pattern
+    set raw $expect_out(buffer)
+    regsub -all {\x1b\[[0-9;?]*[A-Za-z]} $raw {} plain
+    if {($required == "" || [regexp $required $plain]) && ($absent == "" || ![regexp $absent $plain])} {return [list $raw $plain]}
+  }
+}
+proc keys {plain expected absent} {
+  foreach k $expected { if {[string first "\[$k\]" $plain] < 0} {fail "missing key $k"} }
+  foreach k $absent { if {[string first "\[$k\]" $plain] >= 0} {fail "invalid key $k"} }
+}
+proc saved {entry} {
+  global env
+  set f [open "$env(XDG_CONFIG_HOME)/loomy/config" r]
+  set data [read $f]; close $f
+  if {[string first $entry $data] < 0} {fail "preference not saved: $entry"}
+}
+proc quit_watch {} {
+  send "q"
+  see {WATCH_EXIT:0}
+  see {WATCH_STTY:OK}
+  expect eof
+  catch wait result
+  if {[lindex $result 3] != 0} {fail "watch wrapper failed: $result"}
+}
+set shell {
+  bash "$LIVE_REPO/scripts/loomy-status.sh" --root "$WATCH_PROJECT" --watch $WATCH_ARGS
+  rc=$?
+  echo WATCH_EXIT:$rc
+  modes=$(stty -a)
+  if [[ "$modes" =~ (^|[[:space:]])icanon([[:space:];]|$) && "$modes" =~ (^|[[:space:]])echo([[:space:];]|$) ]]; then echo WATCH_STTY:OK; else echo WATCH_STTY:BAD; fi
+}
+spawn bash -c $shell
+set initial [frame]
+set plain [lindex $initial 1]
+if {$env(WATCH_INITIAL) == "tree"} {
+  if {$env(COLUMNS) >= 124} {set title {LOOMY AGENT TREE}} else {set title {AGENT TREE}}
+  if {[info exists env(LOOMY_UI_LANG)] && $env(LOOMY_UI_LANG) == "fr"} {
+    if {$env(COLUMNS) >= 124} {set title {ARBRE DES AGENTS LOOMY}} else {set title {ARBRE DES AGENTS}}
+    foreach label {{[o] orchestrateur} {[a] liste live} {[t] statut} {[l] journal} {[q] quitter}} {
+      if {[string first $label $plain] < 0} {fail "French footer missing $label"}
+    }
+  }
+  if {[string first $title $plain] < 0} {fail "default must be tree at $env(COLUMNS)x$env(LINES)"}
+  if {[string first {IN PROGRESS} $plain] >= 0} {fail "tree fell back to live list"}
+  keys $plain {o a t v l q} {c}
+} else {
+  if {[string first {IN PROGRESS} $plain] < 0} {fail "pane/list preference must start in live list"}
+  keys $plain {o a t v l q} {c}
+}
+if {$env(WATCH_MODE) == "defaults"} {
+  if {$env(WATCH_ARGS) == ""} {keys $plain {s} {}} else {keys $plain {} {s}}
+  if {$env(WATCH_INITIAL) == "tree" && $env(COLUMNS) >= 124} {
+    if {[string first {↑↓} $plain] < 0} {fail "overflow has no scroll keys"}
+    send [format "%c%s%c%s" 27 {[B} 27 {[B}]
+    frame "" $title
+    send [format "%c%s%c%s" 27 {[A} 27 {[A}]
+    frame $title
+  }
+  quit_watch
+  exit 0
+}
+if {$env(WATCH_MODE) == "color"} {
+  set raw [lindex $initial 0]
+  if {$env(NO_COLOR) == "" && $env(TERM) != "dumb"} {
+    foreach code {33 35 36 32} {
+      if {![regexp [format {\x1b\[%sm} $code] $raw]} {fail "missing diagram color $code"}
+    }
+  } elseif {[regexp {\x1b\[[0-9;]*m} $raw]} {fail "ANSI color under NO_COLOR/dumb"}
+  quit_watch
+  exit 0
+}
+# Normalize the compact pane's live list to tree before exercising its navigation.
+if {$env(WATCH_INITIAL) == "list"} {send "t"; set initial [frame {\[t\] status}]}
+# Navigate to the view under test; every transition requires a fresh complete frame.
+if {$env(WATCH_VIEW) == "list"} {send "a"; set current [frame {\[v\] group by model}]} elseif {$env(WATCH_VIEW) == "status"} {send "t"; set current [frame {\[c\] compact view}]} elseif {$env(WATCH_VIEW) == "log"} {send "l"; set current [frame {\[l\] status}]} else {set current $initial}
+set plain [lindex $current 1]
+if {$env(WATCH_VIEW) == "status"} {keys $plain {o a t c l q} {v}} elseif {$env(WATCH_VIEW) == "log"} {keys $plain {o a t l q} {c v}} else {keys $plain {o a t v l q} {c}}
+if {$env(WATCH_ARGS) == ""} {keys $plain {s} {}} else {keys $plain {} {s}}
+send "o"
+if {$env(WATCH_LAUNCH_FAIL) == 1} {see {Could not open the orchestrator; watch is still running\.}} else {see {Orchestrator opened\.}}
+set after_open [frame]
+# A changed view after o proves the watch process and sampler are still alive.
+if {$env(WATCH_VIEW) == "log"} {
+  send "l"; set f [frame {\[c\] compact view}]; keys [lindex $f 1] {c} {v}
+} elseif {$env(WATCH_VIEW) == "tree"} {
+  send "v"
+  if {$env(COLUMNS) >= 124} {set f [frame {\[v\] diagram}]} else {set f [frame {Diagram needs at least 124 columns\.}]}
+  if {$env(COLUMNS) >= 124} {
+    if {[string first {AGENT TREE} [lindex $f 1]] < 0 || [string first {LOOMY AGENT TREE} [lindex $f 1]] >= 0} {fail "v did not switch to tree list"}
+    if {[string first {[v] diagram} [lindex $f 1]] < 0} {fail "tree list footer target"}
+    send "v"; set f [frame {\[v\] list}]
+    if {[string first {LOOMY AGENT TREE} [lindex $f 1]] < 0} {fail "v did not restore diagram"}
+  } else {
+    if {[string first {Diagram needs at least 124 columns.} [lindex $f 1]] < 0} {fail "narrow v lacks feedback"}
+  }
+} elseif {$env(WATCH_VIEW) == "list"} {
+  send "v"; set f [frame {\[v\] group by request}]
+  if {[string first {[v] group by request} [lindex $f 1]] < 0} {fail "v did not change grouping"}
+  saved {watch_group=model}; saved {watch_view=list}
+  send "t"; frame {\[t\] status}; saved {watch_view=tree}
+} else {
+  send "c"; set f [frame {\[c\] full view}]
+  if {[string first {[c] full view} [lindex $f 1]] < 0} {fail "c did not switch compact"}
+}
+quit_watch
+EXPECT
+  cat >"$wt/launch" <<'LAUNCH'
+#!/bin/bash
+# Keep CLI discovery and desktop URLs under stubs even in the real PTY.
+export LIVE_REPO WATCH_PROJECT WATCH_ARGS WATCH_INITIAL WATCH_MODE WATCH_VIEW WATCH_LAUNCH_FAIL WATCH_OPEN_LOG WATCH_TRANSCRIPT
+exec expect "$WATCH_EXPECT"
+LAUNCH
+  chmod +x "$wt/launch"
+  local cols rows view app available args mode initial transcript launch_fail tmux_bin
+  tmux_bin="$(PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" command -v tmux || true)"
+  # Config/PTY dimensions are isolated; tests never change a real desktop preference.
+  for cols in 170 140 100; do
+    rows=40; [[ "$cols" != 170 ]] || rows=60
+    printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+    run "watch PTY: tree default at ${cols}x${rows}" env -u TMUX PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="" WATCH_INITIAL=tree WATCH_MODE=defaults WATCH_VIEW=tree WATCH_LAUNCH_FAIL=0 WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$wt/default-$cols.log" COLUMNS="$cols" LINES="$rows" TERM=xterm-256color "$wt/launch"
+  done
+  for cols in 170 100; do
+    printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+    run "watch PTY: French footer ($cols columns), every key visible" env -u TMUX LOOMY_UI_LANG=fr PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="" WATCH_INITIAL=tree WATCH_MODE=defaults WATCH_VIEW=tree WATCH_LAUNCH_FAIL=0 WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$wt/french-$cols.log" COLUMNS="$cols" LINES=40 TERM=xterm-256color "$wt/launch"
+  done
+  # Saved list preference and start's compact pane take precedence over tree default.
+  for mode in preference pane until; do
+    args=""; printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+    case "$mode" in
+      preference) printf 'watch_view=list\n' >>"$wt/config/loomy/config" ;;
+      pane) args="--compact --pane" ;;
+      until) args="--compact --pane --until-exit $$" ;;
+    esac
+    run "watch PTY: live list ($mode), session key guarded" env -u TMUX PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="$args" WATCH_INITIAL=list WATCH_MODE=defaults WATCH_VIEW=list WATCH_LAUNCH_FAIL=0 WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$wt/$mode.log" COLUMNS=170 LINES=60 TERM=xterm-256color "$wt/launch"
+  done
+  for mode in color no-color dumb; do
+    app=""; [[ "$mode" != no-color ]] || app=1
+    initial=xterm-256color; [[ "$mode" != dumb ]] || initial=dumb
+    printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+    run "watch PTY: tree ANSI ($mode)" env -u TMUX NO_COLOR="$app" TERM="$initial" PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="" WATCH_INITIAL=tree WATCH_MODE=color WATCH_VIEW=tree WATCH_LAUNCH_FAIL=0 WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$wt/$mode.log" COLUMNS=170 LINES=60 "$wt/launch"
+  done
+  # App found, absent, and both opening routes failing, in every view and requested terminal size.
+  for cols in 170 120; do
+    rows=40; [[ "$cols" != 170 ]] || rows=60
+    for view in tree list log status; do
+      for app in Codex missing fail app-fail; do
+        launch_fail=0; [[ "$app" != fail && "$app" != app-fail ]] || launch_fail=1
+        available="$app"; [[ "$app" != app-fail ]] || available=Codex
+        printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+        : >"$wt/open.log"; transcript="$wt/o-$cols-$view-$app.log"
+        run "watch PTY: o survives ($view, $app, ${cols}x${rows}), q=0" env -u TMUX WATCH_APP="$available" LOOMY_CODEX_APPS="$wt/apps/${available}.app" PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="" WATCH_INITIAL=tree WATCH_MODE=open WATCH_VIEW="$view" WATCH_LAUNCH_FAIL="$launch_fail" WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$transcript" COLUMNS="$cols" LINES="$rows" TERM=xterm-256color "$wt/launch"
+        if [[ "$available" == Codex ]]; then
+          file_has "watch o: desktop URL was attempted ($view, $app, $cols)" "$wt/open.log" '^codex://'
+          if grep -q '^history-scan$' "$wt/open.log"; then ko "watch o: app action scanned terminal history"; else ok "watch o: app action skips terminal history ($view, $app, $cols)"; fi
+        fi
+        if [[ "$app" != Codex ]]; then file_has "watch o: terminal fallback attempted ($view, $app, $cols)" "$wt/open.log" 'Terminal.*do script'; fi
+      done
+    done
+  done
+  # Inside tmux, test the same views with pane/parent lifetime guards and a stubbed new-window action.
+  if [[ -n "$tmux_bin" ]] && "$tmux_bin" -L "loomy-watch-probe-$$" new-session -d -s probe 'sleep 2' >"$wt/tmux-probe.txt" 2>&1 && [[ ! -s "$wt/tmux-probe.txt" ]]; then
+    "$tmux_bin" -L "loomy-watch-probe-$$" kill-server 2>/dev/null || true
+    cat >"$wt/bin/tmux" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >>"$WATCH_OPEN_LOG"
+[[ "${WATCH_LAUNCH_FAIL:-0}" == 0 ]]
+STUB
+    chmod +x "$wt/bin/tmux"
+    for cols in 170 120; do
+      rows=40; [[ "$cols" != 170 ]] || rows=60
+      for view in tree list log status; do
+        for app in Codex missing fail app-fail; do
+          launch_fail=0; [[ "$app" != fail && "$app" != app-fail ]] || launch_fail=1
+          available="$app"; [[ "$app" != app-fail ]] || available=Codex
+          printf 'notify=no\nwatch_view=tree\n' >"$wt/config/loomy/config"
+          : >"$wt/open.log"
+          # t returns to the tree from start's initial live pane, then navigation tests begin.
+          # These tests use the outer tmux PTY for ownership and --until-exit, while expect supplies size/key input.
+          run "watch tmux PTY: o survives ($view, $app, ${cols}x${rows})" env -u TMUX WATCH_APP="$available" LOOMY_CODEX_APPS="$wt/apps/${available}.app" PATH="$wt/bin:$PATH" XDG_CONFIG_HOME="$wt/config" LIVE_REPO="$REPO" WATCH_PROJECT="$wt/project" WATCH_EXPECT="$wt/watch.exp" WATCH_ARGS="--pane --until-exit $$" WATCH_INITIAL=list WATCH_MODE=open WATCH_VIEW="$view" WATCH_LAUNCH_FAIL="$launch_fail" WATCH_OPEN_LOG="$wt/open.log" WATCH_TRANSCRIPT="$wt/tmux-$cols-$view-$app.log" COLUMNS="$cols" LINES="$rows" TERM=xterm-256color WATCH_TMUX_BIN="$tmux_bin" WATCH_TMUX_ROOT="$wt" bash -c '
+            "$WATCH_TMUX_BIN" -L "loomy-watch-test-$$" new-session -d -s watch -x "$COLUMNS" -y "$LINES" "bash -c '\''\"$WATCH_TMUX_ROOT/launch\"; echo \$? >\"$WATCH_TMUX_ROOT/tmux-result\"'\''" || exit 1
+            k=0; while [[ ! -f "$WATCH_TMUX_ROOT/tmux-result" && $k -lt 300 ]]; do sleep 0.1; k=$(( k + 1 )); done
+            "$WATCH_TMUX_BIN" -L "loomy-watch-test-$$" kill-server 2>/dev/null || true
+            [[ -f "$WATCH_TMUX_ROOT/tmux-result" ]] || exit 1
+            rc=$(cat "$WATCH_TMUX_ROOT/tmux-result"); rm -f "$WATCH_TMUX_ROOT/tmux-result"; exit "$rc"
+          '
+          if [[ "$available" == Codex ]]; then file_has "watch tmux o: desktop URL ($view, $app, $cols)" "$wt/open.log" '^codex://'; fi
+          if [[ "$app" != Codex ]]; then file_has "watch tmux o: new window ($view, $app, $cols)" "$wt/open.log" '^new-window '; fi
+        done
+      done
+    done
+  else
+    printf '  ○ watch tmux PTYs: tmux unavailable or sandbox denies its socket; run Watch terminal on the Mac\n'
+  fi
+}
+
 # ------------------------------------------------------------------ live native agents and watch
 live_view_tests() {
   section "Live view"
-  local lv="$WORK/live" nowz before
+  local lv="$WORK/live" nowz before wvcfg="$WORK/watch-view-config" relayproj="$WORK/project-relays"
+  run "models: ASCII uppercase keys use the builtin helper" bash -c 'source "$1/scripts/lib/models.sh"; _ai_ascii_upper claude_top; test "$_AI_ASCII_UPPER" = CLAUDE_TOP && _ai_ascii_upper CODEX_FAST && test "$_AI_ASCII_UPPER" = CODEX_FAST' _ "$REPO"
+  mkdir -p "$wvcfg"
+  run "watch_view: defaults to tree" env XDG_CONFIG_HOME="$wvcfg" bash -c 'source "$1/scripts/lib/config.sh"; test "$(loomy_config_get watch_view tree)" = tree' _ "$REPO"
+  run "config set watch_view list" env XDG_CONFIG_HOME="$wvcfg" "$LOOMY" config set watch_view list
+  run "config set watch_view tree" env XDG_CONFIG_HOME="$wvcfg" "$LOOMY" config set watch_view tree
+  fails "config set watch_view rejects invalid value" 2 env XDG_CONFIG_HOME="$wvcfg" "$LOOMY" config set watch_view diagram
+  has "config error lists accepted watch_view values" '^watch_view: tree or list$'
+  fails "French config rejects invalid watch_view value" 2 env LOOMY_UI_LANG=fr XDG_CONFIG_HOME="$wvcfg" "$LOOMY" config set watch_view diagram
+  has "French config error lists accepted watch_view values" '^watch_view : tree ou list$'
+  run "config help documents watch_view" "$LOOMY" config --help
+  has "config help states tree is the default" 'watch_view \(tree by default: diagram when the window fits it'
+  run "French config help documents watch_view" env LOOMY_UI_LANG=fr "$LOOMY" config --help
+  has "French config help states tree is the default" 'watch_view \(tree par défaut'
+  run "project init: relay fixtures installed without the questionnaire" "$LOOMY" init "$relayproj" --no-wizard
+  [[ -x "$relayproj/.loomy/scripts/loomy-statusline.sh" ]] && ok "project relay: wrapper remains executable" || ko "project relay: wrapper is not executable"
+  run "project relay: statusline wrapper reaches installed script" env LOOMY_HOME="$REPO" bash -c 'printf "{}" | "$1/.loomy/scripts/loomy-statusline.sh"' _ "$relayproj"
+  has "project relay: wrapper output is preserved" '^Loomy$'
   mkdir -p "$lv/.loomy/logs" "$lv/.claude/agents"
   printf -- '---\nname: Live demo\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$lv/.loomy/brief.md"
   printf 'phase=done\n' >"$lv/.loomy/state"
@@ -451,7 +735,16 @@ live_view_tests() {
     AVAILABLE=ChatGPT; loomy_orchestrator_target "$2"; test "$LOOMY_OPEN_APP" = ChatGPT || exit 1
     AVAILABLE=""; TMUX=stub; SCRIPT_DIR="$1/scripts"; tmux() { printf "%s\n" "$*" >"$LIVE_ROOT/opened.txt"; }; LIVE_ROOT="$2"; export TMUX
     loomy_open_orchestrator "$2"; grep -q "new-window.*--resume.*--watch" "$2/opened.txt"
+    grep -q "AI_ROUTE_ENV" "$2/opened.txt"
   ' _ "$REPO" "$lv"
+  # A stale AI_ROUTE_ENV (left in a tmux server by an older handoff) must not turn [o] into a relay towards that tool.
+  local lvo="$WORK/live-open"; rm -rf "$lvo"; cp -R "$lv" "$lvo"; rm -f "$lvo/.loomy/failover"
+  run "orchestrator [o] ignores a stale AI_ROUTE_ENV" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/loomy-start.sh" --open-library
+    SCRIPT_DIR="$1/scripts"; uname() { echo Darwin; }; open() { [[ "$2" == Claude ]]; }; export -f open
+    AI_ROUTE_ENV=hybrid-codex loomy_open_orchestrator "$2" >/dev/null 2>&1 || true
+    test ! -e "$2/.loomy/failover"
+  ' _ "$REPO" "$lvo"
   # An explicit Codex override and a native Claude task remain readable in both groupings.
   local demo="$WORK/live-frames" costs="$WORK/live-costs"
   mkdir -p "$demo/.loomy/logs" "$costs/.loomy/logs"
@@ -522,7 +815,7 @@ live_view_tests() {
   run "diagram lead works while a role runs without prompt activity" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$running"
   has "diagram role-only activity shows working" 'session open · working'
   has "diagram role-only activity waits for the role" 'waiting for 1 role'
-  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"usage-only","pid":%s}\n{"ts":"%s","type":"usage","session":"usage-only","tool":"claude","scope":"lead","model":"claude-sonnet-5-5"}\n' "$nowz" "$$" "$nowz" >"$unj"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"usage-only","pid":%s}\n{"ts":"%s","type":"usage","session":"usage-only","tool":"claude","scope":"lead","model":"claude-sonnet-5-5"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$unj"
   run "diagram lead works after recent usage without running roles" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$usage_only"
   has "diagram usage-only activity shows working" 'session open · working'
   has "diagram usage-only activity has no waiting roles" 'reviews \+ checks'
@@ -632,44 +925,7 @@ JSON
   run "config set watch_group request" "$LOOMY" config set watch_group request
   run "config set watch_group model" "$LOOMY" config set watch_group model
   fails "config set watch_group rejects unknown" 2 "$LOOMY" config set watch_group bogus
-  if command -v expect >/dev/null 2>&1; then
-    cat >"$WORK/watch.exp" <<'EXPECT'
-set timeout 15
-log_user 0
-# The spawned PTY's window size does not follow the COLUMNS/LINES environment overrides.
-set stty_init "rows $env(LINES) columns $env(COLUMNS)"
-spawn bash $env(LIVE_REPO)/scripts/loomy-status.sh --root $env(LIVE_PROJECT) --watch
-expect {
-  -re {group by request} {}
-  timeout {exit 1}
-  eof {exit 2}
-}
-send "v"
-expect {
-  -re {group by model} {}
-  timeout {exit 3}
-  eof {exit 4}
-}
-send "t"
-expect {
-  -re {LOOMY AGENT TREE} {}
-  timeout {exit 5}
-  eof {exit 6}
-}
-send "t"
-expect {
-  -re {IN PROGRESS} {}
-  timeout {exit 7}
-  eof {exit 8}
-}
-send "q"
-expect eof
-catch wait result
-exit [lindex $result 3]
-EXPECT
-    run "real terminal: v toggles, t opens the diagram, q quits" env LIVE_REPO="$REPO" LIVE_PROJECT="$demo" COLUMNS=170 LINES=60 expect "$WORK/watch.exp"
-    run "real terminal: v choice persists" bash -c 'source "$1/scripts/lib/config.sh"; test "$(loomy_config_get watch_group)" = request' _ "$REPO"
-  else ko "real terminal: expect unavailable"; fi
+  watch_terminal_tests
   if [[ -n "$LIVE_ARTIFACTS" ]]; then mkdir -p "$LIVE_ARTIFACTS"; cp "$lv/"*-frame.txt "$LIVE_ARTIFACTS/"; fi
   rm -f "$XDG_CONFIG_HOME/loomy/config"
 }
@@ -793,6 +1049,11 @@ if [[ "${1:-}" == --section && "${2:-}" == 'Release defects' ]]; then
   (( FAIL == 0 )); exit $?
 fi
 
+if [[ "${1:-}" == --section && "${2:-}" == 'Watch terminal' ]]; then
+  watch_terminal_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Delegation options' ]]; then
   delegation_options_tests
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
@@ -1072,28 +1333,52 @@ fi
 TMUX_BIN="$(PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" command -v tmux || true)"
 tmux() { "$TMUX_BIN" "$@"; }
 if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
+  tmux_capture_has() {
+    local target="$1" pattern="$2"
+    tmux -L loomy-test capture-pane -t "$target" -p 2>/dev/null | grep -qE -- "$pattern"
+  }
+  tmux_pane_count_is() {
+    local target="$1" count="$2" actual
+    actual="$(tmux -L loomy-test list-panes -t "$target" 2>/dev/null | wc -l | tr -d ' ')"
+    [[ "$actual" == "$count" ]]
+  }
+  tmux_server_stopped() { ! tmux -L loomy-test ls >/dev/null 2>&1; }
+  tmux_prompt_ready() { tmux_capture_has "$1" 'bash-[0-9.]+\$'; }
+
   tmux -L loomy-test kill-server 2>/dev/null || true
+  # Keep the pane alive after watch exits so its restored-screen marker can be captured.
   tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
+  # Several redraws are needed before checking that watch left no scrollback history.
   sleep 4
   [[ "$(tmux -L loomy-test display -p -t w '#{history_size}')" == "0" ]] && ok "watch: nothing piles up in the history" || ko "watch: history $(tmux -L loomy-test display -p -t w '#{history_size}')"
-  tmux -L loomy-test send-keys -t w q; sleep 1.5
-  tmux -L loomy-test capture-pane -t w -p | grep -q SORTIE_OK && ok "watch: q quits and restores the normal screen" || ko "watch: q doesn't quit"
+  tmux -L loomy-test send-keys -t w q
+  if wait_for 20 tmux_capture_has w SORTIE_OK; then ok "watch: q quits and restores the normal screen"; else ko "watch: q doesn't quit"; fi
   tmux -L loomy-test kill-server 2>/dev/null || true
   # Home: full-screen app with a fixed frame; views open inside the frame, q quits leaving nothing behind.
   # Active wait (slower continuous integration machines): up to 20 s for the expected text to show up.
-  tw() { local k=0; until tmux -L loomy-test capture-pane -t h -p 2>/dev/null | grep -q "$1"; do sleep 0.25; k=$(( k + 1 )); (( k > 80 )) && return 1; done; return 0; }
+  tw() { wait_for 20 tmux_capture_has h "$1"; }
   # The previous test's tmux server must be stopped before starting another one under the same name (otherwise "server exited
   # unexpectedly" on slow machines); launch retried if needed.
   tstart() {
     local k=0
-    while tmux -L loomy-test ls >/dev/null 2>&1 && (( k < 20 )); do tmux -L loomy-test kill-server 2>/dev/null || true; sleep 0.25; k=$(( k + 1 )); done
-    for k in 1 2 3; do tmux -L loomy-test new-session -d "$@" 2>/dev/null && return 0; sleep 0.5; done
+    while tmux -L loomy-test ls >/dev/null 2>&1 && (( k < 20 )); do
+      tmux -L loomy-test kill-server 2>/dev/null || true
+      wait_for 2 tmux_server_stopped || return 1
+      k=$(( k + 1 ))
+    done
+    for k in 1 2 3; do
+      tmux -L loomy-test new-session -d "$@" 2>/dev/null && return 0
+      wait_for 2 tmux_server_stopped || true
+    done
     return 1
   }
+  # Keep the home pane open after exit so the terminal cleanup can be inspected.
   tstart -s h -x 100 -y 34 -c "$PARD/sous-projet" "bash '$LOOMY'; echo FIN_ACCUEIL; sleep 60"
   tw "What do you want to do" && tmux -L loomy-test capture-pane -t h -p | tail -1 | grep -q "loomy" \
     && ok "home: frame (menu in the body, version in the footer)" || ko "home: frame missing"
-  tmux -L loomy-test send-keys -t h Down Down; sleep 0.5; tmux -L loomy-test send-keys -t h Enter
+  tmux -L loomy-test send-keys -t h Down Down
+  wait_for 5 tmux_capture_has h '❯ ● Detailed status' || true
+  tmux -L loomy-test send-keys -t h Enter
   tw "PHASES" && tmux -L loomy-test capture-pane -t h -p | grep -q "Detailed status" \
     && ok "home: status shown in the frame" || ko "home: status view missing"
   tmux -L loomy-test send-keys -t h Enter
@@ -1105,12 +1390,12 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   tmux -L loomy-test kill-server 2>/dev/null || true
   # loomy start --watch in tmux: a tracking pane next to the agent, closed with it.
   mkdir -p "$WORK/lent"
+  # Keep the fake agent alive long enough to observe its tracking pane before it exits.
   printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"
+  # Keep the parent pane open after start exits so both pane-count states can be checked.
   tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$LOOMY' start --new --watch; sleep 30"
-  sleep 2.5
-  [[ "$(tmux -L loomy-test list-panes -t s | wc -l | tr -d ' ')" == "2" ]] && ok "start --watch: tracking pane open" || ko "start --watch: $(tmux -L loomy-test list-panes -t s | wc -l) pane(s)"
-  sleep 5
-  [[ "$(tmux -L loomy-test list-panes -t s | wc -l | tr -d ' ')" == "1" ]] && ok "start --watch: tracking closed with the session" || ko "start --watch: tracking still open"
+  if wait_for 20 tmux_pane_count_is s 2; then ok "start --watch: tracking pane open"; else ko "start --watch: $(tmux -L loomy-test list-panes -t s | wc -l) pane(s)"; fi
+  if wait_for 20 tmux_pane_count_is s 1; then ok "start --watch: tracking closed with the session"; else ko "start --watch: tracking still open"; fi
   tmux -L loomy-test kill-server 2>/dev/null || true
 fi
 
@@ -2466,6 +2751,7 @@ relay_active_claude "$(( $(date +%s) + 3600 ))"
 run "status line: active relay renders acting Claude" qenv bash -c \
   'echo "{}" | env LOOMY_PROJECT_ROOT="$1" LOOMY_LANG=en bash "$2/scripts/loomy-statusline.sh"' _ "$LR" "$REPO"
 has "status line: shows ⇄ claude during relay" '⇄ claude'
+hasnt "status line: automatic relay has no manual marker" '\(manual\)|\(manuel\)'
 
 mkdir -p "$LR/.loomy/docs"
 printf 'From: Claude\nTo: Codex\n' >"$LR/.loomy/docs/HANDOFF.md"
@@ -2543,6 +2829,12 @@ run "manual lead: French status displays manual relay" qenv env LOOMY_UI_LANG=fr
 has "manual lead: French status label" '⇄ Lead : Codex à la place de Claude Code \(manuel\)'
 run "manual lead: live view displays manual relay" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-tree.sh" --root "$LR" --once
 has "manual lead: live view manual label" '⇄ Lead: Codex in place of Claude Code \(manual\)'
+run "manual lead: English status line marks the relay" qenv bash -c \
+  'echo "{}" | env LOOMY_PROJECT_ROOT="$1" LOOMY_UI_LANG=en bash "$2/scripts/loomy-statusline.sh"' _ "$LR" "$REPO"
+has "manual lead: English status line suffix" '⇄ codex \(manual\)'
+run "manual lead: French status line marks the relay" qenv bash -c \
+  'echo "{}" | env LOOMY_PROJECT_ROOT="$1" LOOMY_UI_LANG=fr bash "$2/scripts/loomy-statusline.sh"' _ "$LR" "$REPO"
+has "manual lead: French status line suffix" '⇄ codex \(manuel\)'
 run "manual lead: session context describes manual choice" qenv env LOOMY_NO_REPAIR=1 bash -c 'bash "$1/scripts/loomy-context.sh" --root "$2" --hook start --tool codex </dev/null' _ "$REPO" "$LR"
 has "manual lead: context reads handoff and shared state" 'Temporary lead: Codex.*\(manual\).*HANDOFF.md.*STATE.md first'
 # Claude's prompt hook must also suppress the return notice in a manual relay.
@@ -2697,11 +2989,17 @@ run "assess with spaces in names" "$LOOMY" assess --root "$SP" --print
 has "assess: file names with spaces kept whole" '`src dir/a file.js`'
 if [[ -n "$TMUX_BIN" ]]; then
   tstart -s k -x 100 -y 30 -c "$PROJ" "bash"
-  sleep 1; tmux -L loomy-test send-keys -t k "bash '$LOOMY'" Enter
-  k=0; until tmux -L loomy-test capture-pane -t k -p | grep -q "What do you want to do"; do sleep 0.25; k=$(( k + 1 )); (( k > 80 )) && break; done
-  tmux -L loomy-test send-keys -t k C-c; sleep 1
-  tmux -L loomy-test send-keys -t k "stty -a | grep -oE ' -?icanon | -?echo ' | tr -d ' \n'; echo :STTY" Enter; sleep 1
-  tmux -L loomy-test capture-pane -t k -p | grep -q '^icanonecho:STTY\|^echoicanon:STTY' && ok "Ctrl-C: terminal restored (echo, canonical mode)" || ko "Ctrl-C: terminal left in raw mode ($(tmux -L loomy-test capture-pane -t k -p | grep STTY | tail -1))"
+  wait_for 5 tmux_prompt_ready k || true
+  tmux -L loomy-test send-keys -t k "bash '$LOOMY'" Enter
+  wait_for 20 tmux_capture_has k "What do you want to do" || true
+  tmux -L loomy-test send-keys -t k C-c
+  wait_for 10 tmux_prompt_ready k || true
+  tmux -L loomy-test send-keys -t k "stty -a | grep -oE ' -?icanon | -?echo ' | tr -d ' \n'; echo :STTY" Enter
+  if wait_for 10 tmux_capture_has k '^(icanonecho|echoicanon):STTY'; then
+    ok "Ctrl-C: terminal restored (echo, canonical mode)"
+  else
+    ko "Ctrl-C: terminal left in raw mode ($(tmux -L loomy-test capture-pane -t k -p | grep STTY | tail -1))"
+  fi
   tmux -L loomy-test kill-server 2>/dev/null || true
 fi
 

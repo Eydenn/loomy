@@ -153,12 +153,13 @@ ui_external() {
 # included; nothing wraps, even in a terminal that ignores turning off automatic wrap.
 ui_clip() {
   perl -CS -Mutf8 -ne '
+    BEGIN { $reset=shift @ARGV }
     chomp; my ($w, $out, $vis) = ('"$1"', "", 0);
     while (length) {
       if (s/^(\e\[[0-9;?]*[A-Za-z])//) { $out .= $1; next }
       s/^(.)//s; if ($vis >= $w - 1 && length) { $out .= "…"; $vis++; last } $out .= $1; $vis++;
     }
-    print $out, "\e[0m\n";' 2>/dev/null || cat
+    print $out, $reset, "\n";' "${C_RESET:-}" 2>/dev/null || cat
 }
 
 ui_pager() {
@@ -226,7 +227,7 @@ ui_header() {
 
 # _ui_chrome: header lines (UI_HDR_LINES, UI_CHROME_H) and footer (UI_FOOTER) for the terminal size.
 _ui_chrome() {
-  local l left right pad
+  local l left right pad part row="" rest
   UI_HDR_LINES=()
   local head="${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE:-loomy}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}"
   if (( UI_ROWS >= 20 && UI_COLS >= 40 )); then
@@ -235,10 +236,32 @@ _ui_chrome() {
     UI_HDR_LINES[${#UI_HDR_LINES[@]}]=""
   fi
   UI_HDR_LINES[${#UI_HDR_LINES[@]}]="$head"
-  UI_CHROME_H=$(( ${#UI_HDR_LINES[@]} + 1 ))
   left="${UI_FTR_KEYS:-$(t "Ctrl-C to interrupt")}"; right="loomy${UI_LOOMY_V:+ $UI_LOOMY_V}"
+  UI_FOOTER_LINES=()
+  if [[ -n "${UI_FTR_NOTE:-}" ]]; then
+    _ui_fit "$UI_FTR_NOTE" "$(( UI_COLS - 5 ))"
+    UI_FOOTER_LINES+=("${C_RAIL}│${C_RESET}  ${C_YELLOW}${UI_FIT}${C_RESET}")
+  fi
+  # Wrap between key labels so even a narrow watch keeps every available action visible.
+  rest="$left"
+  while [[ -n "$rest" ]]; do
+    part="${rest%% · *}"
+    if [[ "$part" == "$rest" ]]; then rest=""; else rest="${rest#* · }"; fi
+    _ui_strlen "${row}${row:+ · }${part}"
+    if [[ -n "$row" ]] && (( UI_LEN > UI_COLS - 5 )); then
+      UI_FOOTER_LINES+=("${C_RAIL}│${C_RESET}  ${C_DIM}${row}${C_RESET}"); row=""
+    fi
+    row="${row}${row:+ · }${part}"
+  done
+  left="$row"
+  _ui_strlen "$left$right"
+  if (( UI_LEN > UI_COLS - 8 )); then
+    UI_FOOTER_LINES+=("${C_RAIL}│${C_RESET}  ${C_DIM}${left}${C_RESET}"); left=""
+  fi
   _ui_strlen "$left$right"; pad=$(( UI_COLS - 6 - UI_LEN )); (( pad < 2 )) && pad=2
   UI_FOOTER="${C_RAIL}└${C_RESET}  ${C_DIM}${left}$(printf '%*s' "$pad" '')${right}${C_RESET}"
+  UI_FOOTER_LINES+=("$UI_FOOTER")
+  UI_CHROME_H=$(( ${#UI_HDR_LINES[@]} + ${#UI_FOOTER_LINES[@]} ))
 }
 
 # _ui_page_draw [reserved-lines] [tail]: draws the frame, then in the body the page and <tail> (current question).
@@ -253,7 +276,9 @@ _ui_page_draw() {
   UI_BODY_START=$start; end=$(( start + avail )); (( end > n )) && end=$n
   for (( i = start; i < end; i++ )); do out="${out}${UI_PAGE_L[$i]:-}"$'\033[K\n'; done
   if [[ -n "$UI_ANIM_LOCK" ]]; then local w=0; while ! mkdir "$UI_ANIM_LOCK" 2>/dev/null && (( w < 20 )); do sleep 0.01; w=$(( w + 1 )); done; fi
-  printf '%s%s\033[J\033[%d;1H%s\033[K' "$out" "$tail" "$UI_ROWS" "$UI_FOOTER" >&2
+  printf '%s%s\033[J' "$out" "$tail" >&2
+  i=$(( UI_ROWS - ${#UI_FOOTER_LINES[@]} + 1 ))
+  for l in "${UI_FOOTER_LINES[@]}"; do printf '\033[%d;1H%s\033[K' "$i" "$l" >&2; i=$(( i + 1 )); done
   [[ -n "$UI_ANIM_LOCK" ]] && rmdir "$UI_ANIM_LOCK" 2>/dev/null
   return 0
 }

@@ -47,6 +47,21 @@ AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
 # chain, the current model staying as its fallback. "family:tier:model" entries; the catalog can replace them.
 AI_UPCOMING=""
 
+# Uppercase the ASCII routing keys without starting printf/tr subprocesses while this library is sourced.
+_ai_ascii_upper() {
+  local text="$1" char
+  _AI_ASCII_UPPER=""
+  while [[ -n "$text" ]]; do
+    char="${text:0:1}"
+    text="${text:1}"
+    case "$char" in
+      a) char=A ;; b) char=B ;; c) char=C ;; d) char=D ;; e) char=E ;; f) char=F ;; g) char=G ;; h) char=H ;; i) char=I ;; j) char=J ;; k) char=K ;; l) char=L ;; m) char=M ;;
+      n) char=N ;; o) char=O ;; p) char=P ;; q) char=Q ;; r) char=R ;; s) char=S ;; t) char=T ;; u) char=U ;; v) char=V ;; w) char=W ;; x) char=X ;; y) char=Y ;; z) char=Z ;;
+    esac
+    _AI_ASCII_UPPER="${_AI_ASCII_UPPER}${char}"
+  done
+}
+
 # Downloaded catalog (loomy update --catalog): used when newer than the one shipped with Loomy.
 # Read line by line, never executed. Recognised lines (see catalog/models.conf and docs/MODEL_CATALOG.md):
 #   model.<claude|codex>.<top|mid|fast>=<model>[, <fallback>…]
@@ -62,7 +77,7 @@ _ai_catalog_load() {
   AI_CATALOG_DATE="$d"; AI_CATALOG_SOURCE="downloaded"
   while IFS= read -r line; do
     if [[ "$line" =~ ^model\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._,\ -]*)$ ]]; then
-      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
+      _ai_ascii_upper "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"; k="$_AI_ASCII_UPPER"
       v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
       # Every model id starts with a letter or digit (never an option for the CLIs).
       [[ " $v" == *" -"* ]] && continue
@@ -88,7 +103,7 @@ _ai_local_chains() {
   [[ -f "$f" ]] || return 0
   while IFS= read -r line; do
     if [[ "$line" =~ ^chain\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._,\ -]*)$ ]]; then
-      k="$(printf '%s' "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}" | tr 'a-z' 'A-Z')"
+      _ai_ascii_upper "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"; k="$_AI_ASCII_UPPER"
       v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' | cut -d' ' -f1-3)"
       [[ " $v" == *" -"* || -z "$v" ]] && continue
       eval "AI_CHAIN_${k}=\"\$v\""
@@ -103,7 +118,7 @@ _ai_upcoming_promote() {
   for e in $AI_UPCOMING; do
     fam="${e%%:*}"; tier="${e#*:}"; tier="${tier%%:*}"; m="${e##*:}"
     grep -qx "$m=ok" "$st" 2>/dev/null || continue
-    k="$(printf '%s' "${fam}_${tier}" | tr 'a-z' 'A-Z')"
+    _ai_ascii_upper "${fam}_${tier}"; k="$_AI_ASCII_UPPER"
     eval "chain=\"\${AI_CHAIN_${k}:-}\""
     case " $chain " in *" $m "*) continue ;; esac
     eval "AI_CHAIN_${k}=\"\$m \$chain\""
@@ -129,7 +144,7 @@ ai_model_usable() {
 # ai_model_pick <family> <tier>: first available model of the chain (the chain's first when none is).
 ai_model_pick() {
   local chain m fam="$1" k skip=0
-  k="$(printf '%s' "${1}_${2}" | tr 'a-z' 'A-Z')"
+  _ai_ascii_upper "${1}_${2}"; k="$_AI_ASCII_UPPER"
   eval "chain=\"\${AI_CHAIN_${k}:-}\""
   # Thrifty model mode (loomy models --thrifty on): the first available fallback rather than the newest model.
   if grep -qx 'models_mode=thrifty' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null; then
@@ -147,7 +162,7 @@ ai_model_pick() {
 ai_model_next() {
   local fam="$1" m="$2" t chain seen c k
   for t in TOP MID FAST; do
-    k="$(printf '%s' "$fam" | tr 'a-z' 'A-Z')_$t"
+    _ai_ascii_upper "$fam"; k="${_AI_ASCII_UPPER}_$t"
     eval "chain=\"\${AI_CHAIN_${k}:-}\""
     seen=0
     for c in $chain; do
@@ -168,7 +183,7 @@ _ai_pin() {
 }
 for _f in claude codex; do
   for _t in top mid fast; do
-    _k="$(printf '%s' "${_f}_${_t}" | tr 'a-z' 'A-Z')"
+    _ai_ascii_upper "${_f}_${_t}"; _k="$_AI_ASCII_UPPER"
     eval "_cur=\"\${AI_MODEL_${_k}:-}\""
     [[ -z "$_cur" ]] && _cur="$(_ai_pin "$_f" "$_t")"
     [[ -z "$_cur" ]] && _cur="$(ai_model_pick "$_f" "$_t")"

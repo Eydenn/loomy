@@ -1821,7 +1821,9 @@ _t_fr() {
     'diagram') _T='diagramme' ;;
     'list') _T='liste' ;;
     'tree_view: auto, diagram or list') _T='tree_view : auto, diagram ou list' ;;
+    'watch_view: tree or list') _T='watch_view : tree ou list' ;;
     '      tree_view (auto: the diagram when the window holds it, otherwise the list; diagram or list to force one),') _T='      tree_view (auto : le diagramme quand la fenêtre le contient, sinon la liste ; diagram ou list pour forcer l'\''un des deux),' ;;
+    '      watch_view (tree by default: diagram when the window fits it, otherwise list; list: keep the live list),') _T='      watch_view (tree par défaut : diagramme si la fenêtre a la place, sinon liste ; list : garder la liste en direct),' ;;
     '      watch_resize (no: loomy watch no longer asks the terminal to grow for the diagram),') _T='      watch_resize (no : loomy watch ne demande plus au terminal de s'\''agrandir pour le diagramme),' ;;
     '[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/loomy-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/loomy-delegate-codex.sh. Do the work yourself only when the routing keeps it on the lead.') _T='[Loomy] Mode ORCHESTRATED : tu es l'\''orchestrateur, pas l'\''exécutant. Route chaque rôle comme le dit .loomy/scripts/loomy-route.sh : les rôles Claude vers les sous-agents de .claude/agents/ (outil Agent, au premier plan), les rôles Codex via .loomy/scripts/loomy-delegate-codex.sh. Ne fais le travail toi-même que si le routage le garde sur l'\''orchestrateur.' ;;
     '- Bootstrap abandoned: stopped at phase %s of 10 (%s) since %s, START.md is still pending. Don'\''t wait for a go-ahead nobody is going to give: tell the user in one sentence and ask whether to resume it (loomy start) or to close it, then follow their answer.') _T='- Bootstrap abandonné : arrêté à la phase %s sur 10 (%s) depuis %s, START.md est toujours en attente. N'\''attends pas un feu vert que personne ne donnera : dis-le à l'\''utilisateur en une phrase et demande-lui s'\''il faut le reprendre (loomy start) ou le clore, puis suis sa réponse.' ;;
@@ -2244,5 +2246,13 @@ _t_fr() {
     '- Back as lead agent after a manual relay: %s led; read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md and check its commits.') _T='- À nouveau agent lead après un relais manuel : %s a mené le travail ; lis .loomy/docs/HANDOFF.md et .loomy/memory/STATE.md et vérifie ses commits.' ;;
     '  loomy start --lead <codex|claude|auto> temporarily selects the lead tool, replacing AI_ROUTE_ENV (auto returns to the brief'\''s lead)') _T='  loomy start --lead <codex|claude|auto> choisit temporairement le lead, remplaçant AI_ROUTE_ENV (auto revient au lead du brief)' ;;
     'Starts or resumes the lead agent session, at the right point of the project (session closed? it'\''s here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use') _T='Démarre ou reprend la session de l’agent lead au bon point du projet (session fermée ? c’est ici) ; --watch ouvre le suivi en direct à côté ; --lead codex|claude|auto choisit temporairement le lead et remplace AI_ROUTE_ENV pour cet usage' ;;
+    'orchestrator') _T='orchestrateur' ;;
+    'live list') _T='liste live' ;;
+    'group by request') _T='par demande' ;;
+    'group by model') _T='par modèle' ;;
+    'Diagram needs at least %s columns.') _T='Le diagramme nécessite au moins %s colonnes.' ;;
+    'Could not open the orchestrator; watch is still running.') _T='Impossible d’ouvrir l’orchestrateur ; le suivi continue.' ;;
+    'Orchestrator opened.') _T='Orchestrateur ouvert.' ;;
+    '  loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)') _T='  loomy-status.sh --watch [N]     agents et chronos en direct chaque seconde ; touches selon la vue (voir le pied d’écran)' ;;
   esac
 }

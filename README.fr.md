@@ -23,8 +23,16 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 
 ---
 
-<p align="center"><img src="docs/assets/loomy-watch-fr.svg" alt="loomy watch : l'orchestrateur, le routage et les rôles en direct" width="100%"></p>
-<p align="center"><sub>La vue en direct que <code>loomy start</code> ouvre à côté de la session : l'orchestrateur, le routage par niveau de modèle, les rôles au travail (deux en cours, un partiel, un terminé), les autres rôles et le journal de session.</sub></p>
+<p align="center"><img src="docs/assets/loomy-watch-tree-fr.svg" alt="loomy watch : arbre des rôles, outils, modèles et efforts" width="100%"></p>
+<p align="center"><sub>Arbre des agents (touche t) : chaque rôle avec l'outil, le modèle et l'effort réellement utilisés</sub></p>
+
+<details>
+<summary><b>Vue en direct (liste) : les agents en cours d'abord, puis le récapitulatif de session</b></summary>
+
+<p align="center"><img src="docs/assets/loomy-watch-live-fr.svg" alt="loomy watch : vue en direct des agents en cours et du récapitulatif de session" width="100%"></p>
+<p align="center"><sub>Vue en direct : les agents en cours d'abord, regroupés par demande ou par modèle ([v]), le récapitulatif de session en dessous</sub></p>
+
+</details>
 
 ## ✨ Pourquoi Loomy
 

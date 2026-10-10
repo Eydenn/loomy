@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
-# Capture loomy's live view as an animated README SVG, using a disposable project.
+# Capture loomy watch views as animated README SVGs, using a disposable project.
 set -euo pipefail
 
 usage() {
-  echo "Usage: tools/capture-watch.sh <en|fr> <out.svg>" >&2
+  echo "Usage: tools/capture-watch.sh <en|fr> [live|tree] <out.svg>" >&2
 }
 
-[[ $# == 2 ]] || { usage; exit 2; }
-LANGUAGE="$1"
+if [[ $# == 2 ]]; then
+  LANGUAGE="$1"
+  VIEW=live
+  OUTPUT="$2"
+elif [[ $# == 3 ]]; then
+  LANGUAGE="$1"
+  VIEW="$2"
+  OUTPUT="$3"
+else
+  usage
+  exit 2
+fi
 case "$LANGUAGE" in en|fr) ;; *) usage; exit 2 ;; esac
-OUTPUT="$2"
+case "$VIEW" in live|tree) ;; *) usage; exit 2 ;; esac
 [[ -n "$OUTPUT" ]] || { usage; exit 2; }
 [[ "$OUTPUT" == /* ]] || OUTPUT="$PWD/$OUTPUT"
 
@@ -46,7 +56,7 @@ export PATH="$STUB_DIR:$PATH"
 export HOME="$HOME_DIR" XDG_CONFIG_HOME="$XDG_DIR"
 export LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_LANG="$LANGUAGE"
 export LOOMY_FORCE_COLOR=1 LOOMY_WATCH_GROUP=request
-export TERM=xterm-256color COLORTERM=truecolor COLUMNS=110 LINES=34
+export TERM=xterm-256color COLORTERM=truecolor
 unset NO_COLOR AI_ROUTE_ENV AI_ROUTE_PROFILE LOOMY_UI_LANG LOOMY_SCREEN_OWNER LOOMY_SCREEN LOOMY_PAGE_OUT
 
 # The project defaults to an orchestrated Claude lead when both CLI stubs are on PATH.
@@ -195,18 +205,30 @@ PY
 
 FRAME_COUNT=24
 FINISH_AT=12
+if [[ "$VIEW" == tree ]]; then
+  FRAME_COUNT=12
+  FINISH_AT=6
+fi
 for (( frame_index = 0; frame_index < FRAME_COUNT; frame_index++ )); do
   if (( frame_index == FINISH_AT )); then append_midpoint_finish; fi
   frame_path="$FRAME_DIR/frame-$(printf '%02d' "$frame_index").ans"
-  COLUMNS=110 LINES=34 LOOMY_TICK="$frame_index" \
-    "$REPO_ROOT/scripts/loomy-tree.sh" --root "$DEMO_ROOT" --once >"$frame_path"
+  if [[ "$VIEW" == tree ]]; then
+    COLUMNS=150 LINES=44 LOOMY_TREE=diagram LOOMY_TICK="$frame_index" \
+      "$REPO_ROOT/scripts/loomy-tree.sh" --root "$DEMO_ROOT" >"$frame_path"
+  else
+    COLUMNS=110 LINES=34 LOOMY_TICK="$frame_index" \
+      "$REPO_ROOT/scripts/loomy-tree.sh" --root "$DEMO_ROOT" --once >"$frame_path"
+  fi
   if (( frame_index + 1 < FRAME_COUNT )); then sleep 1; fi
 done
 
+if [[ "$VIEW" == tree ]]; then SVG_TITLE="loomy agent tree"; else SVG_TITLE="loomy watch"; fi
 python3 "$SCRIPT_DIR/ansi2svg.py" "$OUTPUT" "$FRAME_DIR"/frame-*.ans \
-  --delay 0.27 --title "loomy watch"
+  --delay 0.27 --title "$SVG_TITLE"
 
-if [[ "$LANGUAGE" == fr ]]; then HEADING="EN COURS"; else HEADING="IN PROGRESS"; fi
+if [[ "$VIEW" == tree ]]; then
+  if [[ "$LANGUAGE" == fr ]]; then HEADING="ARBRE DES AGENTS LOOMY"; else HEADING="LOOMY AGENT TREE"; fi
+elif [[ "$LANGUAGE" == fr ]]; then HEADING="EN COURS"; else HEADING="IN PROGRESS"; fi
 grep -Fq "$HEADING" "$OUTPUT" || { echo "Generated SVG is missing: $HEADING" >&2; exit 1; }
 if LC_ALL=C grep -Eq '/Users/|/var/folders|/tmp(/|$)' "$OUTPUT"; then
   echo "Generated SVG contains a local path" >&2
@@ -226,6 +248,6 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as source:
     frame = source.read()
-print(re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", frame), end="")
+print("\n".join(re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", frame).splitlines()[:40]))
 PY
 fi

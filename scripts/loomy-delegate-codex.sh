@@ -112,15 +112,56 @@ fi
 { t "loomy-delegate-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
 DELEG_ID="$(ai_delegation_id)"
-ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 STARTED="$(date +%s)"
+START_MODEL="$MODEL"
+CHILD_PID=""
+FINAL_WRITTEN=0
+delegate_start_exists() {
+  ai_journal_all "$ROOT" | grep -F "\"type\":\"delegation_start\",\"id\":\"$DELEG_ID\"" >/dev/null
+}
+delegate_final_exists() {
+  ai_journal_all "$ROOT" | grep -F "\"type\":\"delegation\",\"id\":\"$DELEG_ID\"" >/dev/null
+}
+delegate_stop_child() {
+  local attempts=0
+  [[ -n "$CHILD_PID" ]] || return 0
+  kill -TERM -- "-$CHILD_PID" 2>/dev/null || true
+  while kill -0 -- "-$CHILD_PID" 2>/dev/null && (( attempts < 5 )); do
+    sleep 1
+    attempts=$(( attempts + 1 ))
+  done
+  if kill -0 -- "-$CHILD_PID" 2>/dev/null; then kill -KILL -- "-$CHILD_PID" 2>/dev/null || true; fi
+  wait "$CHILD_PID" 2>/dev/null || true
+  CHILD_PID=""
+}
+delegate_finish() {
+  local signal="$1" exit_code="$2" duration
+  trap '' INT TERM HUP
+  trap - EXIT
+  delegate_stop_child
+  if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
+    duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
+    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"estimate\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    FINAL_WRITTEN=1
+  fi
+  rm -rf "$TMP"
+  exit "$exit_code"
+}
+trap 'delegate_finish INT 130' INT
+trap 'delegate_finish TERM 143' TERM
+trap 'delegate_finish HUP 129' HUP
+trap 'delegate_finish EXIT "$?"' EXIT
+ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 run_codex() {
-  LOOMY_DELEGATION=1 "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
+  LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
+    "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
     --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
 }
 set +e
-run_codex "$MODEL"
-STATUS=$?
+run_codex "$MODEL" &
+CHILD_PID=$!
+wait "$CHILD_PID"; STATUS=$?
+CHILD_PID=""
 set -e
 # Model refused (doesn't exist or no access for this account): recorded for this machine, then fallback to the next in its chain.
 while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not supported|unavailable|not available)|unknown model|model_not_found" "$TMP/log.txt"; do
@@ -130,8 +171,10 @@ while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not suppo
   t "loomy-delegate-codex: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
   MODEL="$NEXT"
   set +e
-  run_codex "$MODEL"
-  STATUS=$?
+  run_codex "$MODEL" &
+  CHILD_PID=$!
+  wait "$CHILD_PID"; STATUS=$?
+  CHILD_PID=""
   set -e
 done
 DURATION=$(( $(date +%s) - STARTED ))
@@ -157,6 +200,7 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
 fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+FINAL_WRITTEN=1
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$(cat "$TMP/last.txt" 2>/dev/null || true)"
 

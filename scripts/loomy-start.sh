@@ -8,6 +8,7 @@
 #                            (the default; loomy config set start_watch no or --no-watch to skip it)
 #   loomy-start.sh --app        opens the session in the desktop app (Claude: on this folder, prompt filled in; Codex:
 #                            prompt filled in) and live tracking in a terminal window (loomy config set start_in app)
+#   loomy-start.sh --lead <codex|claude|auto> temporarily selects the lead tool, replacing AI_ROUTE_ENV (auto returns to the brief's lead)
 #   loomy-start.sh --root <dir> works on another project folder
 
 # Private watch launcher; deletes itself when started.
@@ -101,23 +102,27 @@ source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/failover.sh
 source "$SCRIPT_DIR/lib/failover.sh"
 
-ROOT=""; MODE="menu"; WATCH=""; APP_ONLY=0
+ROOT=""; MODE="menu"; WATCH=""; APP_ONLY=0; LEAD=""; PRINT_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --lead)
+      case "${2:-}" in codex|claude|auto) LEAD="$2" ;; *) t "--lead: codex, claude or auto" >&2; echo >&2; exit 2 ;; esac
+      shift ;;
     --root) ROOT="${2:-}"; shift ;;
     --resume|-r) MODE="resume" ;;
     --new|-n) MODE="new" ;;
-    --print|-p) MODE="print" ;;
+    --print|-p) MODE="print"; PRINT_ONLY=1 ;;
     --app|-a) MODE="app" ;;
     --app-only) MODE="app"; WATCH=0; APP_ONLY=1 ;;
     --orchestrator) MODE="orchestrator" ;;
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
-    -h|--help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
+(( ! PRINT_ONLY )) || MODE="print"
 # Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
@@ -129,24 +134,31 @@ if [[ ! -f "$BRIEF" ]]; then
   exit 1
 fi
 
-loomy_project_register "$ROOT"
+[[ "$MODE" == print ]] || loomy_project_register "$ROOT"
 # ---------------------------------------------------------------- project and lead agent
 PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
 NAME="$(_ai_brief_get "$BRIEF" name)"
 
 tool_name() { if [[ "$1" == "codex" ]]; then echo "Codex"; else echo "Claude Code"; fi; }
 
-# resolve_session: who leads this session (the brief's lead, or the other tool during a quota relay), its model, prompt
+# resolve_session: who leads this session (the brief's lead, or the other tool during a quota/manual relay), its model, prompt
 # and commands. Nothing is recorded here (lf_decide --dry): lf_apply does it when the session really starts.
-# The relay is temporary: the brief is unchanged and the master takes the lead back once it has room.
+# The brief is unchanged; a manual relay lasts until an explicit return or the acting tool saturates.
 resolve_session() {
   local master since=""
   ai_detect_env "$ROOT"
-  if lf_active "$ROOT"; then master="$(lf_get "$ROOT" master)"
+  if [[ -n "$LEAD" ]]; then
+    master="$(_ai_brief_get "$BRIEF" ai_lead)"
+    if [[ -z "$master" ]]; then ai_resolve lead "$AI_ENV" "$AI_PROFILE"; master="$R_FAMILY"; fi
+  elif lf_active "$ROOT"; then master="$(lf_get "$ROOT" master)"
   else ai_resolve lead "$AI_ENV" "$AI_PROFILE"; master="$R_FAMILY"; fi
-  lf_decide "$ROOT" "$master" --dry >/dev/null
+  if [[ -n "$LEAD" ]]; then
+    local selected="$LEAD"; [[ "$selected" != auto ]] || selected="$master"
+    if ! _lf_installed "$selected"; then t "%s not found" "$(tool_name "$selected")" >&2; echo >&2; exit 2; fi
+  fi
+  lf_decide "$ROOT" "$master" --dry "$LEAD" >/dev/null
   AI_LEAD="$LF_LEAD"
-  if [[ -z "${AI_ROUTE_ENV:-}" ]]; then ai_env_for "$AI_MODE" "$LF_LEAD"; fi
+  if [[ -n "$LEAD" || "$LF_MANUAL" == 1 || -z "${AI_ROUTE_ENV:-}" ]]; then ai_env_for "$AI_MODE" "$LF_LEAD"; fi
   ai_resolve lead "$AI_ENV" "$AI_PROFILE"
   TOOL="$R_FAMILY"; MODEL="$R_MODEL"; EFFORT="$R_EFFORT"
 
@@ -162,7 +174,9 @@ resolve_session() {
   fi
   case "$LF_KIND" in
     handover)
-      if [[ "$LF_RESUME_AT" =~ ^[0-9]+$ ]]; then
+      if [[ "$LF_MANUAL" == 1 ]]; then
+        PROMPT="$(t "You are temporarily the lead agent in place of %s (manual). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s." "$(tool_name "$LF_MASTER")" "$(tool_name "$LF_MASTER")")"
+      elif [[ "$LF_RESUME_AT" =~ ^[0-9]+$ ]]; then
         PROMPT="$(t "You are temporarily the lead agent in place of %s (quota %s, back around %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s." "$(tool_name "$LF_MASTER")" "$LF_REASON" "$(lf_time "$LF_RESUME_AT")" "$(tool_name "$LF_MASTER")")"
       else
         PROMPT="$(t "You are temporarily the lead agent in place of %s (quota %s). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s." "$(tool_name "$LF_MASTER")" "$LF_REASON" "$(tool_name "$LF_MASTER")")"
@@ -170,7 +184,11 @@ resolve_session() {
       KIND="$(t "temporary lead")" ;;
     return)
       since="$(ai_ts_epoch "$LF_SINCE")"; [[ -n "$since" ]] && since="$(lf_time "$since")"
-      PROMPT="$(t "You are the lead agent again; %s led while your quota was low (since %s). Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue." "$(tool_name "$LF_ACTING")" "${since:-?}")"
+      if [[ "$LF_MANUAL" == 1 ]]; then
+        PROMPT="$(t "You are the lead agent again after a manual relay; %s led since %s. Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue." "$(tool_name "$LF_ACTING")" "${since:-?}")"
+      else
+        PROMPT="$(t "You are the lead agent again; %s led while your quota was low (since %s). Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue." "$(tool_name "$LF_ACTING")" "${since:-?}")"
+      fi
       KIND="$(t "lead back")" ;;
   esac
 
@@ -207,14 +225,24 @@ fi
 ui_section "SESSION"
 ui_kv "$(t "Phase")" "${C_BOLD}$(loomy_phase_label "$PHASE")${C_RESET}"
 ui_kv "$(t "Lead agent")" "${C_BRAND}${MODEL}${C_RESET} · effort $EFFORT · $tool_label${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
+if [[ "$LF_MANUAL" == 1 && "$LF_KIND" != return ]]; then
+  ui_info "⇄ $(t "Lead: %s in place of %s (manual)" "$tool_label" "$(tool_name "$LF_MASTER")")"
+else
 case "$LF_KIND" in
   handover)
     ui_warn "$(t "%s quota at %s: this session runs on %s" "$(tool_name "$LF_MASTER")" "$(ai_quota_state "$LF_MASTER")" "$tool_label")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$(tool_name "$LF_MASTER")")" ;;
   continue)
     ui_warn "$(t "%s leads for now in place of %s (quota %s)" "$tool_label" "$(tool_name "$LF_MASTER")" "$LF_REASON")" "$(t "back to %s once the quota resets · keep it: LOOMY_NO_SWITCH=1 loomy start" "$(tool_name "$LF_MASTER")")" ;;
-  return) ui_ok "$(t "%s takes the lead back" "$tool_label")" "$(t "%s led while its quota was low" "$(tool_name "$LF_ACTING")")" ;;
+  return)
+    if [[ "$LF_MANUAL" == 1 ]]; then ui_ok "$(t "%s takes the lead back" "$tool_label")"
+    else ui_ok "$(t "%s takes the lead back" "$tool_label")" "$(t "%s led while its quota was low" "$(tool_name "$LF_ACTING")")"; fi ;;
   *) if [[ -n "$LF_NOTE" ]]; then ui_warn "$(t "%s quota at %s" "$(tool_name "$LF_MASTER")" "$(ai_quota_state "$LF_MASTER")")" "$LF_NOTE"; fi ;;
 esac
+fi
+if [[ -n "$LEAD" && "$LEAD" != auto && "$LEAD" != "$LF_MASTER" ]]; then
+  if ! loomy_on_plan "$TOOL"; then ui_warn "$(t "%s is on a pay-per-use plan; manual lead allowed" "$tool_label")"
+  elif ai_quota_saturated "$TOOL"; then ui_warn "$(t "%s quota is saturated; manual lead allowed" "$tool_label")"; fi
+fi
 if (( HAS_SESSION )); then ui_kv "Session" "${C_GREEN}$(t "a previous session exists on this machine")${C_RESET}"
 else ui_kv "Session" "${C_DIM}$(t "no previous session on this machine")${C_RESET}"; fi
 # Lead agent model missing from Codex's local catalog (renamed or removed): warn before launching.
@@ -234,6 +262,7 @@ fi
 # watch_script [agent pid] is shared with the desktop launcher above.
 start_with_watch() {
   local side=0 w agent name n
+  local lead_args=()
   # Agent on the left, tracking on the right; stacked only in a terminal too narrow for two columns.
   _ui_term_size; (( UI_COLS >= 110 )) && side=1
   # Tracking scripts left by previous versions (before automatic deletion).
@@ -271,7 +300,8 @@ start_with_watch() {
       name="$name-$n"
     fi
     # The dedicated session runs the whole chain (relay included): this script again, without tracking of its own.
-    agent="$(printf '%q ' env LOOMY_START_INNER=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" "--$MODE" --no-watch)"
+    lead_args=(); [[ -z "$LEAD" ]] || lead_args=(--lead "$LEAD")
+    agent="$(printf '%q ' env LOOMY_START_INNER=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" "--$MODE" --no-watch ${lead_args[@]+"${lead_args[@]}"})"
     # tmux that can't start (container, no terminal): the session opens alone rather than failing.
     if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name" 2>/dev/null \
        || ! tmux has-session -t "=$name" 2>/dev/null; then
@@ -342,10 +372,16 @@ case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
   app)
     if open_in_app; then
+      # Repeated choices still need applying, without a duplicate event.
       case "$LF_KIND" in
         handover|return)
-          lf_apply "$ROOT"
-          ui_info "$(t "The automatic chain only runs in the terminal; the master takes the lead back on the next loomy start if its quota allows.")" ;;
+          lf_apply "$ROOT" "$LEAD"
+          if [[ "$LF_MANUAL" == 1 && "$LF_KIND" != return ]]; then ui_info "$(t "Manual lead kept until --lead auto, --lead %s, or a quota relay in the terminal." "$LF_MASTER")"
+          elif [[ "$LF_KIND" == return && -n "$LEAD" ]]; then :
+          else
+            ui_info "$(t "The automatic chain only runs in the terminal; the master takes the lead back on the next loomy start if its quota allows.")"
+          fi ;;
+        continue) [[ -z "$LEAD" ]] || lf_apply "$ROOT" "$LEAD" ;;
       esac
       ui_end "$(t "session in the app · live tracking: loomy watch")"
       exit 0
@@ -375,7 +411,8 @@ WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start 
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
 ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
-lf_apply "$ROOT"
+lf_apply "$ROOT" "$LEAD"
+LEAD=""
 
 # Session chain (6 sessions at most): the agent runs as a child; when it ends and the lead relay is due (its tool's
 # quota ran out, or the master has room again), the other tool takes over after a short delay.

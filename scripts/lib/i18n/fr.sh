@@ -2233,5 +2233,16 @@ _t_fr() {
     'Earlier work') _T='Travail antérieur' ;;
     'request') _T='demande' ;;
     'model + effort') _T='modèle + effort' ;;
+    '--lead: codex, claude or auto') _T='--lead : codex, claude ou auto' ;;
+    'Lead: %s in place of %s (manual)') _T='Lead : %s à la place de %s (manuel)' ;;
+    '%s is on a pay-per-use plan; manual lead allowed') _T='%s utilise une offre à l’usage ; lead manuel autorisé' ;;
+    '%s quota is saturated; manual lead allowed') _T='Le quota de %s est saturé ; lead manuel autorisé' ;;
+    'Manual lead kept until --lead auto, --lead %s, or a quota relay in the terminal.') _T='Lead manuel conservé jusqu’à --lead auto, --lead %s ou un relais de quota dans le terminal.' ;;
+    'You are temporarily the lead agent in place of %s (manual). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first, then continue the current work. Before ending, update STATE.md and HANDOFF.md for %s.') _T='Tu es temporairement l’agent lead à la place de %s (manuel). Lis d’abord .loomy/docs/HANDOFF.md si présent et .loomy/memory/STATE.md, puis continue le travail en cours. Avant de terminer, mets à jour STATE.md et HANDOFF.md pour %s.' ;;
+    'You are the lead agent again after a manual relay; %s led since %s. Read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md, check its work (git log since then), then continue.') _T='Tu es à nouveau l’agent lead après un relais manuel ; %s a mené le travail depuis %s. Lis .loomy/docs/HANDOFF.md et .loomy/memory/STATE.md, vérifie son travail (git log depuis cette heure), puis continue.' ;;
+    '- Temporary lead: %s in place of %s (manual). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first. Keep this lead until the user selects --lead auto or --lead %s, or its quota requires a relay.') _T='- Lead temporaire : %s à la place de %s (manuel). Lis d’abord .loomy/docs/HANDOFF.md si présent et .loomy/memory/STATE.md. Garde ce lead jusqu’à ce que l’utilisateur choisisse --lead auto ou --lead %s, ou que son quota impose un relais.' ;;
+    '- Back as lead agent after a manual relay: %s led; read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md and check its commits.') _T='- À nouveau agent lead après un relais manuel : %s a mené le travail ; lis .loomy/docs/HANDOFF.md et .loomy/memory/STATE.md et vérifie ses commits.' ;;
+    '  loomy start --lead <codex|claude|auto> temporarily selects the lead tool, replacing AI_ROUTE_ENV (auto returns to the brief'\''s lead)') _T='  loomy start --lead <codex|claude|auto> choisit temporairement le lead, remplaçant AI_ROUTE_ENV (auto revient au lead du brief)' ;;
+    'Starts or resumes the lead agent session, at the right point of the project (session closed? it'\''s here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use') _T='Démarre ou reprend la session de l’agent lead au bon point du projet (session fermée ? c’est ici) ; --watch ouvre le suivi en direct à côté ; --lead codex|claude|auto choisit temporairement le lead et remplace AI_ROUTE_ENV pour cet usage' ;;
   esac
 }

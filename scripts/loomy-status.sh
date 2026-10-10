@@ -459,7 +459,7 @@ else
   fi
 fi
 
-# Temporary lead relay (quota), compact and full views.
+# Temporary lead relay (quota or manual), compact and full views.
 relay_txt="$(lf_status_text "$ROOT")"
 [[ -z "$relay_txt" ]] || ui_rail "${C_YELLOW}⇄ ${relay_txt}${C_RESET}"
 

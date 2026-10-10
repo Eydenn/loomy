@@ -72,6 +72,7 @@ loomy_live_poll() {
       delegation:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_DONE=$(( LV_DONE + 1 )); [[ "$status" == ok ]] || LV_ERRORS=$(( LV_ERRORS + 1 ))
+        [[ "$status" != interrupted ]] || outcome=interrupted
         found=-1
         for (( i=0; i<${#LV_ID[@]}; i++ )); do [[ "${LV_ID[i]}" != "$id" ]] || found=$i; done
         if (( found < 0 )); then
@@ -296,7 +297,7 @@ loomy_live_row() {
 loomy_live_metadata() {
   local line phase="done" master="" acting="" name="" state="${STATE:-$ROOT/.loomy/state}"
   ai_detect_env "$ROOT"; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
-  LV_LEAD_TOOL="$R_FAMILY"; LV_LEAD_MODEL="$R_MODEL"; LV_LEAD_EFFORT="$R_EFFORT"; LV_RELAY=""
+  LV_LEAD_TOOL="$R_FAMILY"; LV_LEAD_MODEL="$R_MODEL"; LV_LEAD_EFFORT="$R_EFFORT"; LV_RELAY=""; LV_MANUAL_RELAY=""
   if [[ -f "$ROOT/.loomy/failover" ]]; then
     while IFS= read -r line; do case "$line" in master=*) master="${line#*=}" ;; acting=*) acting="${line#*=}" ;; esac; done <"$ROOT/.loomy/failover"
     [[ -z "$acting" || "$acting" == "$master" ]] || {
@@ -304,6 +305,7 @@ loomy_live_metadata() {
       LV_LEAD_TOOL="$R_FAMILY"; LV_LEAD_MODEL="$R_MODEL"; LV_LEAD_EFFORT="$R_EFFORT"; LV_RELAY="⇄ "
     }
   fi
+  if [[ "$(lf_get "$ROOT" manual)" == 1 ]] && lf_active "$ROOT"; then LV_MANUAL_RELAY="⇄ $(lf_status_text "$ROOT")"; fi
   [[ ! -f "$state" ]] || while IFS= read -r line; do case "$line" in phase=*) phase="${line#*=}" ;; esac; done <"$state"
   LV_PHASE="$phase"; LV_PHASE_LABEL="$(loomy_phase_label "$phase")"
   name="$(_ai_brief_get "$ROOT/.loomy/brief.md" name)"; LV_NAME="${name:-${ROOT##*/}}"
@@ -356,6 +358,7 @@ loomy_live_render() {
   loomy_live_header
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || { loomy_live_line "$LV_HEADER"; }
   loomy_live_line "$LV_LEAD_LINE"
+  if [[ -n "${LV_MANUAL_RELAY:-}" ]]; then loomy_live_line "$LV_MANUAL_RELAY"; used=$(( used + 1 )); fi
   loomy_live_line "$(t "IN PROGRESS")"
   for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do
     if [[ "$LV_GROUP" == model ]]; then key="${LV_MODEL[i]}"; else key="${LV_REQ[i]}"; fi

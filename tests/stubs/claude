@@ -12,7 +12,16 @@ case "${1:-}" in
     echo "2.1.300 (Claude Code)"; exit 0 ;;
   update) echo "Claude Code is up to date."; exit 0 ;;
 esac
-[[ -n "${STUB_SLEEP:-}" ]] && sleep "$STUB_SLEEP"
+stub_sleep_pid=""
+if [[ -n "${STUB_SLEEP:-}" ]]; then
+  trap '[[ -z "$stub_sleep_pid" ]] || { kill "$stub_sleep_pid" 2>/dev/null || true; wait "$stub_sleep_pid" 2>/dev/null || true; }; exit 143' TERM
+fi
+[[ -z "${STUB_PID_FILE:-}" ]] || printf '%s\n' "$$" >"$STUB_PID_FILE"
+if [[ -n "${STUB_SLEEP:-}" ]]; then
+  sleep "$STUB_SLEEP" &
+  stub_sleep_pid=$!
+  wait "$stub_sleep_pid"
+fi
 # STUB_UNKNOWN_MODELS="a b": those model ids are refused, like a model not released yet.
 for m in ${STUB_UNKNOWN_MODELS:-}; do
   case " $* " in *" --model $m "*) printf '{"type":"result","subtype":"error","is_error":true,"result":"model not found: %s"}\n' "$m"; exit 1 ;; esac

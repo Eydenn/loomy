@@ -70,9 +70,14 @@ loomy start --print
 loomy start --watch
 loomy start --no-watch
 loomy start --app
+loomy start --lead codex
+loomy start --lead claude
+loomy start --lead auto
 ```
 
 Démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`, `--watch`)
+
+`--lead codex|claude` choisit temporairement l'outil lead sans modifier le brief et remplace `AI_ROUTE_ENV=hybrid-codex loomy start` pour cet usage. Un changement ouvre une nouvelle session avec le prompt de passation et d'état partagé, même avec `--resume` ; redemander l'outil actif conserve le choix de session et n'ajoute aucun événement de relais. `--lead auto` ou l'outil lead du brief efface le relais et le démarre avec le prompt de retour. Le relais manuel persiste jusqu'au retour explicite, sauf si l'outil actif atteint le seuil de quota et que le lead du brief a de la marge. Un outil absent est refusé (code 2) ; un quota saturé ou une offre à l'usage provoque un avertissement et reste autorisé. Compatible avec `--app` et le suivi ; `--print` affiche un aperçu sans écrire d'état.
 
 🪟 La session de l'orchestrateur à gauche et le suivi en direct à droite, par défaut (l'un au-dessus de l'autre si le terminal est étroit), via tmux ou iTerm2 ; le suivi se ferme avec la session. `--no-watch`, ou `loomy config set start_watch no`, ouvre la session seule. Dans chaque session, la ligne d'état de Claude Code affiche la phase et les délégations en cours (⟳ n), y compris après ta propre ligne d'état ; une session ouverte sans suivi le signale et propose `loomy watch`
 

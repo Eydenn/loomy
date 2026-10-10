@@ -125,6 +125,160 @@ delegation_options_tests() {
   : >"$J"
   run "delegation: task and why privacy" bash -c 'cd "$1" && LOOMY_JOURNAL_TASKS=0 "$2" delegate codex architect --why SECRET-WHY SECRET-TASK' _ "$op" "$LOOMY"
   if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
+
+  local cap_tmp="$WORK/capture-watch-tmp" cap_bin="$WORK/capture-watch-bin"
+  mkdir -p "$cap_tmp" "$cap_bin"
+  cat >"$cap_bin/mkdir" <<'STUB'
+#!/usr/bin/env bash
+for arg in "$@"; do [[ "$arg" == */demo-project ]] && exit 1; done
+exec /bin/mkdir "$@"
+STUB
+  chmod +x "$cap_bin/mkdir"
+  fails "capture watch: init setup failure exits" 1 env TMPDIR="$cap_tmp" PATH="$cap_bin:$PATH" bash "$REPO/tools/capture-watch.sh" en "$WORK/capture-watch.svg"
+  if find "$cap_tmp" -mindepth 1 -maxdepth 1 -name 'loomy-watch-capture.*' -print | grep -q .; then ko "capture watch: failed init left its temp dir"; else ok "capture watch: failed init removes its temp dir"; fi
+
+  local bridge_pid child_pid attempts codex_pid_file="$WORK/codex-child.pid" claude_pid_file="$WORK/claude-child.pid"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"interrupted-bridge-test","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$J"
+  bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" "$3" delegate codex architect --effort low --why "cancel codex" "Interrupt codex"' _ "$op" "$codex_pid_file" "$LOOMY" >"$OUT" 2>&1 &
+  bridge_pid=$!
+  attempts=0
+  while ! grep -q '"type":"delegation_start".*"task":"Interrupt codex"' "$J"; do
+    attempts=$(( attempts + 1 )); (( attempts < 100 )) || break; sleep 0.05
+  done
+  attempts=0
+  while [[ ! -s "$codex_pid_file" ]]; do
+    attempts=$(( attempts + 1 )); (( attempts < 100 )) || break; sleep 0.05
+  done
+  kill -TERM "$bridge_pid" 2>/dev/null || true
+  wait "$bridge_pid"; local codex_exit=$?
+  [[ "$codex_exit" == 143 ]] && ok "codex: TERM exits with 143" || ko "codex: TERM exit was $codex_exit"
+  run "codex: one interrupted final event preserves start metadata" perl -MJSON::PP -e '
+    my ($path,$task,$signal,$bridge)=@ARGV; open my $f,"<",$path or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>;
+    my ($s)=grep { ($_->{type}//"") eq "delegation_start" && ($_->{task}//"") eq $task } @e;
+    die "start missing" unless $s; my @f=grep { ($_->{type}//"") eq "delegation" && ($_->{id}//"") eq $s->{id} } @e;
+    die "expected one final event" unless @f==1; my $d=$f[0];
+    die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq $signal && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
+    for my $k (qw(id role family model effort sandbox requested requested_model off_routing why task)) { die "$k mismatch" unless ($d->{$k}//"") eq ($s->{$k}//"") }
+    die "nonzero usage" unless $d->{tokens_in}==0 && $d->{tokens_cached}==0 && $d->{tokens_out}==0 && $d->{cost_usd}==0;
+  ' "$J" "Interrupt codex" TERM codex
+  if [[ -s "$codex_pid_file" ]]; then child_pid="$(cat "$codex_pid_file")"; if kill -0 "$child_pid" 2>/dev/null; then ko "codex: stub child remains alive"; kill -KILL "$child_pid" 2>/dev/null || true; else ok "codex: stub child is gone"; fi; else ko "codex: stub child pid was not recorded"; fi
+  run "codex: interrupted final event renders with duration in tree" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$op" --once
+  has "codex: tree shows interrupted state and duration" '⊘ Architect.*0:[0-9][0-9].*· interrupted'
+
+  perl -e '$SIG{INT}="DEFAULT"; exec @ARGV' bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" LOOMY_BRIDGE_OK=1 "$3" delegate claude architect --effort low --why "cancel claude" "Interrupt claude"' _ "$op" "$claude_pid_file" "$LOOMY" >"$OUT" 2>&1 &
+  bridge_pid=$!
+  attempts=0
+  while ! grep -q '"type":"delegation_start".*"task":"Interrupt claude"' "$J"; do
+    attempts=$(( attempts + 1 )); (( attempts < 100 )) || break; sleep 0.05
+  done
+  attempts=0
+  while [[ ! -s "$claude_pid_file" ]]; do
+    attempts=$(( attempts + 1 )); (( attempts < 100 )) || break; sleep 0.05
+  done
+  kill -INT "$bridge_pid" 2>/dev/null || true
+  wait "$bridge_pid"; local claude_exit=$?
+  [[ "$claude_exit" == 130 ]] && ok "claude: INT exits with 130" || ko "claude: INT exit was $claude_exit"
+  run "claude: one interrupted final event preserves start metadata" perl -MJSON::PP -e '
+    my ($path,$task,$signal,$bridge)=@ARGV; open my $f,"<",$path or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>;
+    my ($s)=grep { ($_->{type}//"") eq "delegation_start" && ($_->{task}//"") eq $task } @e;
+    die "start missing" unless $s; my @f=grep { ($_->{type}//"") eq "delegation" && ($_->{id}//"") eq $s->{id} } @e;
+    die "expected one final event" unless @f==1; my $d=$f[0];
+    die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq $signal && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
+    for my $k (qw(id role family model effort sandbox requested requested_model off_routing why task)) { die "$k mismatch" unless ($d->{$k}//"") eq ($s->{$k}//"") }
+    die "nonzero usage" unless $d->{tokens_in}==0 && $d->{tokens_cached}==0 && $d->{tokens_out}==0 && $d->{cost_usd}==0;
+  ' "$J" "Interrupt claude" INT claude
+  if [[ -s "$claude_pid_file" ]]; then child_pid="$(cat "$claude_pid_file")"; if kill -0 "$child_pid" 2>/dev/null; then ko "claude: stub child remains alive"; kill -KILL "$child_pid" 2>/dev/null || true; else ok "claude: stub child is gone"; fi; else ko "claude: stub child pid was not recorded"; fi
+  run "claude: interrupted final event renders with duration in tree" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$op" --once
+  has "claude: tree shows interrupted state and duration" '⊘ Architect.*0:[0-9][0-9].*· interrupted'
+
+  local status_only="$WORK/interrupted-status-only"
+  mkdir -p "$status_only/.loomy/logs"; cp "$op/.loomy/brief.md" "$status_only/.loomy/brief.md"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"status-only","pid":%s}\n{"ts":"%s","type":"delegation_start","session":"status-only","id":"status-only","pid":99999999,"bridge":"codex","role":"architect","family":"codex","model":"gpt-6-luna","effort":"low","task":"status only"}\n{"ts":"%s","type":"delegation","session":"status-only","id":"status-only","bridge":"codex","role":"architect","family":"codex","model":"gpt-6-luna","effort":"low","status":"interrupted","duration_s":7,"signal":"TERM","tokens_in":0,"tokens_cached":0,"tokens_out":0,"cost_usd":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$status_only/.loomy/logs/events.jsonl"
+  run "tree: status interrupted maps to the interrupted outcome" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$status_only" --once
+  has "tree: status-only event uses ⊘ and recorded duration" '⊘ Architect.*0:07.*· interrupted'
+}
+
+interrupted_delegation_tests() {
+  section "Interrupted delegations"
+  local op="$WORK/interrupted-delegations" cli_dir="$WORK/interrupted-cli" bridge mode task pid_file descendant_file bridge_pid attempts status started elapsed pid
+  mkdir -p "$op" "$cli_dir"
+  git -C "$op" init -q
+  run "interrupted: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
+  git -C "$op" add -A && git -C "$op" commit -qm "initialize interrupted delegation fixture"
+  local J="$op/.loomy/logs/events.jsonl"
+  cat >"$cli_dir/stub" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --version)
+    if [[ "${0##*/}" == claude ]]; then echo "2.1.300 (Claude Code)"; else echo "codex-cli 0.160.0"; fi
+    exit 0 ;;
+  exec) shift ;;
+esac
+[[ -z "${STUB_CLI_PID_FILE:-}" ]] || printf '%s\n' "$$" >"$STUB_CLI_PID_FILE"
+if [[ "${STUB_MODE:-}" == ignore-term ]]; then trap '' TERM; fi
+sleep 30 &
+descendant=$!
+[[ -z "${STUB_DESCENDANT_PID_FILE:-}" ]] || printf '%s\n' "$descendant" >"$STUB_DESCENDANT_PID_FILE"
+if [[ "${STUB_MODE:-}" == ignore-term ]]; then
+  while :; do sleep 30; done
+else
+  wait "$descendant"
+fi
+STUB
+  cp "$cli_dir/stub" "$cli_dir/codex"
+  cp "$cli_dir/stub" "$cli_dir/claude"
+  chmod +x "$cli_dir/codex" "$cli_dir/claude"
+
+  for bridge in codex claude; do
+    for mode in normal ignore-term; do
+      task="Interrupt $bridge $mode"
+      pid_file="$WORK/$bridge-$mode-cli.pid"
+      descendant_file="$WORK/$bridge-$mode-descendant.pid"
+      rm -f "$pid_file" "$descendant_file"
+      if [[ "$bridge" == codex ]]; then
+        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_CODEX_BIN="$5" "$6" delegate codex architect --effort low "$7"' \
+          _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir/codex" "$LOOMY" "$task" >"$OUT" 2>&1 &
+      else
+        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_BRIDGE_OK=1 PATH="$5:$PATH" "$6" delegate claude architect --effort low "$7"' \
+          _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir" "$LOOMY" "$task" >"$OUT" 2>&1 &
+      fi
+      bridge_pid=$!
+      attempts=0
+      while [[ ! -s "$pid_file" || ! -s "$descendant_file" ]]; do
+        attempts=$(( attempts + 1 )); (( attempts < 200 )) || break; sleep 0.05
+      done
+      if [[ ! -s "$pid_file" || ! -s "$descendant_file" ]]; then
+        kill -TERM "$bridge_pid" 2>/dev/null || true
+        wait "$bridge_pid" 2>/dev/null || true
+        ko "$bridge: $mode stub did not start"
+        continue
+      fi
+
+      started="$(date +%s)"
+      kill -TERM "$bridge_pid" 2>/dev/null || true
+      wait "$bridge_pid"; status=$?
+      elapsed=$(( $(date +%s) - started ))
+      [[ "$status" == 143 ]] && ok "$bridge: $mode TERM exits with 143" || ko "$bridge: $mode TERM exit was $status"
+      if [[ "$mode" == ignore-term ]]; then
+        (( elapsed <= 6 )) && ok "$bridge: ignored TERM is bounded to ${elapsed}s" || ko "$bridge: ignored TERM took ${elapsed}s"
+      fi
+
+      for pid_file in "$pid_file" "$descendant_file"; do
+        pid="$(cat "$pid_file")"
+        if kill -0 "$pid" 2>/dev/null; then
+          ko "$bridge: $mode process $pid remains alive"
+          kill -KILL "$pid" 2>/dev/null || true
+        else ok "$bridge: $mode process $pid is gone"; fi
+      done
+      if perl -MJSON::PP -e '
+        my ($path,$task,$bridge)=@ARGV; open my $f,"<",$path or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>;
+        my ($s)=grep { ($_->{type}//"") eq "delegation_start" && ($_->{task}//"") eq $task } @e;
+        die "start missing" unless $s; my @f=grep { ($_->{type}//"") eq "delegation" && ($_->{id}//"") eq $s->{id} } @e;
+        die "expected one final event" unless @f==1; my $d=$f[0];
+        die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq "TERM" && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
+      ' "$J" "$task" "$bridge"; then ok "$bridge: $mode writes one interrupted final event"; else ko "$bridge: $mode final event missing or duplicated"; fi
+    done
+  done
 }
 
 # ------------------------------------------------------------------ live native agents and watch
@@ -631,6 +785,8 @@ release_defects_tests() {
     ' "$rd/.loomy/logs/events.jsonl" "$model" "$to"
   done
 }
+# The relay section owns its fixtures and can run without the full terminal walkthrough.
+if [[ "${1:-}" != --section || "${2:-}" != 'Lead relay (quota)' ]]; then
 if [[ "${1:-}" == --section && "${2:-}" == 'Release defects' ]]; then
   release_defects_tests
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
@@ -639,6 +795,11 @@ fi
 
 if [[ "${1:-}" == --section && "${2:-}" == 'Delegation options' ]]; then
   delegation_options_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+if [[ "${1:-}" == --section && "${2:-}" == 'Interrupted delegations' ]]; then
+  interrupted_delegation_tests
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   (( FAIL == 0 )); exit $?
 fi
@@ -1705,6 +1866,7 @@ run "LOOMY_JOURNAL=0 turns the log off" env LOOMY_JOURNAL=0 "$LOOMY" delegate cl
 [[ "$(wc -l <"$J")" == "$n_before" ]] && ok "nothing written with LOOMY_JOURNAL=0" || ko "log written despite LOOMY_JOURNAL=0"
 
 delegation_options_tests
+interrupted_delegation_tests
 
 section "Live tracking"
 run "status with delegations from both families" "$LOOMY" status
@@ -1939,6 +2101,12 @@ has "start: lead agent session on the other tool" "Claude Code quota at 97 %: th
 has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
 rm -f "$QC/loomy/claude-limits"
 
+fi
+
+lead_relay_tests() {
+QC="$WORK/quota-cfg"; QX="$WORK/quota-codex"
+mkdir -p "$QC/loomy" "$QX/sessions/2026/09/28"
+qenv() { env XDG_CONFIG_HOME="$QC" CODEX_HOME="$QX" "$@"; }
 section "Lead relay (quota)"
 LR="$WORK/lead-relay"; LR_BIN="$WORK/lead-relay-bin"; LR_LOG="$WORK/lead-relay.log"
 mkdir -p "$LR/.loomy/logs" "$LR_BIN"
@@ -1962,14 +2130,14 @@ relay_state_active() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >"$LR/.loomy/failover"
 }
 lead_relay_decide() {
-  local dry="${1:-}" no_switch="${2:-}"
+  local dry="${1:-}" no_switch="${2:-}" requested="${3:-}"
   qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_NO_SWITCH="$no_switch" bash -c '
     source "$1/scripts/lib/models.sh"
     source "$1/scripts/lib/failover.sh"
-    lf_decide "$2" claude "${3:-}"
+    lf_decide "$2" claude "${3:-}" "${4:-}"
     [[ -n "$LF_NOTE" ]] && printf "LF_NOTE=%s\n" "$LF_NOTE"
     exit 0
-  ' _ "$REPO" "$LR" "$dry"
+  ' _ "$REPO" "$LR" "$dry" "$requested"
 }
 printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
 relay_codex_quota 20
@@ -1988,6 +2156,19 @@ file_has "lead relay: state records Codex as acting lead" "$LR/.loomy/failover" 
 file_has "lead relay: state records Claude quota reason" "$LR/.loomy/failover" '^reason=5 h 97 %$'
 file_has "lead relay: state records Claude reset time" "$LR/.loomy/failover" "^resume_at=$LR_RESET$"
 file_has "lead relay: handover event is journaled" "$LR/.loomy/logs/events.jsonl" '"type":"lead_failover"'
+
+got="$(lead_relay_decide "" "" codex)"
+[[ "$got" == "codex continue" ]] && ok "lead relay: explicit acting lead keeps automatic relay" || ko "lead relay: explicit acting choice was $got"
+file_has "lead relay: explicit acting choice marks state manual" "$LR/.loomy/failover" '^manual=1$'
+[[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl")" == 1 ]] \
+  && ok "lead relay: explicit acting choice adds no failover event" || ko "lead relay: explicit choice duplicated failover event"
+rm -f "$QC/loomy/claude-limits"
+got="$(lead_relay_decide)"
+[[ "$got" == "codex continue" && -f "$LR/.loomy/failover" ]] \
+  && ok "lead relay: manualized Codex stays lead while Claude has room" || ko "lead relay: manualized decision was $got"
+[[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl")" == 1 ]] \
+  && ok "lead relay: manualized continuation keeps one failover event" || ko "lead relay: continuation changed failover event count"
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
 
 rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
 got="$(lead_relay_decide --dry)"
@@ -2305,6 +2486,141 @@ run "start: normal print renders banner logo" qenv env COLUMNS=80 LINES=24 \
   LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --print
 has "start: normal print includes banner logo line" '▀▄'
 # END lead relay part B standalone coverage.
+
+# Manual lead selection shares the quota relay state and leaves the brief untouched.
+relay_set_brief claude ORCHESTRATED
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
+: >"$LR/.loomy/logs/events.jsonl"; : >"$LR_LOG"
+cp "$LR/.loomy/brief.md" "$WORK/manual-brief.before"
+manual_start() {
+  qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 \
+    LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 \
+    "$LOOMY" start --root "$LR" "$@"
+}
+printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+relay_codex_quota 20
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
+rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
+got="$(lead_relay_decide)"
+[[ "$got" == 'codex handover' ]] && ok "manual lead: fixture starts with automatic Codex relay" || ko "manual lead: automatic relay was $got"
+run "manual lead: --lead codex pins the acting automatic relay" manual_start --lead codex --new
+file_has "manual lead: pinned automatic relay is marked manual" "$LR/.loomy/failover" '^manual=1$'
+[[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl")" == 1 ]] \
+  && ok "manual lead: pinning automatic relay writes no second failover" || ko "manual lead: pin duplicated failover event"
+rm -f "$QC/loomy/claude-limits"
+got="$(lead_relay_decide)"
+[[ "$got" == 'codex continue' && -f "$LR/.loomy/failover" ]] \
+  && ok "manual lead: pinned Codex stays lead while Claude has room" || ko "manual lead: pinned relay returned to Claude"
+relay_codex_quota 20
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
+: >"$LR/.loomy/logs/events.jsonl"; : >"$LR_LOG"
+
+run "manual lead: Codex switch overrides resume" manual_start --lead codex --resume
+file_has "manual lead: marked manual in state" "$LR/.loomy/failover" '^manual=1$'
+file_has "manual lead: reason is manual" "$LR/.loomy/failover" '^reason=manual$'
+file_has "manual lead: manual handover journal event" "$LR/.loomy/logs/events.jsonl" '"type":"lead_failover".*"manual":true'
+file_has "manual lead: Codex receives handoff and STATE prompt" "$LR_LOG" 'codex.*You are temporarily.*\(manual\).*HANDOFF.md.*STATE.md first'
+if grep -q $'codex\tresume' "$LR_LOG"; then ko "manual lead: switch resumed old session"; else ok "manual lead: switch starts new session"; fi
+if cmp -s "$LR/.loomy/brief.md" "$WORK/manual-brief.before"; then ok "manual lead: brief unchanged"; else ko "manual lead: brief changed"; fi
+got="$(lead_relay_decide)"
+[[ "$got" == 'codex continue' && -f "$LR/.loomy/failover" ]] && ok "manual lead: no automatic return when master has room" || ko "manual lead: unexpectedly returned: $got"
+: >"$LR_LOG"
+run "manual lead: repeating Codex starts it" manual_start --lead codex --new
+[[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl")" == 1 ]] && ok "manual lead: repeated choice writes no relay event" || ko "manual lead: duplicate relay event"
+mkdir -p "$HOME/.codex/sessions"
+printf '{"cwd":"%s"}\n' "$(cd "$LR" && pwd -P)" >"$HOME/.codex/sessions/manual.jsonl"
+: >"$LR_LOG"
+run "manual lead: same acting tool honors resume" manual_start --lead codex --resume
+file_has "manual lead: repeated acting tool resumes" "$LR_LOG" '^codex.*resume[[:space:]]--last'
+rm -f "$HOME/.codex/sessions/manual.jsonl"
+run "manual lead: routing follows acting tool" qenv bash -c 'source "$1/scripts/lib/models.sh"; ai_detect_env "$2"; echo "$AI_LEAD|$AI_LEAD_MASTER|$AI_ENV"' _ "$REPO" "$LR"
+has "manual lead: hybrid Codex routing with Claude master" '^codex\|claude\|hybrid-codex$'
+run "manual lead: status displays manual relay" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR" --compact
+has "manual lead: English status label" '⇄ Lead: Codex in place of Claude Code \(manual\)'
+run "manual lead: French status displays manual relay" qenv env LOOMY_UI_LANG=fr bash "$REPO/scripts/loomy-status.sh" --root "$LR" --compact
+has "manual lead: French status label" '⇄ Lead : Codex à la place de Claude Code \(manuel\)'
+run "manual lead: live view displays manual relay" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-tree.sh" --root "$LR" --once
+has "manual lead: live view manual label" '⇄ Lead: Codex in place of Claude Code \(manual\)'
+run "manual lead: session context describes manual choice" qenv env LOOMY_NO_REPAIR=1 bash -c 'bash "$1/scripts/loomy-context.sh" --root "$2" --hook start --tool codex </dev/null' _ "$REPO" "$LR"
+has "manual lead: context reads handoff and shared state" 'Temporary lead: Codex.*\(manual\).*HANDOFF.md.*STATE.md first'
+# Claude's prompt hook must also suppress the return notice in a manual relay.
+relay_set_brief codex ORCHESTRATED
+relay_active_claude "$(( $(date +%s) - 1 ))"; printf 'manual=1\n' >>"$LR/.loomy/failover"
+rm -f "$LR/.loomy/relay.notice"
+relay_prompt_hook >"$OUT" 2>&1
+hasnt "manual lead: no in-session return notice" 'Codex has quota again and takes the lead back'
+relay_set_brief claude ORCHESTRATED
+relay_state_active ""; printf 'manual=1\n' >>"$LR/.loomy/failover"
+: >"$LR_LOG"
+run "manual lead: explicit Claude returns" manual_start --lead claude --resume
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: Claude return clears state" || ko "manual lead: Claude return kept state"
+file_has "manual lead: explicit return journaled as manual" "$LR/.loomy/logs/events.jsonl" '"type":"lead_return".*"manual":true'
+file_has "manual lead: master receives return prompt" "$LR_LOG" 'claude.*You are the lead agent again after a manual relay'
+run "manual lead: switch for auto return" manual_start --lead codex --new
+: >"$LR_LOG"
+run "manual lead: auto returns to master" manual_start --lead auto --resume
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: auto clears state" || ko "manual lead: auto kept state"
+file_has "manual lead: auto return gets new master prompt" "$LR_LOG" 'claude.*You are the lead agent again after a manual relay'
+fails "manual lead: unknown tool exits 2" 2 manual_start --lead unknown --new
+fails "manual lead: missing value exits 2" 2 manual_start --lead
+fails "manual lead: uninstalled Codex exits 2" 2 qenv env PATH="$LR_BIN:/usr/bin:/bin" LOOMY_CODEX_BIN="$WORK/missing-codex" "$LOOMY" start --root "$LR" --lead codex --new
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: refusal writes no relay" || ko "manual lead: refusal wrote state"
+cp "$LR/.loomy/logs/events.jsonl" "$WORK/manual-events.before"
+run "manual lead: print previews switch" manual_start --lead codex --print
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: print switch writes no relay" || ko "manual lead: print switch wrote state"
+if cmp -s "$LR/.loomy/logs/events.jsonl" "$WORK/manual-events.before"; then ok "manual lead: print writes no event"; else ko "manual lead: print wrote events"; fi
+relay_state_active ""; printf 'manual=1\n' >>"$LR/.loomy/failover"
+cp "$LR/.loomy/failover" "$WORK/manual-state.before"
+cp "$LR/.loomy/logs/events.jsonl" "$WORK/manual-events.before"
+run "manual lead: print stays read-only when combined with resume and tracking" manual_start --lead auto --print --resume --watch
+if cmp -s "$LR/.loomy/failover" "$WORK/manual-state.before" && cmp -s "$LR/.loomy/logs/events.jsonl" "$WORK/manual-events.before"; then ok "manual lead: combined print preserves state and events"; else ko "manual lead: combined print wrote state or events"; fi
+run "manual lead: print previews auto return" manual_start --lead auto --print
+if cmp -s "$LR/.loomy/failover" "$WORK/manual-state.before"; then ok "manual lead: print return preserves relay"; else ko "manual lead: print return changed state"; fi
+# Saturated destinations are allowed for the first launch; the normal chain then protects the acting lead.
+relay_codex_quota 97
+: >"$LR_LOG"
+run "manual lead: saturated Codex is allowed and chains back" manual_start --lead codex --new
+has "manual lead: saturation warning" 'Codex quota is saturated; manual lead allowed'
+LR_ORDER="$(awk -F '\t' '$1 == "claude" || ($1 == "codex" && $2 !~ /^--version/) { printf "%s%s", sep, $1; sep = " " } END { print "" }' "$LR_LOG")"
+[[ "$LR_ORDER" == 'codex claude' && ! -e "$LR/.loomy/failover" ]] && ok "manual lead: saturated acting lead hands back and clears manual" || ko "manual lead: saturated chain order=$LR_ORDER"
+relay_codex_quota 20
+printf 'plan_claude=pro\nplan_codex=api\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
+run "manual lead: API destination allowed" manual_start --lead codex --new
+has "manual lead: API warning" 'Codex is on a pay-per-use plan; manual lead allowed'
+file_has "manual lead: API destination remains manual relay" "$LR/.loomy/failover" '^manual=1$'
+# An explicit manual choice is independent of automatic relay preferences.
+printf 'lead_failover=off\n' >>"$QC/loomy/config"
+run "manual lead: disabled auto relay still preserves explicit choice" manual_start --lead codex --new
+file_has "manual lead: manual relay survives lead_failover off" "$LR/.loomy/failover" '^manual=1$'
+printf 'lead_failover=auto\nplan_codex=business\n' >>"$QC/loomy/config"
+rm -f "$LR/.loomy/failover"; : >"$LR_APP_OPEN_LOG"
+run "manual lead: app starts chosen Codex" qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --lead codex --app
+file_has "manual lead: app link contains manual prompt" "$LR_APP_OPEN_LOG" '^codex://.*manual'
+file_has "manual lead: app records manual relay" "$LR/.loomy/failover" '^manual=1$'
+run "manual lead: app returns to master" qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --lead auto --app
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: app return clears state" || ko "manual lead: app return kept state"
+relay_set_brief codex ORCHESTRATED
+: >"$LR_LOG"
+run "manual lead: reverse switch starts Claude" manual_start --lead claude --new
+file_has "manual lead: reverse switch keeps Codex master" "$LR/.loomy/failover" '^master=codex$'
+file_has "manual lead: reverse switch receives manual handoff prompt" "$LR_LOG" 'claude.*temporarily.*Codex.*\(manual\).*STATE.md first'
+run "manual lead: reverse auto returns Codex" manual_start --lead auto --new
+[[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: reverse return clears relay" || ko "manual lead: reverse return kept relay"
+relay_set_brief claude ORCHESTRATED
+file_has "manual lead: tracking forwards selected tool to inner session" "$REPO/scripts/loomy-start.sh" 'agent=.*lead_args'
+run "manual lead: start help advertises flag" "$LOOMY" help start
+has "manual lead: start help includes choices" 'loomy start --lead <codex\|claude\|auto>'
+run "manual lead: global help advertises flag" "$LOOMY" help
+has "manual lead: global help includes choices" '\-\-lead codex\|claude\|auto'
+rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
+}
+lead_relay_tests
+if [[ "${1:-}" == --section && "${2:-}" == 'Lead relay (quota)' ]]; then
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
 
 section "Codex CLI discovery"
 CA="$WORK/apps/ChatGPT.app/Contents/Resources/codex-cli"; mkdir -p "$CA/bin" "$WORK/stalebin"

@@ -70,9 +70,14 @@ loomy start --print
 loomy start --watch
 loomy start --no-watch
 loomy start --app
+loomy start --lead codex
+loomy start --lead claude
+loomy start --lead auto
 ```
 
 Starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`)
+
+`--lead codex|claude` temporarily selects the lead tool without changing the brief, replacing `AI_ROUTE_ENV=hybrid-codex loomy start` for this use. A switch starts a new session with the handoff and shared state prompt, even with `--resume`; repeating the acting tool keeps the session choice and adds no relay event. `--lead auto` or the brief's lead clears the relay and starts that lead with the return prompt. Manual relays stay until an explicit return, except when the acting tool reaches its quota threshold and the master has room. A missing tool is refused (exit 2); a saturated quota or pay-per-use plan produces a warning and remains allowed. Works with `--app` and tracking; `--print` previews without writing state.
 
 🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone. In every session, Claude Code's status line shows the phase and the delegations running (⟳ n), also after your own status line; a session opened without tracking is told to mention `loomy watch`
 

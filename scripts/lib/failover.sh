@@ -4,7 +4,7 @@
 # room again. The lead set in the brief (the "master") never changes; the relay is a state file. To be sourced.
 # Bash 3.2 compatible; nothing here fails its caller.
 #
-# State: <root>/.loomy/failover, key=value lines: master, acting, since (ISO UTC), reason, resume_at (epoch, may be empty).
+# State: <root>/.loomy/failover, key=value lines: master, acting, since (ISO UTC), reason, resume_at (epoch, may be empty), manual (1 for a user-selected relay).
 # Settings: loomy config lead_failover (auto|off), quota_switch (95: hand over), quota_room (80: master takes back below).
 if ! declare -F t >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"; fi
 if ! declare -F ai_quota >/dev/null 2>&1; then source "$(dirname "${BASH_SOURCE[0]}")/usage.sh"; fi
@@ -82,25 +82,39 @@ _lf_reason() {
   fi
 }
 
-# lf_start <root> <master> <acting> <reason> <resume_at>: records the relay and journals it.
+# lf_start <root> <master> <acting> <reason> <resume_at> [manual]: records the relay and journals it.
 lf_start() {
-  local f; f="$(lf_file "$1")"
+  local f manual="${6:-0}" extra="" manual_line=""; f="$(lf_file "$1")"
   [[ -d "$1/.loomy" ]] || return 0
-  printf 'master=%s\nacting=%s\nsince=%s\nreason=%s\nresume_at=%s\n' "$2" "$3" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$4" "${5:-}" >"$f" 2>/dev/null || return 0
-  ai_journal_write "$1" "\"type\":\"lead_failover\",\"master\":\"$2\",\"acting\":\"$3\",\"reason\":$(ai_json_str "$4"),\"resume_at\":\"${5:-}\"" || true
+  if [[ "$manual" == 1 ]]; then manual_line=$'manual=1\n'; extra=',"manual":true'; fi
+  printf 'master=%s\nacting=%s\nsince=%s\nreason=%s\nresume_at=%s\n%s' "$2" "$3" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$4" "${5:-}" "$manual_line" >"$f" 2>/dev/null || return 0
+  ai_journal_write "$1" "\"type\":\"lead_failover\",\"master\":\"$2\",\"acting\":\"$3\",\"reason\":$(ai_json_str "$4"),\"resume_at\":\"${5:-}\"$extra" || true
   return 0
 }
 
 # lf_clear <root>: removes the state, no event.
 lf_clear() { rm -f "$(lf_file "$1")" 2>/dev/null || true; return 0; }
 
-# lf_end <root>: the master takes the lead back: journals lead_return with the duration, then clears the state.
+# lf_mark_manual <root>: marks an existing relay as user-selected without journaling another handover.
+lf_mark_manual() {
+  local f tmp
+  f="$(lf_file "$1")"
+  [[ -f "$f" ]] || return 0
+  tmp="$(mktemp "${f}.XXXXXX" 2>/dev/null)" || return 0
+  if awk -F= '$1 == "manual" { if (!seen) print "manual=1"; seen=1; next } { print } END { if (!seen) print "manual=1" }' "$f" >"$tmp"; then
+    mv "$tmp" "$f" 2>/dev/null || { rm -f "$tmp"; return 0; }
+  else rm -f "$tmp"; fi
+  return 0
+}
+
+# lf_end <root> [manual]: the master takes the lead back: journals lead_return with the duration, then clears the state.
 lf_end() {
-  local m a s since_ep dur=0
+  local m a s since_ep dur=0 extra=""
+  [[ "${2:-$(lf_get "$1" manual)}" != 1 ]] || extra=',"manual":true'
   m="$(lf_get "$1" master)"; a="$(lf_get "$1" acting)"; s="$(lf_get "$1" since)"
   since_ep="$(ai_ts_epoch "$s")"
   [[ -n "$since_ep" ]] && dur=$(( $(date +%s) - since_ep ))
-  ai_journal_write "$1" "\"type\":\"lead_return\",\"master\":\"$m\",\"acting\":\"$a\",\"duration_s\":$dur" || true
+  ai_journal_write "$1" "\"type\":\"lead_return\",\"master\":\"$m\",\"acting\":\"$a\",\"duration_s\":$dur$extra" || true
   lf_clear "$1"
 }
 
@@ -116,23 +130,43 @@ lf_master_ready() {
 # lf_time <epoch>: HH:MM local.
 lf_time() { date -r "$1" +%H:%M 2>/dev/null || date -d "@$1" +%H:%M 2>/dev/null || true; }
 
-# lf_decide <root> <master> [--dry]: prints "<lead tool> <normal|handover|continue|return>" and sets LF_LEAD, LF_KIND,
-# LF_MASTER, LF_ACTING, LF_REASON, LF_RESUME_AT, LF_SINCE and LF_NOTE ("no other tool with room left" when the master is
+# lf_decide <root> <master> [--dry] [codex|claude|auto]: prints "<lead tool> <normal|handover|continue|return>" and sets LF_LEAD, LF_KIND,
+# LF_MASTER, LF_ACTING, LF_REASON, LF_RESUME_AT, LF_SINCE, LF_MANUAL and LF_NOTE ("no other tool with room left" when the master is
 # saturated and nothing can take over). Without --dry the decision is recorded (state and journal).
 lf_decide() {
-  local root="$1" master="$2" dry="${3:-}" other
-  LF_LEAD="$master"; LF_KIND="normal"; LF_MASTER="$master"; LF_ACTING=""; LF_REASON=""; LF_RESUME_AT=""; LF_SINCE=""; LF_NOTE=""
-  if [[ -f "$(lf_file "$root")" ]]; then
-    if ! lf_enabled || [[ "$(lf_get "$root" master)" != "$master" ]] || ! lf_active "$root"; then lf_clear "$root"
-    else
-      LF_ACTING="$(lf_get "$root" acting)"; LF_REASON="$(lf_get "$root" reason)"; LF_RESUME_AT="$(lf_get "$root" resume_at)"; LF_SINCE="$(lf_get "$root" since)"
-      if lf_master_ready "$root"; then
-        LF_KIND="return"; LF_LEAD="$master"
-        [[ "$dry" == "--dry" ]] || lf_end "$root"
-      else LF_KIND="continue"; LF_LEAD="$LF_ACTING"; fi
-      echo "$LF_LEAD $LF_KIND"; return 0
-    fi
+  local root="$1" master="$2" dry="${3:-}" requested="${4:-}" other active=0
+  LF_LEAD="$master"; LF_KIND="normal"; LF_MASTER="$master"; LF_ACTING=""; LF_REASON=""; LF_RESUME_AT=""; LF_SINCE=""; LF_NOTE=""; LF_MANUAL=0
+  if lf_active "$root" && [[ "$(lf_get "$root" master)" == "$master" ]]; then
+    active=1
+    LF_ACTING="$(lf_get "$root" acting)"; LF_REASON="$(lf_get "$root" reason)"; LF_RESUME_AT="$(lf_get "$root" resume_at)"; LF_SINCE="$(lf_get "$root" since)"
+    LF_MANUAL="$(lf_get "$root" manual)"; LF_MANUAL="${LF_MANUAL:-0}"
   fi
+  # An explicit choice overrides quota decisions for this launch; the chain protects it afterwards.
+  if [[ -n "$requested" ]]; then
+    [[ "$requested" != auto ]] || requested="$master"
+    if [[ "$requested" == "$master" ]]; then
+      if (( active )); then
+        LF_KIND="return"; LF_MANUAL=1
+        [[ "$dry" == "--dry" ]] || lf_end "$root" 1
+      elif [[ "$dry" != "--dry" ]]; then lf_clear "$root"; fi
+    elif (( active )) && [[ "$requested" == "$LF_ACTING" ]]; then
+      LF_KIND="continue"; LF_LEAD="$LF_ACTING"; LF_MANUAL=1
+      [[ "$dry" == "--dry" ]] || lf_mark_manual "$root"
+    else
+      LF_KIND="handover"; LF_LEAD="$requested"; LF_ACTING="$requested"; LF_REASON="manual"; LF_RESUME_AT=""; LF_MANUAL=1
+      [[ "$dry" == "--dry" ]] || lf_start "$root" "$master" "$requested" manual "" 1
+    fi
+    echo "$LF_LEAD $LF_KIND"; return 0
+  fi
+  if (( active )) && { [[ "$LF_MANUAL" == 1 ]] || lf_enabled; }; then
+    if { [[ "$LF_MANUAL" != 1 ]] && lf_master_ready "$root"; } ||
+      { lf_enabled && ai_quota_saturated "$LF_ACTING" && _lf_installed "$master" && lf_has_room "$master"; }; then
+      LF_KIND="return"; LF_LEAD="$master"
+      [[ "$dry" == "--dry" ]] || lf_end "$root"
+    else LF_KIND="continue"; LF_LEAD="$LF_ACTING"; fi
+    echo "$LF_LEAD $LF_KIND"; return 0
+  fi
+  [[ "$dry" == "--dry" ]] || lf_clear "$root"
   if lf_enabled && ai_quota_saturated "$master"; then
     other="$(_lf_other "$master")"
     if _lf_installed "$other"; then
@@ -169,15 +203,15 @@ _lf_lock_acquire() {
   printf '%s\n' "$(date +%s)" >"$lock/created" 2>/dev/null || true
 }
 
-# lf_apply <root>: serialize and re-run the decision; the lock is removed when this call exits.
+# lf_apply <root> [codex|claude|auto]: serialize and re-run the decision; the lock is removed when this call exits.
 lf_apply() {
   local root="$1" master="${LF_MASTER:-}" lock="$1/.loomy/failover.lock"
   [[ -d "$root/.loomy" && -n "$master" ]] || return 0
   if _lf_lock_acquire "$lock"; then
-    lf_decide "$root" "$master" >/dev/null
+    lf_decide "$root" "$master" "" "${2:-}" >/dev/null
     rm -rf "$lock" 2>/dev/null || true
   else
-    lf_decide "$root" "$master" >/dev/null
+    lf_decide "$root" "$master" "" "${2:-}" >/dev/null
   fi
   return 0
 }
@@ -199,7 +233,9 @@ lf_status_text() {
   local m a r at
   lf_active "$1" || return 0
   m="$(lf_get "$1" master)"; a="$(lf_get "$1" acting)"; r="$(lf_get "$1" reason)"; at="$(lf_get "$1" resume_at)"
-  if [[ "$at" =~ ^[0-9]+$ ]]; then
+  if [[ "$(lf_get "$1" manual)" == 1 ]]; then
+    t "Lead: %s in place of %s (manual)" "$(lf_tool_name "$a")" "$(lf_tool_name "$m")"
+  elif [[ "$at" =~ ^[0-9]+$ ]]; then
     t "Lead: %s in place of %s (quota %s, back around %s)" "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "$r" "$(lf_time "$at")"
   else
     t "Lead: %s in place of %s (quota %s)" "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "$r"
@@ -232,6 +268,7 @@ lf_prompt_notice() {
   loomy_on_plan "$tool" || return 0
   name="$(lf_tool_name "$tool")"
   if lf_active "$root"; then
+    [[ "$(lf_get "$root" manual)" != 1 ]] || return 0
     [[ "$(lf_get "$root" acting)" == "$tool" ]] || return 0
     lf_master_ready "$root" || return 0
     lf_notice_due "$root" return || return 0
@@ -260,7 +297,9 @@ lf_context_lines() {
   if lf_active "$root"; then
     m="$(lf_get "$root" master)"; a="$(lf_get "$root" acting)"; r="$(lf_get "$root" reason)"; at="$(lf_get "$root" resume_at)"
     since="$(lf_since_time "$root")"
-    if [[ "$at" =~ ^[0-9]+$ ]]; then
+    if [[ "$(lf_get "$root" manual)" == 1 ]]; then
+      t "- Temporary lead: %s in place of %s (manual). Read .loomy/docs/HANDOFF.md if present and .loomy/memory/STATE.md first. Keep this lead until the user selects --lead auto or --lead %s, or its quota requires a relay." "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "$m"
+    elif [[ "$at" =~ ^[0-9]+$ ]]; then
       t "- Temporary lead: %s in place of %s since %s (quota %s); %s takes the lead back once its quota allows (around %s). Read .loomy/docs/HANDOFF.md first." "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "${since:-?}" "$r" "$(lf_tool_name "$m")" "$(lf_time "$at")"
     else
       t "- Temporary lead: %s in place of %s since %s (quota %s); %s takes the lead back once its quota allows. Read .loomy/docs/HANDOFF.md first." "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "${since:-?}" "$r" "$(lf_tool_name "$m")"
@@ -277,6 +316,10 @@ lf_context_lines() {
   [[ -n "$ep" ]] && (( $(date +%s) - ep <= 600 )) || return 0
   m="$(printf '%s' "$ev" | sed -n 's/.*"master":"\([^"]*\)".*/\1/p')"; a="$(printf '%s' "$ev" | sed -n 's/.*"acting":"\([^"]*\)".*/\1/p')"
   [[ "$m" == "$tool" && -n "$a" ]] || return 0
+  if [[ "$ev" == *'"manual":true'* ]]; then
+    t "- Back as lead agent after a manual relay: %s led; read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md and check its commits." "$(lf_tool_name "$a")"
+    echo; return 0
+  fi
   t "- Back as lead agent: %s led during your quota pause; read .loomy/docs/HANDOFF.md and check its commits." "$(lf_tool_name "$a")"
   echo
   return 0

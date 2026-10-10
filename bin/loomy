@@ -159,7 +159,7 @@ usage() {
   _h_cmd report "[--all] [--md [dir]]" "$(t "Project report: bootstrap, tasks, delegations by role and model, tokens and cost; --all compares every project on this machine; --md writes it as Markdown in the repository (docs/reports/)")"
   _h_cmd audit "[--resume|--print|--yes]" "$(t "Security audit of an existing repository with Cloudflare's security-audit skill: scope, analysis, validated findings, report and fix plan (kept out of Git), fixes on a branch if you want; followed in loomy watch")"
   _h_cmd assess "[--print]" "$(t "Assessment of an existing project, without AI: stack, commands, tests, CI, conventions, Git history, sensitive areas, debt (.loomy/assessment.md)")"
-  _h_cmd start "[--resume|--new|--print] [--watch]" "$(t "Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside")"
+  _h_cmd start "[--resume|--new|--print] [--watch] [--lead codex|claude|auto]" "$(t "Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use")"
   _h_cmd effort "$(t "[<role>] [level|--reset]")" "$(t "Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max")"
   _h_cmd route "$(t "[command]")" "$(t "Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)")"
   _h_cmd delegate "$(t "<claude|codex> <role> [options] \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
@@ -220,6 +220,18 @@ sub_help() {
 # No argument: the home screen (project status and next step in one choice) in a terminal, help otherwise.
 cmd="${1:-home}"; [[ $# -gt 0 ]] && shift
 
+# Reject an invalid manual lead before upkeep can change project files.
+start_print=0
+if [[ "$cmd" == start || "$cmd" == resume ]]; then
+  start_args=("$@")
+  for (( start_i = 0; start_i < ${#start_args[@]}; start_i++ )); do
+    case "${start_args[start_i]}" in --print|-p) start_print=1 ;; esac
+    if [[ "${start_args[start_i]}" == --lead ]]; then
+      case "${start_args[start_i+1]:-}" in codex|claude|auto) ;; *) t "--lead: codex, claude or auto" >&2; echo >&2; exit 2 ;; esac
+    fi
+  done
+fi
+
 # Upkeep before the commands that open a session or a project: Loomy, its catalog and the AI CLIs brought up to date
 # in one question (scripts/lib/upkeep.sh), then the project's missing relays added. Loomy updated: the command runs again.
 case "$cmd" in
@@ -228,7 +240,7 @@ case "$cmd" in
     source "$S/lib/repair.sh"
     # shellcheck source=../scripts/lib/upkeep.sh
     source "$S/lib/upkeep.sh"
-    case " $* " in *" -h "*|*" --help "*) ;; *)
+    case "$start_print $* " in 1\ *|*" -h "*|*" --help "*) ;; *)
       up_rc=0; loomy_upkeep || up_rc=$?
       if (( up_rc == 10 )); then
         again="$(command -v loomy 2>/dev/null || echo "$LOOMY_HOME/bin/loomy")"

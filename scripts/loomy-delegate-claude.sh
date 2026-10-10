@@ -122,15 +122,19 @@ DFORMAT="$(ai_delegation_format "$ROOT")"
 
 $(ai_result_contract)"
 
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-claude.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
 run_claude() {
   if (( WRITES )); then
     # Like Codex's workspace-write sandbox: file edits accepted in the project, shell commands only inside Claude
     # Code's sandbox (filesystem limited to the project, no network); anything else is refused, never asked.
-    LOOMY_DELEGATION=1 claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
+    LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
+      claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" --permission-mode acceptEdits \
       --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
   else
-    LOOMY_DELEGATION=1 claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
+    LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
+      claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" \
       --disallowedTools "Edit,Write,NotebookEdit"
   fi
@@ -141,20 +145,67 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
 { t "loomy-delegate-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
 DELEG_ID="$(ai_delegation_id)"
-ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 STARTED="$(date +%s)"
+START_MODEL="$MODEL"
+CHILD_PID=""
+FINAL_WRITTEN=0
+delegate_start_exists() {
+  ai_journal_all "$ROOT" | grep -F "\"type\":\"delegation_start\",\"id\":\"$DELEG_ID\"" >/dev/null
+}
+delegate_final_exists() {
+  ai_journal_all "$ROOT" | grep -F "\"type\":\"delegation\",\"id\":\"$DELEG_ID\"" >/dev/null
+}
+delegate_stop_child() {
+  local attempts=0
+  [[ -n "$CHILD_PID" ]] || return 0
+  kill -TERM -- "-$CHILD_PID" 2>/dev/null || true
+  while kill -0 -- "-$CHILD_PID" 2>/dev/null && (( attempts < 5 )); do
+    sleep 1
+    attempts=$(( attempts + 1 ))
+  done
+  if kill -0 -- "-$CHILD_PID" 2>/dev/null; then kill -KILL -- "-$CHILD_PID" 2>/dev/null || true; fi
+  wait "$CHILD_PID" 2>/dev/null || true
+  CHILD_PID=""
+}
+delegate_finish() {
+  local signal="$1" exit_code="$2" duration
+  trap '' INT TERM HUP
+  trap - EXIT
+  delegate_stop_child
+  if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
+    duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
+    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"reported\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    FINAL_WRITTEN=1
+  fi
+  rm -rf "$TMP"
+  exit "$exit_code"
+}
+trap 'delegate_finish INT 130' INT
+trap 'delegate_finish TERM 143' TERM
+trap 'delegate_finish HUP 129' HUP
+trap 'delegate_finish EXIT "$?"' EXIT
+ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
 set +e
-OUT="$(run_claude "$MODEL")"
-STATUS=$?
+run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
+CHILD_PID=$!
+wait "$CHILD_PID"; STATUS=$?
+CHILD_PID=""
+OUT="$(cat "$TMP/out.json")"
+[[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
 set -e
 
 # Old Claude Code versions refuse recent model ids: try again with the family alias.
 if grep -q 'does not support this model' <<<"$OUT"; then
   ALIAS="$(ai_claude_alias "$MODEL")"
   t "loomy-delegate-claude: this Claude Code version doesn't know %s, trying again with '%s' (run 'claude update')." "$MODEL" "$ALIAS" >&2; echo >&2
+  : >"$TMP/out.json"; : >"$TMP/err.log"
   set +e
-  OUT="$(run_claude "$ALIAS")"
-  STATUS=$?
+  run_claude "$ALIAS" >"$TMP/out.json" 2>"$TMP/err.log" &
+  CHILD_PID=$!
+  wait "$CHILD_PID"; STATUS=$?
+  CHILD_PID=""
+  OUT="$(cat "$TMP/out.json")"
+  [[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
   set -e
 fi
 
@@ -166,9 +217,14 @@ while grep -qiE "may not exist|not have access|model.*not (found|available)|inva
   [[ -n "$NEXT" ]] || break
   t "loomy-delegate-claude: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
   MODEL="$NEXT"
+  : >"$TMP/out.json"; : >"$TMP/err.log"
   set +e
-  OUT="$(run_claude "$MODEL")"
-  STATUS=$?
+  run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
+  CHILD_PID=$!
+  wait "$CHILD_PID"; STATUS=$?
+  CHILD_PID=""
+  OUT="$(cat "$TMP/out.json")"
+  [[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
   set -e
 done
 
@@ -201,6 +257,7 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
 ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+FINAL_WRITTEN=1
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$MEM_RESULT"

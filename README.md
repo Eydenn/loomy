@@ -763,6 +763,7 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 
 | Status | Planned |
 |---|---|
+| 🔜 | **0.16.1 · polish and speed**: the status line marks a manual lead relay `(manual)`; fewer subprocesses in the routing library (case-based upper-casing instead of `tr`) and in the project relays setup (no `basename` per relay); tests wait for `tmux` by polling instead of fixed pauses |
 | 🔜 | **Windows 11 through WSL2**: Loomy already runs on Linux (tested in CI), and Claude Code and Codex both run in WSL2. Remaining: WSL detection in `loomy doctor`, clipboard (`clip.exe`), notifications, `start --app` opening the Windows desktop apps, line endings forced to LF, a Windows section in the docs, then a check on a real Windows 11 machine. A few days |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

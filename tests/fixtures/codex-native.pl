@@ -45,6 +45,51 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
     open my $brief,'>',"$root/.loomy/brief.md" or die $!; print $brief $brief_text;
 } elsif ($action eq 'compact') {
     write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
+} elsif ($action eq 'root-context' || $action eq 'root-update' || $action eq 'root-no-effort') {
+    my $c=context(10,-40);
+    $c->{payload}{model}=$action eq 'root-update' ? 'gpt-6-sol' : 'gpt-6.1-sol';
+    $c->{payload}{effort}=$action eq 'root-update' ? 'max' : 'high';
+    delete $c->{payload}{effort} if $action eq 'root-no-effort';
+    $c->{payload}{developer_instructions}='PRIVATE_ROOT_INSTRUCTIONS';
+    write_json(path(1),1,$c);
+} elsif ($action eq 'root-large') {
+    write_json(path(1),1,{timestamp=>ts(-25),type=>'response_item',payload=>{type=>'message',content=>'PRIVATE_ROOT_HISTORY'.('x'x6000000)}});
+} elsif ($action eq 'root-incomplete') {
+    my $c=context(10,-1); $c->{payload}{model}='gpt-incomplete';
+    open my $f,'>>',path(1) or die $!; print $f encode_json($c);
+} elsif ($action eq 'root-complete-line') {
+    open my $f,'>>',path(1) or die $!; print $f "\n";
+} elsif ($action eq 'root-truncate' || $action eq 'root-truncate-empty') {
+    my $c=context(10,-1); $c->{payload}{model}='gpt-truncated'; $c->{payload}{effort}='low';
+    write_json(path(1),0,meta(1,0,$root,'',''),($action eq 'root-truncate' ? $c : ()));
+} elsif ($action eq 'root-reopen') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'end',tool=>'codex',pid=>0+$pid},
+        {ts=>ts(),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
+} elsif ($action eq 'root-resumed-context') {
+    my $c=context(10,1); $c->{payload}{model}='gpt-resumed'; $c->{payload}{effort}='high';
+    write_json(path(1),1,$c);
+} elsif ($action eq 'root-restore-identical') {
+    my $p=path(1); open my $f,'<',"$root/root-snapshot.jsonl" or die $!;
+    my @rows=map {decode_json($_)} <$f>; close $f;
+    write_json($p,0,@rows);
+} elsif ($action eq 'root-stale-sessionless') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session_context',bridge=>'codex-native',tool=>'codex',owner_pid=>0+$pid,
+        scope=>'lead',session=>'',model=>'gpt-stale-owner',effort=>'low'});
+} elsif ($action eq 'root-corrupt-index') {
+    open my $f,'>',"$root/.loomy/logs/codex-native.idx" or die $!; print $f '{"version":';
+} elsif ($action eq 'root-legacy-freshness-index') {
+    my $index="$root/.loomy/logs/codex-native.idx"; open my $f,'<',$index or die $!;
+    my $s=decode_json(do {local $/;<$f>}); close $f;
+    for my $snapshot (values %{$s->{root_snapshots}}) { delete $snapshot->{context_freshness}; delete $snapshot->{context_revision} }
+    open my $h,'>',$index or die $!; print $h encode_json($s); close $h or die $!;
+} elsif ($action eq 'root-legacy-journal') {
+    my $journal="$root/.loomy/logs/events.jsonl"; open my $f,'<',$journal or die $!;
+    my @rows=map {decode_json($_)} <$f>; close $f;
+    for my $d (@rows) {
+        next unless ($d->{type}//'') eq 'session_context';
+        delete $d->{context_revision}; delete $d->{parent_session} unless $d->{model};
+    }
+    write_json($journal,0,@rows);
 } elsif ($action eq 'claude-later') {
     write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'claude',pid=>0+$pid,session=>id(8)});
 } elsif ($action eq 'finish') {
@@ -69,9 +114,9 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
     open my $f,'>>',path(2) or die $!;
     print $f encode_json({timestamp=>ts(-25),type=>'response_item',payload=>{type=>'function_call',name=>'exec_command',arguments=>'PRIVATE_TOOL_ARGUMENT'.('x'x680000)}}),"\n";
     if ($action eq 'huge-terminal') { print $f encode_json(event('task_complete',12,-20,last_agent_message=>'STATUS: done')),"\n" }
-} elsif ($action eq 'large-journal') {
+} elsif ($action eq 'large-journal' || $action eq 'root-large-journal') {
     my $journal="$root/.loomy/logs/events.jsonl";
-    my $first=do {open my $f,'<',$journal or die $!; <$f>};
+    my $first=do {open my $f,'<',$journal or die $!; local $/=$action eq 'root-large-journal' ? undef : "\n"; <$f>};
     open my $f,'>',$journal or die $!;
     for (1..16000) { print $f encode_json({ts=>ts(-70),type=>'fixture',padding=>'x'x160}),"\n" }
     print $f $first;

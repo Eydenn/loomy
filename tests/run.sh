@@ -294,8 +294,62 @@ STUB
   done
 }
 
+watch_linux_opener_tests() {
+  section "Watch Linux opener"
+  local lp="$WORK/watch-linux-opener" tool mode
+  mkdir -p "$lp/bin" "$lp/project/.loomy" "$lp/tmp"
+  cp "$HERE/stubs/watch-uname" "$lp/bin/uname"
+  chmod +x "$lp/bin/uname"
+  run "watch uname: only -s is simulated, other probes stay native" env PATH="$lp/bin:$PATH" bash -c '
+    test "$(uname -s)" = Darwin || exit 1
+    test "$(WATCH_TEST_OS=Linux uname -s)" = Linux || exit 1
+    for arg in "" -a -m -r; do
+      if [[ -n "$arg" ]]; then
+        test "$(uname "$arg")" = "$(/usr/bin/uname "$arg")" || exit 1
+      else
+        test "$(uname)" = "$(/usr/bin/uname)" || exit 1
+      fi
+    done
+    uname --loomy-invalid >"$1/stub.out" 2>&1; stub_rc=$?
+    /usr/bin/uname --loomy-invalid >"$1/real.out" 2>&1; real_rc=$?
+    test "$stub_rc" = "$real_rc" && test "$stub_rc" != 0
+  ' _ "$lp"
+  for tool in codex claude; do
+    printf -- '---\nname: Linux opener\nai_mode: ORCHESTRATED\nai_lead: %s\nbudget: equilibre\n---\n' "$tool" >"$lp/project/.loomy/brief.md"
+    for mode in target tmux tmux-fail missing; do
+      run "watch Linux: $tool opener ($mode), no macOS commands" env -u TMUX PATH="$lp/bin:$PATH" WATCH_TEST_OS=Linux TMPDIR="$lp/tmp" bash -c '
+        source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/loomy-start.sh" --open-library
+        SCRIPT_DIR="$1/scripts"; log="$2/open.log"; : >"$log"
+        # Available macOS commands must still never be probed or launched on Linux.
+        open() { printf "open %s\n" "$*" >>"$log"; return 0; }
+        osascript() { printf "osascript %s\n" "$*" >>"$log"; return 0; }
+        export log; export -f open osascript
+        case "$3" in
+          target)
+            loomy_orchestrator_target "$2/project" || exit 1
+            test "$LOOMY_OPEN_TOOL:$LOOMY_OPEN_TARGET:$LOOMY_OPEN_APP" = "$4:terminal:" || exit 1 ;;
+          tmux|tmux-fail)
+            export TMUX=stub
+            tmux() { printf "tmux %s\n" "$*" >>"$log"; return "$tmux_rc"; }
+            tmux_rc=0; [[ "$3" != tmux-fail ]] || tmux_rc=1
+            loomy_open_orchestrator "$2/project"; rc=$?
+            test "$rc" = "$tmux_rc" || exit 1
+            grep -q "^tmux new-window -c $2/project .*--resume.*--watch" "$log" || exit 1
+            grep -q "AI_ROUTE_ENV.*LOOMY_WATCH_TOOL.*LOOMY_START_IN=terminal" "$log" || exit 1 ;;
+          missing)
+            loomy_open_orchestrator "$2/project"; rc=$?
+            test "$rc" = 1 && test ! -s "$log" || exit 1 ;;
+        esac
+        if grep -Eq "^(open|osascript) " "$log"; then exit 1; fi
+        test -z "$(find "$2/tmp" -type f -print)"
+      ' _ "$REPO" "$lp" "$mode" "$tool"
+    done
+  done
+}
+
 # Real PTYs exercise the watch's sampler, frame and launcher, without opening a real app.
 watch_terminal_tests() {
+  watch_linux_opener_tests
   section "Watch terminal"
   local wt="$WORK/watch-terminal" nowz
   mkdir -p "$wt/project/.loomy/logs" "$wt/config/loomy" "$wt/bin" "$wt/apps/Codex.app/Contents/Resources"
@@ -306,6 +360,8 @@ watch_terminal_tests() {
   printf '{"ts":"%s","type":"delegation_start","id":"run","session":"watch-test","pid":%s,"role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Fix watch"}\n' "$nowz" "$$" >>"$wt/project/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation","id":"security-done","session":"watch-test","role":"security","family":"claude","model":"claude-opus-5-5","effort":"high","status":"ok","duration_s":2,"task":"Check terminal ownership"}\n' "$nowz" >>"$wt/project/.loomy/logs/events.jsonl"
   ln -s "$HERE/stubs/codex" "$wt/apps/Codex.app/Contents/Resources/codex"
+  # This matrix asserts macOS opening routes even when CI itself runs on Linux.
+  cp "$HERE/stubs/watch-uname" "$wt/bin/uname"
   cat >"$wt/bin/open" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$*" >>"$WATCH_OPEN_LOG"
@@ -326,7 +382,7 @@ if [[ "$1" == -rlqF && "${3:-}" == "$HOME/.codex/sessions" ]]; then
 fi
 exec /usr/bin/grep "$@"
 STUB
-  chmod +x "$wt/bin/open" "$wt/bin/osascript" "$wt/bin/grep"
+  chmod +x "$wt/bin/uname" "$wt/bin/open" "$wt/bin/osascript" "$wt/bin/grep"
   if ! command -v expect >/dev/null 2>&1; then ko "watch PTY: expect unavailable"; return; fi
   cat >"$wt/watch.exp" <<'EXPECT'
 set timeout 15
@@ -463,6 +519,7 @@ EXPECT
 #!/bin/bash
 # Keep CLI discovery and desktop URLs under stubs even in the real PTY.
 export LIVE_REPO WATCH_PROJECT WATCH_ARGS WATCH_INITIAL WATCH_MODE WATCH_VIEW WATCH_LAUNCH_FAIL WATCH_OPEN_LOG WATCH_TRANSCRIPT
+export WATCH_TEST_OS=Darwin
 exec expect "$WATCH_EXPECT"
 LAUNCH
   chmod +x "$wt/launch"
@@ -799,7 +856,7 @@ live_view_tests() {
   rj="$routed/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"routed-effort","pid":%s}\n' "$nowz" "$$" >"$rj"
   run "lead: missing session effort falls back to routed effort" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$routed" --once
-  has "lead: live header shows routed high effort" '^Orchestrator · Claude \? high'
+  has "lead: live header names missing model and shows routed high effort" '^Orchestrator · Claude model unknown high'
   hasnt "lead: live header never shows unknown effort" '^Orchestrator .* \? ·'
   run "lead: diagram shows routed effort and open idle state" env LOOMY_TREE=diagram COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$routed"
   has "lead: diagram shows routed high effort" 'effort ▮▮▮▯ high'
@@ -1051,6 +1108,11 @@ fi
 
 if [[ "${1:-}" == --section && "${2:-}" == 'Watch terminal' ]]; then
   watch_terminal_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+if [[ "${1:-}" == --section && "${2:-}" == 'Watch Linux opener' ]]; then
+  watch_linux_opener_tests
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   (( FAIL == 0 )); exit $?
 fi
@@ -2931,6 +2993,8 @@ has "doctor: readable fix" "fix: loomy doctor --fix"
 
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
+run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"
+run "watch timer backpressure, key ordering and prompt quit under slow rendering" bash "$HERE/watch-backpressure.sh"
 SD="$WORK/structured"; mkdir -p "$SD"
 run "init with the default delegation format" "$LOOMY" init "$SD" --yes --no-clipboard
 file_has "brief: structured delegations by default" "$SD/.loomy/brief.md" "^delegation_format: structured$"

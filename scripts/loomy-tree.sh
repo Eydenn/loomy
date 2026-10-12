@@ -19,13 +19,13 @@ loomy_live_init() {
   LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=()
   LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=(); LV_OBSERVED=()
   LV_REQ_ID=(); LV_REQ_TEXT=(); LV_REQ_TS=(); LV_REQ_SID=(); LV_REQUEST=-1
-  LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=()
+  LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=(); LV_SESSION_CONTEXT_FRESHNESS=""; LV_CONTEXT_NOTE=""
 }
 
 # loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
 loomy_live_poll() {
-  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity key off i found selection selected attributed
-  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity; do
+  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness key off i found selection selected attributed
+  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness; do
     case "$kind" in
       RESET) loomy_live_init; continue ;;
       OFFSET) LV_FILE_KEY="$ts"; LV_OFFSET="$id"; continue ;;
@@ -57,6 +57,10 @@ loomy_live_poll() {
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_USAGE=$(( LV_USAGE + ${cost:-0} ))
         if [[ "$scope" == lead && "$tool" == "$LV_SESSION_TOOL" ]]; then LV_ACTIVITY=$ts; LV_SESSION_MODEL="$model"; [[ -z "$effort" ]] || LV_SESSION_EFFORT="$effort"; fi ;;
+      session_context:*)
+        [[ "$tool" == "$LV_SESSION_TOOL" && "$pid" == "$LV_SESSION_PID" ]] || continue
+        [[ "$sid" == "$LV_SESSION" ]] || continue
+        LV_SESSION_MODEL="$model"; LV_SESSION_EFFORT="$effort"; LV_SESSION_CONTEXT_FRESHNESS="$freshness" ;;
       request:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_ACTIVITY=$ts
@@ -149,7 +153,7 @@ loomy_live_poll() {
       $d->{pid}=$d->{owner_pid}//0 if ($d->{bridge}//"") eq "codex-native";
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
-      my @v=($d->{type}//"",$ep//0,map { $d->{$_}//"" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity));
+      my @v=($d->{type}//"",$ep//0,map { $d->{$_}//"" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness));
       for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
@@ -231,6 +235,17 @@ loomy_live_line() {
 }
 loomy_live_time() { ai_display_duration "$1"; LV_TIME="$AI_DURATION"; }
 loomy_live_short_model() { LV_SHORT="${1#claude-}"; LV_SHORT="${LV_SHORT#gpt-}"; }
+
+# Observed native sessions must not borrow effort from the planned routing configuration.
+loomy_live_lead_context() {
+  LV_CONTEXT_MODEL="$LV_SESSION_MODEL"; LV_CONTEXT_EFFORT="$LV_SESSION_EFFORT"
+  LV_CONTEXT_NOTE=""; [[ "$LV_SESSION_CONTEXT_FRESHNESS" != catching_up ]] || tv LV_CONTEXT_NOTE "catching up"
+  [[ -n "$LV_CONTEXT_MODEL" ]] || tv LV_CONTEXT_MODEL "model unknown"
+  if [[ -z "$LV_CONTEXT_EFFORT" ]]; then
+    if [[ "$LV_SESSION_TOOL" == codex ]]; then tv LV_CONTEXT_EFFORT "unknown"
+    else LV_CONTEXT_EFFORT="$LV_LEAD_EFFORT"; fi
+  fi
+}
 
 # Cache static columns once per event, never fork per role on timer ticks.
 loomy_live_cache_row() {
@@ -342,13 +357,14 @@ loomy_live_header() {
   tv tool Orchestrator
   local leadtool="$LV_LEAD_TOOL" model="$LV_LEAD_MODEL"
   if (( LV_SESSION_SEQ > 0 )); then
-    leadtool="$LV_SESSION_TOOL"; model="${LV_SESSION_MODEL:-?}"; word="${LV_SESSION_EFFORT:-$LV_LEAD_EFFORT}"
+    loomy_live_lead_context
+    leadtool="$LV_SESSION_TOOL"; model="$LV_CONTEXT_MODEL"; word="$LV_CONTEXT_EFFORT"
   fi
   word="${word/medium/med}"
   case "$leadtool" in claude) leadtool=Claude ;; codex) leadtool=Codex ;; esac
   loomy_live_short_model "$model"
   tv LV_LEAD_LINE "%s running" "${#LV_RUNNING[@]}"
-  LV_LEAD_LINE="$tool · $LV_RELAY$leadtool $LV_SHORT $word · $state · $LV_LEAD_LINE"
+  LV_LEAD_LINE="$tool · $LV_RELAY$leadtool $LV_SHORT $word${LV_CONTEXT_NOTE:+ · $LV_CONTEXT_NOTE} · $state · $LV_LEAD_LINE"
 }
 
 loomy_live_group_title() {
@@ -522,7 +538,7 @@ color_of() { case "$1" in TOP) printf '%s' "$C_MAGENTA" ;; FAST) printf '%s' "$C
 
 # ---------------------------------------------------------------- lead and advisor, from the same live session
 L_MODEL="$LV_LEAD_MODEL"; L_EFFORT="$LV_LEAD_EFFORT"; L_FAM="$LV_LEAD_TOOL"
-if (( LV_SESSION_SEQ > 0 )); then L_MODEL="${LV_SESSION_MODEL:-?}"; L_EFFORT="${LV_SESSION_EFFORT:-$LV_LEAD_EFFORT}"; L_FAM="$LV_SESSION_TOOL"; fi
+if (( LV_SESSION_SEQ > 0 )); then loomy_live_lead_context; L_MODEL="$LV_CONTEXT_MODEL"; L_EFFORT="$LV_CONTEXT_EFFORT"; L_FAM="$LV_SESSION_TOOL"; fi
 ADV=""; [[ "$L_FAM" == claude ]] && ADV="$(ai_advisor_for "$L_MODEL" "$AI_PROFILE")"
 sess=closed; (( LV_SESSION_OPEN )) && [[ "$LV_ALIVE_PIDS" == *"|$LV_SESSION_PID|"* ]] && sess=open
 s_txt="${C_DIM}○ $(t "session closed")${C_RESET}"
@@ -635,7 +651,6 @@ if (( DIAGRAM )); then
       function num(k) { if (match($0, "\"" k "\":[0-9]+")) { return substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 3) + 0 } return 0 }
       /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
   fi
-  (( W > 140 )) && W=140
   K_LEAD="$C_YELLOW"; K_ROUTE="$C_GREEN"; K_ROLE="$C_CYAN"; K_ADV="$C_MAGENTA"; K_DIM="$C_DIM"; K_TXT=""; K_B="$C_BOLD"
   bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; xhigh|max|ultra) BARS="▮▮▮▮" ;; *) BARS="" ;; esac; }
   eff_short() { case "$1" in medium) EFS="med" ;; *) EFS="$1" ;; esac; }
@@ -682,9 +697,12 @@ if (( DIAGRAM )); then
   done
   ADV_W=0; recent=0; [[ -n "$ADV" ]] && ADV_W=26
   CX=$(( ADV_W > 0 ? ADV_W + 6 : 0 )); CWID=$(( W - CX ))
-  BW=22; NB=$(( (CWID + 4) / (BW + 4) )); (( NB > 4 )) && NB=4; (( NB < 2 )) && NB=2
+  NB=$(( (CWID - 2) / 28 )); (( NB > 4 )) && NB=4; (( NB < 2 )) && NB=2
   read -r -a SHOWN <<<"$pick"; SHOWN=("${SHOWN[@]:0:$NB}")
   NB=${#SHOWN[@]}
+  BOX_GAP=2; (( CWID >= 156 )) && BOX_GAP=4
+  BW=$(( (CWID - (NB + 1) * BOX_GAP) / NB )); (( BW > 40 )) && BW=40
+  (( BW % 2 )) && BW=$(( BW - 1 ))
   _ui_term_size
   LOGN=$(( UI_ROWS - 53 )); (( LOGN < 4 )) && LOGN=4; (( LOGN > 8 )) && LOGN=8
   H=$(( 57 + LOGN ))
@@ -707,22 +725,24 @@ if (( DIAGRAM )); then
   # Lead agent box.
   # One vertical axis for the lead, routing and back boxes and the links between them: every box is centred on it.
   CC=$(( CX + CWID / 2 ))
-  MW=38; MX=$(( CC - MW / 2 )); MY=6
+  MW=54; (( MW > CWID - 8 )) && MW=$(( CWID - 8 )); MX=$(( CC - MW / 2 )); MY=6
   mcx=$CC
   # Animations at different paces (the lead box every two seconds, each role shifted by its place), so that the
   # whole diagram doesn't change in step with the seconds.
   lk="$K_LEAD"; [[ "$sess" == open* ]] && (( (TICK / 2) % 2 )) && lk="${C_BOLD}${C_YELLOW}"
   cv_box "$MX" "$MY" "$MW" 6 "$lk"
-  cv_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$NM_LEAD · ${TR_8}"
-  cv_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "$LV_RELAY$L_FAM · ${TR_9}"
-  bars "$L_EFFORT"; cv_center "$MX" $(( MY + 3 )) "$MW" "$K_TXT" "effort $BARS $L_EFFORT"
+  cv_box_center "$MX" $(( MY + 1 )) "$MW" "${C_BOLD}${C_YELLOW}" "$NM_LEAD · ${TR_8}"
+  lead_detail="$LV_RELAY$L_FAM · ${TR_9}"
+  [[ -z "$LV_CONTEXT_NOTE" ]] || lead_detail="$LV_RELAY$L_FAM · $LV_CONTEXT_NOTE"
+  cv_box_center "$MX" $(( MY + 2 )) "$MW" "$K_TXT" "$lead_detail"
+  bars "$L_EFFORT"; cv_box_center "$MX" $(( MY + 3 )) "$MW" "$K_TXT" "effort $BARS $L_EFFORT"
   PH_LBL=""; [[ -n "$phase" && "$phase" != "done" ]] && PH_LBL="$(loomy_phase_label "$phase")"
   if [[ "$sess" == open* ]]; then sk="$C_GREEN"; st_txt="● ${TR_10}"; else sk="$K_DIM"; st_txt="○ ${TR_11}"; (( LV_SESSION_SEQ > 0 )) || st_txt="○ ${TR_40}"; fi
   if [[ "$sess" == open* ]]; then
     if (( LV_ACTIVE || ${#LV_RUNNING[@]} > 0 )); then lead_state="$(t "working")"; else lead_state="$(t "idle")"; fi
     st_txt="$st_txt · $lead_state"
   fi
-  cv_center "$MX" $(( MY + 4 )) "$MW" "$sk" "$st_txt${PH_LBL:+ · $PH_LBL}"
+  cv_box_center "$MX" $(( MY + 4 )) "$MW" "$sk" "$st_txt${PH_LBL:+ · $PH_LBL}"
   # Connector lead → routing, with a travelling dot.
   cv_vline "$mcx" $(( MY + 6 )) $(( MY + 7 )) "$K_DIM"
   cv_put "$mcx" $(( MY + 6 + TICK % 2 )) "$K_LEAD" "●"
@@ -780,12 +800,12 @@ if (( DIAGRAM )); then
     cv_box "${bx[b]}" "$BY" "$BW" 9 "$bk"
     role_lbl "$r"; color_tier "$R_TIER"; [[ "$RS_K" != idle ]] || CT="$K_DIM"; bars "$R_EFFORT"; eff_short "$R_EFFORT"; action_of "$r"
     if [[ "$RS_K" == idle ]]; then role_tool="$R_FAMILY"; else role_tool="${LV_TOOL[RS_I]}"; fi
-    cv_center "${bx[b]}" $(( BY + 1 )) "$BW" "$CT" "$role_tool"
-    cv_center "${bx[b]}" $(( BY + 2 )) "$BW" "${C_BOLD}" "$RL"
-    cv_center "${bx[b]}" $(( BY + 3 )) "$BW" "$CT" "$R_MODEL"
-    cv_center "${bx[b]}" $(( BY + 4 )) "$BW" "$K_DIM" "effort $BARS $EFS"
-    cv_center "${bx[b]}" $(( BY + 5 )) "$BW" "$K_TXT" "$ACT"
-    cv_center "${bx[b]}" $(( BY + 6 )) "$BW" "$stk" "$stl"
+    cv_box_center "${bx[b]}" $(( BY + 1 )) "$BW" "$CT" "$role_tool"
+    cv_box_title "${bx[b]}" $(( BY + 2 )) "$BW" "${C_BOLD}" "$RL"
+    cv_box_center "${bx[b]}" $(( BY + 4 )) "$BW" "$CT" "$R_MODEL"
+    cv_box_center "${bx[b]}" $(( BY + 5 )) "$BW" "$K_DIM" "effort $BARS $EFS"
+    cv_box_center "${bx[b]}" $(( BY + 6 )) "$BW" "$K_TXT" "$ACT"
+    cv_box_center "${bx[b]}" $(( BY + 7 )) "$BW" "$stk" "$stl"
     cv_vline "$c" $(( BY + 9 )) $(( BY + 10 )) "$K_DIM"
   done
   # Merge back to the lead agent.
@@ -794,19 +814,19 @@ if (( DIAGRAM )); then
   for (( b = 0; b < NB; b++ )); do cv_put $(( bx[b] + BW / 2 )) "$MGY" "$K_DIM" "●"; done
   :
   cv_vline "$mcx" $(( MGY + 1 )) $(( MGY + 1 )) "$K_DIM"; cv_put "$mcx" $(( MGY + 2 )) "$K_DIM" "▼"
-  BKY=$(( MGY + 3 )); BKW=38; BKX=$(( CC - BKW / 2 ))
+  BKY=$(( MGY + 3 )); BKW=$MW; BKX=$(( CC - BKW / 2 ))
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
-  cv_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
+  cv_box_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
   back_state="$(t "reviews + checks")"
   if (( n_run == 1 )); then back_state="$(t "waiting for %s role" "$n_run")"
   elif (( n_run > 1 )); then back_state="$(t "waiting for %s roles" "$n_run")"; fi
-  cv_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$back_state"
+  cv_box_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$back_state"
   # Advisor column, linked to the lead box, the roles and the final check.
   if [[ -n "$ADV" ]]; then
     AH=$(( BKY + 4 - MY ))
     cv_box 0 "$MY" "$ADV_W" "$AH" "$K_ADV"
-    cv_center 0 $(( MY + 1 )) "$ADV_W" "${C_BOLD}${C_MAGENTA}" "$adv_up"
-    cv_center 0 $(( MY + 2 )) "$ADV_W" "$K_ADV" "${TR_7} · ${TR_20}"
+    cv_box_center 0 $(( MY + 1 )) "$ADV_W" "${C_BOLD}${C_MAGENTA}" "$adv_up"
+    cv_box_center 0 $(( MY + 2 )) "$ADV_W" "$K_ADV" "${TR_7} · ${TR_20}"
     # The moment the advisor is most likely called now, from the phase and the last results.
     act="plan"
     case "$phase" in verify|commit|document|retire|validate|report|done) act="done" ;; esac
@@ -886,7 +906,7 @@ fi
 ui_section "$(t "AGENT TREE")" "$(ai_env_label "$AI_ENV") · $(t "%s profile" "$(ai_profile_label "$AI_PROFILE")")"
 (( TREE_SMALL )) && ui_rail "${C_DIM}$(t "diagram view: enlarge the window to %s × %s (now %s × %s), or key v" "$TREE_NEED_COLS" "$TREE_NEED_ROWS" "$UI_COLS" "$UI_ROWS")${C_RESET}"
 ui_rail ""
-lead_line="${C_BRAND}${C_BOLD}$(t "LEAD AGENT")${C_RESET}  $(color_of TOP)${LV_RELAY}${L_FAM} ${L_MODEL}${C_RESET} · $L_EFFORT · $s_txt${phase:+ ${C_DIM}·${C_RESET} ${MISSION:+$MISSION · }$(loomy_phase_label "$phase")}"
+lead_line="${C_BRAND}${C_BOLD}$(t "LEAD AGENT")${C_RESET}  $(color_of TOP)${LV_RELAY}${L_FAM} ${L_MODEL}${C_RESET} · $L_EFFORT${LV_CONTEXT_NOTE:+ · $LV_CONTEXT_NOTE} · $s_txt${phase:+ ${C_DIM}·${C_RESET} ${MISSION:+$MISSION · }$(loomy_phase_label "$phase")}"
 ui_rail "┏━ $lead_line"
 if [[ -n "$ADV" ]]; then
   a_n=0; a_last=""

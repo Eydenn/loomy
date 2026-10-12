@@ -156,6 +156,10 @@ not successful assignments; native Codex usage/cost is not invented. See
 [ADR-0007](adr/0007-native-codex-observability.md) for evidence limits. Phase
 labels remain the lead's last recorded metadata, not inferred progress.
 
+The main Codex model and effort come from observed root turn contexts, including
+later changes. Catch-up is marked separately; invalidated evidence is cleared
+rather than presented as current or replaced by a guessed configured model.
+
 When multiple tool sessions remain open, `LOOMY_WATCH_TOOL=codex loomy watch`
 (or `claude`) explicitly selects which tool's session to display. This optional
 filter does not switch the acting lead or modify routing. Unset or invalid values

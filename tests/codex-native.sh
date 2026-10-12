@@ -20,6 +20,9 @@ json_check() {
   perl -MJSON::PP -e 'my $test=shift; my @all; while (<>) { my $d=eval{decode_json($_)}; push @all,$d if ref($d) eq "HASH" } my @native=grep {($_->{bridge}//"") eq "codex-native"} @all; eval $test; die $@ if $@;' "$1" "$J"
 }
 count_start() { json_check 'die unless (grep {$_->{type} eq "delegation_start"} @native)==3'; }
+drain_root() {
+  perl -MJSON::PP -e 'my ($module,$root,$sessions)=@ARGV; require $module; for(1..256){Loomy::CodexNative::poll($root,$sessions); open my $h,"<","$root/.loomy/logs/codex-native.idx" or die; my $s=decode_json(do{local $/;<$h>}); for my $path(keys %{$s->{files}}){my $f=$s->{files}{$path}; next if $f->{meta}{parent} || $f->{meta}{id}!~/000001$/; exit 0 if $f->{at_eof} && $f->{offset}==(-s $path)}} die "root did not finish bounded catch-up\n";' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+}
 fixture seed
 check 'first poll discovers three agents' poll
 check 'three distinct starts' count_start
@@ -190,6 +193,114 @@ check 'recovery after contention sees three agents' count_start
 
 # Measure the actual in-process sampler path, not shell startup time.
 check '100 unchanged polls stay below five seconds and append nothing' perl -MTime::HiRes=time -e 'my ($module,$root,$sessions,$journal)=@ARGV; require $module; my $size=-s $journal; my $begin=time; for(1..100){Loomy::CodexNative::poll($root,$sessions)} my $elapsed=time-$begin; printf "100 polls: %.3f s\n",$elapsed; die if $elapsed>5 || (-s $journal)!=$size;' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions" "$J"
+
+# Root metadata is observed, refreshed and owner-scoped; it never becomes fake usage/activity.
+ROOT="$WORK/root-context"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-context-codex"
+fixture compact-seed; fixture root-context; fixture root-large; poll
+check 'bounded head recovers actual root model/effort with explicit catch-up freshness' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==1 && $c[0]{model} eq "gpt-6.1-sol" && $c[0]{effort} eq "high" && $c[0]{context_freshness} eq "catching_up"; die if grep {$_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @all; die if encode_json(\@all)=~/PRIVATE_ROOT/;'
+COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-live" 2>&1
+check 'live root uses observed Sol 6.1/high and names catch-up' grep -q '6.1-sol high.*catching up' "$WORK/root-live"
+fixture root-update; poll
+check 'new tail context updates model/effort before historical catch-up completes' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6-sol" && $c[-1]{effort} eq "max" && $c[-1]{context_freshness} eq "current";'
+for (( catchup=0; catchup<3; catchup++ )); do poll; done
+check 'older incremental head cannot overwrite newer tail context' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6-sol";'
+cp "$J" "$WORK/root-stable"; poll
+check 'unchanged root context is append-free' cmp "$J" "$WORK/root-stable"
+fixture compact; poll
+check 'compaction keeps observed root and original owner boundary' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6-sol" && $c[-1]{session} eq "00000000-0000-4000-8000-000000000001";'
+fixture root-context; poll
+check 'subsequent model change after compaction remains observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6.1-sol" && $c[-1]{effort} eq "high";'
+fixture root-incomplete; poll
+check 'incomplete newest root record does not invent model change' json_check 'die if grep {($_->{model}//"") eq "gpt-incomplete"} @native;'
+fixture root-complete-line; poll
+check 'completed root append is retried' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-incomplete";'
+fixture root-truncate; poll
+check 'same-inode root truncation discards higher cached context position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-truncated" && $c[-1]{effort} eq "low";'
+fixture root-truncate-empty; poll
+check 'truncation without valid context clears stale model evidence' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "" && $c[-1]{effort} eq "";'
+fixture root-no-effort; poll
+COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-no-effort" 2>&1
+check 'missing observed root effort is named unknown, not configured routing effort' grep -q '6.1-sol unknown' "$WORK/root-no-effort"
+fixture root-stale-sessionless
+COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-selected-owner" 2>&1
+check 'same-PID sessionless stale context cannot overwrite the selected explicit owner' perl -0777 -e 'my $s=<>; die unless $s=~/6.1-sol unknown/; die if $s=~/stale-owner/;' "$WORK/root-selected-owner"
+
+ROOT="$WORK/root-repeated-clear"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-repeated-clear-codex"
+fixture compact-seed; fixture root-context
+cp "$CODEX_HOME/sessions/$(date -u +%Y/%m/%d)/rollout-fixture-00000000-0000-4000-8000-000000000001.jsonl" "$ROOT/root-snapshot.jsonl"
+poll; fixture root-truncate-empty; poll; fixture root-restore-identical; poll
+check 'identical root context restores after a clear despite identical identity/position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[1]{model} eq "" && $c[2]{model} eq "gpt-6.1-sol";'
+fixture root-truncate-empty; poll
+check 'second identical truncation emits a second clear instead of retaining stale model' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==4 && $c[-1]{model} eq "";'
+fixture root-restore-identical; poll
+check 'second identical restoration uses a new persisted root revision' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==5 && $c[-1]{model} eq "gpt-6.1-sol";'
+cp "$J" "$WORK/root-before-checkpoint-loss"
+rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+check 'unchanged root recovery after checkpoint loss is append-free' cmp "$J" "$WORK/root-before-checkpoint-loss"
+fixture root-truncate-empty; poll
+check 'journal-recovered revision permits a fresh clear after checkpoint loss' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==6 && $c[-1]{model} eq "" && $c[-1]{context_revision}>$c[-2]{context_revision};'
+fixture root-restore-identical; poll
+check 'identical root restoration after checkpoint loss is observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==7 && $c[-1]{model} eq "gpt-6.1-sol";'
+cp "$J" "$WORK/root-before-checkpoint-corruption"
+fixture root-corrupt-index; poll
+check 'unchanged root recovery after checkpoint corruption is append-free' cmp "$J" "$WORK/root-before-checkpoint-corruption"
+fixture root-truncate-empty; poll; fixture root-restore-identical; poll
+check 'corrupted checkpoint cannot suppress subsequent clear or identical restoration' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==9 && $c[-2]{model} eq "" && $c[-1]{model} eq "gpt-6.1-sol" && $c[-2]{context_revision}>$c[-3]{context_revision}; for(@c){die unless exists($_->{context_revision}) && ($_->{parent_session}//"") eq "00000000-0000-4000-8000-000000000001";}'
+fixture root-truncate-empty; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+check 'lost checkpoint with already-truncated root clears the last journal snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==10 && $c[-1]{model} eq "";'
+fixture root-restore-identical; poll; fixture root-legacy-journal
+rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+check 'legacy revisionless root journal receives a conservative recovered snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==12 && exists($c[-1]{context_revision}) && $c[-1]{context_revision}>=11 && $c[-1]{model} eq "gpt-6.1-sol";'
+cp "$J" "$WORK/root-legacy-recovered"; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+check 'legacy snapshot makes the next lost-checkpoint recovery append-free' cmp "$J" "$WORK/root-legacy-recovered"
+
+ROOT="$WORK/root-freshness-cycle"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-freshness-cycle-codex"
+fixture compact-seed; fixture root-context; poll; fixture root-large; poll
+check 'growing root changes current to catching-up without losing actual model' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==2 && $c[0]{context_freshness} eq "current" && $c[1]{context_freshness} eq "catching_up" && $c[1]{model} eq "gpt-6.1-sol" && $c[1]{context_revision}>$c[0]{context_revision};'
+cp "$J" "$WORK/root-freshness-before-upgrade"; fixture root-legacy-freshness-index; poll
+check 'old checkpoint recovers its last freshness from bounded journal replay without appending' cmp "$J" "$WORK/root-freshness-before-upgrade"
+check 'root completes first bounded catch-up' drain_root
+check 'current-catching-up-current cycle emits its final current observation' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[-1]{context_freshness} eq "current" && $c[-1]{context_revision}>$c[-2]{context_revision};'
+cp "$J" "$WORK/root-freshness-stable"; poll
+check 'unchanged completed catch-up is append-free' cmp "$J" "$WORK/root-freshness-stable"
+fixture root-large; poll
+check 'second growth emits a new catching-up transition' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==4 && $c[-1]{context_freshness} eq "catching_up" && $c[-1]{context_revision}>$c[-2]{context_revision};'
+cp "$J" "$WORK/root-freshness-mid-catchup"; poll
+check 'restart during catch-up leaves unchanged freshness append-free' cmp "$J" "$WORK/root-freshness-mid-catchup"
+rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+check 'checkpoint loss during catch-up recovers highest revision and last flag without appending' cmp "$J" "$WORK/root-freshness-mid-catchup"
+check 'root completes catch-up after checkpoint loss' drain_root
+check 'repeated freshness cycle after checkpoint loss emits its final current observation' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==5 && $c[-1]{context_freshness} eq "current"; for my $i(1..$#c){die unless $c[$i]{context_revision}>$c[$i-1]{context_revision}} die if grep {$_->{type} eq "usage"} @all;'
+fixture root-large; poll; cp "$J" "$WORK/root-freshness-mid-corruption"; fixture root-corrupt-index; poll
+check 'corrupted checkpoint during catch-up recovers unchanged flag without appending' cmp "$J" "$WORK/root-freshness-mid-corruption"
+check 'root completes catch-up after checkpoint corruption' drain_root
+check 'freshness completion after checkpoint corruption is observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==7 && $c[-1]{context_freshness} eq "current" && $c[-1]{context_revision}>$c[-2]{context_revision};'
+
+ROOT="$WORK/root-freshness-migration"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-freshness-migration-codex"
+fixture compact-seed; fixture root-context; poll; fixture root-large; poll
+fixture root-large-journal; fixture root-legacy-freshness-index; cp "$J" "$WORK/root-freshness-large-journal"; poll
+check 'old freshness checkpoint migration advances within its bounded journal block' perl -MJSON::PP -e 'my ($idx,$journal)=@ARGV; open my $f,"<",$idx or die; my $s=decode_json(do{local $/;<$f>}); die unless $s->{journal}{offset}>0 && $s->{journal}{offset}<=2097152 && $s->{journal}{offset}<(-s $journal);' "$ROOT/.loomy/logs/codex-native.idx" "$J"
+poll
+check 'multi-block freshness replay finishes without resetting its cursor or appending duplicates' cmp "$J" "$WORK/root-freshness-large-journal"
+check 'root completes catch-up after bounded legacy freshness migration' drain_root
+check 'legacy freshness migration still emits the final current transition' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[-1]{context_freshness} eq "current" && $c[-1]{context_revision}>$c[-2]{context_revision};'
+
+ROOT="$WORK/root-resume"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-resume-codex"
+fixture compact-seed; fixture root-context; poll
+sleep 30 & OWNER=$!
+fixture root-reopen; poll
+check 'new owner PID cannot reuse pre-owner context' json_check 'my @c=grep {$_->{type} eq "session_context" && $_->{owner_pid}!='"$$"'} @native; die if @c;'
+fixture root-resumed-context; poll
+check 'new owner receives its own subsequent observed context' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-resumed" && $c[-1]{owner_pid}!='"$$"';'
+kill "$OWNER"; wait "$OWNER" 2>/dev/null || true; OWNER=""
+
+ROOT="$WORK/root-budget"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-budget-codex"
+fixture seed; fixture root-context; fixture root-large; fixture nine; poll
+check 'root history read advances by at most its bounded head slice' perl -MJSON::PP -e 'my $s=decode_json(do{local $/;<>}); my ($r)=grep {!$_->{meta}{parent} && $_->{meta}{id}=~/000001$/} values %{$s->{files}}; die unless $r->{offset}<=131072 && $r->{read_bytes}<=131072;' "$ROOT/.loomy/logs/codex-native.idx"
+fixture nine-grow; fixture end-owner
+check 'root and children consume no more than the shared 2 MiB lifecycle budget' perl -e 'my ($module,$root,$sessions)=@ARGV; require $module; my $bytes=0; my $lines=\&Loomy::CodexNative::lines; my $context=\&Loomy::CodexNative::root_context; no warnings "redefine"; local *Loomy::CodexNative::lines=sub {my @r=$lines->(@_); $bytes+=$_[1]{read_bytes}//0 unless $_[0]=~/events\.jsonl$/; return @r}; local *Loomy::CodexNative::root_context=sub {my $before=$bytes; my $n=$context->(@_); $bytes+=$n-($bytes-$before); return $n}; Loomy::CodexNative::poll($root,$sessions); die if $bytes>2097152; printf "Lifecycle read: %d bytes\n",$bytes;' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+for (( catchup=0; catchup<4; catchup++ )); do poll; done
+check 'root catch-up cannot starve ninth child completion' json_check 'die unless grep {$_->{type} eq "delegation" && ($_->{task}//"") eq "nine10" && $_->{outcome} eq "done"} @native;'
 if command -v expect >/dev/null 2>&1; then
   check 'real watch sampler displays identities and refreshes terminal outcomes' expect "$REPO/tests/fixtures/native-watch.exp"
 else printf 'SKIP native watch PTY: expect unavailable\n'; fi

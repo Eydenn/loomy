@@ -23,6 +23,9 @@ The parent's continued existence is not proof that every child is still working.
 - Export only necessary identity, model, effort, timestamp and lifecycle fields.
   Never export raw conversations or tool arguments; measured usage must not be
   invented or counted again through another path.
+- Recover the root session's model and effort from observed turn contexts,
+  not its planned routing. Keep source identity separate from catch-up status;
+  clear invalidated evidence and recover revision ordering after checkpoint loss.
 - Record the owner process explicitly, not as an individual agent PID.
 - Track new turns, termination and observed activity. A turn completion without
   an explicit recognized result is unknown, not approved work. Partial/blocked
@@ -44,8 +47,11 @@ The parent's continued existence is not proof that every child is still working.
   Metadata must fit in the first 64 KiB. Already discovered files remain tailed;
   older undiscovered sessions and formats outside these bounds are not promised.
 - Lifecycle polling runs once per second in the existing watcher process.
-  Journal replay and child reads each have a 2 MiB budget per pass, with up to
-  256 KiB per child and rotating read order. Initial catch-up may take several
+  Journal replay and lifecycle reads each have a 2 MiB budget per pass, with up to
+  256 KiB per child and rotating read order. Root context discovery shares that
+  lifecycle budget with a 128 KiB incremental head and at most 128 KiB recent
+  tail per root; tail positions cannot be replaced by older head observations.
+  Initial catch-up may take several
   passes. Oversized records are skipped, not treated as valid completion;
   missing evidence stays unknown. Locks never wait on a concurrent journal writer.
 - Parent-session correlation must be unambiguous. If a Loomy opening lacks an

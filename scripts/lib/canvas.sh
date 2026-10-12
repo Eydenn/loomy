@@ -40,7 +40,22 @@ cv_put() {
 # cv_get <x> <y>: the character at (x, y), in CV_CH.
 cv_get() { CV_CH="${CV_ROW[$2]:$1:1}"; }
 # cv_center <x> <y> <width> <colour> <text>: text centred within [x, x+width).
-cv_center() { local s="$5"; cv_put $(( $1 + ($3 - ${#s}) / 2 )) "$2" "$4" "$s"; }
+cv_center() {
+  local s="$5" w="$3"
+  (( w > 0 )) || return 0
+  (( ${#s} <= w )) || s="${s:0:$(( w - 1 ))}…"
+  cv_put $(( $1 + (w - ${#s}) / 2 )) "$2" "$4" "$s"
+}
+# Box text reserves the border and two blank cells on each side.
+cv_box_center() { cv_center $(( $1 + 3 )) "$2" $(( $3 - 6 )) "$4" "$5"; }
+# Two fixed title rows: wrap even unbroken agent paths without changing box geometry.
+cv_box_title() {
+  local x="$1" y="$2" w="$3" k="$4" s="$5" room=$(( $3 - 6 )) first
+  (( room > 0 )) || return 0
+  first="${s:0:room}"; s="${s:room}"
+  cv_box_center "$x" "$y" "$w" "$k" "$first"
+  cv_box_center "$x" $(( y + 1 )) "$w" "$k" "$s"
+}
 # cv_right <x_end> <y> <colour> <text>: text ending at column x_end.
 cv_right() { local s="$4"; cv_put $(( $1 - ${#s} + 1 )) "$2" "$3" "$s"; }
 # cv_hline <x1> <x2> <y> <colour> [char]

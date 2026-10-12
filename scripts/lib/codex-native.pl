@@ -135,6 +135,58 @@ sub observed_time {
     return $cursor->{started};
 }
 
+# Root contexts share the child read budget: incremental head plus a cached recent tail.
+# Position ordering prevents old catch-up records from replacing a newer tail observation.
+sub root_context {
+    my ($path,$f,$budget)=@_; my $used=0; my $reset=0;
+    my @before=stat($path);
+    if (@before && (($f->{offset}//0)>$before[7] || ($f->{context} && ($f->{context}{position}//0)>$before[7]))) {
+        ++$f->{context_revision};
+        $reset=1;
+        $f->{context_invalidated}=1 if $f->{context};
+        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+    }
+    my $accept=sub {
+        my ($line,$position)=@_;
+        my $d=eval { decode_json($line) };
+        return unless ref($d) eq 'HASH' && scalar_text($d->{type}) eq 'turn_context';
+        my $p=$d->{payload}; return unless ref($p) eq 'HASH' && identity($p->{turn_id}) && epoch($d->{timestamp});
+        return if $f->{context} && $position<=$f->{context}{position};
+        $f->{context}={position=>$position,ts=>stamp($d->{timestamp}),turn=>identity($p->{turn_id}),
+            model=>identity($p->{model}),effort=>identity($p->{effort})};
+    };
+    my $key=$f->{key}//'';
+    my $limit=$budget<131072 ? $budget : 131072;
+    my @records=lines($path,$f,$limit); $used+=$f->{read_bytes}//0;
+    if ($key ne ($f->{key}//'')) {
+        ++$f->{context_revision} if $key ne '' && !$reset;
+        $f->{context_invalidated}=1 if $f->{context};
+        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+    }
+    $accept->(@$_) for @records;
+    my @st=stat($path); return $used unless @st;
+    my $sig=join(':',@st[0,1,7,9]);
+    if ($f->{at_eof}) { $f->{tail_sig}=$sig; $f->{complete_sig}=$sig; return $used }
+    my $room=$budget-$used; $room=131072 if $room>131072;
+    if ($room>0 && ($f->{tail_sig}//'') ne $sig) {
+        my $h=open_read($path) or return $used;
+        my $start=$st[7]>$room ? $st[7]-$room : 0;
+        seek $h,$start,0 or return $used;
+        my $n=sysread($h,my $buf,$room); $used+=$n//0;
+        return $used unless $n;
+        my $end=rindex($buf,"\n"); my $skip=$start ? index($buf,"\n")+1 : 0;
+        my $position=$start+$skip;
+        if ($end>=$skip) {
+            for my $line (split /\n/,substr($buf,$skip,$end-$skip+1)) {
+                $position+=length($line)+1; $accept->($line,$position);
+            }
+        }
+        $f->{tail_sig}=$sig;
+        $f->{tail_start}=$start;
+    }
+    return $used;
+}
+
 sub poll {
     my ($root,$sessions)=@_;
     return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
@@ -155,6 +207,11 @@ sub poll {
     chmod 0600,$out or return;
     my $now=time;
     my $jc=$s->{journal}//={};
+    # Upgrade old checkpoints through the same bounded replay, without clearing deduplication or usage events.
+    if (grep { !exists $_->{context_freshness} } values %{$s->{root_snapshots}//{}}) {
+        $jc->{offset}=0;
+        $_->{context_freshness}//='' for values %{$s->{root_snapshots}//{}};
+    }
     # A replaced journal needs fresh owner evidence, but stable native keys remain deduplicated.
     my @js=stat($out); my $jk="$js[0]:$js[1]";
     my $generation=$jc->{generation}//1;
@@ -172,6 +229,21 @@ sub poll {
         my $line=$record->[0];
         my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH';
         $s->{seen}{identity($d->{native_key})}=1 if identity($d->{native_key});
+        if (($d->{type}//'') eq 'session_context' && ($d->{tool}//'') eq 'codex' && ($d->{bridge}//'') eq 'codex-native' && ($d->{scope}//'') eq 'lead') {
+            my $root_id=identity($d->{parent_session}) || identity($d->{session});
+            if ($root_id) {
+                my $revision=scalar_text($d->{context_revision});
+                # Legacy records cannot reveal their hashed revision: one bounded recovery snapshot is safer than reuse.
+                $revision=($s->{root_revisions}{$root_id}//0)+1 unless $revision =~ /\A[0-9]{1,12}\z/;
+                if ($revision>=($s->{root_revisions}{$root_id}//0)) {
+                    $s->{root_revisions}{$root_id}=0+$revision;
+                    my $freshness=scalar_text($d->{context_freshness});
+                    $freshness='' unless $freshness eq 'current' || $freshness eq 'catching_up';
+                    $s->{root_snapshots}{$root_id}={known=>(identity($d->{model}) ne '' || identity($d->{effort}) ne '' ? 1 : 0),
+                        ts=>stamp($d->{ts}),owner_pid=>scalar_text($d->{owner_pid}),context_freshness=>$freshness,context_revision=>0+$revision};
+                }
+            }
+        }
         if (($d->{bridge}//'') eq 'codex-native' && identity($d->{id})) {
             $jc->{active}{$d->{id}}=1 if ($d->{type}//'') eq 'delegation_start';
             delete $jc->{active}{$d->{id}} if ($d->{type}//'') eq 'delegation';
@@ -248,7 +320,45 @@ sub poll {
     my $position=0;
     for my $path (@paths) {
         my $slot=$position++;
-        my $f=$s->{files}{$path}; my $m=$f->{meta}; next unless $m->{parent};
+        my $f=$s->{files}{$path}; my $m=$f->{meta};
+        if (!$m->{parent}) {
+            my ($owner)=grep { ($_->{lead}//'') eq $m->{id} } @owners;
+            next unless $owner;
+            my $recovered=$s->{root_revisions}{$m->{id}}//0;
+            $f->{context_revision}=$recovered if $recovered>($f->{context_revision}//0);
+            $f->{at_eof}=0;
+            if ($budget>0) {
+                $s->{read_rotation}=($rotation+$slot+1)%@paths;
+                $budget-=root_context($path,$f,$budget);
+            }
+            my $snapshot=$s->{root_snapshots}{$m->{id}};
+            if (!$f->{context} && !$f->{context_invalidated} && $f->{at_eof} && $snapshot && $snapshot->{known}
+                && $snapshot->{owner_pid} eq "$owner->{pid}" && epoch($snapshot->{ts})>=epoch($owner->{ts})-10) {
+                ++$f->{context_revision}; $f->{context_invalidated}=1;
+            }
+            if (my $c=$f->{context}) {
+                next if epoch($c->{ts})<epoch($owner->{ts})-10;
+                my @st=stat($path); my $sig=@st && safe_path($path) && -f $path ? join(':',@st[0,1,7,9]) : '';
+                my $fresh=$sig ne '' && (($f->{complete_sig}//'') eq $sig || (($f->{tail_sig}//'') eq $sig && defined $f->{tail_start} && $c->{position}>$f->{tail_start}));
+                my $freshness=$fresh ? 'current' : 'catching_up';
+                # Re-entering a prior freshness state is a new observation, not a duplicate of an old cycle.
+                ++$f->{context_revision} if $snapshot && ($snapshot->{context_freshness}//'') ne '' && $snapshot->{context_freshness} ne $freshness;
+                my $revision=$f->{context_revision}//0;
+                $emit->("lead:$m->{id}:$owner->{pid}:$owner->{ts}:$revision:$c->{turn}:$c->{ts}:$c->{position}:$c->{model}:$c->{effort}:$freshness:$generation",'session_context',$c->{ts},
+                    {bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},
+                        owner_pid=>$owner->{pid},pid_role=>'owner',model=>$c->{model},effort=>$c->{effort},turn_id=>$c->{turn},context_freshness=>$freshness,context_revision=>$revision});
+                $s->{root_revisions}{$m->{id}}=$revision;
+                $s->{root_snapshots}{$m->{id}}={known=>($c->{model} ne '' || $c->{effort} ne '' ? 1 : 0),ts=>$c->{ts},owner_pid=>"$owner->{pid}",context_freshness=>$freshness,context_revision=>$revision};
+                delete $f->{context_invalidated};
+            } elsif (delete $f->{context_invalidated}) {
+                my $revision=$f->{context_revision}//0;
+                $emit->("lead:$m->{id}:$owner->{pid}:$owner->{ts}:invalidated:$revision:$f->{key}:$f->{offset}:$generation",'session_context',strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),
+                    {bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},owner_pid=>$owner->{pid},pid_role=>'owner',model=>'',effort=>'',context_freshness=>'catching_up',context_revision=>$revision});
+                $s->{root_revisions}{$m->{id}}=$revision;
+                $s->{root_snapshots}{$m->{id}}={known=>0,ts=>strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),owner_pid=>"$owner->{pid}",context_freshness=>'catching_up',context_revision=>$revision};
+            }
+            next;
+        }
         # A child skipped by this tick's shared budget has no fresh EOF evidence.
         $f->{at_eof}=0;
         my ($owner)=grep { ($_->{lead}//'') eq $m->{parent} } @owners; next unless $owner;

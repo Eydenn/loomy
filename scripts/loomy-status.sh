@@ -200,6 +200,26 @@ loomy_watch_feed() {
   ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions"
 }
 
+# A slow frame must not queue old clocks ahead of input. Read no further than the first key.
+loomy_watch_coalesce() {
+  perl -MIO::Select -e '
+    my ($now,$dirty,$key,$clock)=@ARGV;
+    if ($key eq "") {
+      open my $feed,"<&",8 or die "watch feed unavailable: $!";
+      my $select=IO::Select->new($feed);
+      while ($key eq "" && $select->can_read(0)) {
+        my $line=""; my $n;
+        while (($n=sysread($feed,my $char,1)) && $n==1) { $line.=$char; last if $char eq "\n" }
+        last unless $line =~ /\n$/;
+        chomp $line; my @row=split /\|/,$line,-1;
+        next unless @row==4 && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
+        ($now,$key,$clock)=@row[0,2,3]; $dirty=($dirty || $row[1]) ? 1 : 0;
+      }
+    }
+    print join("|",$now,$dirty,$key,$clock),"\n";
+  ' "$1" "$2" "$3" "$4"
+}
+
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
 watch_keys() {
   local keys
@@ -255,6 +275,8 @@ if (( WATCH )); then
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
   while IFS='|' read -r now dirty key LV_CLOCK <&8; do
+    IFS='|' read -r now dirty key LV_CLOCK <<<"$(loomy_watch_coalesce "$now" "$dirty" "$key" "$LV_CLOCK")"
+    case "$key" in q|Q) break ;; esac
     # ---- what changed since the previous frame
     LV_NOW="$now"
     if [[ -n "$watch_note" ]] && (( now >= note_until )); then watch_note=""; force_frame=1; fi
@@ -345,7 +367,6 @@ if (( WATCH )); then
     case "$key" in up) wtop=$(( wtop - 1 )) ;; down) wtop=$(( wtop + 1 )) ;; esac
     (( wtop >= 0 )) || wtop=0
     case "$key" in
-      q|Q) break ;;
       c|C) [[ "$view" == "status" ]] && { if [[ "$size" == "--compact" ]]; then COMPACT=0; else COMPACT=1; fi; } ;;
       l|L) if [[ "$view" == log ]]; then view=status; else view=log; fi; wtop=0 ;;
       t|T) if [[ "$view" == tree ]]; then view=status

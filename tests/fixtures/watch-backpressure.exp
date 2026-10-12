@@ -1,0 +1,58 @@
+# Real PTY, real sampler, synthetic slow renderer and private throwaway project only.
+set timeout 15
+log_user 0
+match_max -d 200000
+set stty_init "rows 65 columns 170"
+log_file -a -noappend $env(WATCH_BACKPRESSURE_TRANSCRIPT)
+set shell {
+  # Canonical restoration sets the transient PENDIN bit on macOS; stabilize it before the exact mode snapshot.
+  stty echo icanon min 1 time 0 pendin
+  before=$(stty -g)
+  bash "$WATCH_BACKPRESSURE_RUNTIME/scripts/loomy-status.sh" --root "$WATCH_BACKPRESSURE_ROOT" --watch --full
+  rc=$?
+  after=$(stty -g)
+  echo BACKPRESSURE_EXIT:$rc
+  echo BACKPRESSURE_BEFORE:$before
+  echo BACKPRESSURE_AFTER:$after
+  if [[ "$before" == "$after" ]]; then echo BACKPRESSURE_STTY:OK; else echo BACKPRESSURE_STTY:BAD; fi
+}
+spawn bash -c $shell
+set owned [exp_pid]
+proc fail {message} {
+  global owned
+  catch {exec kill $owned}
+  puts stderr $message
+  exit 1
+}
+for {set n 0} {$n<6} {incr n} {
+  expect {
+    -re {BACKPRESSURE_FRAME tick=[0-9]+ start=[0-9.]+} {}
+    timeout {fail "slow watch did not produce six frames"}
+    eof {fail "slow watch exited before quit"}
+  }
+}
+# Send a navigation burst: all keys must survive coalescing in their original order.
+send -- "aavv"
+expect {
+  -re {BACKPRESSURE_FRAME tick=[0-9]+ start=[0-9.]+} {}
+  timeout {fail "watch navigation stalled behind slow frames"}
+  eof {fail "watch lost navigation burst"}
+}
+set sent [clock milliseconds]
+send -- "q"
+set timeout 4
+expect {
+  -exact BACKPRESSURE_EXIT:0 {}
+  timeout {fail "q waited more than four seconds behind sampler timestamps"}
+  eof {fail "watch quit without a clean exit"}
+}
+set elapsed [expr {[clock milliseconds]-$sent}]
+expect {
+  -exact BACKPRESSURE_STTY:OK {}
+  timeout {fail "watch did not restore terminal modes"}
+  eof {fail "watch lost terminal cleanup"}
+}
+expect eof
+set result [wait]
+if {[lindex $result 3]!=0} {fail "watch wrapper failed: $result"}
+puts "Slow watch quit: $elapsed ms; terminal restored"

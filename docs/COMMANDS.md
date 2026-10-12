@@ -147,6 +147,15 @@ loomy watch [N]
 
 🖥️ Live project agents: the orchestrator, then **IN PROGRESS** (native Claude subagents and bridges), then **SESSION**, containing only finished roles from the current lead session. Starts are polled every 250 ms; timers tick every second, including when an older refresh interval `N` is supplied. In the live list, `v` switches grouping by request/model and saves `watch_group` (`request` by default). Prompt excerpts obey `LOOMY_JOURNAL_TASKS=0`. Keys shown in the footer depend on the view: `q` quits; `o` opens the acting orchestrator in its desktop app, or a separate terminal with tracking (failure is shown in the footer and tracking continues); `l` opens the journal, then returns to status; `t` switches tree/status; `a` opens the live list, then returns to status. In the tree, `v` switches diagram/list; in the live list, it groups by request/model and saves `watch_group`. In status, `c` switches compact/full. `s` opens the session outside a tracking pane and without `--until-exit`; arrows scroll when the body exceeds the screen. `watch_view` (`tree` by default; `list` selects the live list) remembers the view chosen with `t` or `a`. The tree uses boxes from 124 columns, with scrolling in a shorter terminal, and its own compact list below that width. The compact side pane opened by `loomy start` starts in the live list. Rows show the translated role, tool, actual model, effort word and four-cell bar, elapsed time, task and completion outcome; explicit requests and routing overrides are flagged. Narrow panes drop task, model and bar in that order, keeping the tool and effort word; routing annotations move to an indented continuation when needed. The banner shows the lead state once setup is done; active means a live lead process with a prompt or usage event in the last two minutes. The view redraws on journal/state changes, or every second for running timers; at rest the clock holds at the last refresh. Native subagent costs come from usage events only, while bridges retain their own costs.
 
+Native Codex agents are also observed from the local rollout files under
+`CODEX_HOME` (default `~/.codex`). File discovery is bounded; lifecycle tailing
+is incremental, so historical catch-up may take several polls. The collector
+records native thread/turn identities and last observed activity without
+copying prompts, tool arguments or conversations. Missing results are unknown,
+not successful assignments; native Codex usage/cost is not invented. See
+[ADR-0007](adr/0007-native-codex-observability.md) for evidence limits. Phase
+labels remain the lead's last recorded metadata, not inferred progress.
+
 ### `loomy tree`
 
 ```bash

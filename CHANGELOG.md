@@ -2,6 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased
+
+### Fixed
+- Native Codex agents are tracked alongside bridge delegations and native Claude agents in the live views. Local lifecycle evidence is scoped to the current project and parent session; repeated turns are distinct, and missing evidence is not treated as successful completion. No agent conversation or tool arguments are copied into the journal.
+
+### Clarified
+- Task phases are lead-maintained metadata, not inferred progress. A completed agent turn is not acceptance of its assignment or approval of a release.
+
 ## 0.16.1 — 2026-10-10
 
 ### Changed

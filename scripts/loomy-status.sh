@@ -171,7 +171,9 @@ watch_notify() {
 # Foreground stty avoids the SIGTTIN/stty race of a background Bash read -s.
 loomy_watch_feed() {
   exec perl -MIO::Select -MTime::HiRes=time,stat -e '
-    my ($root,$cfg,$terminal)=@ARGV; $|=1;
+    my ($root,$cfg,$terminal,$native,$sessions)=@ARGV; $|=1;
+    require $native;
+    my $native_tick=0;
     my $tty; open $tty,"<","/dev/tty" if $terminal;
     my $select=IO::Select->new; $select->add($tty) if $tty;
     my @files=("$root/.loomy/logs/events.jsonl",map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts));
@@ -184,6 +186,7 @@ loomy_watch_feed() {
       if ($buf =~ s/^\e\[A//) { $key="up" }
       elsif ($buf =~ s/^\e\[B//) { $key="down" }
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
+      if (int(time)>$native_tick) { eval { Loomy::CodexNative::poll($root,$sessions) }; $native_tick=int(time) }
       my $sig="";
       for my $f (@files) {
         my @s=stat($f); $sig.=join(":",@s[0,1,7,9]).";";
@@ -194,7 +197,7 @@ loomy_watch_feed() {
       my $now=int(time); my @t=localtime($now); my $clock=sprintf "%02d:%02d:%02d",@t[2,1,0];
       print join("|",$now,($sig ne $last ? 1 : 0),$key,$clock),"\n"; $last=$sig;
     }
-  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1"
+  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions"
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
@@ -215,6 +218,7 @@ watch_keys() {
   printf '%s · [q] %s' "$keys" "$(t "quit")"
 }
 
+ai_codex_native_poll "$ROOT"
 if (( WATCH )); then
   ui_screen_begin
   KEY_READER=""; WATCH_STTY=""
@@ -530,6 +534,7 @@ if [[ -s "$JOURNAL" ]]; then
   awk '
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
+    /"bridge":"codex-native"/ { next }
     /"type":"delegation_start"/ { id = field("id"); order[++n] = id
       line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" substr(field("task"), 1, 60); next }
     /"type":"delegation",/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
@@ -556,6 +561,17 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail "${C_YELLOW}${spin} $(t "running")${C_RESET} ${C_BOLD}$(printf '%-11s' "$role")${C_RESET}${C_DIM}$(printf '%-17s' "$m")${C_RESET} ${prog}"
     ui_rail "           ${C_DIM}${task}${C_RESET}"
   done
+  # Native turns have no agent process or elapsed-time completion estimate.
+  if grep -q '"bridge":"codex-native"' "$JOURNAL"; then
+    # shellcheck source=loomy-tree.sh
+    source "$SCRIPT_DIR/loomy-tree.sh" --library
+    loomy_live_init; loomy_live_poll "$JOURNAL"; LV_NOW="$now_s"; loomy_live_states
+    LV_WIDTH=$(( UI_COLS - 8 )); LV_ROLE_WIDTH=12
+    for ni in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do
+      [[ "${LV_BRIDGE[ni]:-}" == codex-native ]] || continue
+      while IFS= read -r native_line; do ui_rail "$native_line"; done < <(loomy_live_row "$ni" 0)
+    done
+  fi
   # Claude Code direct work (lead agent, native subagents): cost measured by the Stop and SubagentStop hooks.
   if grep -q '"type":"usage"' "$JOURNAL"; then
     read -r u_ln u_lc u_lt u_sn u_sc u_st <<<"$(awk '
@@ -587,17 +603,19 @@ if [[ -s "$JOURNAL" ]]; then
     summary="$(grep '"type":"delegation"' "$JOURNAL" | awk -v pc="$PLAN_C" -v px="$PLAN_X" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-      { m = field("model"); f = field("family"); plan = (f == "claude" ? pc : px) + 0
+      { if (field("bridge") == "codex-native") { n++; native++; if (field("status") != "ok") err++; next }
+        m = field("model"); f = field("family"); plan = (f == "claude" ? pc : px) + 0
         tk = num("tokens_in") + num("tokens_out"); calls[m]++; tok[m] += tk; mp[m] = plan
         if (plan) { ptok += tk } else { cost[m] += num("cost_usd"); total += num("cost_usd"); api++ }
         n++; if (field("status") != "ok") err++ }
-      END { printf "TOTAL %d %.4f %d %d %d\n", n, total, err, api, ptok
+      END { printf "TOTAL %d %.4f %d %d %d %d\n", n, total, err, api, ptok, native
             for (m in calls) printf "MODEL %s %d %.4f %d %d\n", m, calls[m], cost[m], tok[m], mp[m] }')"
-    read -r _ n_calls total_cost n_err n_api plan_tok <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
+    read -r _ n_calls total_cost n_err n_api plan_tok n_native <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
     # API part: its cost; subscription part: its tokens (the quota is in the plans lines).
     d_val=""
     (( n_api > 0 )) && d_val="${C_BOLD}\$${total_cost}${C_RESET}"
-    (( n_api < n_calls )) && d_val="${d_val:+$d_val · }${C_BOLD}$(ai_tokens_label "$plan_tok")${C_RESET} $(t "tokens")"
+    (( n_api < n_calls - n_native )) && d_val="${d_val:+$d_val · }${C_BOLD}$(ai_tokens_label "$plan_tok")${C_RESET} $(t "tokens")"
+    (( n_native == 0 )) || d_val="${d_val:+$d_val · }$(t 'native usage unknown')"
     ui_kv "$(t "Delegations")" "${C_BOLD}${n_calls}${C_RESET} · ${d_val}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
@@ -621,18 +639,20 @@ if [[ -s "$JOURNAL" ]]; then
     grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out"), field("outcome") }' |
-    while IFS='|' read -r t st role m d cost task fam tk oc; do
+      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' |
+    while IFS='|' read -r t st role m d cost task fam tk oc bridge; do
       row=$(( row + 1 ))
       # Log in UTC, shown in local time.
       ep="$(ai_ts_epoch "$t")"
       if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
+      [[ "$oc" != unknown ]] || mark="${C_DIM}?${C_RESET}"
       # Structured result: partial or blocked means the task is not done, even when the call succeeded.
-      if [[ "$st" == "ok" ]]; then case "$oc" in partial) mark="${C_YELLOW}◐${C_RESET}" ;; blocked) mark="${C_YELLOW}■${C_RESET}" ;; esac; fi
+      if [[ "$st" == "ok" ]]; then case "$oc" in partial) mark="${C_YELLOW}◐${C_RESET}" ;; blocked) mark="${C_YELLOW}■${C_RESET}" ;; unknown) mark="${C_DIM}?${C_RESET}" ;; esac; fi
       # Delegation just finished (loomy watch): highlighted for a few seconds.
       if (( row > n_shown - ${LOOMY_HL_DELEG:-0} )); then mark="${mark}${C_BRAND}${C_BOLD}✦${C_RESET}"; t="${C_BOLD}${t}"; else mark="${mark} "; fi
-      if { [[ "$fam" == "claude" ]] && (( PLAN_C )); } || { [[ "$fam" != "claude" ]] && (( PLAN_X )); }; then val="$(printf '%7s' "$(ai_tokens_label "$tk")") tk"
+      if [[ "$bridge" == codex-native ]]; then val="$(t 'native usage unknown')"
+      elif { [[ "$fam" == "claude" ]] && (( PLAN_C )); } || { [[ "$fam" != "claude" ]] && (( PLAN_X )); }; then val="$(printf '%7s' "$(ai_tokens_label "$tk")") tk"
       else val="$(printf '%10s' "$(printf '$%.4f' "$cost")")"; fi
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  %s' "$role" "$m" "$d" "$val")  ${C_DIM}${task}${C_RESET}"
     done

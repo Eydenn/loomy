@@ -2253,6 +2253,8 @@ _t_fr() {
     'Diagram needs at least %s columns.') _T='Le diagramme nécessite au moins %s colonnes.' ;;
     'Could not open the orchestrator; watch is still running.') _T='Impossible d’ouvrir l’orchestrateur ; le suivi continue.' ;;
     'Orchestrator opened.') _T='Orchestrateur ouvert.' ;;
+    'unknown') _T='inconnu' ;;
+    'native usage unknown') _T='usage natif inconnu' ;;
     '  loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)') _T='  loomy-status.sh --watch [N]     agents et chronos en direct chaque seconde ; touches selon la vue (voir le pied d’écran)' ;;
   esac
 }

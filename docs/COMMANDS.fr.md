@@ -147,6 +147,16 @@ loomy watch [N]
 
 🖥️ Agents du projet en direct : l'orchestrateur, puis **EN COURS** (sous-agents Claude natifs et passerelles), puis **SESSION**, avec uniquement les rôles terminés de la session courante. Les démarrages sont détectés toutes les 250 ms ; les chronos avancent chaque seconde, même avec un ancien intervalle `N`. Dans la liste live, `v` bascule le regroupement par demande/modèle et mémorise `watch_group` (`request` par défaut). Les extraits respectent `LOOMY_JOURNAL_TASKS=0`. Les touches du pied de page dépendent de la vue : `q` quitte ; `o` ouvre l’orchestrateur actif dans son application, ou un terminal séparé avec suivi (un échec apparaît en bas et le suivi continue) ; `l` ouvre le journal puis revient au statut ; `t` bascule arbre/statut ; `a` ouvre la liste live puis revient au statut. Dans l’arbre, `v` bascule diagramme/liste ; dans la liste live, il regroupe par demande/modèle et mémorise `watch_group`. Dans le statut, `c` bascule compact/complet. `s` ouvre la session hors du panneau de suivi et sans `--until-exit` ; les flèches défilent lorsque le contenu dépasse l’écran. `watch_view` (`tree` par défaut ; `list` choisit la liste live) mémorise la vue choisie avec `t` ou `a`. L’arbre affiche ses boîtes dès 124 colonnes, avec défilement si le terminal est moins haut, et sa propre liste compacte en dessous. Le panneau compact ouvert par `loomy start` démarre dans la liste live. Chaque ligne montre le rôle traduit, l'outil, le modèle réel, le mot et la barre d'effort, le chrono, la tâche et le résultat ; les demandes explicites et écarts au routage sont signalés. Une fenêtre étroite retire dans l'ordre la tâche, le modèle et la barre, en conservant l'outil et le mot d'effort ; les annotations de routage passent sur une ligne indentée si nécessaire. Après la configuration, le bandeau affiche l'état de l'orchestrateur : actif si son processus vit et qu'une demande ou un événement d'usage date de moins de deux minutes. Le rendu change avec le journal ou les fichiers d'état, ou chaque seconde pour les chronos en cours ; au repos, l'horloge reste à l'heure du dernier rendu. Le coût d'un sous-agent natif provient uniquement de son usage, celui d'une passerelle reste dans sa délégation.
 
+Les agents Codex natifs sont aussi suivis depuis les fichiers de session locaux
+dans `CODEX_HOME` (`~/.codex` par défaut). La découverte est bornée ; la lecture
+des événements est incrémentale, donc le rattrapage peut demander plusieurs
+passes. La collecte enregistre l'identité du thread et du tour, ainsi que la
+dernière activité observée, sans recopier les messages, arguments d'outils ou
+conversations. Un résultat absent reste inconnu, pas une tâche réussie ; l'usage
+et le coût Codex natif ne sont pas inventés. Voir l'[ADR-0007](adr/0007-native-codex-observability.md)
+pour les limites. La phase reste la dernière information enregistrée par
+l'orchestrateur, pas un avancement déduit automatiquement.
+
 ### `loomy tree`
 
 ```bash

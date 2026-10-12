@@ -2930,6 +2930,7 @@ has "doctor: broken codex command flagged" "points to a Codex CLI that no longer
 has "doctor: readable fix" "fix: loomy doctor --fix"
 
 section "Structured delegations"
+run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 SD="$WORK/structured"; mkdir -p "$SD"
 run "init with the default delegation format" "$LOOMY" init "$SD" --yes --no-clipboard
 file_has "brief: structured delegations by default" "$SD/.loomy/brief.md" "^delegation_format: structured$"

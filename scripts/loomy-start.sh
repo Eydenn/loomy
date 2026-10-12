@@ -426,7 +426,7 @@ while :; do
   CHAIN_N=$(( CHAIN_N + 1 ))
   # Codex has no per-project hooks: the session is recorded here (this script's pid lives as long as the session).
   if [[ "$TOOL" == "codex" ]]; then
-    ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$"
+    ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$,\"pid_role\":\"owner\""
   fi
   rc=0; "${AGENT_CMD[@]}" || rc=$?
   if [[ "$TOOL" == "codex" ]]; then

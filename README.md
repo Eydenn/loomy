@@ -351,13 +351,17 @@ Everything happens in the terminal, with no dependency. `loomy start` opens live
 Each command in detail: [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **What is live.** Starts are polled every 250 ms; running timers tick every second:
-- **delegations**, through bridges and native Claude subagents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed and ⊘ interrupted. Native subagent usage is counted only once;
+- **delegations**, through bridges and native Claude or Codex agents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed and ⊘ interrupted. Native Claude subagent usage is counted only once; native Codex usage and costs remain unknown unless separately measured;
 - **grouping** by request or model switches with `v` and is saved in `watch_group` (`request` by default; `loomy config set watch_group model` changes it). Request excerpts come from Claude's prompt hook and obey `LOOMY_JOURNAL_TASKS=0`; ⚑ marks an explicit request and ⇢ a routing difference;
 - **the orchestrator** opens with `o` in an available desktop app, falling back to a separate terminal window with session and tracking side by side;
-- the **phase** changes when the lead agent records it (`START.md` asks it to at each step);
+- the **phase** changes when the lead agent records it (`START.md` asks it to at each step); it is last-recorded metadata, not automatically inferred progress;
 - work the lead agent does itself is followed in its session; prompt and usage events inform the live view without exposing its full conversation.
 
 The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. `LOOMY_JOURNAL=0` disables it, `LOOMY_JOURNAL_TASKS=0` leaves task text out of it.
+
+A finished native agent turn is a lifecycle observation, not approval of its work. The lead still checks partial or blocked results and independent reviews before accepting an assignment or publishing a release. Subsequent turns must remain visible; elapsed time is not a completion percentage.
+
+Native Codex tracking reads local rollout metadata and lifecycle events. It never calls a model and does not copy conversation text or tool arguments into the journal. Missing or unrecognized lifecycle evidence is not success. The collector discovers recent files on a bounded schedule, then tails them incrementally; its evidence and compatibility limits are documented in [ADR-0007](docs/adr/0007-native-codex-observability.md).
 
 ### 💳 Claude and ChatGPT subscriptions
 

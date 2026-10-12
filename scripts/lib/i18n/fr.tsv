@@ -2248,4 +2248,6 @@ group by model	par modèle
 Diagram needs at least %s columns.	Le diagramme nécessite au moins %s colonnes.
 Could not open the orchestrator; watch is still running.	Impossible d’ouvrir l’orchestrateur ; le suivi continue.
 Orchestrator opened.	Orchestrateur ouvert.
+unknown	inconnu
+native usage unknown	usage natif inconnu
   loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)	  loomy-status.sh --watch [N]     agents et chronos en direct chaque seconde ; touches selon la vue (voir le pied d’écran)

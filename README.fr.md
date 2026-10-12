@@ -351,13 +351,17 @@ Tout se passe dans le terminal, sans dépendance. `loomy start` ouvre le suivi e
 Chaque commande en détail : [docs/COMMANDS.fr.md](docs/COMMANDS.fr.md).
 
 **Ce qui est en direct.** Les lancements sont détectés toutes les 250 ms ; les chronos en cours avancent chaque seconde :
-- les **délégations**, via les bridges et les sous-agents natifs Claude, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec et ⊘ interruption. L'usage des sous-agents natifs n'est compté qu'une fois ;
+- les **délégations**, via les bridges et les agents natifs Claude ou Codex, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec et ⊘ interruption. L'usage des sous-agents Claude natifs n'est compté qu'une fois ; l'usage et le coût des agents Codex natifs restent inconnus sans mesure distincte ;
 - le **regroupement** par demande ou modèle se change avec `v` et se mémorise dans `watch_group` (`request` par défaut ; `loomy config set watch_group model` le change). Les extraits des demandes viennent du hook de message Claude et respectent `LOOMY_JOURNAL_TASKS=0` ; ⚑ signale une demande explicite et ⇢ un écart au routage ;
 - **l'orchestrateur** s'ouvre avec `o` dans une app de bureau disponible, sinon dans une fenêtre de terminal séparée avec session et suivi côte à côte ;
-- la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ;
+- la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ; c'est la dernière information enregistrée, pas un avancement déduit automatiquement ;
 - le travail que l'orchestrateur fait lui-même se suit dans sa session ; les événements de message et d'usage alimentent la vue sans exposer sa conversation complète.
 
 Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de Git automatiquement. `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
+
+Un tour d'agent natif terminé est un événement de cycle de vie, pas une validation de son travail. L'orchestrateur vérifie toujours les résultats partiels ou bloqués et les relectures indépendantes avant d'accepter une tâche ou de publier une version. Les tours suivants doivent rester visibles ; le temps écoulé n'est pas un pourcentage d'avancement.
+
+Le suivi natif Codex lit les métadonnées et événements de cycle de vie des fichiers de session locaux. Il n'appelle aucun modèle et ne recopie ni conversation ni arguments d'outils dans le journal. Des événements absents ou non reconnus ne valent pas réussite. La collecte découvre les fichiers récents à une cadence bornée, puis lit seulement leur suite ; ses limites de compatibilité et d'observation sont documentées dans l'[ADR-0007](docs/adr/0007-native-codex-observability.md).
 
 ### 💳 Forfaits Claude et ChatGPT
 

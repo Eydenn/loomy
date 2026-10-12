@@ -12,6 +12,15 @@ ai_journal_enabled() {
   [[ "${LOOMY_JOURNAL:-1}" != "0" && -d "$1/.loomy" ]]
 }
 
+# The sampler loads the same Perl module in-process; one-shot commands use this wrapper.
+AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
+ai_codex_native_poll() {
+  ai_journal_enabled "$1" || return 0
+  [[ -d "${CODEX_HOME:-$HOME/.codex}/sessions" ]] || return 0
+  ai_journal_prepare "$1" || return 0
+  perl "$AI_CODEX_NATIVE_LIB" "$1" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null || true
+}
+
 # Private logs, including older files. Descriptor chmod never follows a symbolic link.
 ai_journal_prepare() {
   [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/logs" ]] || return 1
@@ -225,13 +234,13 @@ ai_journal_display_events() {
         my $bridge=$e->{bridge}//""; my $interrupted=0;
         if (!($e->{id}//"") || !$done{$e->{id}}) {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
-          else { $interrupted=!alive($e->{pid}) }
+          else { $interrupted=!alive($bridge eq "codex-native" ? $e->{owner_pid} : $e->{pid}) }
         }
         $who=$role; $what=$interrupted ? "interrupted" : "start"; $extra="$model · ".ai_title($e->{task})
       }
       elsif ($ty eq "delegation") {
         $who=$role; my $oc=$e->{outcome}//"";
-        $what=($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed";
+        $what=$oc eq "unknown" ? "unknown" : (($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed");
         $extra=duration($e->{duration_s})." · $model"; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
       }
       elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }

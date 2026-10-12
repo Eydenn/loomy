@@ -47,6 +47,7 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
   {
     ts = field("ts"); if (ts == "" || (since != "" && substr(ts, 1, 10) < since)) next
     ty = field("type"); if (ty != "delegation" && ty != "usage") next
+    if (field("bridge") == "codex-native") { native++; next }
     if (first == "" || ts < first) first = ts; if (ts > last) last = ts
     f = field("family"); plan = (f == "codex" ? px : pc) + 0
     ti = num("tokens_in"); tc = num("tokens_cached"); to = num("tokens_out"); c = num("cost_usd"); day = substr(ts, 1, 10)
@@ -68,6 +69,7 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
     }
   }
   END {
+    printf "NATIVE|%d\n", native
     printf "ALL|%s|%s|%d|%d|%d|%d|%d|%d|%.4f|%.4f|%d|%d|%.4f|%d|%d|%.4f|%d|%d|%d|%d|%d\n", first, last, n, err, dur, ti_all, tc_all, to_all, ac, pv, lr, lt, lv, sn, st, sv, fo, sf, suf, sp, sb
     for (r in rn) printf "ROLE|%s|%d|%d|%d|%.4f|%d|%d\n", r, rn[r], rd[r], rt[r], rv[r], rp[r], re[r]
     for (m in md) printf "MODEL|%s|%d|%d|%d|%d|%d|%.4f|%d\n", m, mn[m], mu[m], mi[m], mc[m], mo[m], mv[m], md[m]
@@ -75,6 +77,7 @@ DATA="$(ai_journal_all "$ROOT" | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
   }')"
 
 IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
+IFS='|' read -r _ NATIVE <<<"$(printf '%s\n' "$DATA" | grep '^NATIVE|')"
 
 day_of() { local ep; ep="$(ai_ts_epoch "$1")"; [[ -n "$ep" ]] && { date -r "$ep" +%Y-%m-%d 2>/dev/null || date -d "@$ep" +%Y-%m-%d; }; }
 money() {   # money <amount> <on plan: 0|1|2>: real cost, or "≈ API value" when covered by a subscription
@@ -87,10 +90,13 @@ money() {   # money <amount> <on plan: 0|1|2>: real cost, or "≈ API value" whe
 dur_label() { _ui_dur $(( ${1:-0} * 1000 )); printf '%s' "$UI_DUR"; }
 
 ui_banner "$(t "Statistics")" "${NAME:-$(basename "$ROOT")} · ${SINCE:+$(t "since %s" "$SINCE") · }${ROOT/#$HOME/~}"
+(( NATIVE == 0 )) || ui_info "$(t 'native usage unknown') · $(t '%s finished' "$NATIVE")"
 
 if [[ -z "$FIRST" ]]; then
+  if (( NATIVE == 0 )); then
   ui_info "$(t "nothing logged yet%s" "${SINCE:+ $(t "since %s" "$SINCE")}")"
   ui_rail "${C_DIM}  $(t "figures show up as soon as the lead agent works or delegates")${C_RESET}"
+  fi
 else
   ui_section "$(t "OVERVIEW")" "$(t "from %s to %s" "$(day_of "$FIRST")" "$(day_of "$LAST")")"
   if (( N > 0 )); then
@@ -141,7 +147,7 @@ for fam in claude codex; do
     ui_kv "$name" "$(ai_plan_label "$fam" "$plan") · ${q:-${C_DIM}$(ai_quota_hint "$fam")${C_RESET}}"
     # What this month's work would have cost through the API, next to the plan's price.
     month_val="$(ai_journal_all "$ROOT" | awk -v fam="\"family\":\"$fam\"" -v ts="\"ts\":\"$(date -u +%Y-%m)" '
-      (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) && !/"bridge":"subagent"|"cost_in":"usage"/ {
+      (index($0, "\"type\":\"delegation\",") || index($0, "\"type\":\"usage\"")) && index($0, fam) && index($0, ts) && !/"bridge":"subagent"|"bridge":"codex-native"|"cost_in":"usage"/ {
         if (match($0, /"cost_usd":[0-9.]+/)) c += substr($0, RSTART + 11, RLENGTH - 11) }
       END { printf "%.2f", c }')"
     monthly="$(loomy_plan_monthly "$fam")"

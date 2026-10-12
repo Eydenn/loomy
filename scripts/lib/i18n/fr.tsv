@@ -2249,6 +2249,9 @@ Diagram needs at least %s columns.	Le diagramme nécessite au moins %s colonnes.
 Could not open the orchestrator; watch is still running.	Impossible d’ouvrir l’orchestrateur ; le suivi continue.
 Orchestrator opened.	Orchestrateur ouvert.
 unknown	inconnu
+response received	réponse reçue
+end unconfirmed	fin non confirmée
+%s in recap	%s dans le récapitulatif
 model unknown	modèle inconnu
 catching up	rattrapage en cours
 native usage unknown	usage natif inconnu

@@ -177,7 +177,7 @@ ai_task_excerpt() {
 # Read-side titles shared by the live reducer and the session log; journal entries stay untouched.
 AI_TITLE_PERL='use utf8;
   sub ai_title {
-    my ($s)=@_; $s //= "";
+    my ($s)=@_; $s = "" unless defined $s && !ref($s);
     $s =~ s/^\s*(?:GOAL|TASK|OBJECTIF)\s*:\s*//i;
     $s =~ s/\bSCOPE\s*:.*//is;
     $s =~ s/[\r\n].*//s;
@@ -209,28 +209,75 @@ ai_display_duration() {
   else printf -v AI_DURATION '%d:%02d' $(( d / 60 )) $(( d % 60 )); fi
 }
 
+# A received native response is not approval; missing terminal evidence stays distinct.
+ai_native_end_label() {
+  AI_NATIVE_END="end unconfirmed"
+  [[ "$1" != ok ]] || AI_NATIVE_END="response received"
+}
+
 # Tree/watch opt into this formatter; ai_session_log_rows keeps its existing reveal cursor.
 ai_journal_display_events() {
   tail -n 400 "$1" | perl -MJSON::PP -MErrno=EPERM -e "$AI_TITLE_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
-    sub duration { my $d=int($_[0]//0); return $d>=3600 ? sprintf("%d h %02d",$d/3600,$d%3600/60) : sprintf("%d:%02d",$d/60,$d%60) }
+    sub duration { my $d=text($_[0]); return "—" unless $d =~ /^\d+(?:\.\d+)?$/; $d=int($d); return $d>=3600 ? sprintf("%d h %02d",$d/3600,$d%3600/60) : sprintf("%d:%02d",$d/60,$d%60) }
     sub alive { my $p=$_[0]//0; return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
-    sub session_key { my $e=$_[0]; return ($e->{tool}//$e->{family}//"")."|".($e->{session} || "pid".($e->{pid}//0)) }
-    my (@events,%done,%sessions);
+    sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : "" }
+    sub task_title { my ($e,$start)=@_; return ai_title(defined $e->{task} && !ref($e->{task}) ? $e->{task} : $start->{task}) }
+    sub session_key { my $e=$_[0]; return text($e->{tool}//$e->{family})."|".(text($e->{session}) || "pid".text($e->{owner_pid}//$e->{pid}//0)) }
+    sub agent_key { my $e=$_[0]; return session_key($e)."|".text($e->{parent_session})."|".(text($e->{agent_id}) || text($e->{id})) }
+    sub owner_key {
+      my $e=$_[0]; my $pid=text($e->{owner_pid}//$e->{pid});
+      return "" unless $pid =~ /^\d+$/ && $pid>1;
+      return text($e->{tool}//$e->{family})."|$pid";
+    }
+    sub owner_closed {
+      my ($e,$ends,$opens,$index)=@_; my $key=owner_key($e); return 0 if $key eq "";
+      my $session=text($e->{session}); my $slot="$key|$session";
+      my $end=$ends->{"$key|"}//0; $end=$ends->{$slot} if ($ends->{$slot}//0)>$end;
+      return 0 unless $end;
+      my $open=$opens->{$slot}; return 1 unless $open && $open->{index}>$end;
+      # Reopening does not revive observations from the preceding owner lifetime.
+      return 1 if $index<$open->{index};
+      return text($e->{ts}) lt $open->{ts};
+    }
+    my (@events,%done,%sessions,%starts,%activity,%agents,%owner_ends,%owner_opens);
     while (<STDIN>) { my $e=eval { decode_json($_) }; push @events,$e if ref($e) eq "HASH" }
-    for my $e (@events) {
+    for my $i (0..$#events) {
+      my $e=$events[$i]; my $id=text($e->{id}); my $ts=text($e->{ts});
       if (($e->{type}//"") eq "session") {
         my $key=session_key($e);
         if (($e->{event}//"") eq "start") { $sessions{$key}={%$e,ended=>0} }
         elsif ($sessions{$key}) { $sessions{$key}{ended}=1 }
+        my $owner=owner_key($e);
+        if ($owner ne "") {
+          my $slot=$owner."|".text($e->{session});
+          $owner_opens{$slot}={index=>$i+1,ts=>$ts} if text($e->{event}) eq "start";
+          $owner_ends{$slot}=$i+1 if text($e->{event}) eq "end";
+        }
       }
-      $done{$e->{id}}=1 if ($e->{type}//"") eq "delegation" && defined $e->{id};
+      $done{$id}=1 if ($e->{type}//"") eq "delegation" && $id ne "";
+      $starts{$id}=$e if ($e->{type}//"") eq "delegation_start" && $id ne "";
+      if (text($e->{bridge}) eq "codex-native" && $id ne "" && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/) {
+        if (text($e->{type}) eq "delegation_activity") {
+          $activity{$id}=$i if !exists $activity{$id} || $ts ge text($events[$activity{$id}]{ts});
+        }
+      }
     }
+    # Closed turns must not hide the same agents newer active turn, even if stale activity was appended late.
     for my $e (@events) {
+      my $id=text($e->{id}); my $ts=text($e->{ts});
+      next unless text($e->{bridge}) eq "codex-native" && $id ne "" && !$done{$id} && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/;
+      my $key=agent_key($e);
+      $agents{$key}={id=>$id,ts=>$ts} if !$agents{$key} || $ts ge $agents{$key}{ts};
+    }
+    for my $i (0..$#events) {
+      my $e=$events[$i];
       next unless ref($e) eq "HASH";
-      my ($ty,$who,$what,$extra)=($e->{type}//"","","","");
-      my $model=$e->{model}//""; my $role=$e->{role}//"";
+      my ($ty,$who,$what,$extra)=(text($e->{type}),"","","");
+      my $id=text($e->{id}); my $start=$starts{$id}//{};
+      my $model=text($e->{model}); my $role=text($e->{role});
       if ($ty eq "delegation_start") {
+        next if text($e->{bridge}) eq "codex-native" && !$done{$id} && exists $activity{$id};
         my $bridge=$e->{bridge}//""; my $interrupted=0;
         if (!($e->{id}//"") || !$done{$e->{id}}) {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
@@ -239,9 +286,25 @@ ai_journal_display_events() {
         $who=$role; $what=$interrupted ? "interrupted" : "start"; $extra="$model · ".ai_title($e->{task})
       }
       elsif ($ty eq "delegation") {
-        $who=$role; my $oc=$e->{outcome}//"";
+        $who=$role || text($start->{role}); $model ||= text($start->{model}); my $oc=text($e->{outcome});
         $what=$oc eq "unknown" ? "unknown" : (($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed");
+        $what=(text($e->{status}) eq "ok" ? "response received" : "end unconfirmed") if $oc eq "unknown" && text($e->{bridge}) eq "codex-native";
+        $what="interrupted" if $oc eq "interrupted" || text($e->{status}) eq "interrupted";
         $extra=duration($e->{duration_s})." · $model"; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
+        my $task=task_title($e,$start); $extra.=" · $task" if $task ne "";
+      }
+      elsif ($ty eq "delegation_activity" && text($e->{bridge}) eq "codex-native") {
+        next if $done{$id} || !exists $activity{$id} || $activity{$id}!=$i || $agents{agent_key($e)}{id} ne $id;
+        my $owner=$e->{owner_pid}//$start->{owner_pid};
+        my $observed={%$start,%$e,owner_pid=>$owner,session=>($e->{session}//$start->{session}),tool=>($e->{tool}//$e->{family}//$start->{tool}//$start->{family})};
+        next if !alive($owner) || owner_closed($observed,\%owner_ends,\%owner_opens,$i+1);
+        next unless text($e->{ts}) =~ /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/;
+        $what=text($e->{activity}); next unless $what eq "running" || $what eq "waiting";
+        $who=$role || text($start->{role}) || "agent";
+        $model ||= text($start->{model});
+        my $task=task_title($e,$start);
+        $task="$who ".substr(text($e->{agent_id}) || $id,-8) if $task eq "";
+        $extra="$model · $task";
       }
       elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }
       elsif ($ty eq "advisor") { $who="advisor"; $what="consulted"; $extra=($e->{calls}//0)." × $model · ".int(($e->{tokens_in}//0)/1000)."k" }
@@ -250,7 +313,7 @@ ai_journal_display_events() {
       elsif ($ty eq "skill") { $who="skills"; $what=$e->{event}//""; $extra=($e->{name}//"")." · ".substr($e->{reason}//"",0,52) }
       elsif ($ty eq "usage" && ($e->{scope}//"") eq "lead") { $who="lead"; $what="replied"; $extra=($e->{messages}//0)." msg · $model" }
       else { next }
-      my @row=($e->{ts}//"",$who,$what,$extra); for (@row) { s/[\x00-\x1f|]/ /g } print join("|",@row),"\n";
+      my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g } print join("|",@row),"\n";
     }
   '
 }

@@ -1,10 +1,25 @@
 # Release Priorities
 
+## Follow-Up: Exclusive-Mode Routing Display
+
+User feedback on 2026-10-12: the tree routing panel still lists Claude and
+Codex side by side in an exclusive mode, implying a fallback that is not active.
+This display refinement is deferred, not part of the current maintenance fix.
+
+- In effective Codex-only mode, show only the selected Codex model for each tier.
+- In effective Claude-only mode, show only the selected Claude model for each tier.
+- In hybrid mode, retain both families with an explicit primary/fallback distinction.
+- Resolve effective routing, including temporary overrides, rather than merely
+  the tool used by the lead or a watch-only session-selection filter.
+- Add English/French, profile and terminal-width regressions. Do not change
+  actual routing, failover or the user's global preferences for this UI change.
+
 ## P1: Native Codex Agents Missing From Watch
 
 Reported and reproduced on 2026-10-12 with Loomy 0.16.1 and Codex CLI
-0.162.0-alpha.17.2. Implemented on `fix/codex-native-watch` for the next
-maintenance release; not installed or released by this change.
+0.162.0-alpha.17.2. Implemented for 0.16.2 on `fix/codex-native-watch`.
+This section preserves the original report; final validation and publication
+records are linked in [the release checks](reports/2026-10-12-0.16.2-release.md).
 
 ### Observed Behavior
 
@@ -93,7 +108,7 @@ the npm, bun, Homebrew and genuinely manual installation classifications.
 ## Release Gate: Linux Orchestrator-Open Checks
 
 The first native-watch PR run on Ubuntu failed 72 existing watch/orchestrator-open
-checks involving desktop URL and terminal fallback expectations. The native
-collector regression check passed. Investigate platform-specific target resolution
-and fixtures before a maintenance release; do not treat a green Mac suite as a
-green Linux gate, or simply remove the failing assertions.
+checks involving desktop URL and terminal fallback expectations. Scoped macOS
+fixture simulation and separate Linux branch checks corrected this mismatch;
+candidate `69d9273` passed 1430 Linux checks with no failures. No assertions were
+removed. Final refinements must pass their own Mac and Linux release gates.

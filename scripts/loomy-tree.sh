@@ -153,7 +153,7 @@ loomy_live_poll() {
       $d->{pid}=$d->{owner_pid}//0 if ($d->{bridge}//"") eq "codex-native";
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
-      my @v=($d->{type}//"",$ep//0,map { $d->{$_}//"" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness));
+      my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness));
       for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
@@ -276,6 +276,9 @@ loomy_live_row() {
     elapsed="${LV_DURATION[i]:-0}"; mark=✓; outcome="${LV_OUTCOME[i]:-done}"; color="$C_GREEN"
     [[ "${LV_STATUS[i]}" == ok || "$outcome" == unknown || "$outcome" == lost || "$outcome" == interrupted ]] || outcome=failed
     case "$outcome" in blocked) mark=■; color="$C_YELLOW" ;; partial) mark=△; color="$C_YELLOW" ;; failed) mark=✗; color="$C_RED" ;; interrupted) mark=⊘; suffix=" · $(t 'interrupted')"; color="$C_DIM$C_RED" ;; unknown) mark='?'; color="$C_DIM" ;; lost) mark="! $(t 'lost')"; color="$C_YELLOW" ;; esac
+    if [[ "$outcome" == unknown && "${LV_BRIDGE[i]:-}" == codex-native ]]; then
+      ai_native_end_label "${LV_STATUS[i]}"; mark=·; suffix=" · $(t "$AI_NATIVE_END")"
+    fi
   else elapsed=$(( LV_NOW - ${LV_TS[i]:-0} )); (( elapsed >= 0 )) || elapsed=0; mark="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"; fi
   if (( ! finished )) && [[ "${LV_BRIDGE[i]:-}" == codex-native ]]; then
     suffix=" · $(t "${LV_OBSERVED[i]:-running}")"
@@ -384,7 +387,7 @@ loomy_live_group_title() {
 
 # All running roles remain above the recap. Height only limits finished lines, never active roles.
 loomy_live_render() {
-  local i j k key count total=0 cost=$LV_USAGE footer emitted=0 used=0 group_seen="|" indices=() d native_unknown=""
+  local i j k key count total=0 cost=$LV_USAGE footer emitted=0 used=0 group_seen="|" indices=() d native_unknown="" recap_count=""
   _ui_term_size; LV_WIDTH=$(( UI_COLS - 1 )); LV_HEIGHT=$UI_ROWS
   (( LV_META_READY )) || loomy_live_metadata
   LV_ROLE_WIDTH=0
@@ -415,8 +418,12 @@ loomy_live_render() {
   loomy_live_time "$total"
   for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"} ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
     [[ "${LV_BRIDGE[i]:-}" != codex-native ]] || native_unknown=" · $(t 'native usage unknown')"
+    if [[ "${LV_BRIDGE[i]:-}" == codex-native && "${LV_FIN[i]:-0}" == 1 && "${LV_OUTCOME[i]:-}" == unknown ]]; then
+      tv recap_count "%s in recap" "${#LV_FINISHED[@]}"
+    fi
   done
-  loomy_live_line "$(t "SESSION") · $(t "%s finished" "${#LV_FINISHED[@]}") · $LV_TIME · ~\$$cost$native_unknown"
+  [[ -n "$recap_count" ]] || tv recap_count "%s finished" "${#LV_FINISHED[@]}"
+  loomy_live_line "$(t "SESSION") · $recap_count · $LV_TIME · ~\$$cost$native_unknown"
   # Newest completions first; group order follows the most recent completion.
   indices=()
   for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
@@ -790,7 +797,9 @@ if (( DIAGRAM )); then
             cv_put "$c" $(( SY + 2 + (TICK + b) % 2 )) "$C_YELLOW" "●" ;;
       last) d0="${RS_DUR%.*}"; d0="${d0:-0}"
             if [[ "$RS_OC" == interrupted ]]; then w="$(t "interrupted")"; stl="⊘ $w"; stk="$C_DIM$C_RED"
-            elif [[ "$RS_OC" == "unknown" ]]; then tv w "unknown"; stl="? $w"; stk="$C_DIM"
+            elif [[ "$RS_OC" == "unknown" ]]; then
+              if [[ "${LV_BRIDGE[RS_I]:-}" == codex-native ]]; then ai_native_end_label "$RS_ST"; tv w "$AI_NATIVE_END"; stl="· $w"
+              else tv w "unknown"; stl="? $w"; fi; stk="$C_DIM"
             elif [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
             elif [[ "$RS_OC" == "partial" ]]; then tv w "partial"; stl="△ $w"; stk="$C_YELLOW"
             elif [[ "$RS_OC" == "blocked" ]]; then tv w "blocked"; stl="■ $w"; stk="$C_YELLOW"
@@ -818,9 +827,16 @@ if (( DIAGRAM )); then
   cv_box "$BKX" "$BKY" "$BKW" 4 "$K_LEAD"
   cv_box_center "$BKX" $(( BKY + 1 )) "$BKW" "${C_BOLD}${C_YELLOW}" "${TR_18} · $L_EFFORT"
   back_state="$(t "reviews + checks")"
-  if (( n_run == 1 )); then back_state="$(t "waiting for %s role" "$n_run")"
-  elif (( n_run > 1 )); then back_state="$(t "waiting for %s roles" "$n_run")"; fi
+  back_prefix=""
+  if (( n_run > 0 )); then
+    if (( n_run == 1 )); then back_template="$(t "waiting for %s role" __COUNT__)"
+    else back_template="$(t "waiting for %s roles" __COUNT__)"; fi
+    back_prefix="${back_template%%__COUNT__*}"; back_state="$back_prefix$n_run${back_template#*__COUNT__}"
+  fi
   cv_box_center "$BKX" $(( BKY + 2 )) "$BKW" "$K_TXT" "$back_state"
+  if (( n_run > 0 && ${#back_state} <= BKW - 6 )); then
+    cv_put $(( BKX + 3 + (BKW - 6 - ${#back_state}) / 2 + ${#back_prefix} )) $(( BKY + 2 )) "$C_BOLD$K_TXT" "$n_run"
+  fi
   # Advisor column, linked to the lead box, the roles and the final check.
   if [[ -n "$ADV" ]]; then
     AH=$(( BKY + 4 - MY ))
@@ -941,6 +957,9 @@ for r in "${roles[@]}"; do
     [[ "$RS_OC" == blocked ]] && mark="${C_YELLOW}■${C_RESET}"
     [[ "$RS_OC" == unknown ]] && mark="${C_DIM}?${C_RESET}"
     outcome_word="${RS_OC:-done}"; [[ "$RS_ST" == ok || "$RS_OC" == interrupted || "$RS_OC" == unknown ]] || outcome_word=failed
+    if [[ "$RS_OC" == unknown && "${LV_BRIDGE[RS_I]:-}" == codex-native ]]; then
+      ai_native_end_label "$RS_ST"; outcome_word="$AI_NATIVE_END"; mark="${C_DIM}·${C_RESET}"
+    fi
     if [[ "$outcome_word" == interrupted ]]; then state="${C_DIM}${C_RED}$(t "$outcome_word") · $(dur "$RS_DUR")${C_RESET}"
     else state="${C_DIM}$(t "$outcome_word") · $(dur "$RS_DUR")${C_RESET}"; fi
   else state="${C_DIM}$(t "planned")${C_RESET}"; fi

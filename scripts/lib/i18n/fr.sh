@@ -2254,6 +2254,9 @@ _t_fr() {
     'Could not open the orchestrator; watch is still running.') _T='Impossible d’ouvrir l’orchestrateur ; le suivi continue.' ;;
     'Orchestrator opened.') _T='Orchestrateur ouvert.' ;;
     'unknown') _T='inconnu' ;;
+    'response received') _T='réponse reçue' ;;
+    'end unconfirmed') _T='fin non confirmée' ;;
+    '%s in recap') _T='%s dans le récapitulatif' ;;
     'model unknown') _T='modèle inconnu' ;;
     'catching up') _T='rattrapage en cours' ;;
     'native usage unknown') _T='usage natif inconnu' ;;

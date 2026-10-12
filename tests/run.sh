@@ -2995,6 +2995,7 @@ section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"
 run "watch timer backpressure, key ordering and prompt quit under slow rendering" bash "$HERE/watch-backpressure.sh"
+run "native end semantics, useful journal activity and count-only emphasis" bash "$HERE/native-display.sh"
 SD="$WORK/structured"; mkdir -p "$SD"
 run "init with the default delegation format" "$LOOMY" init "$SD" --yes --no-clipboard
 file_has "brief: structured delegations by default" "$SD/.loomy/brief.md" "^delegation_format: structured$"

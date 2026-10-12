@@ -2,7 +2,7 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.16.2 — 2026-10-12
+## 0.16.2 — 2026-10-13
 
 ### Fixed
 - Native Codex agents are tracked alongside bridge delegations and native Claude agents in the live views. Local lifecycle evidence is scoped to the current project and parent session; repeated turns are distinct, and missing evidence is not treated as successful completion. No agent conversation or tool arguments are copied into the journal.
@@ -11,6 +11,8 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - The main Codex session's observed model and effort are recovered locally and refreshed from its contexts rather than displayed as a bare question mark or inferred from planned routing.
 - Watch opener tests simulate macOS only within their fixtures; separate Linux checks retain native platform behavior and do not attempt desktop app commands.
 - Slow watch rendering no longer replays stale timer records ahead of navigation. Pending changes are retained, keys keep their order and quit is handled before another expensive frame.
+- Native responses without a qualified result use neutral received/unconfirmed labels rather than ambiguous unknown states. The integrated tree journal retains task identity and the latest useful observed activity without inventing heartbeats.
+- Only the pending-role number is emphasized in the tree's return-to-lead box, with English/French alignment preserved.
 
 ### Clarified
 - Task phases are lead-maintained metadata, not inferred progress. A completed agent turn is not acceptance of its assignment or approval of a release.

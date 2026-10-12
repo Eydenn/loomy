@@ -89,3 +89,11 @@ Validate the native-agent candidate in an ordinary local Git clone with
 byte-identical source files; do not suppress the installation assertion.
 A future focused fix should recognize valid linked Git worktrees and retain
 the npm, bun, Homebrew and genuinely manual installation classifications.
+
+## Release Gate: Linux Orchestrator-Open Checks
+
+The first native-watch PR run on Ubuntu failed 72 existing watch/orchestrator-open
+checks involving desktop URL and terminal fallback expectations. The native
+collector regression check passed. Investigate platform-specific target resolution
+and fixtures before a maintenance release; do not treat a green Mac suite as a
+green Linux gate, or simply remove the failing assertions.

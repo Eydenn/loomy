@@ -23,9 +23,11 @@ sub meta {
         source=>($parent ? {subagent=>{thread_spawn=>{parent_thread_id=>id($parent),depth=>1,agent_role=>($n==4 ? 'default' : 'worker'),agent_nickname=>$name,agent_path=>"/root/$task"}}} : 'cli'),
         agent_role=>($n==4 ? 'default' : 'worker'),agent_nickname=>$name}};
 }
-if ($action eq 'seed') {
+if ($action eq 'seed' || $action eq 'compact-seed') {
     make_path($dir,"$root/.loomy/logs");
-    write_json("$root/.loomy/logs/events.jsonl",0,{ts=>ts(-60),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid});
+    my $owner={ts=>ts(-60),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid};
+    $owner->{session}=id(1) if $action eq 'compact-seed';
+    write_json("$root/.loomy/logs/events.jsonl",0,$owner);
     write_json(path(1),0,meta(1,0,$root,'',''),start(10,-50));
     for my $n (2..4) {
         my $task=(qw(unused unused consolidation enrichment review))[$n];
@@ -38,7 +40,13 @@ if ($action eq 'seed') {
     # Root exec/bridge metadata is never a native lead candidate.
     my $bridge=meta(7,0,$root,'',''); $bridge->{payload}{source}='exec'; write_json(path(7),0,$bridge);
     open my $state,'>',"$root/.loomy/state" or die $!; print $state "phase=done\n";
-    open my $brief,'>',"$root/.loomy/brief.md" or die $!; print $brief "# Brief\n\n## AI tools\n\n- Lead: Codex\n";
+    my $brief_text="# Brief\n\n## AI tools\n\n- Lead: Codex\n";
+    $brief_text="---\nai_mode: SOLO\nai_lead: codex\n---\n\n$brief_text" if $action eq 'compact-seed';
+    open my $brief,'>',"$root/.loomy/brief.md" or die $!; print $brief $brief_text;
+} elsif ($action eq 'compact') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
+} elsif ($action eq 'claude-later') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'claude',pid=>0+$pid,session=>id(8)});
 } elsif ($action eq 'finish') {
     write_json(path(2),1,event('task_complete',12,-20,last_agent_message=>"STATUS: done\nPRIVATE_FINAL"));
     write_json(path(3),1,event('turn_aborted',13,-20,reason=>'interrupted'));

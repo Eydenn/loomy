@@ -6,6 +6,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Fixed
 - Native Codex agents are tracked alongside bridge delegations and native Claude agents in the live views. Local lifecycle evidence is scoped to the current project and parent session; repeated turns are distinct, and missing evidence is not treated as successful completion. No agent conversation or tool arguments are copied into the journal.
+- Repeated starts for an unchanged live session after compaction retain the original native-agent ownership and visible task history.
 
 ### Clarified
 - Task phases are lead-maintained metadata, not inferred progress. A completed agent turn is not acceptance of its assignment or approval of a release.

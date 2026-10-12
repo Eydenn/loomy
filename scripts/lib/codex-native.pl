@@ -180,12 +180,27 @@ sub poll {
         my $pid=scalar_text($d->{pid}); next unless $pid =~ /^\d+$/ && $pid>1;
         if (($d->{event}//'') eq 'start') {
             my $key="$pid:".stamp($d->{ts});
+            if (identity($d->{session})) {
+                for my $candidate (sort { $s->{owners}{$a}{ts} cmp $s->{owners}{$b}{ts} } keys %{$s->{owners}//{}}) {
+                    my $o=$s->{owners}{$candidate};
+                    if (!$o->{ended} && $o->{pid}==$pid && $o->{session} eq identity($d->{session})) { $key=$candidate; last }
+                }
+            }
             $s->{owners}{$key}//={pid=>0+$pid,ts=>stamp($d->{ts}),session=>identity($d->{session})};
             my $prior=$s->{owner_leads}{$key};
             $s->{owners}{$key}{lead}=$prior->{lead} if $prior && $prior->{session} eq identity($d->{session});
         } elsif (($d->{event}//'') eq 'end') {
             for my $o (values %{$s->{owners}//{}}) { $o->{ended}=stamp($d->{ts}) if $o->{pid}==$pid && (!identity($d->{session}) || $o->{session} eq identity($d->{session})) }
         }
+    }
+    my %live_owner;
+    for my $key (sort { $s->{owners}{$a}{ts} cmp $s->{owners}{$b}{ts} } keys %{$s->{owners}//{}}) {
+        my $o=$s->{owners}{$key}; next if $o->{ended} || !$o->{session};
+        my $group="$o->{pid}:$o->{session}";
+        if (my $first=$live_owner{$group}) {
+            $s->{owners}{$first}{lead}||=$o->{lead};
+            delete $s->{owners}{$key};
+        } else { $live_owner{$group}=$key }
     }
     if (($jc->{offset}//0)<$js[7]) { save($lock,$s); return }
     discover($s,$sessions,$root,$now);

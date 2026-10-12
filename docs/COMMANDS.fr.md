@@ -157,6 +157,11 @@ et le coût Codex natif ne sont pas inventés. Voir l'[ADR-0007](adr/0007-native
 pour les limites. La phase reste la dernière information enregistrée par
 l'orchestrateur, pas un avancement déduit automatiquement.
 
+Si plusieurs sessions d'outils restent ouvertes, `LOOMY_WATCH_TOOL=codex loomy watch`
+(ou `claude`) choisit explicitement la session affichée. Ce filtre facultatif ne
+change ni l'orchestrateur actif ni le routage. Sans valeur valide, le suivi reprend
+l'orchestrateur actuel ; `o` efface le filtre lorsqu'il ouvre celui-ci.
+
 ### `loomy tree`
 
 ```bash

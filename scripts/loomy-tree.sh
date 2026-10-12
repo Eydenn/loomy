@@ -101,6 +101,7 @@ loomy_live_poll() {
     binmode STDOUT, ":encoding(UTF-8)";
 
     my ($file,$key,$off,$selection,$preferred)=@ARGV; open my $f,"<",$file or exit;
+    my $watch_tool=$ENV{LOOMY_WATCH_TOOL}//""; $preferred=$watch_tool if $watch_tool eq "codex" || $watch_tool eq "claude";
     my @st=stat($f); my $k="$st[0]:$st[1]";
     my (@rows,%sessions,%lead_context); my ($seq,$context)=(0,"");
     while (my $l=<$f>) {
@@ -110,7 +111,11 @@ loomy_live_poll() {
       ++$seq;
       if ($type eq "session") {
         my $id=($d->{tool}//"")."|".($d->{session} || "pid".($d->{pid}//0));
-        if (($d->{event}//"") eq "start") { $sessions{$id}={%$d,seq=>$seq}; $context=$id; $lead_context{$d->{tool}//""}=$id }
+        if (($d->{event}//"") eq "start") {
+          my $prior=$sessions{$id};
+          my $same_live=$prior && !$prior->{ended} && ($d->{session}//"") ne "" && ($prior->{pid}//0)==($d->{pid}//0);
+          $sessions{$id}={%$d,seq=>($same_live ? $prior->{seq} : $seq)}; $context=$id; $lead_context{$d->{tool}//""}=$id
+        }
         elsif ($sessions{$id}) { $sessions{$id}{ended}=1 }
       }
       my $owner=$context;

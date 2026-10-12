@@ -9,7 +9,7 @@ trap '[[ -z "$OWNER" ]] || { kill "$OWNER" 2>/dev/null || true; wait "$OWNER" 2>
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
-unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT
+unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"
 PASS=0
@@ -53,6 +53,29 @@ check 'native-only stats show unknown usage, not measured model/duration rows' p
 fixture bridge-stats
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-stats.sh" --root "$ROOT" >"$WORK/mixed-stats" 2>&1
 check 'mixed stats retain bridge aggregates and exclude native turns' perl -0777 -e 'my $s=<>; die unless $s=~/native usage unknown/ && $s=~/fixture-model/ && $s=~/10 s in total .*10 s on average/; die if $s=~/gpt-6-luna/;' "$WORK/mixed-stats"
+
+# Compaction repeats the live owner start; its original boundary still owns earlier child turns.
+ROOT="$WORK/compact-before"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/compact-before-codex"
+fixture compact-seed; fixture compact
+check 'compact before first native ingestion poll' poll
+check 'precompact child turns remain associated with the original owner' json_check 'my @s=grep {$_->{type} eq "delegation_start"} @native; die unless @s==3 && !grep {($_->{session}//"") ne "00000000-0000-4000-8000-000000000001"} @s;'
+check 'compact owner index keeps its initial live boundary' perl -MJSON::PP -e 'my ($index,$journal)=@ARGV; open my $i,"<",$index or die; my $s=decode_json(do{local $/;<$i>}); my @o=values %{$s->{owners}}; open my $j,"<",$journal or die; my @e=map {decode_json($_)} <$j>; my ($first)=grep {($_->{type}//"") eq "session" && ($_->{event}//"") eq "start"} @e; die unless @o==1 && $o[0]{ts} eq $first->{ts} && $o[0]{session} eq $first->{session};' "$ROOT/.loomy/logs/codex-native.idx" "$J"
+
+ROOT="$WORK/compact-active"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/compact-active-codex"
+fixture compact-seed; check 'initial active native ingestion' poll
+fixture compact; check 'compact after active native ingestion' poll
+check 'compact preserves active native rows without replay duplicates' json_check 'die unless (grep {$_->{type} eq "delegation_start"} @native)==3 && (grep {$_->{type} eq "delegation_activity"} @native)==6 && !grep {$_->{type} eq "delegation"} @native;'
+fixture claude-later
+AI_LEAD=claude LOOMY_WATCH_TOOL=codex AI_ROUTE_ENV=claude COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-codex" 2>&1
+check 'Codex watch filter wins over stale Claude route with both sessions open' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/; for(qw(consolidation enrichment review)){die unless $s=~/\b\Q$_\E\b/} die if $s=~/No roles running/;' "$WORK/compact-tree-codex"
+AI_LEAD=codex LOOMY_WATCH_TOOL=claude AI_ROUTE_ENV=codex COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-claude" 2>&1
+check 'Claude watch filter wins over stale Codex route' perl -0777 -e 'my $s=<>; die unless $s=~/No roles running/; die if $s=~/3 running|consolidation|enrichment|review/;' "$WORK/compact-tree-claude"
+env -u LOOMY_WATCH_TOOL -u AI_ROUTE_ENV AI_LEAD=codex COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-default" 2>&1
+check 'unset watch filter falls back to lead, not stale AI_ROUTE_ENV' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-default"
+env -u AI_ROUTE_ENV AI_LEAD=codex LOOMY_WATCH_TOOL=invalid COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-invalid" 2>&1
+check 'invalid watch filter falls back to lead' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-invalid"
+check 'app orchestrator fallback clears route and watch-only selector' grep -qF 'env -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL bash' "$REPO/scripts/loomy-start.sh"
+check 'terminal orchestrator fallback clears route and watch-only selector' grep -qF 'env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL LOOMY_START_IN=terminal bash' "$REPO/scripts/loomy-start.sh"
 
 # Journal generations carry only live turn snapshots; history remains deduplicated.
 ROOT="$WORK/rotation"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/rotation-codex"

@@ -71,9 +71,9 @@ loomy_open_orchestrator() {
   if [[ "$LOOMY_OPEN_TARGET" == app ]]; then
     # The current lead (an active relay's acting tool, else the brief's): never a stale AI_ROUTE_ENV inherited from a
     # tmux server or an older shell (loomy start --lead replaces it).
-    if env -u AI_ROUTE_ENV bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only </dev/null; then return 0; fi
+    if env -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only </dev/null; then return 0; fi
   fi
-  printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
+  printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
     tmux new-window -c "$root" "$command"
   elif [[ "$(uname -s)" == Darwin ]] && command -v osascript >/dev/null 2>&1; then

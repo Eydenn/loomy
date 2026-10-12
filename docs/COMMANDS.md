@@ -156,6 +156,11 @@ not successful assignments; native Codex usage/cost is not invented. See
 [ADR-0007](adr/0007-native-codex-observability.md) for evidence limits. Phase
 labels remain the lead's last recorded metadata, not inferred progress.
 
+When multiple tool sessions remain open, `LOOMY_WATCH_TOOL=codex loomy watch`
+(or `claude`) explicitly selects which tool's session to display. This optional
+filter does not switch the acting lead or modify routing. Unset or invalid values
+fall back to the current lead; `o` clears the filter when opening that lead.
+
 ### `loomy tree`
 
 ```bash

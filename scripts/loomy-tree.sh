@@ -58,7 +58,7 @@ loomy_native_accept() {
 
 # Bash 3.2 here-strings create pipe writers; split sanitized wire rows in-process instead.
 loomy_native_read() {
-  local __ns_line="$1" __ns_name __ns_value; shift
+  local __ns_line="$1" __ns_name __ns_value LC_ALL=C; shift
   while (( $# )); do
     __ns_name="$1"; shift
     if (( $# )) && [[ "$__ns_line" == *'|'* ]]; then
@@ -71,22 +71,39 @@ loomy_native_read() {
 # Index ownership only on deltas; timer frames never scan unrelated agents or recap turns.
 loomy_native_index() {
   [[ "${NS_INDEX_SEQ:--1}" != "$LV_SEQ" ]] || return 0
-  local i j key sid parent
+  local i j key sid parent slot owners i_owner LC_ALL=C
+  local state role task model effort start end duration outcome turn seen turnstate turns
   NS_AI_KEY=(); NS_AI_GROUP=(); NS_AI_PARENT=()
+  NS_AI_STATE=(); NS_AI_ROLE=(); NS_AI_TASK=(); NS_AI_MODEL=(); NS_AI_EFFORT=()
+  NS_AI_START=(); NS_AI_END=(); NS_AI_DURATION=(); NS_AI_OUTCOME=(); NS_AI_TURN=(); NS_AI_TURNSTATE=(); NS_AI_TURNS=()
   NS_CHILDREN=(); NS_AGENT_TURNS=(); NS_GROUP_AGENTS=(); NS_GROUP_ROOTS=()
   for (( i=0; i<${#NS_A[@]}; i++ )); do
-    loomy_native_read "${NS_A[i]}" _ _ key sid parent _ _
+    loomy_native_read "${NS_A[i]}" _ _ key sid parent state role task model effort start end duration outcome turn seen turnstate turns
     NS_AI_KEY[i]="$key"; NS_AI_GROUP[i]="$sid"; NS_AI_PARENT[i]="$parent"
+    NS_AI_STATE[i]="$state"; NS_AI_ROLE[i]="$role"; NS_AI_TASK[i]="$task"; NS_AI_MODEL[i]="$model"; NS_AI_EFFORT[i]="$effort"
+    NS_AI_START[i]="$start"; NS_AI_END[i]="$end"; NS_AI_DURATION[i]="$duration"; NS_AI_OUTCOME[i]="$outcome"
+    NS_AI_TURN[i]="$turn"; NS_AI_TURNSTATE[i]="$turnstate"; NS_AI_TURNS[i]="$turns"
     NS_CHILDREN[i]=""; NS_AGENT_TURNS[i]=""
+    slot="NS_OWNER_${key//[^a-zA-Z0-9]/_}"
+    local "$slot="
+  done
+  # Identifier buckets keep Bash 3.2 lookups cheap; verify full keys on collisions.
+  for (( i=0; i<${#NS_A[@]}; i++ )); do
+    slot="NS_OWNER_${NS_AI_KEY[i]//[^a-zA-Z0-9]/_}"
+    printf -v "$slot" '%s' "${!slot} $i"
   done
   for (( i=0; i<${#NS_A[@]}; i++ )); do
-    for (( j=0; j<${#NS_A[@]}; j++ )); do
-      [[ "${NS_AI_GROUP[j]}" != "${NS_AI_GROUP[i]}" || "${NS_AI_PARENT[j]}" != "${NS_AI_KEY[i]}" ]] || NS_CHILDREN[i]="${NS_CHILDREN[i]} $j"
+    slot="NS_OWNER_${NS_AI_PARENT[i]//[^a-zA-Z0-9]/_}"
+    owners="${!slot-}"
+    for j in $owners; do
+      [[ "${NS_AI_GROUP[j]}" != "${NS_AI_GROUP[i]}" || "${NS_AI_KEY[j]}" != "${NS_AI_PARENT[i]}" ]] || NS_CHILDREN[j]="${NS_CHILDREN[j]} $i"
     done
   done
   for (( j=0; j<${#NS_T[@]}; j++ )); do
     loomy_native_read "${NS_T[j]}" _ _ key sid parent _
-    for (( i=0; i<${#NS_A[@]}; i++ )); do
+    slot="NS_OWNER_${parent//[^a-zA-Z0-9]/_}"
+    owners="${!slot-}"
+    for i in $owners; do
       [[ "${NS_AI_GROUP[i]}" != "$sid" || "${NS_AI_KEY[i]}" != "$parent" ]] || NS_AGENT_TURNS[i]="${NS_AGENT_TURNS[i]} $j"
     done
   done
@@ -98,10 +115,12 @@ loomy_native_index() {
       NS_GROUP_AGENTS[j]="${NS_GROUP_AGENTS[j]} $i"
       parent="${NS_AI_PARENT[i]}"
       if [[ "$parent" != "$key" && -n "$parent" ]]; then
-        for (( sid=0; sid<${#NS_A[@]}; sid++ )); do
-          [[ "${NS_AI_GROUP[sid]}" != "$key" || "${NS_AI_KEY[sid]}" != "$parent" ]] || break
+        slot="NS_OWNER_${parent//[^a-zA-Z0-9]/_}"
+        owners="${!slot-}"; sid=-1
+        for i_owner in $owners; do
+          [[ "${NS_AI_GROUP[i_owner]}" != "$key" || "${NS_AI_KEY[i_owner]}" != "$parent" ]] || { sid=$i_owner; break; }
         done
-        (( sid == ${#NS_A[@]} )) || continue
+        (( sid < 0 )) || continue
       fi
       NS_GROUP_ROOTS[j]="${NS_GROUP_ROOTS[j]} $i"
     done
@@ -163,11 +182,14 @@ loomy_native_agent() {
   local wanted="$1" depth="$2" group="$3" row kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns indent="" i label age d tkey ta tstate tout tduration turnrow active=0 word idle_word ai="${4:-0}" child_index turn_index
   local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE=""
   (( depth < 32 )) || return 0
-  [[ "$NS_VISITED" != *"|$wanted|"* ]] || return 0
-  NS_VISITED="$NS_VISITED$wanted|"
+  [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
+  NS_VISITED_IDX[ai]=1
   row="${NS_A[ai]}"
   if [[ "$row" == "N|A|$wanted|"* ]]; then
-    loomy_native_read "$row" kind kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns
+    key="${NS_AI_KEY[ai]}"; state="${NS_AI_STATE[ai]}"; role="${NS_AI_ROLE[ai]}"; task="${NS_AI_TASK[ai]}"
+    model="${NS_AI_MODEL[ai]}"; effort="${NS_AI_EFFORT[ai]}"; start="${NS_AI_START[ai]}"; end="${NS_AI_END[ai]}"
+    duration="${NS_AI_DURATION[ai]}"; outcome="${NS_AI_OUTCOME[ai]}"; turn="${NS_AI_TURN[ai]}"
+    turnstate="${NS_AI_TURNSTATE[ai]}"; turns="${NS_AI_TURNS[ai]}"
     for (( i=0; i<depth; i++ )); do indent="$indent  "; done
     active=0; [[ "$state" != running && "$state" != waiting ]] || active=1
     label="${task:-${role:-agent} ${key: -8}}"
@@ -223,9 +245,7 @@ loomy_native_agent() {
 loomy_native_route() {
   local group="$1" row key sid model label models="|" text="" family ai gi="$2"
   for ai in ${NS_GROUP_AGENTS[gi]}; do
-    row="${NS_A[ai]}"
-    loomy_native_read "$row" _ _ key sid _ _ _ _ model _
-    [[ "$sid" == "$group" ]] || continue
+    key="${NS_AI_KEY[ai]}"; model="${NS_AI_MODEL[ai]}"
     family="${key%%:*}"; [[ -n "$model" ]] || tv model 'model unknown'
     [[ "$models" != *"|$family:$model|"* ]] || continue
     models="$models$family:$model|"; label="$family $model"; text="${text:+$text · }$label"
@@ -244,21 +264,21 @@ loomy_native_group() {
   tv state "$state"
   loomy_native_line '┏━ ' "$label" "${model:+ $model $effort}" "$state" '—'
   (( NS_MODE >= 3 )) || loomy_native_route "$key" "$gi"
-  NS_VISITED="|$key|"
+  NS_VISITED_IDX=()
   for ai in ${NS_GROUP_ROOTS[gi]}; do
     loomy_native_agent "${NS_AI_KEY[ai]}" 1 "$key" "$ai"
   done
   # Late or unresolved parent links remain visible, then move under their proven parent.
   for ai in ${NS_GROUP_AGENTS[gi]}; do
     aid="${NS_AI_KEY[ai]}"
-    [[ "$NS_VISITED" == *"|$aid|"* ]] || loomy_native_agent "$aid" 1 "$key" "$ai"
+    [[ "${NS_VISITED_IDX[ai]:-0}" == 1 ]] || loomy_native_agent "$aid" 1 "$key" "$ai"
   done
   (( NS_FINISHED == 0 || NS_MODE == 0 )) || { tv word '%s finished' "$NS_FINISHED"; loomy_live_line "  +$word"; }
   (( NS_MODE >= 3 )) || loomy_live_line '┗━'
 }
 
 loomy_native_render() {
-  local row kind key tool surface cwd presence state model effort seen evidence freshness i j agentrow hidden=0 count=0
+  local row kind key tool surface cwd presence state model effort seen evidence freshness i j hidden=0 count=0
   local order=() scores=() modes=() full=() active_counts=() detail=() ended_counts=() routes=() score aid sid parent turn start end duration outcome
   local word usage total=0 overhead=1 phase biggest saving best current_cost next_cost selected='*' candidates=() starts=() candidate budget=0 available summary=0 compact=0
   local NS_CAPTURE_LINES=0
@@ -299,20 +319,18 @@ loomy_native_render() {
     for (( i=0; i<${#order[@]}; i++ )); do
       loomy_native_read "${order[i]}" _ _ key _
       full[i]=0; active_counts[i]=0; detail[i]=0; ended_counts[i]=0; routes[i]=0; modes[i]=0
-      for agentrow in ${NS_A[@]+"${NS_A[@]}"}; do
-        [[ "$agentrow" == "N|A|"*"|$key|"* ]] || continue
-        loomy_native_read "$agentrow" _ _ aid sid parent state _ _ model _ start end duration outcome turn _ _
-        [[ "$sid" == "$key" ]] || continue
+      for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
+      local group_index=$j agent_index turn_index
+      for agent_index in ${NS_GROUP_AGENTS[group_index]}; do
+        aid="${NS_AI_KEY[agent_index]}"; state="${NS_AI_STATE[agent_index]}"
+        start="${NS_AI_START[agent_index]}"; turn="${NS_AI_TURN[agent_index]}"
         routes[i]=1; full[i]=$(( full[i] + 1 )); [[ -z "$turn" ]] || full[i]=$(( full[i] + 1 ))
         if [[ "$state" == running || "$state" == waiting ]]; then
           active_counts[i]=$(( active_counts[i] + 1 )); count=$(( count + 1 )); [[ -z "$turn" ]] || detail[i]=$(( detail[i] + 1 ))
-          # Newest starts win only when even one row per agent cannot fit.
-          score=${start:-0}; j=${#candidates[@]}
-          while (( j > 0 )) && (( score >= starts[j-1] )); do candidates[j]="${candidates[j-1]}"; starts[j]="${starts[j-1]}"; j=$(( j - 1 )); done
-          candidates[j]="$aid"; starts[j]="$score"
+          candidates+=("$aid"); starts+=("${start:-0}")
         else ended_counts[i]=$(( ended_counts[i] + 1 )); fi
-        for row in ${NS_T[@]+"${NS_T[@]}"}; do
-          [[ "$row" == "N|T|"*"|$key|$aid|"* ]] || continue
+        for turn_index in ${NS_AGENT_TURNS[agent_index]}; do
+          row="${NS_T[turn_index]}"
           loomy_native_read "$row" _ _ candidate _ sid _
           [[ "$sid" == "$aid" && "$candidate" != "$turn" ]] || continue
           full[i]=$(( full[i] + 1 ))
@@ -362,7 +380,19 @@ loomy_native_render() {
       compact=1; selected='|'; budget=$(( available - overhead - ${#order[@]} - 1 ))
       for (( i=0; i<${#order[@]}; i++ )); do modes[i]=3; (( ended_counts[i] == 0 )) || budget=$(( budget - 1 )); done
       (( budget >= 0 )) || budget=0
-      for (( i=0; i<${#candidates[@]} && i<budget; i++ )); do selected="$selected${candidates[i]}|"; done
+      # Sort only when rows must be omitted, retaining just the visible newest starts.
+      local newest=() newest_starts=()
+      if (( budget > 0 )); then
+        for (( i=0; i<${#candidates[@]}; i++ )); do
+          score=${starts[i]}; j=${#newest[@]}; (( j <= budget )) || j=$budget
+          while (( j > 0 )) && (( score >= newest_starts[j-1] )); do
+            (( j >= budget )) || { newest[j]="${newest[j-1]}"; newest_starts[j]="${newest_starts[j-1]}"; }
+            j=$(( j - 1 ))
+          done
+          (( j >= budget )) || { newest[j]="${candidates[i]}"; newest_starts[j]="$score"; }
+        done
+        for candidate in ${newest[@]+"${newest[@]}"}; do selected="$selected$candidate|"; done
+      fi
     fi
     NS_LAYOUT_KEY="$layout_key"; NS_LAYOUT_ORDER=(${order[@]+"${order[@]}"})
     NS_LAYOUT_MODES=(${modes[@]+"${modes[@]}"}); NS_LAYOUT_ENDED=(${ended_counts[@]+"${ended_counts[@]}"})

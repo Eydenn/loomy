@@ -88,11 +88,19 @@ before/after the native cache (milliseconds, warm frames):
 | Paint | 14 / 14 | 15 / 14 |
 
 The frame fixture now budgets states, rendering, viewport and painting together
-under 150 ms (five trials each: maximum 63 ms tree, 85 ms list, including timing
+under 150 ms (five trials each: maximum 71 ms tree, 89 ms list, including timing
 helper overhead). Cached and rebuilt frames are compared byte-for-byte across EN/FR,
 tree/list, terminal sizes, duration boundaries and identity updates; warm timers
 assert zero wire decodes and survive a PATH without external executables.
-Changed native layouts still rebuild (measured 304/350 ms for tree/list). These
+Changed native layouts now index ownership through collision-checked Bash 3.2
+identifier buckets and reuse decoded agent columns for hierarchy, routing and rows.
+Newest-start selection runs only when active rows cannot fit, with its sorted list
+bounded to the visible budget. On the same 50,000-event fixture, five complete changed
+frames (states, rebuild, viewport and paint) measured maxima of 152.415 ms tree and
+182.912 ms list, below the new 200 ms changed-frame budget (previous rebuild stage:
+304/350 ms). A comparison against the batch-5 renderer produced byte-identical output
+for 48 EN/FR, tree/list, width and height combinations; ownership tests cover bucket
+collisions, unrelated groups and UTF-8 labels. These
 are fixture results; S5 remains partial because hook-only diagram, changed status
 and journal views still invoke the legacy full scripts (`loomy-status.sh` watch
 branches), including history parsing and sourcing. Preserving their output requires

@@ -46,6 +46,39 @@ for view in tree list; do
   done
 done
 
+# Projection changes invalidate ownership, layout and row inputs together.
+for view in tree list; do
+  LOOMY_WATCH_VIEW=$view
+  for trial in 1 2 3 4 5; do
+    s5_id=""; s5_group=""; s5_parent=""; s5_state=""; s5_role=""; s5_tail=""
+    loomy_native_read "${NS_A[0]}" s5_n s5_kind s5_id s5_group s5_parent s5_state s5_role s5_task s5_tail
+    loomy_native_accept "N|A|$s5_id|$s5_group|$s5_parent|$s5_state|$s5_role|Changed title $trial|$s5_tail"
+    start="$(perl -MTime::HiRes=time -e 'print time')"
+    LV_FRAME=""; loomy_live_states; loomy_native_render
+    loomy_live_viewport "$LV_FRAME" 170 0
+    UI_HDR_TITLE="$LV_HEADER"; UI_FTR_KEYS="q quit"; UI_FTR_NOTE=""; UI_BODY_TOP=0
+    _ui_page_draw 0 2>"$WORK/render-screen"
+    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=200)' "$start")"; then printf 'FAIL changed %s render (%s ms >=200)\n' "$view" "$elapsed"; exit 1; fi
+    printf 'PASS changed %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
+    cached="$LV_FRAME"; NS_DRAW_KEY=""; LV_FRAME=""; loomy_native_render
+    [[ "$cached" == "$LV_FRAME" ]] || { printf 'FAIL changed %s frame differs from rebuild\n' "$view"; exit 1; }
+  done
+done
+
+# Sanitizing bucket names must not merge distinct identities or cross group ownership.
+loomy_live_init
+loomy_native_accept 'N|native|1'
+loomy_native_accept 'N|G|claude:g|claude|app|.|live|running|||1000|source lease|'
+loomy_native_accept 'N|G|claude:h|claude|app|.|live|running|||1000|source lease|'
+loomy_native_accept 'N|A|claude:g:a.b|claude:g|claude:g|running|developer|日本語 title|||1000|||unknown||1000|running|0'
+loomy_native_accept 'N|A|claude:g:a-b|claude:g|claude:g|running|developer|Other title|||1000|||unknown||1000|running|0'
+loomy_native_accept 'N|A|claude:g:child|claude:g|claude:g:a-b|running|executor|Child|||1000|||unknown||1000|running|0'
+loomy_native_accept 'N|A|claude:h:orphan|claude:h|claude:g:a.b|running|executor|Orphan|||1000|||unknown||1000|running|0'
+loomy_native_accept 'N|T|old-turn|claude:g|claude:g:a.b|done|unknown|900|999|99||developer'
+loomy_native_index
+[[ "${NS_CHILDREN[0]}" == '' && "${NS_CHILDREN[1]}" == ' 2' && "${NS_AGENT_TURNS[0]}" == ' 0' && "${NS_AGENT_TURNS[1]}" == '' && "${NS_GROUP_ROOTS[1]}" == ' 3' && "${NS_AI_TASK[0]}" == '日本語 title' ]] || { printf 'FAIL indexed identity collision/group/UTF-8\n'; exit 1; }
+printf 'PASS ownership buckets preserve colliding keys, groups and UTF-8\n'
+
 # Timer-only frames must neither decode unchanged wire rows nor fork helpers.
 read_def="$(declare -f loomy_native_read)"
 eval "${read_def/loomy_native_read/s5_native_read}"

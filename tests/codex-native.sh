@@ -87,9 +87,9 @@ check 'Codex watch filter wins over stale Claude route with both sessions open' 
 AI_LEAD=codex LOOMY_WATCH_TOOL=claude AI_ROUTE_ENV=codex COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-claude" 2>&1
 check 'Claude watch filter wins over stale Codex route' perl -0777 -e 'my $s=<>; die unless $s=~/No roles running/; die if $s=~/3 running|consolidation|enrichment|review/;' "$WORK/compact-tree-claude"
 env -u LOOMY_WATCH_TOOL -u AI_ROUTE_ENV AI_LEAD=codex COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-default" 2>&1
-check 'unset watch filter falls back to lead, not stale AI_ROUTE_ENV' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-default"
+check 'unset watch filter shows both tool groups despite stale AI_ROUTE_ENV' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-default"
 env -u AI_ROUTE_ENV AI_LEAD=codex LOOMY_WATCH_TOOL=invalid COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/compact-tree-invalid" 2>&1
-check 'invalid watch filter falls back to lead' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-invalid"
+check 'invalid watch filter shows all tool groups' perl -0777 -e 'my $s=<>; die unless $s=~/3 running/;' "$WORK/compact-tree-invalid"
 check 'app orchestrator fallback clears route and watch-only selector' grep -qF 'env -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL bash' "$REPO/scripts/loomy-start.sh"
 check 'terminal orchestrator fallback clears route and watch-only selector' grep -qF 'env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL LOOMY_START_IN=terminal bash' "$REPO/scripts/loomy-start.sh"
 
@@ -172,7 +172,7 @@ fixture seed; fixture resume; fixture tomorrow; poll
 check 'resume recovery and tomorrow date directory' count_start
 ROOT="$WORK/ambiguous"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/ambiguous-codex"
 fixture seed; fixture ambiguous; poll
-check 'ambiguous lead ownership is not guessed' json_check 'die if @native;'
+check 'ambiguous launcher pairing never gates discovery or invents an owner' json_check 'my @s=grep {$_->{type} eq "delegation_start"} @native; die unless @s==3; die if grep {($_->{owner_pid}//0)>0} @s;'
 
 ROOT="$WORK/private-labels"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/private-codex"
 fixture seed

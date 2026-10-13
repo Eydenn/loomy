@@ -2264,5 +2264,6 @@ _t_fr() {
     'waiting since %s') _T='en attente depuis %s' ;;
     'last turn %s') _T='dernier tour %s' ;;
     '%s turns') _T='%s tours' ;;
+    '%s hidden groups') _T='%s groupes masqués' ;;
   esac
 }

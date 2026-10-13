@@ -171,39 +171,66 @@ watch_notify() {
 # Foreground stty avoids the SIGTTIN/stty race of a background Bash read -s.
 loomy_watch_feed() {
   exec perl -MIO::Select -MTime::HiRes=time,stat -e '
-    my ($root,$cfg,$terminal,$native,$sessions)=@ARGV; $|=1;
-    require $native;
-    my $native_tick=0;
+    my ($root,$cfg,$terminal,$native,$sessions,$reducer)=@ARGV; $|=1;
+    require $native; require $reducer;
+    my $live=Loomy::LiveState->new;
     my $tty; open $tty,"<","/dev/tty" if $terminal;
     my $select=IO::Select->new; $select->add($tty) if $tty;
-    my @files=("$root/.loomy/logs/events.jsonl",map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts));
+    my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts);
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
-    my ($last,$buf)=("","");
+    my ($last,$buf,$last_tick,$maintained)=("","",0,0);
+    my $state;
     while (1) {
       my $key="";
-      if ($tty && $select->can_read(0.25)) { my $n=sysread($tty,my $input,32); last unless defined $n; $buf.=$input if $n }
-      elsif (!$tty) { select undef,undef,undef,0.25 }
+      if ($tty && $select->can_read(0.20)) { my $n=sysread($tty,my $input,32); last unless defined $n; $buf.=$input if $n }
+      elsif (!$tty) { select undef,undef,undef,0.20 }
       if ($buf =~ s/^\e\[A//) { $key="up" }
       elsif ($buf =~ s/^\e\[B//) { $key="down" }
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
-      if (int(time)>$native_tick) { eval { Loomy::CodexNative::poll($root,$sessions) }; $native_tick=int(time) }
-      my $sig="";
-      for my $f (@files) {
-        my @s=stat($f); $sig.=join(":",@s[0,1,7,9]).";";
-        # Small state/config files may be rewritten with the same size within one second.
-        if ($f !~ /events\.jsonl$/ && open my $h,"<",$f) { local $/; $sig.=<$h>//""; close $h }
+      my $wall=time; my $now=int($ENV{LOOMY_NATIVE_NOW}//$wall);
+      if (Loomy::CodexNative::watch_changed($root,$sessions,$now) || int($wall)!=$maintained) {
+        $state=eval { Loomy::CodexNative::poll($root,$sessions) }; $maintained=int($wall);
       }
-      if ($tty) { my $size=""; ioctl($tty,$^O eq "darwin" ? 0x40087468 : 0x5413,$size); $sig.=$size }
-      my $now=int(time); my @t=localtime($now); my $clock=sprintf "%02d:%02d:%02d",@t[2,1,0];
-      print join("|",$now,($sig ne $last ? 1 : 0),$key,$clock),"\n"; $last=$sig;
+      $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
+      my @deltas=$live->projections($now);
+      my $sig="";
+      for my $f (@files) { my @s=stat($f); $sig.=join(":",@s ? @s[0,1,7,9] : "-").";" }
+      my ($rows,$cols)=(0,0);
+      if ($tty) {
+        my $size=""; ioctl($tty,$^O eq "darwin" ? 0x40087468 : 0x5413,$size);
+        ($rows,$cols)=unpack("SS",$size) if length($size)>=4; $sig.=$size;
+      }
+      my @t=localtime($now); my $clock=sprintf "%02d:%02d:%02d",@t[2,1,0];
+      my $dirty=$sig ne $last ? 1 : 0;
+      # Send complete batches only on changes, input or a clock tick, never five idle frames/s.
+      if (@deltas || $dirty || $key ne "" || $now!=$last_tick) {
+        print join("",map { "$_\n" } @deltas),join("|",$now,$dirty,$key,$clock,$rows,$cols),"\n";
+        $last_tick=$now;
+      }
+      $last=$sig;
     }
-  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions"
+  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions" "$AI_LIVE_STATE_LIB"
 }
 
 # A slow frame must not queue old clocks ahead of input. Read no further than the first key.
 loomy_watch_coalesce() {
+  if [[ "${LOOMY_WATCH_INLINE:-0}" == 1 ]]; then
+    printf '%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "${watch_rows:-0}" "${watch_cols:-0}" >&9
+    local feed_line
+    while IFS= read -r feed_line <&10; do
+      if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
+      loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
+      break
+    done
+    return 0
+  fi
   perl -MIO::Select -e '
-    my ($now,$dirty,$key,$clock)=@ARGV;
+    $|=1; my $server=$ENV{LOOMY_WATCH_SERVER};
+    my $requests; open $requests,"<&",9 or die $! if $server;
+    while (1) {
+    my @args=@ARGV;
+    if ($server) { my $request=<$requests>; last unless defined $request; chomp $request; @args=split /\|/,$request,-1 }
+    my ($now,$dirty,$key,$clock,$rows,$cols)=@args; my @deltas;
     if ($key eq "") {
       open my $feed,"<&",8 or die "watch feed unavailable: $!";
       my $select=IO::Select->new($feed);
@@ -211,42 +238,56 @@ loomy_watch_coalesce() {
         my $line=""; my $n;
         while (($n=sysread($feed,my $char,1)) && $n==1) { $line.=$char; last if $char eq "\n" }
         last unless $line =~ /\n$/;
-        chomp $line; my @row=split /\|/,$line,-1;
-        next unless @row==4 && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
-        ($now,$key,$clock)=@row[0,2,3]; $dirty=($dirty || $row[1]) ? 1 : 0;
+        chomp $line;
+        if ($line =~ /^N\|/) { push @deltas,$line; next }
+        my @row=split /\|/,$line,-1;
+        next unless (@row==4 || @row==6) && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
+        ($now,$key,$clock,$rows,$cols)=@row[0,2,3,4,5]; $dirty=($dirty || $row[1]) ? 1 : 0;
       }
     }
-    print join("|",$now,$dirty,$key,$clock),"\n";
-  ' "$1" "$2" "$3" "$4"
+    print "$_\n" for @deltas;
+    print join("|",$now,$dirty,$key,$clock,($server ? ($rows//0,$cols//0) : ())),"\n";
+    last unless $server;
+    }
+  ' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${watch_rows:-0}" "${watch_cols:-0}"
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
 watch_keys() {
-  local keys
-  keys="[o] $(t "orchestrator")"
-  if [[ "$view" == list ]]; then keys="$keys · [a] $(t "status")"
-  else keys="$keys · [a] $(t "live list")"; fi
-  if [[ "$view" == tree ]]; then keys="$keys · [t] $(t "status") · [v] $( [[ "$tree_layout" == list ]] && t "diagram" || t "list")"
-  else keys="$keys · [t] $(t "tree")"; fi
+  local word
+  tv word orchestrator; WATCH_KEYS="[o] $word"
+  if [[ "$view" == list ]]; then tv word status; else tv word 'live list'; fi
+  WATCH_KEYS="$WATCH_KEYS · [a] $word"
+  if [[ "$view" == tree ]]; then
+    tv word status; WATCH_KEYS="$WATCH_KEYS · [t] $word"
+    if [[ "$tree_layout" == list ]]; then tv word diagram; else tv word list; fi
+    WATCH_KEYS="$WATCH_KEYS · [v] $word"
+  else tv word tree; WATCH_KEYS="$WATCH_KEYS · [t] $word"; fi
   if [[ "$view" == list ]]; then
-    keys="$keys · [v] $( [[ "$LV_GROUP" == model ]] && t "group by request" || t "group by model")"
+    if [[ "$LV_GROUP" == model ]]; then tv word 'group by request'; else tv word 'group by model'; fi
+    WATCH_KEYS="$WATCH_KEYS · [v] $word"
   elif [[ "$view" == status ]]; then
-    keys="$keys · [c] $( [[ "$size" == --compact ]] && t "full view" || t "compact view")"
+    if [[ "$size" == --compact ]]; then tv word 'full view'; else tv word 'compact view'; fi
+    WATCH_KEYS="$WATCH_KEYS · [c] $word"
   fi
-  keys="$keys · [l] $( [[ "$view" == log ]] && t "status" || t "log")"
-  [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && keys="$keys · [s] $(t "session")"
-  printf '%s · [q] %s' "$keys" "$(t "quit")"
+  if [[ "$view" == log ]]; then tv word status; else tv word log; fi
+  WATCH_KEYS="$WATCH_KEYS · [l] $word"
+  if [[ -z "$UNTIL" ]] && (( ! IN_PANE )); then tv word session; WATCH_KEYS="$WATCH_KEYS · [s] $word"; fi
+  tv word quit; WATCH_KEYS="$WATCH_KEYS · [q] $word"
 }
 
 ai_codex_native_poll "$ROOT"
 if (( WATCH )); then
-  ui_screen_begin
-  KEY_READER=""; WATCH_STTY=""
+  # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
+  LOOMY_NO_ANIM=1 ui_screen_begin
+  KEY_READER=""; COALESCER=""; WATCH_PIPE=""; WATCH_STTY=""
   watch_cleanup() {
     # Process substitutions inherit EXIT on Bash 3.2; only the watch owns the terminal.
     (( BASH_SUBSHELL == 0 )) || return 0
     [[ -z "$KEY_READER" ]] || { kill "$KEY_READER" 2>/dev/null || true; wait "$KEY_READER" 2>/dev/null || true; }
-    exec 8<&-
+    [[ -z "$COALESCER" ]] || { kill "$COALESCER" 2>/dev/null || true; wait "$COALESCER" 2>/dev/null || true; }
+    exec 8<&- 9<&- 10<&-
+    [[ -z "$WATCH_PIPE" ]] || { rm -f "$WATCH_PIPE/request"; rmdir "$WATCH_PIPE"; }
     UI_PAGE_L=(); _ui_restore
     [[ -z "$WATCH_STTY" ]] || stty "$WATCH_STTY" 2>/dev/null || true
   }
@@ -260,27 +301,66 @@ if (( WATCH )); then
   fi
   exec 8< <(loomy_watch_feed "$terminal")
   KEY_READER=$!
+  WATCH_PIPE="$(mktemp -d "${TMPDIR:-/tmp}/loomy-watch-feed.XXXXXX")"
+  mkfifo "$WATCH_PIPE/request"
+  exec 9<>"$WATCH_PIPE/request"
+  exec 10< <(LOOMY_WATCH_SERVER=1 loomy_watch_coalesce)
+  COALESCER=$!
   NAME_W="$(brief_get name 2>/dev/null || true)"; NAME_W="${NAME_W:-$(basename "$ROOT")}"
   J="$(ai_journal_file "$ROOT")"
   # shellcheck source=loomy-tree.sh
   source "$SCRIPT_DIR/loomy-tree.sh" --library
   loomy_live_init
   _ui_term_size
+  # The sampler already owns TIOCGWINSZ; reuse it even inside the UI drawing helpers.
+  watch_rows=$UI_ROWS; watch_cols=$UI_COLS
+  _ui_term_size() {
+    UI_ROWS=${watch_rows:-0}; UI_COLS=${watch_cols:-0}
+    (( UI_ROWS > 0 )) || UI_ROWS=${LINES:-24}; (( UI_ROWS > 0 )) || UI_ROWS=24
+    (( UI_COLS > 0 )) || UI_COLS=${COLUMNS:-80}; (( UI_COLS > 0 )) || UI_COLS=80
+    [[ "$UI_ROWS" =~ ^[0-9]+$ ]] || UI_ROWS=24
+    [[ "$UI_COLS" =~ ^[0-9]+$ ]] || UI_COLS=80
+    UI_W=$(( UI_COLS - 2 )); (( UI_W > 78 )) && UI_W=78; (( UI_W < 40 )) && UI_W=40
+    return 0
+  }
+  # Footer/logo layout is stable between key/size/note changes; only the title has a clock.
+  _watch_chrome_def="$(declare -f _ui_chrome)"
+  eval "${_watch_chrome_def/_ui_chrome/loomy_watch_chrome_build}"
+  watch_chrome_sig=""; watch_chrome_alt=""; watch_footer_alt=()
+  _ui_chrome() {
+    local sig="$UI_ROWS|$UI_COLS|$UI_FTR_KEYS|$UI_FTR_NOTE"
+    if [[ "$sig" != "$watch_chrome_sig" ]]; then
+      local saved_footer=(${UI_FOOTER_LINES[@]+"${UI_FOOTER_LINES[@]}"}) saved_sig="$watch_chrome_sig"
+      if [[ "$sig" == "$watch_chrome_alt" ]]; then
+        UI_FOOTER_LINES=("${watch_footer_alt[@]}")
+        UI_FOOTER="${UI_FOOTER_LINES[$(( ${#UI_FOOTER_LINES[@]} - 1 ))]}"
+        UI_CHROME_H=$(( ${#UI_HDR_LINES[@]} + ${#UI_FOOTER_LINES[@]} ))
+      else loomy_watch_chrome_build; fi
+      watch_footer_alt=(${saved_footer[@]+"${saved_footer[@]}"}); watch_chrome_alt="$saved_sig"; watch_chrome_sig="$sig"
+    fi
+    UI_HDR_LINES[$(( ${#UI_HDR_LINES[@]} - 1 ))]="${C_RAIL}┌${C_RESET}  ${C_TITLE}${UI_HDR_TITLE:-loomy}${C_RESET}${UI_HDR_SUB:+  ${C_DIM}${UI_HDR_SUB}${C_RESET}}"
+  }
   watch_pref="$(loomy_config_get watch_view tree)"
-  state_tick=0; tick=0; wtop=0; view="tree"; tree_mode=auto; tree_layout=list; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; last_frame=""; force_frame=1
+  native_dirty=0; state_tick=0; tick=0; wtop=0; view="tree"; tree_mode=auto; tree_layout=list; first=1; hl_phase=0; hl_deleg_until=0; hl_deleg_n=0; last_frame=""; force_frame=1
   tree_mode="${LOOMY_TREE:-$(loomy_config_get tree_view auto)}"
   if [[ "$watch_pref" == list || "$COMPACT" == 1 ]] || (( IN_PANE )); then view=list; fi
   watch_note=""; note_until=0
   p_relay=0; p_phase=""; p_done=0; p_err=0; p_sess=""; q_next=0; first_q=1
+  scroll_word=""
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
-  while IFS='|' read -r now dirty key LV_CLOCK <&8; do
-    IFS='|' read -r now dirty key LV_CLOCK <<<"$(loomy_watch_coalesce "$now" "$dirty" "$key" "$LV_CLOCK")"
+  while IFS= read -r feed_line <&8; do
+    if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
+    loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
+    LOOMY_WATCH_INLINE=1 loomy_watch_coalesce "$now" "$dirty" "$key" "$LV_CLOCK"
+    config_dirty=$dirty
+    if (( native_dirty )); then dirty=1; native_dirty=0; fi
     case "$key" in q|Q) break ;; esac
     # ---- what changed since the previous frame
     LV_NOW="$now"
     if [[ -n "$watch_note" ]] && (( now >= note_until )); then watch_note=""; force_frame=1; fi
-    if (( dirty )); then loomy_live_metadata; loomy_live_poll "$J"; fi
+    if (( config_dirty || ! LV_META_READY )); then loomy_live_metadata; fi
+    if (( dirty )); then (( NS_ENABLED )) || loomy_live_poll "$J"; fi
     old_active=$LV_ACTIVE; old_finished=${#LV_FINISHED[@]}
     if (( dirty || now != state_tick )); then loomy_live_states; state_tick=$now; fi
     [[ "$old_active:${old_finished}" == "$LV_ACTIVE:${#LV_FINISHED[@]}" ]] || force_frame=1
@@ -324,20 +404,29 @@ if (( WATCH )); then
       first=0; p_relay=$relay; p_phase="$phase"; p_done=$n_done; p_err=$n_err; p_sess="$sess"
     fi
     # ---- image
-    timer=""; (( ${#LV_RUNNING[@]} == 0 )) || timer="$now"
+    timer=""; (( ${#LV_RUNNING[@]} == 0 && ! LV_ACTIVE )) || timer="$now"
     stamp="$timer:$LV_SEQ:$view:$phase:$COMPACT:$LV_GROUP:$tree_mode"
     if [[ "$stamp" != "$last_frame" ]] || (( force_frame || dirty )); then
       _ui_term_size; size="--full"
       if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
       tree_layout=list
       if [[ "$tree_mode" != list ]] && (( UI_COLS >= 124 )); then tree_layout=diagram; fi
-      keys="$(watch_keys)"
+      watch_keys; keys="$WATCH_KEYS"
       hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
       hl_p=0; (( now < hl_phase )) && hl_p=1
+      # Reserve the actual banner/footer before deciding how much hierarchy fits.
+      loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="$watch_note"; _ui_chrome
+      watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
-      if [[ "$view" == list ]]; then
-        frame="$(LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
+      native_frame=0
+      if (( NS_ENABLED )) && [[ "$view" == list || "$view" == tree ]]; then
+        LV_FRAME=""
+        LOOMY_WATCH_CAPTURE=1 LOOMY_WATCH_BODY_HEIGHT=$watch_body_height LOOMY_WATCH_PIN=1 LOOMY_WATCH_VIEW=$view LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_native_render
+        frame="${LV_FRAME%$'\n'}"; native_frame=1
+      elif [[ "$view" == list ]]; then
+        frame="$(LOOMY_WATCH_BODY_HEIGHT=$watch_body_height LOOMY_WATCH_PIN=1 LOOMY_WATCH_VIEW=list LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
       elif [[ "$view" == tree ]]; then
         frame="$(LOOMY_TREE=$tree_mode LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
       else
@@ -347,21 +436,22 @@ if (( WATCH )); then
       fi
       # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
       # even in a terminal that ignores turning off automatic wrap.
-      frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"
-      UI_PAGE_L=()
-      while IFS= read -r line; do UI_PAGE_L[${#UI_PAGE_L[@]}]="$line"; done <<<"$frame"
+      if (( ! native_frame )); then frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"; fi
+      loomy_live_viewport "$frame" "$watch_body_height" "$wtop"
       if [[ "$UI_SCREEN" == "1" ]]; then
         # Keep the banner/logo; redraw its clock only with a meaningful frame.
         loomy_live_header
-        LV_HEADER="$(printf '%s\n' "$LV_HEADER" | ui_clip "$(( UI_COLS - 4 ))")"
+        loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
         UI_FTR_KEYS="$keys"; UI_FTR_NOTE="$watch_note"
         _ui_term_size; _ui_chrome
-        (( ${#UI_PAGE_L[@]} > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $(t "scroll") · $keys"
+        (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $scroll_word · $keys"
         UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
-        ui_banner "$LV_HEADER" ""; wtop=$UI_BODY_START
+        if (( LV_PINNED )); then wtop=$LV_SCROLL_TOP; UI_BODY_TOP=0; fi
+        ui_banner "$LV_HEADER" ""
+        (( LV_PINNED )) || wtop=$UI_BODY_START
       else
-        printf '%s\n' "$frame" >&2
+        printf '%s\n' "${frame//$'\036loomy-recap'/}" >&2
       fi
     fi
     case "$key" in up) wtop=$(( wtop - 1 )) ;; down) wtop=$(( wtop + 1 )) ;; esac
@@ -587,6 +677,9 @@ if [[ -s "$JOURNAL" ]]; then
     # shellcheck source=loomy-tree.sh
     source "$SCRIPT_DIR/loomy-tree.sh" --library
     loomy_live_init; loomy_live_poll "$JOURNAL"; LV_NOW="$now_s"; loomy_live_states
+    if (( NS_ENABLED )); then
+      LOOMY_NO_HEADER=1 loomy_native_render
+    fi
     LV_WIDTH=$(( UI_COLS - 8 )); LV_ROLE_WIDTH=12
     native_seen="|"
     for (( ni=${#LV_ID[@]}-1; ni>=0; ni-- )); do

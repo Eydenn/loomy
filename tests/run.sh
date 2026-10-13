@@ -353,6 +353,10 @@ watch_linux_opener_tests() {
 watch_terminal_tests() {
   watch_linux_opener_tests
   section "Watch terminal"
+  if [[ "$NATIVE_PTY" == 0 ]]; then
+    printf '  ○ watch PTY matrix skipped (LOOMY_TEST_NATIVE_PTY=0); run on the Mac\n'
+    return
+  fi
   local wt="$WORK/watch-terminal" nowz
   mkdir -p "$wt/project/.loomy/logs" "$wt/config/loomy" "$wt/bin" "$wt/apps/Codex.app/Contents/Resources"
   printf -- '---\nname: Watch regression\nai_mode: ORCHESTRATED\nai_lead: codex\nbudget: equilibre\n---\n' >"$wt/project/.loomy/brief.md"
@@ -1122,7 +1126,7 @@ native_lifecycle_tests() {
   ' "$np" "$nc" "$$"
   run "native: initial ingestion" env CODEX_HOME="$nc" perl "$REPO/scripts/lib/codex-native.pl" "$np" "$nc/sessions"
   run "native: running agent box" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
-  has "native: spinner has running state and elapsed time" 'running [0-9]+:[0-9]{2}'
+  has "native: spinner has running state and elapsed time" 'running · [0-9]+:[0-9]{2}'
   if grep -qE 'opus-5-5|sonnet-5-5|haiku-5-5' "$OUT"; then ko "native: Codex-only routing leaks Claude"; else ok "native: Codex-only routing"; fi
   run "native: finish source without turn_id" perl -MJSON::PP -e '
     my ($r,$h)=@ARGV; open my $t,"<","$r/times" or die; chomp(my $ts=<$t>); my ($p)=glob "$h/sessions/*/*/*/rollout-child.jsonl"; open my $f,">>",$p or die; print $f encode_json({type=>"event_msg",timestamp=>"$ts",payload=>{type=>"task_complete"}}),"\n";
@@ -1160,7 +1164,9 @@ native_lifecycle_tests() {
   run "native: closed agent box counts its two turns" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
   has "native: agent done with total turns" '✓ done · 2 turns'
   run "native: no native journal row lacks a lifecycle word" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$np/.loomy/logs/events.jsonl"
-  if grep -qE 'response received|end unconfirmed|\|unknown\|' "$OUT"; then ko "native: journal lacks state"; else ok "native: journal rows have state"; fi
+  # S1 records metadata-only sessions as unknown without inventing lead activity.
+  if grep -qE 'response received|end unconfirmed|^[^|]*\|[^|]*\|\|' "$OUT" || grep -vE '^[^|]*\|session\|' "$OUT" | grep -qF '|unknown|'; then ko "native: journal lacks state"; else ok "native: journal rows have state"; fi
+  has "native: metadata-only session explicitly retains unknown state" '\|session\|unknown\|codex cli'
   has "native: turn rows have done state" '\|worker\|done\|'
   run "native: observed counts follow Luna model tier for both turns" bash -c '
     source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/loomy-tree.sh" --library
@@ -1187,15 +1193,15 @@ native_lifecycle_tests() {
   run "native: failed second turn fixture" perl -MJSON::PP -i -pe 'my $d=decode_json($_); if ($d->{type} eq "delegation" && ($d->{turn_id}//"") eq "turn2") {$d->{status}="error"; $d->{outcome}="failed"} $_=encode_json($d)."\n"' "$base/native-abort/.loomy/logs/events.jsonl"
   run "native: failed turn has explicit failure state" env CODEX_HOME="$base/no-source" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$base/native-abort"
   has "native: failure glyph and state word" '✗ failed'
-  run "native: ended owner fixture closes an idle two-turn agent" perl -MJSON::PP -MFile::Path=make_path -e '
+  run "native: ended owner fixture closes an idle two-turn agent" perl -MJSON::PP -MPOSIX -MFile::Path=make_path -e '
     my ($r,$dest)=@ARGV; make_path("$dest/.loomy/logs"); open my $f,"<","$r/.loomy/logs/events.jsonl" or die; open my $o,">","$dest/.loomy/logs/events.jsonl" or die;
     my $owner; while (<$f>) {my $d=decode_json($_); next if $d->{type} eq "agent_closed"; $owner=$d if $d->{type} eq "session"; print $o encode_json($d),"\n"}
-    $owner->{event}="end"; print $o encode_json($owner),"\n";
+    $owner->{event}="end"; $owner->{ts}=POSIX::strftime("%Y-%m-%dT%H:%M:%SZ",gmtime(time)); print $o encode_json($owner),"\n";
   ' "$np" "$base/native-ended"
   cp "$np/.loomy/brief.md" "$base/native-ended/.loomy/brief.md"
   run "native: parent session ended closes completed agent" env CODEX_HOME="$base/no-source" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$base/native-ended"
   has "native: ended owner gives done and turn count" '✓ done · 2 turns'
-  run "native: dead owner fixture" perl -MJSON::PP -i -pe 'my $d=decode_json($_); $d->{pid}=99999999 if exists $d->{pid}; $d->{owner_pid}=99999999 if exists $d->{owner_pid}; $_=encode_json($d)."\n"' "$base/native-ended/.loomy/logs/events.jsonl"
+  run "native: dead owner fixture" perl -MJSON::PP -i -pe 'my $d=decode_json($_); if ($d->{type} eq "session" && ($d->{event}//"") eq "end") {$_=""} else {$d->{pid}=99999999 if exists $d->{pid}; $d->{owner_pid}=99999999 if exists $d->{owner_pid}; $_=encode_json($d)."\n"}' "$base/native-ended/.loomy/logs/events.jsonl"
   run "native: owner PID gone keeps agent done" env CODEX_HOME="$base/no-source" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$base/native-ended"
   has "native: dead owner gives done and turn count" '✓ done · 2 turns'
   cp "$np/.loomy/logs/events.jsonl" "$np/before-repeat"
@@ -1203,7 +1209,7 @@ native_lifecycle_tests() {
   # A real Claude delegation in the same lead session adds its family, without old sessions leaking.
   printf '{"ts":"2026-10-13T01:00:00Z","type":"delegation","session":"owner","id":"mixed","bridge":"claude","family":"claude","tool":"claude","role":"reviewer","model":"claude-sonnet-5-5","status":"ok","outcome":"done","duration_s":1}\n' >>"$np/.loomy/logs/events.jsonl"
   run "native: mixed routing shows both model families" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
-  has "native: both routing families" 'haiku-5-5 · 6-luna'
+  has "native: both routing families" 'gpt-6-luna.*claude-sonnet-5-5|claude-sonnet-5-5.*gpt-6-luna'
 }
 
 # The relay section owns its fixtures and can run without the full terminal walkthrough.
@@ -1236,6 +1242,12 @@ if [[ "${1:-}" == --section && "${2:-}" == 'Interrupted delegations' ]]; then
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Native lifecycle' ]]; then
   native_lifecycle_tests
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  (( FAIL == 0 )); exit $?
+fi
+if [[ "${1:-}" == --section && "${2:-}" == 'W1 Codex live' ]]; then
+  section "W1 Codex live"
+  run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
   (( FAIL == 0 )); exit $?
 fi
@@ -3111,6 +3123,9 @@ has "doctor: broken codex command flagged" "points to a Codex CLI that no longer
 has "doctor: readable fix" "fix: loomy doctor --fix"
 
 native_lifecycle_tests
+section "W1 Codex live"
+run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
+
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"

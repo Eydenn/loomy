@@ -42,15 +42,52 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
         write_json(path($n),0,meta($n,1,$root,"Native$n",$task),start(10+$n),context(10+$n),
             {timestamp=>ts(-28),type=>'response_item',payload=>{type=>'function_call',name=>'exec_command',arguments=>'PRIVATE_TOOL_ARGUMENT'}});
     }
-    # Both kinds of isolation failures: wrong project, and wrong lead at the same project.
+    # Unrelated cwd evidence is excluded even when its parent identity points into this project.
     write_json(path(5),0,meta(5,1,'/nonexistent-fixture-project','Excluded','excluded'),start(15),context(15));
-    write_json(path(6),0,meta(6,99,$root,'Unrelated','unrelated'),start(16),context(16));
+    write_json(path(6),0,meta(6,99,'/nonexistent-fixture-project','Unrelated','unrelated'),start(16),context(16));
     # Root exec/bridge metadata is never a native lead candidate.
     my $bridge=meta(7,0,$root,'',''); $bridge->{payload}{source}='exec'; write_json(path(7),0,$bridge);
     open my $state,'>',"$root/.loomy/state" or die $!; print $state "phase=done\n";
     my $brief_text="# Brief\n\n## AI tools\n\n- Lead: Codex\n";
     $brief_text="---\nai_mode: SOLO\nai_lead: codex\n---\n\n$brief_text" if $action eq 'compact-seed';
     open my $brief,'>',"$root/.loomy/brief.md" or die $!; print $brief $brief_text;
+ } elsif ($action eq 'app' || $action eq 'ownerless-cli') {
+    # Metadata-only schema evidence: real app headers use vscode + Codex Desktop.
+    write_json("$root/.loomy/logs/events.jsonl",0);
+    if ($action eq 'app') {
+        open my $h,'<',path(1) or die $!; my @rows=map {decode_json($_)} <$h>; close $h;
+        $rows[0]{payload}{source}='vscode'; $rows[0]{payload}{originator}='Codex Desktop';
+        $rows[0]{payload}{developer_instructions}='PRIVATE_APP_METADATA'.('x'x70000);
+        write_json(path(1),0,@rows,context(10,-49));
+    }
+} elsif ($action eq 'live-child') {
+    die 'invalid latency identity' unless $pid =~ /^\d+$/ && $pid>=30 && $pid<100;
+    write_json(path($pid),0,meta($pid,1,$root,'Worker',"latency$pid"),start($pid,-1),context($pid,0));
+} elsif ($action eq 'second-lead') {
+    make_path("$root/src");
+    write_json(path(8),0,meta(8,0,"$root/src",'',''),start(18,-20),context(18,-19));
+    write_json(path(9),0,meta(9,8,"$root/src",'Worker','cli_worker'),start(19,-18),context(19,-17));
+    write_json(path(10),0,meta(10,9,"$root/src",'Worker','grandchild'),start(20,-16),context(20,-15));
+} elsif ($action eq 'ordinary-activity' || $action eq 'wait-unrelated' || $action eq 'wait-result') {
+    my $p={type=>'function_call',name=>'exec_command',call_id=>'ordinary',arguments=>'PRIVATE_APP_WORK'};
+    $p={type=>'function_call_output',call_id=>'wait-call',output=>'PRIVATE_WAIT_OUTPUT'} if $action eq 'wait-result';
+    write_json(path(2),1,{timestamp=>ts(-2),type=>'response_item',payload=>$p});
+} elsif ($action eq 'wait') {
+    write_json(path(2),1,{timestamp=>ts(-3),type=>'response_item',payload=>{type=>'function_call',name=>'collaboration.wait_agent',call_id=>'wait-call',arguments=>'PRIVATE_WAIT_ARGUMENT'}});
+} elsif ($action eq 'surface-leads') {
+    for my $n (7,12,13) {
+        my $m=meta($n,0,$root,'','');
+        $m->{payload}{source}=$n==7 ? 'exec' : $n==12 ? 'future_surface' : 'vscode';
+        $m->{payload}{originator}=$n==7 ? 'codex_exec' : 'synthetic-ide';
+        write_json(path($n),0,$m,start(100+$n,-1),context(100+$n,0));
+    }
+} elsif ($action eq 'boundary') {
+    make_path("$root-other");
+    write_json(path(11),0,meta(11,0,"$root-other",'',''),start(21,-10),context(21,-9));
+} elsif ($action eq 'orphan') {
+    write_json(path(6),0,meta(6,99,$root,'Pending','pending_child'),start(16,-2),context(16,-1));
+} elsif ($action eq 'late-parent') {
+    write_json(path(99),0,meta(99,0,$root,'',''),start(99,-2),context(99,-1));
 } elsif ($action eq 'compact') {
     write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
 } elsif ($action eq 'root-context' || $action eq 'root-update' || $action eq 'root-no-effort') {
@@ -130,6 +167,16 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
     print $f $first;
 } elsif ($action eq 'end-owner') {
     write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'end',tool=>'codex',pid=>0+$pid});
+} elsif ($action eq 'after-owner') {
+    for my $n (1,2) { write_json(path($n),1,start(40+$n,10),context(40+$n,11)) }
+} elsif ($action eq 'after-owner-complete') {
+    write_json(path(2),1,event('task_complete',42,15,last_agent_message=>'STATUS: done'));
+} elsif ($action eq 'after-owner-invalid-end') {
+    write_json(path(2),1,event('task_complete',42,5,last_agent_message=>'STATUS: done'));
+} elsif ($action eq 'after-owner-launcher') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(9),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
+} elsif ($action eq 'after-owner-launcher-end') {
+    write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(30),type=>'session',event=>'end',tool=>'codex',pid=>0+$pid,session=>id(1)});
 } elsif ($action eq 'tomorrow') {
     my $next="$sessions/".strftime('%Y/%m/%d',gmtime($now+86400)); make_path($next);
     rename path(4),"$next/rollout-fixture-".id(4).'.jsonl' or die $!;

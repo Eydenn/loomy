@@ -22,7 +22,7 @@ foreach identity {consolidation enrichment review} {
 }
 if {$code == 0} {
     exec perl $fixture finish $root $sessions [pid]
-    foreach outcome {"interrupted" "waiting since"} {
+    foreach outcome {"interrupted" "partial" "waiting since"} {
         expect {
             -exact $outcome {}
             timeout { set code 1 }

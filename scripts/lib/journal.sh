@@ -14,6 +14,7 @@ ai_journal_enabled() {
 
 # The sampler loads the same Perl module in-process; one-shot commands use this wrapper.
 AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
+AI_LIVE_STATE_LIB="${AI_CODEX_NATIVE_LIB%/*}/live-state.pl"
 ai_codex_native_poll() {
   ai_journal_enabled "$1" || return 0
   [[ -d "${CODEX_HOME:-$HOME/.codex}/sessions" ]] || return 0
@@ -280,7 +281,7 @@ ai_journal_display_events() {
         my $bridge=$e->{bridge}//""; my $interrupted=0;
         if (!($e->{id}//"") || !$done{$e->{id}}) {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
-          else { $interrupted=!alive($bridge eq "codex-native" ? $e->{owner_pid} : $e->{pid}) }
+          else { $interrupted=($bridge eq "codex-native" && ($e->{schema}//0)==2 && !text($e->{owner_pid})) ? 0 : !alive($bridge eq "codex-native" ? $e->{owner_pid} : $e->{pid}) }
         }
         $who=$role; $what=$interrupted ? "interrupted" : ($bridge eq "codex-native" ? "running" : "start"); $extra="$model · ".ai_title($e->{task})
       }
@@ -296,7 +297,7 @@ ai_journal_display_events() {
         next if $done{$id} || !exists $activity{$id} || $activity{$id}!=$i || $agents{agent_key($e)}{id} ne $id;
         my $owner=$e->{owner_pid}//$start->{owner_pid};
         my $observed={%$start,%$e,owner_pid=>$owner,session=>($e->{session}//$start->{session}),tool=>($e->{tool}//$e->{family}//$start->{tool}//$start->{family})};
-        next if !alive($owner) || owner_closed($observed,\%owner_ends,\%owner_opens,$i+1);
+        next if (!alive($owner) && !(($e->{schema}//0)==2 && !text($owner))) || owner_closed($observed,\%owner_ends,\%owner_opens,$i+1);
         next unless text($e->{ts}) =~ /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/;
         $what=text($e->{activity}); next unless $what eq "running" || $what eq "waiting";
         $who=$role || text($start->{role}) || "agent";
@@ -308,6 +309,7 @@ ai_journal_display_events() {
       elsif ($ty eq "agent_closed" && text($e->{bridge}) eq "codex-native") {
         $who=$role || "agent"; $what="done"; $extra=task_title($e,$start);
       }
+      elsif ($ty eq "session_observed") { $who="session"; $what=text($e->{state}) || "unknown"; $extra=text($e->{tool})." ".text($e->{surface})." ".substr(text($e->{session}),-8) }
       elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }
       elsif ($ty eq "advisor") { $who="advisor"; $what="consulted"; $extra=($e->{calls}//0)." × $model · ".int(($e->{tokens_in}//0)/1000)."k" }
       elsif ($ty =~ /^(task_|audit_)?phase$/) { $who="phase"; $what=$e->{phase}//""; ($extra=$ty)=~s/_?phase$// }

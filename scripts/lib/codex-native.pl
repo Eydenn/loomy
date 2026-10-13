@@ -7,6 +7,10 @@ use Fcntl qw(O_RDONLY O_RDWR O_WRONLY O_CREAT O_APPEND O_NOFOLLOW LOCK_EX LOCK_N
 use Cwd qw(abs_path);
 use POSIX qw(strftime);
 use Time::Local qw(timegm);
+use Time::HiRes ();
+my (%inventory,%cached,%diagnosed,%watch);
+my $canonical=JSON::PP->new->canonical;
+my $metadata_bytes=0;
 use Errno qw(EPERM);
 use IO::Handle;
 use Digest::SHA qw(sha256_hex);
@@ -14,10 +18,10 @@ use Digest::SHA qw(sha256_hex);
 sub scalar_text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
 sub identity { scalar_text($_[0]) =~ /\A[A-Za-z0-9_.:-]{1,100}\z/ ? scalar_text($_[0]) : '' }
 sub label { my $s=scalar_text($_[0]); $s =~ s/[^A-Za-z0-9 _.-]/ /g; return substr($s,0,40) }
-sub stamp { my $s=scalar_text($_[0]); $s =~ s/\.\d+Z$/Z/; return $s }
+sub stamp { scalar_text($_[0]) }
 sub epoch {
-    my @t=stamp($_[0]) =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z$/;
-    return @t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0) : 0;
+    my @t=stamp($_[0]) =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
+    return @t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0)+($t[6]//0) : 0;
 }
 sub alive { my $p=scalar_text($_[0]); return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
 sub safe_path {
@@ -31,9 +35,30 @@ sub open_read {
     return $f;
 }
 
+# Stat-only watch probe: retained dates cover old resumes; today's ancestors cover midnight.
+sub watch_changed {
+    my ($root,$sessions,$now)=@_;
+    my $idx="$root/.loomy/logs/codex-native.idx";
+    my $s=$cached{$idx} ? $cached{$idx}{state} : {};
+    my %paths=map { $_=>1 } ($idx,"$root/.loomy/logs/events.jsonl",keys %{$s->{files}//{}},
+        keys %{$inventory{$sessions}{dirs}//{}},keys %{$inventory{$sessions}{invalid}//{}});
+    my $day=strftime('%Y/%m/%d',gmtime($now));
+    $paths{$sessions}=1;
+    my $path=$sessions; for my $part (split '/', $day) { $path.="/$part"; $paths{$path}=1 }
+    my $sig=join(';',map { my @st=Time::HiRes::stat($_); join(':',$_,@st ? @st[0,1,7,9] : '-') } sort keys %paths);
+    my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
+    $watch{$idx}=$sig;
+    # Continue bounded catch-up even if the producer stops appending.
+    return $changed || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
+}
+
 # sysread has a fixed budget; offsets stop at complete lines, including malformed ones.
 sub lines {
-    my ($path,$cursor,$budget)=@_; $cursor->{read_bytes}=0; $cursor->{at_eof}=0;
+    my ($path,$cursor,$budget)=@_; $cursor->{read_bytes}=0;
+    my @probe=Time::HiRes::stat($path);
+    my $sig=@probe ? join(':',@probe[0,1,7,9]) : '';
+    if ($sig ne '' && ($cursor->{read_sig}//'') eq $sig) { $cursor->{at_eof}=1; return () }
+    $cursor->{at_eof}=0;
     my $f=open_read($path) or return ();
     my @s=stat($f); my $key="$s[0]:$s[1]";
     if (($cursor->{key}//'') ne $key || ($cursor->{offset}//0)>$s[7]) { $cursor->{offset}=0; delete $cursor->{skipping} }
@@ -43,6 +68,7 @@ sub lines {
     my $n=sysread($f,my $buf,$budget); $cursor->{read_bytes}=$n//0;
     my @after=stat($f);
     $cursor->{at_eof}=1 if defined $n && $off+$n >= $s[7] && $after[7]==$s[7] && $after[9]==$s[9];
+    $cursor->{read_sig}=$sig if defined $n && $cursor->{at_eof};
     return () unless $n;
     my $skip=0;
     if ($cursor->{skipping}) {
@@ -63,54 +89,92 @@ sub lines {
 }
 
 sub metadata {
+    $metadata_bytes=0;
     my $f=open_read($_[0]) or return;
-    sysread($f,my $buf,65536); my ($line)=$buf =~ /\A([^\n]*)\n/; return unless defined $line;
+    $metadata_bytes=sysread($f,my $buf,262144)//0; my ($line)=$buf =~ /\A([^\n]*)\n/;
+    unless (defined $line) {
+        warn "Codex rollout metadata exceeds 256 KiB; tracking unknown\n" if length($buf)==262144 && !$diagnosed{$_[0]}++;
+        return;
+    }
     my $d=eval { decode_json($line) }; return unless ref($d) eq 'HASH' && ($d->{type}//'') eq 'session_meta';
     my $p=$d->{payload}; return unless ref($p) eq 'HASH' && identity($p->{id});
     my $spawn=ref($p->{source}) eq 'HASH' && ref($p->{source}{subagent}) eq 'HASH' ? $p->{source}{subagent}{thread_spawn} : undef;
     my $parent=ref($spawn) eq 'HASH' ? identity($spawn->{parent_thread_id}) : '';
     my $source=scalar_text($p->{source});
-    return unless $parent || $source eq 'cli' || $source eq 'vscode';
+    my $origin=scalar_text($p->{originator});
+    my $surface=$source eq 'exec' ? 'exec' : $source eq 'cli' ? 'cli'
+        : ($source eq 'app' || ($source eq 'vscode' && $origin =~ /desktop/i)) ? 'app' : 'unknown';
     my $task=ref($spawn) eq 'HASH' ? scalar_text($spawn->{agent_path}) : '';
     $task =~ s{.*/}{};
     my $names=($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0';
-    return {id=>identity($p->{id}),parent=>$parent,cwd=>scalar_text($p->{cwd}),task=>($names ? label($task) : ''),
+    return {id=>identity($p->{id}),parent=>$parent,surface=>$surface,cwd=>scalar_text($p->{cwd}),task=>($names ? label($task) : ''),
         ts=>stamp($p->{timestamp}//$d->{timestamp}),role=>label($p->{agent_role}//(ref($spawn) eq 'HASH' ? $spawn->{agent_role} : '')),
         nickname=>($names ? label($p->{agent_nickname}//(ref($spawn) eq 'HASH' ? $spawn->{agent_nickname} : '')) : '')};
 }
 
-# Only recent date directories, capped file count, cached metadata, no recursive history traversal.
+# Directory signatures detect new names; known files are retained for old-date resumes.
 sub discover {
     my ($s,$sessions,$root,$now)=@_;
-    return if $now<($s->{discover_after}//0);
-    $s->{discover_after}=$now+5;
-    my @paths;
-    for my $day (-1..6) {
-        my $dir="$sessions/".strftime('%Y/%m/%d',gmtime($now-$day*86400));
-        next unless safe_path($dir) && -d $dir;
-        opendir my $dh,$dir or next;
-        my @names; my $n=0;
-        while (my $name=readdir $dh) { last if ++$n>4096; push @names,$name if $name =~ /^rollout-.*\.jsonl$/ }
-        push @paths,map { "$dir/$_" } (reverse sort @names)[0..($#names<127 ? $#names : 127)] if @names;
+    my $inv=$inventory{$sessions}//={dirs=>{},paths=>{},checked=>{},invalid=>{}};
+    my @queue=([$sessions,0]);
+    while (my $entry=shift @queue) {
+        my ($dir,$depth)=@$entry; next unless safe_path($dir) && -d $dir;
+        my @st=Time::HiRes::stat($dir); my $sig=join(':',@st[0,1,9]);
+        my $d=$inv->{dirs}{$dir};
+        if (!$d || $d->{sig} ne $sig) {
+            opendir my $dh,$dir or next;
+            my @names=sort grep { $depth==3 ? /^rollout-.*\.jsonl$/ : /^\d{2,4}$/ } readdir $dh;
+            $d=$inv->{dirs}{$dir}={sig=>$sig,names=>\@names};
+        }
+        if ($depth<3) { push @queue,map { ["$dir/$_",$depth+1] } @{$d->{names}} }
+        else { $inv->{paths}{"$dir/$_"}=1 for @{$d->{names}} }
     }
-    my %present=map { $_=>1 } @paths;
-    for my $p (keys %{$s->{checked}//{}}) { delete $s->{checked}{$p} unless $present{$p} || $s->{files}{$p} }
-    for my $p (keys %{$s->{invalid}//{}}) { delete $s->{invalid}{$p} unless $present{$p} }
-    my $read=0;
-    for my $path (@paths) {
+    my ($read,$bytes)=(0,0);
+    for my $path (sort keys %{$inv->{paths}}) {
         next unless safe_path($path) && -f $path;
         my @st=stat($path); my $sig="$st[0]:$st[1]";
-        next if ($s->{checked}{$path}//'') eq $sig;
+        next if ($inv->{checked}{$path}//'') eq $sig;
+        # Checkpointed eligible metadata is reusable across one-shot calls and sampler restarts.
+        if ($s->{files}{$path} && ($s->{files}{$path}{key}//'') eq $sig) {
+            $inv->{checked}{$path}=$sig; next;
+        }
         my $version=join(':',@st[0,1,7,9]);
-        next if ($s->{invalid}{$path}//'') eq $version;
-        last if ++$read>32;
-        my $m=metadata($path);
-        if (!$m) { $s->{invalid}{$path}=$version; next }
-        delete $s->{invalid}{$path};
-        $s->{checked}{$path}=$sig;
-        next unless safe_path($m->{cwd}) && (abs_path($m->{cwd})//'') eq $root;
-        $s->{files}{$path}={meta=>$m,offset=>0};
+        next if ($inv->{invalid}{$path}//'') eq $version;
+        last if ++$read>32 || $bytes+262144>2097152;
+        my $m=metadata($path); $bytes+=$metadata_bytes;
+        if (!$m) { $inv->{invalid}{$path}=$version; next }
+        delete $inv->{invalid}{$path}; $inv->{checked}{$path}=$sig;
+        my $cwd=abs_path($m->{cwd})//'';
+        next unless $cwd eq $root || index($cwd,"$root/")==0;
+        $m->{cwd}=$cwd;
+        my $old=$s->{files}{$path};
+        $s->{files}{$path}={meta=>$m,offset=>0} unless $old && ($old->{key}//'') eq $sig;
     }
+    return $bytes;
+}
+
+# Parent identity, never role or arrival order, determines the lead group.
+sub lead_id {
+    my ($m,$by_id)=@_; my %seen;
+    while ($m->{parent}) {
+        return '' if $seen{$m->{id}}++;
+        my $parent=$by_id->{$m->{parent}}; return "pending:$m->{parent}" unless $parent;
+        $m=$parent;
+    }
+    return $m->{id};
+}
+
+# An ended launcher owns historical turns only; later source work has its own activation.
+sub owner_at {
+    my ($owners,$lead,$ts,$created)=@_;
+    for my $o (@$owners) {
+        next if $o->{unbound} || ($o->{lead}//'') ne $lead;
+        next if epoch($ts)<epoch($o->{ts})-10;
+        my $end=$o->{ended}//$o->{dead_at};
+        next if $end && epoch($ts)>epoch($end);
+        return $o;
+    }
+    return {lead=>$lead,session=>$lead,ts=>$created,unbound=>1,pid=>0};
 }
 
 sub save {
@@ -135,6 +199,22 @@ sub observed_time {
     return $cursor->{started};
 }
 
+# A confirmed close ends a persistent child, including grandchildren of a native parent.
+sub close_record {
+    my ($f,$p,$ts)=@_;
+    if (($p->{type}//'') eq 'function_call' && scalar_text($p->{name}) =~ /^(?:.*[._])?close_agent$/) {
+        my $args=eval { decode_json(scalar_text($p->{arguments})) };
+        my $id=ref($args) eq 'HASH' ? identity($args->{agent_id}//$args->{id}) : '';
+        $f->{close_calls}{identity($p->{call_id})}=$id if $id && identity($p->{call_id});
+    } elsif (($p->{type}//'') eq 'function_call_output') {
+        my $id=delete $f->{close_calls}{identity($p->{call_id})};
+        my $result=eval { decode_json(scalar_text($p->{output})) };
+        if ($id && epoch($ts) && ref($result) eq 'HASH' && !$result->{error} && exists $result->{status}) {
+            $f->{closed_agents}{$id}=$ts if epoch($ts)>epoch($f->{closed_agents}{$id});
+        }
+    }
+}
+
 # Root contexts share the child read budget: incremental head plus a cached recent tail.
 # Position ordering prevents old catch-up records from replacing a newer tail observation.
 sub root_context {
@@ -145,6 +225,7 @@ sub root_context {
         $reset=1;
         $f->{context_invalidated}=1 if $f->{context};
         delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+        delete $f->{lead_position}; $f->{lead_waits}={}; $f->{lead_state}='unknown';
     }
     my $accept=sub {
         my ($line,$position)=@_;
@@ -152,25 +233,34 @@ sub root_context {
         return unless ref($d) eq 'HASH';
         my $p=$d->{payload};
         return unless ref($p) eq 'HASH';
-        # A successful parent close call ends the persistent agent, not just its last turn.
+        my $ts=stamp($d->{timestamp});
+        if (epoch($ts) && scalar_text($d->{type}) =~ /^(event_msg|response_item|turn_context)$/) {
+            $f->{last_evidence_ts}=$ts if epoch($ts)>epoch($f->{last_evidence_ts});
+        }
+        if (scalar_text($d->{type}) eq 'event_msg' && $position>($f->{lead_position}//0)) {
+            my $event=scalar_text($p->{type});
+            if ($event eq 'task_started') { $f->{lead_state}='running'; $f->{lead_turn}=identity($p->{turn_id}); $f->{lead_waits}={} }
+            elsif ($event =~ /^(task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/) {
+                $f->{lead_state}=$event =~ /complete$/ ? 'idle' : $event eq 'task_failed' ? 'failed' : 'interrupted';
+            }
+            $f->{lead_position}=$position if $event =~ /^(task_started|task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/;
+        }
         if (scalar_text($d->{type}) eq 'response_item') {
-            if (($p->{type}//'') eq 'function_call' && scalar_text($p->{name}) =~ /^(?:.*__)?close_agent$/) {
-                my $args=eval { decode_json(scalar_text($p->{arguments})) };
-                my $id=ref($args) eq 'HASH' ? identity($args->{agent_id}//$args->{id}) : '';
-                $f->{close_calls}{identity($p->{call_id})}=$id if $id && identity($p->{call_id});
-            } elsif (($p->{type}//'') eq 'function_call_output') {
-                my $id=delete $f->{close_calls}{identity($p->{call_id})};
-                my $result=eval { decode_json(scalar_text($p->{output})) };
-                my $ts=stamp($d->{timestamp});
-                if ($id && epoch($ts) && ref($result) eq 'HASH' && !$result->{error} && exists $result->{status}) {
-                    $f->{closed_agents}{$id}=$ts if $ts gt ($f->{closed_agents}{$id}//'');
-                }
+            close_record($f,$p,$ts);
+            if ($position>($f->{lead_position}//0) && ($p->{type}//'') eq 'function_call' && scalar_text($p->{name}) =~ /(?:^|[._])(?:wait|wait_agent)$/) {
+                $f->{lead_position}=$position; $f->{lead_waits}{identity($p->{call_id}) || 'legacy'}=1; $f->{lead_state}='waiting';
+            } elsif ($position>($f->{lead_position}//0) && ($p->{type}//'') eq 'function_call_output' && delete $f->{lead_waits}{identity($p->{call_id})}) {
+                $f->{lead_position}=$position; $f->{lead_state}=keys %{$f->{lead_waits}//{}} ? 'waiting' : 'running';
             }
             return;
         }
         return unless scalar_text($d->{type}) eq 'turn_context';
         return unless identity($p->{turn_id}) && epoch($d->{timestamp});
         return if $f->{context} && $position<=$f->{context}{position};
+        if ($position>($f->{lead_position}//0)) {
+            $f->{lead_position}=$position; $f->{lead_state}=keys %{$f->{lead_waits}//{}} ? 'waiting' : 'running';
+            $f->{lead_turn}=identity($p->{turn_id});
+        }
         $f->{context}={position=>$position,ts=>stamp($d->{timestamp}),turn=>identity($p->{turn_id}),
             model=>identity($p->{model}),effort=>identity($p->{effort})};
     };
@@ -181,6 +271,7 @@ sub root_context {
         ++$f->{context_revision} if $key ne '' && !$reset;
         $f->{context_invalidated}=1 if $f->{context};
         delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+        delete $f->{lead_position}; $f->{lead_waits}={}; $f->{lead_state}='unknown';
     }
     $accept->(@$_) for @records;
     my @st=stat($path); return $used unless @st;
@@ -211,20 +302,29 @@ sub poll {
     return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
     $root=abs_path($root)//return;
     my $dir="$root/.loomy/logs";
-    return unless safe_path($dir) && -d $dir && safe_path($sessions) && -d $sessions;
+    return unless safe_path($dir) && -d $dir;
+    unless (safe_path($sessions)) {
+        warn "Codex session path contains a symlink; tracking unavailable\n" unless $diagnosed{$sessions}++;
+        return;
+    }
+    return unless -d $sessions;
     my $idx="$dir/codex-native.idx"; my $journal="$dir/events.jsonl";
     return unless safe_path($idx) && safe_path($journal);
     umask 0077;
+    sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
     sysopen my $lock,$idx,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($lock,LOCK_EX|LOCK_NB) or return;
     chmod 0600,$lock or return;
-    my $raw=''; sysread($lock,$raw,4194304);
-    my $s=eval { decode_json($raw) }; $s={} unless ref($s) eq 'HASH' && ($s->{version}//0)==1;
+    my @is=Time::HiRes::stat($lock); my $isig=join(':',@is[0,1,7,9]);
+    my $raw='';
+    my $s=$cached{$idx} && $cached{$idx}{sig} eq $isig ? $cached{$idx}{state} : undef;
+    unless ($s) { sysread($lock,$raw,4194304); $s=eval { decode_json($raw) } }
+    my $before=$s ? $canonical->encode($s) : ''; $s={} unless ref($s) eq 'HASH' && ($s->{version}//0)==1;
     $s->{version}=1;
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($out,LOCK_EX|LOCK_NB) or return;
     chmod 0600,$out or return;
-    my $now=time;
+    my $now=$ENV{LOOMY_NATIVE_NOW}//time;
     my $jc=$s->{journal}//={};
     # Upgrade old checkpoints through the same bounded replay, without clearing deduplication or usage events.
     if (grep { !exists $_->{context_freshness} } values %{$s->{root_snapshots}//{}}) {
@@ -274,32 +374,42 @@ sub poll {
             if (identity($d->{session})) {
                 for my $candidate (sort { $s->{owners}{$a}{ts} cmp $s->{owners}{$b}{ts} } keys %{$s->{owners}//{}}) {
                     my $o=$s->{owners}{$candidate};
-                    if (!$o->{ended} && $o->{pid}==$pid && $o->{session} eq identity($d->{session})) { $key=$candidate; last }
+                    if (!$o->{ended} && !$o->{dead_at} && $o->{pid}==$pid && $o->{session} eq identity($d->{session})) { $key=$candidate; last }
                 }
             }
             $s->{owners}{$key}//={pid=>0+$pid,ts=>stamp($d->{ts}),session=>identity($d->{session})};
             my $prior=$s->{owner_leads}{$key};
             $s->{owners}{$key}{lead}=$prior->{lead} if $prior && $prior->{session} eq identity($d->{session});
         } elsif (($d->{event}//'') eq 'end') {
-            for my $o (values %{$s->{owners}//{}}) { $o->{ended}=stamp($d->{ts}) if $o->{pid}==$pid && (!identity($d->{session}) || $o->{session} eq identity($d->{session})) }
+            for my $o (values %{$s->{owners}//{}}) {
+                $o->{ended}=stamp($d->{ts}) if !$o->{ended} && epoch($d->{ts})>=epoch($o->{ts})
+                    && $o->{pid}==$pid && (!identity($d->{session}) || $o->{session} eq identity($d->{session}));
+            }
         }
     }
     my %live_owner;
     for my $key (sort { $s->{owners}{$a}{ts} cmp $s->{owners}{$b}{ts} } keys %{$s->{owners}//{}}) {
-        my $o=$s->{owners}{$key}; next if $o->{ended} || !$o->{session};
+        my $o=$s->{owners}{$key}; next if $o->{ended} || $o->{dead_at} || !$o->{session};
         my $group="$o->{pid}:$o->{session}";
         if (my $first=$live_owner{$group}) {
             $s->{owners}{$first}{lead}||=$o->{lead};
             delete $s->{owners}{$key};
         } else { $live_owner{$group}=$key }
     }
-    if (($jc->{offset}//0)<$js[7]) { save($lock,$s); return }
-    discover($s,$sessions,$root,$now);
+    if (($jc->{offset}//0)<$js[7]) { save($lock,$s); return $s }
+    my $discovery_bytes=discover($s,$sessions,$root,$now)//0;
     if (($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0') {
         for my $f (values %{$s->{files}//{}}) { $f->{meta}{task}=''; $f->{meta}{nickname}='' }
     }
     my $emit=sub {
         my ($key,$type,$ts,$body)=@_; $key=sha256_hex($key); return if $s->{seen}{$key};
+        if (($body->{schema}//0)==2) {
+            delete @$body{qw(owner_pid pid_role)} if exists($body->{owner_pid}) && scalar_text($body->{owner_pid}) eq '0';
+            $body->{source_ts}=stamp($ts); $body->{observed_at}=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
+            $body->{evidence}//='rollout'; $body->{event_key}=$key; $body->{source_revision}//=$generation;
+            $body->{state}//=$type eq 'delegation_start' ? 'running' : $type eq 'delegation_activity' ? ($body->{activity}//'unknown')
+                : $type eq 'delegation' ? ($body->{status} eq 'ok' ? 'done' : $body->{status} eq 'error' ? 'failed' : $body->{status}) : 'unknown';
+        }
         my $json=encode_json($body); $json =~ s/^\{//; $json =~ s/\}$//;
         print $out '{"ts":'.encode_json(stamp($ts)).',"type":'.encode_json($type).',"native_key":'.encode_json($key).($json ne '' ? ",$json" : '')."}\n" or die 'native journal write failed';
         $out->flush or die 'native journal flush failed';
@@ -308,31 +418,42 @@ sub poll {
         delete $jc->{active}{$body->{id}} if $type eq 'delegation';
     };
     my @owners=sort { $b->{ts} cmp $a->{ts} } values %{$s->{owners}//{}};
-    my $probe_budget=2097152;
     for my $o (@owners) {
-        next if $o->{lead} || $o->{ended} || !alive($o->{pid});
+        $o->{dead_at}//=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)) if !$o->{ended} && !alive($o->{pid});
+    }
+    my $probe_budget=2097152-$discovery_bytes; my $probe_used=0;
+    for my $o (@owners) {
+        next if $o->{lead} || $o->{ended} || $o->{dead_at} || !alive($o->{pid});
         my @candidates;
         for my $path (sort keys %{$s->{files}//{}}) {
             my $m=$s->{files}{$path}{meta}; next if $m->{parent};
             if ($o->{session}) { push @candidates,$m->{id} if $m->{id} eq $o->{session}; next }
+            next unless $m->{surface} eq 'cli';
             my $start=epoch($o->{ts}); my $created=epoch($m->{ts});
-            if ($created && $created >= $start-10 && $created <= $start+120) { push @candidates,$m->{id}; next }
+            if ($created && $created >= $start-10) { push @candidates,$m->{id}; next }
             # Resume keeps the original metadata timestamp: inspect only its bounded tail.
             my $record=$s->{files}{$path}; my @st=stat($path); my $sig=join(':',@st[0,1,7,9]);
             if (($record->{probe_sig}//'') ne $sig && $probe_budget>=65536) {
                 my $f=open_read($path) or next; seek $f,($st[7]>65536 ? $st[7]-65536 : 0),0;
-                my $n=sysread($f,my $tail,65536); $probe_budget-=$n//0;
+                my $n=sysread($f,my $tail,65536); $probe_budget-=$n//0; $probe_used+=$n//0;
                 $record->{starts}=[]; $record->{probe_sig}=$sig;
                 for my $line (split /\n/,$tail) {
                     my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH' && ($d->{type}//'') eq 'event_msg' && ref($d->{payload}) eq 'HASH' && ($d->{payload}{type}//'') eq 'task_started';
                     push @{$record->{starts}},epoch($d->{timestamp});
                 }
             }
-            push @candidates,$m->{id} if grep { $_ >= $start-10 && $_ <= $start+120 } @{$record->{starts}//[]};
+            push @candidates,$m->{id} if grep { $_ >= $start-10 } @{$record->{starts}//[]};
         }
         $o->{lead}=$candidates[0] if @candidates==1;
     }
-    my $budget=2097152;
+    my %by_id=map { $_->{meta}{id}=>$_->{meta} } values %{$s->{files}//{}};
+    # Launcher evidence enriches a group, but never decides whether it is collected.
+    for my $m (values %by_id) {
+        next if $m->{parent};
+        next if grep { ($_->{lead}//'') eq $m->{id} } @owners;
+        push @owners,{lead=>$m->{id},session=>$m->{id},ts=>$m->{ts},unbound=>1,pid=>0};
+    }
+    my $budget=2097152-$discovery_bytes-$probe_used;
     my @paths=sort keys %{$s->{files}//{}};
     my $rotation=@paths ? ($s->{read_rotation}//0)%@paths : 0;
     @paths=(@paths[$rotation..$#paths],@paths[0..$rotation-1]) if $rotation;
@@ -345,18 +466,19 @@ sub poll {
             next unless $owner;
             my $recovered=$s->{root_revisions}{$m->{id}}//0;
             $f->{context_revision}=$recovered if $recovered>($f->{context_revision}//0);
-            $f->{at_eof}=0;
+            $f->{at_eof}=0 if $budget<=0;
             if ($budget>0) {
                 $s->{read_rotation}=($rotation+$slot+1)%@paths;
                 $budget-=root_context($path,$f,$budget);
             }
+            $owner=owner_at(\@owners,$m->{id},$f->{last_evidence_ts}//$m->{ts},$m->{ts});
             my $snapshot=$s->{root_snapshots}{$m->{id}};
             if (!$f->{context} && !$f->{context_invalidated} && $f->{at_eof} && $snapshot && $snapshot->{known}
                 && $snapshot->{owner_pid} eq "$owner->{pid}" && epoch($snapshot->{ts})>=epoch($owner->{ts})-10) {
                 ++$f->{context_revision}; $f->{context_invalidated}=1;
             }
             if (my $c=$f->{context}) {
-                next if epoch($c->{ts})<epoch($owner->{ts})-10;
+                next if !$owner->{unbound} && epoch($c->{ts})<epoch($owner->{ts})-10;
                 my @st=stat($path); my $sig=@st && safe_path($path) && -f $path ? join(':',@st[0,1,7,9]) : '';
                 my $fresh=$sig ne '' && (($f->{complete_sig}//'') eq $sig || (($f->{tail_sig}//'') eq $sig && defined $f->{tail_start} && $c->{position}>$f->{tail_start}));
                 my $freshness=$fresh ? 'current' : 'catching_up';
@@ -364,7 +486,7 @@ sub poll {
                 ++$f->{context_revision} if $snapshot && ($snapshot->{context_freshness}//'') ne '' && $snapshot->{context_freshness} ne $freshness;
                 my $revision=$f->{context_revision}//0;
                 $emit->("lead:$m->{id}:$owner->{pid}:$owner->{ts}:$revision:$c->{turn}:$c->{ts}:$c->{position}:$c->{model}:$c->{effort}:$freshness:$generation",'session_context',$c->{ts},
-                    {bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},
+                    {schema=>2,session_key=>"codex:$m->{id}",surface=>$m->{surface},bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},
                         owner_pid=>$owner->{pid},pid_role=>'owner',model=>$c->{model},effort=>$c->{effort},turn_id=>$c->{turn},context_freshness=>$freshness,context_revision=>$revision});
                 $s->{root_revisions}{$m->{id}}=$revision;
                 $s->{root_snapshots}{$m->{id}}={known=>($c->{model} ne '' || $c->{effort} ne '' ? 1 : 0),ts=>$c->{ts},owner_pid=>"$owner->{pid}",context_freshness=>$freshness,context_revision=>$revision};
@@ -372,19 +494,43 @@ sub poll {
             } elsif (delete $f->{context_invalidated}) {
                 my $revision=$f->{context_revision}//0;
                 $emit->("lead:$m->{id}:$owner->{pid}:$owner->{ts}:invalidated:$revision:$f->{key}:$f->{offset}:$generation",'session_context',strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),
-                    {bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},owner_pid=>$owner->{pid},pid_role=>'owner',model=>'',effort=>'',context_freshness=>'catching_up',context_revision=>$revision});
+                    {schema=>2,session_key=>"codex:$m->{id}",surface=>$m->{surface},bridge=>'codex-native',tool=>'codex',scope=>'lead',session=>$owner->{session},parent_session=>$m->{id},owner_pid=>$owner->{pid},pid_role=>'owner',model=>'',effort=>'',context_freshness=>'catching_up',context_revision=>$revision});
                 $s->{root_revisions}{$m->{id}}=$revision;
                 $s->{root_snapshots}{$m->{id}}={known=>0,ts=>strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),owner_pid=>"$owner->{pid}",context_freshness=>'catching_up',context_revision=>$revision};
             }
+            my $state=$f->{lead_state}//'unknown';
+            my $ts=$f->{last_evidence_ts}//$m->{ts};
+            my $relative=($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{cwd} eq $root ? '.' : substr($m->{cwd},length($root)+1));
+            $emit->("session:$m->{id}:$state:".($f->{lead_turn}//'').":".($owner->{unbound} ? 'unbound' : "$owner->{pid}"),'session_observed',$ts,
+                {schema=>2,session_key=>"codex:$m->{id}",session=>$m->{id},agent_id=>$m->{id},tool=>'codex',surface=>$m->{surface},
+                    state=>$state,source_active=>($f->{last_evidence_ts} ? 1 : 0),cwd_relative=>$relative,owner_pid=>$owner->{pid},evidence=>($owner->{unbound} ? 'source lease' : 'launcher')});
             next;
         }
         # A child skipped by this tick's shared budget has no fresh EOF evidence.
-        $f->{at_eof}=0;
-        my ($owner)=grep { ($_->{lead}//'') eq $m->{parent} } @owners; next unless $owner;
-        my $base={bridge=>'codex-native',family=>'codex',tool=>'codex',owner_pid=>$owner->{pid},pid_role=>'owner',
-            parent_session=>$m->{parent},session=>$owner->{session},agent_id=>$m->{id},role=>($m->{role}||'agent'),
-            task=>(($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{task}||'Codex agent '.($m->{nickname}||$m->{id}))),nickname=>$m->{nickname},cost_in=>'unknown'};
-        my $dead=$owner->{ended} || !alive($owner->{pid});
+        $f->{at_eof}=0 if $budget<=0;
+        my $lead=lead_id($m,\%by_id); next unless $lead;
+        my ($owner)=grep { ($_->{lead}//'') eq $lead } @owners;
+        $owner//={lead=>$lead,session=>$lead,ts=>$m->{ts},unbound=>1,pid=>0} if $lead =~ /^pending:/;
+        next unless $owner;
+        my $base;
+        my $bind=sub {
+            $owner=owner_at(\@owners,$lead,$_[0],$m->{ts});
+            $base={bridge=>'codex-native',family=>'codex',tool=>'codex',owner_pid=>$owner->{pid},pid_role=>'owner',
+                schema=>2,session_key=>"codex:$lead",surface=>($by_id{$lead} ? $by_id{$lead}{surface} : 'unknown'),parent_agent_id=>"codex:$m->{parent}",
+                parent_session=>$m->{parent},session=>$owner->{session},agent_id=>$m->{id},role=>($m->{role}||'agent'),
+                task=>(($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{task}||'Codex agent '.($m->{nickname}||$m->{id}))),nickname=>$m->{nickname},cost_in=>'unknown'};
+            delete @$base{qw(owner_pid pid_role)} if $owner->{unbound};
+        };
+        $bind->($f->{started}//$m->{ts});
+        if ($lead =~ /^pending:/) {
+            $emit->("pending:$lead",'session_observed',$m->{ts},
+                {schema=>2,session_key=>"codex:$lead",session=>$lead,tool=>'codex',surface=>'unknown',state=>'unknown',source_active=>0,evidence=>'parent pending'});
+        }
+        if ($f->{id} && ($f->{projected_lead}//'') ne $lead) {
+            $emit->("agent:$m->{id}:link:$lead",'agent_link',$f->{last_observed_ts}//$f->{started},
+                {%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort}});
+        }
+        $f->{projected_lead}=$lead;
         if ($budget>0) {
             $f->{last_observed_ts}//=observed_time($path,$f) if $f->{id} && !$f->{finished};
             $s->{read_rotation}=($rotation+$slot+1)%@paths;
@@ -394,24 +540,27 @@ sub poll {
                 my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH';
                 my $p=$d->{payload}; next unless ref($p) eq 'HASH';
                 my $type=scalar_text($d->{type}); my $event=scalar_text($p->{type}); my $ts=stamp($d->{timestamp}); next unless epoch($ts);
+                close_record($f,$p,$ts) if $type eq 'response_item';
                 my $turn=identity($p->{turn_id});
                 if ($type eq 'event_msg' && $event eq 'task_started' && $turn) {
-                    next if epoch($ts)<epoch($owner->{ts})-10;
                     if ($f->{id} && !$f->{finished} && ($f->{turn}//'') ne $turn) {
                         my $end=$f->{last_observed_ts}//observed_time($path,$f)//$f->{started};
+                        $end=$f->{started} if epoch($end)<epoch($f->{started});
                         my $duration=epoch($end)-epoch($f->{started}); $duration=0 if $duration<0;
                         $emit->("$f->{id}:end",'delegation',$end,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},status=>'unknown',outcome=>'unknown',duration_s=>$duration});
                     }
+                    $bind->($ts);
                     $f->{turn}=$turn; $f->{started}=$ts; $f->{finished}=0;
                     $f->{id}="cn:$m->{id}:$turn"; $f->{model}=''; $f->{effort}='';
-                    $f->{activity}='running'; $f->{last_observed_ts}=$ts; delete $f->{activity_ts}; delete $f->{activity_position};
+                    $f->{activity}='running'; $f->{wait_calls}={}; $f->{last_observed_ts}=$ts; delete $f->{activity_ts}; delete $f->{activity_position};
                     $emit->("$f->{id}:start",'delegation_start',$ts,{%$base,id=>$f->{id},turn_id=>$turn,model=>'',effort=>''});
                     $f->{journal_generation}=$generation if $jc->{active}{$f->{id}};
                 } elsif ($type eq 'turn_context' && $turn && $turn eq ($f->{turn}//'')) {
                     $f->{model}=identity($p->{model}); $f->{effort}=identity($p->{effort});
-                    $f->{activity}='running'; $f->{last_observed_ts}=$ts;
-                    $emit->("$f->{id}:context:$position",'delegation_activity',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>'running'});
+                    $f->{activity}=keys %{$f->{wait_calls}//{}} ? 'waiting' : 'running'; $f->{last_observed_ts}=$ts;
+                    $emit->("$f->{id}:context:$position",'delegation_activity',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>$f->{activity}});
                 } elsif ($type eq 'event_msg' && $event =~ /^(task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/ && $f->{id} && (!$turn || $turn eq ($f->{turn}//'')) && !$f->{finished}) {
+                    next if epoch($ts)<epoch($f->{started});
                     my $outcome='unknown'; my $text=scalar_text($p->{last_agent_message});
                     $outcome=lc($1) if $text =~ /^\s*STATUS\s*:\s*(done|partial|blocked)\b/im;
                     $outcome='interrupted' if $event =~ /aborted$/;
@@ -424,7 +573,12 @@ sub poll {
                     $f->{activity_ts}=$ts;
                     $f->{last_observed_ts}=$ts;
                     $f->{activity_position}=$position;
-                    $f->{activity}=($type eq 'response_item' && ($p->{type}//'') eq 'function_call' && ($p->{name}//'') =~ /^(wait|wait_agent)$/) ? 'waiting' : 'running';
+                    if ($type eq 'response_item' && ($p->{type}//'') eq 'function_call' && scalar_text($p->{name}) =~ /(?:^|[._])(?:wait|wait_agent)$/) {
+                        $f->{wait_calls}{identity($p->{call_id}) || 'legacy'}=1;
+                    } elsif ($type eq 'response_item' && ($p->{type}//'') eq 'function_call_output') {
+                        delete $f->{wait_calls}{identity($p->{call_id})};
+                    }
+                    $f->{activity}=keys %{$f->{wait_calls}//{}} ? 'waiting' : 'running';
                 }
             }
             $budget-=$f->{read_bytes}//0;
@@ -434,21 +588,27 @@ sub poll {
                 delete $f->{oversized};
             }
             if ($f->{id} && !$f->{finished} && $f->{activity_ts}) {
-                $emit->("$f->{id}:activity:$f->{activity_position}",'delegation_activity',$f->{activity_ts},{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>$f->{activity}});
+                my $signature=join(':',$f->{id},$f->{model}//'',$f->{effort}//'',$f->{activity}//'unknown');
+                if (($f->{emitted_activity}//'') ne $signature) {
+                    $emit->("$f->{id}:activity:$f->{activity_position}",'delegation_activity',$f->{activity_ts},{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>$f->{activity}});
+                    $f->{emitted_activity}=$signature;
+                }
                 delete $f->{activity_ts};
             }
         }
         my ($parent)=grep { $_->{meta}{id} eq $m->{parent} } values %{$s->{files}};
         my $closed=$parent ? $parent->{closed_agents}{$m->{id}} : undef;
-        $closed=undef if $closed && (epoch($closed)<epoch($owner->{ts}) || epoch($closed)<epoch($f->{started}));
-        $dead||=$closed;
+        $closed=undef if $closed && ((!$owner->{unbound} && epoch($closed)<epoch($owner->{ts})) || epoch($closed)<epoch($f->{started}));
+        my $dead=$closed || (!$owner->{unbound} && ($owner->{ended} || $owner->{dead_at} || !alive($owner->{pid})));
         if ($dead && $f->{at_eof} && $f->{id} && !$f->{finished}) {
             my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
+            $ts=$f->{started} if epoch($ts)<epoch($f->{started});
             $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},status=>'interrupted',outcome=>'interrupted',duration_s=>undef});
             $f->{finished}=1;
         }
         if ($dead && $f->{at_eof} && $f->{id}) {
             my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
+            $ts=$f->{started} if epoch($ts)<epoch($f->{started});
             $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>'done'});
         }
         # Restore only an observed active turn; rotation is not new work or a new delegation.
@@ -463,7 +623,10 @@ sub poll {
     }
     # The append and checkpoint share one lock; crash recovery replays only unseen native keys.
     my @end=stat($out); $jc->{offset}=$end[7]; $jc->{key}="$end[0]:$end[1]";
-    save($lock,$s);
+    my $after=$canonical->encode($s);
+    save($lock,$s) if $after ne $before;
+    @is=Time::HiRes::stat($lock); $cached{$idx}={sig=>join(':',@is[0,1,7,9]),state=>$s};
+    return $s;
 }
 
 unless (caller) { eval { poll(@ARGV) }; exit($@ ? 1 : 0) }

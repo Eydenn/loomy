@@ -185,7 +185,10 @@ availability, live and watch-exit suites.
   The test guard runs first; model calls require catalog validation and provider
   availability. Bridges retain W8 handover/pause semantics; ordinary callers return
   75 on unavailable providers. Metadata calls and bounded probes use only the guard
-  and do not write model lifecycle events.
+  and do not write model lifecycle events. A lead session (role `lead`) is not a
+  delegation: it keeps its ids for child links but writes no `delegation_start` /
+  `delegation` event. `LOOMY_TEST_STUBS` is a colon-separated list of trusted stub
+  directories (a test appends its own opener stubs; real binaries stay refused).
 - Bridges use the central lifecycle writers, retaining their usage, outcome,
   permissions and resumption data. A bridge worker keeps a process group for signal
   cleanup. Detached runners own their end event, after the provider returns.

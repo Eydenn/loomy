@@ -551,9 +551,12 @@ if (( WATCH )); then
         fi ;;
       o|O)
         # The launcher has no ownership of the watch's screen, input or sampler.
-        watch_note=""
-        if ! watch_note="$(env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null 2>&1 8<&-)"; then
-          watch_note="$(printf '%s\n' "$watch_note" | tail -1)"
+        watch_note=""; open_rc=0
+        watch_note="$(env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null 2>&1 8<&-)" || open_rc=$?
+        if (( open_rc )); then
+          # Only the explicit busy-session refusal (3) explains itself; any other failure leaves stale warnings
+          # of an earlier route (e.g. "opening in the terminal"), so it gets the generic note.
+          if (( open_rc == 3 )); then watch_note="$(printf '%s\n' "$watch_note" | tail -1)"; else watch_note=""; fi
           [[ -n "$watch_note" ]] || watch_note="$(t "Could not open the orchestrator; watch is still running.")"
           note_until=$(( now + 5 ))
         else

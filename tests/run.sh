@@ -466,6 +466,8 @@ fi
 exec /usr/bin/grep "$@"
 STUB
   chmod +x "$wt/bin/uname" "$wt/bin/open" "$wt/bin/osascript" "$wt/bin/grep"
+  # The opener stubs live in this fixture's own bin: trust that directory next to the shared stubs (real binaries stay refused).
+  local LOOMY_TEST_STUBS="$LOOMY_TEST_STUBS:$wt/bin"; export LOOMY_TEST_STUBS
   if ! command -v expect >/dev/null 2>&1; then ko "watch PTY: expect unavailable"; return; fi
   cat >"$wt/watch.exp" <<'EXPECT'
 source "$env(LIVE_REPO)/tests/fixtures/watchdog.exp"
@@ -1961,7 +1963,7 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
 
   tmux -L loomy-test kill-server 2>/dev/null || true
   # Keep the pane alive after watch exits so its restored-screen marker can be captured.
-  tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "perl '$TEST_WATCHDOG' 120 bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
+  tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "bash '$HERE/fixtures/pane-watchdog.sh' 120 bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
   # Several redraws are needed before checking that watch left no scrollback history.
   sleep 4
   [[ "$(tmux -L loomy-test display -p -t w '#{history_size}')" == "0" ]] && ok "watch: nothing piles up in the history" || ko "watch: history $(tmux -L loomy-test display -p -t w '#{history_size}')"
@@ -2007,7 +2009,7 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   # Keep the fake agent alive long enough to observe its tracking pane before it exits.
   printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"
   # Keep the parent pane open after start exits so both pane-count states can be checked.
-  tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "LOOMY_TEST_STUBS='$WORK/lent' PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH perl '$TEST_WATCHDOG' 120 bash '$LOOMY' start --new --watch; sleep 30"
+  tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "LOOMY_TEST_STUBS='$WORK/lent' PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$HERE/fixtures/pane-watchdog.sh' 120 bash '$LOOMY' start --new --watch; sleep 30"
   if wait_for 20 tmux_pane_count_is s 2; then ok "start --watch: tracking pane open"; else ko "start --watch: $(tmux -L loomy-test list-panes -t s | wc -l) pane(s)"; fi
   if wait_for 20 tmux_pane_count_is s 1; then ok "start --watch: tracking closed with the session"; else ko "start --watch: tracking still open"; fi
   tmux -L loomy-test kill-server 2>/dev/null || true
@@ -2097,7 +2099,8 @@ has "csv: lead agent cost" "usage,lead,,claude,claude-haiku-4-5-20251001,ok"
 AR="$WORK/archive"; mkdir -p "$AR/.loomy/logs"; : >"$AR/.loomy/brief.md"
 printf '%s\n' '{"ts":"2000-01-05T10:00:00Z","type":"phase","phase":"build"}' >"$AR/.loomy/logs/events.jsonl"
 bash "$REPO/scripts/loomy-status.sh" --root "$AR" set verify >/dev/null
-[[ -f "$AR/.loomy/logs/archive/events-2000-01.jsonl" ]] && ok "log: previous month archived" || ko "log: no archive"
+# Archive segments are inode-named (events-YYYY-MM-<dev>-<inode>.jsonl), never overwritten.
+compgen -G "$AR/.loomy/logs/archive/events-2000-01-*.jsonl" >/dev/null && ok "log: previous month archived" || ko "log: no archive"
 run "log --since in the archives" bash "$REPO/scripts/loomy-log.sh" --root "$AR" --since 2000-01-01
 has "log --since: archived event" "Build"
 

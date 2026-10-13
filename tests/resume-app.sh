@@ -15,6 +15,8 @@ cp "$REPO/tests/fixtures/resume-app/"* "$WORK/stubs/"
 chmod +x "$WORK/stubs/"*
 export LOOMY_TEST_ORIGINAL_STUBS="$LOOMY_TEST_STUBS"
 export LOOMY_TEST_STUBS="$WORK/stubs" PATH="$WORK/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
+# Under tests/run.sh the parent exports LOOMY_CODEX_BIN from the shared stubs: use this fixture's own copy.
+export LOOMY_CODEX_BIN="$WORK/stubs/codex"
 export STUB_LOG="$WORK/calls" STUB_APPS='Codex Claude'
 ROOT="$WORK/project"; OUT="$WORK/output"
 perl "$REPO/tests/fixtures/resume-app.pl" "$ROOT" "$HOME"

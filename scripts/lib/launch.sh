@@ -13,8 +13,16 @@ _loomy_cli_test_guard() {
     binary="$(_ai_realpath "$binary")"
     binary="$(cd "$(dirname "$binary")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "${binary##*/}")" || binary=""
   fi
+  # LOOMY_TEST_STUBS is a colon-separated list of trusted stub directories (tests append their own).
   stubs="${LOOMY_TEST_STUBS:-}"
-  if [[ -n "$stubs" && "$binary" == "$stubs/"* ]]; then return 0; fi
+  if [[ -n "$binary" ]]; then
+    local dir old_ifs="$IFS"; IFS=:
+    for dir in $stubs; do
+      [[ -n "$dir" ]] || continue
+      if [[ "$binary" == "$dir/"* ]]; then IFS="$old_ifs"; return 0; fi
+    done
+    IFS="$old_ifs"
+  fi
   message="loomy: test guard: refusing to launch real $name (${binary:-not found})"
   printf '%s\n' "$message" >&2
   if [[ -n "${LOOMY_TEST_GUARD_LOG:-}" ]]; then printf '%s\n' "$message" >>"$LOOMY_TEST_GUARD_LOG"; fi
@@ -124,7 +132,10 @@ loomy_cli_run() (
   export LOOMY_PARENT_ID="${LOOMY_PARENT_ID:-$id}" LOOMY_ATTEMPT="${LOOMY_ATTEMPT:-$id}"
   started="$(date +%s)"
   body="\"id\":$(ai_json_str "$id"),\"bridge\":$(ai_json_str "$tool"),\"family\":$(ai_json_str "$tool"),\"role\":$(ai_json_str "$role"),\"model\":$(ai_json_str "$model"),\"effort\":$(ai_json_str "${EFFORT:-${LOOMY_CLI_EFFORT:-}}")"
-  if [[ "${LOOMY_CLI_MANAGED:-0}" != 1 && "${LOOMY_CLI_PROBE:-0}" != 1 ]]; then
+  # A lead session is not a delegation: it keeps its ids for child links but never counts as one in the journal.
+  local journal_ends=1
+  [[ "${LOOMY_CLI_MANAGED:-0}" != 1 && "${LOOMY_CLI_PROBE:-0}" != 1 && "$role" != lead ]] || journal_ends=0
+  if (( journal_ends )); then
     loomy_cli_end "$root" "\"type\":\"delegation_start\",$body,\"pid\":${BASHPID:-$$}"
   fi
   _loomy_cli_finish() {
@@ -137,7 +148,7 @@ loomy_cli_run() (
       kill -KILL -- "-$child" 2>/dev/null || true
       wait "$child" 2>/dev/null || true
     fi
-    if [[ "${LOOMY_CLI_MANAGED:-0}" != 1 && "${LOOMY_CLI_PROBE:-0}" != 1 ]]; then
+    if (( journal_ends )); then
       local result=ok; (( status == 0 )) || result=error
       (( status < 128 )) || result=interrupted
       loomy_cli_end "$root" "\"type\":\"delegation\",$body,\"status\":\"$result\",\"duration_s\":$(( $(date +%s)-started ))"

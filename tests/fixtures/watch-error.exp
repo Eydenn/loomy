@@ -1,0 +1,40 @@
+source [file join [file dirname [info script]] watchdog.exp]
+set timeout 15
+set repo [lindex $argv 0]
+set work [lindex $argv 1]
+set runtime [file join $work runtime]
+file mkdir $runtime
+file copy [file join $repo scripts] $runtime
+set reducer [file join $runtime scripts lib live-state.pl]
+set f [open $reducer a]
+puts $f {
+package Loomy::LiveState;
+my $original=\&read_journal;
+my $injected=0;
+no warnings 'redefine';
+*read_journal=sub {die "INJECTED_PRIVATE_REDUCER_ERROR" unless $injected++; goto &$original};
+}
+close $f
+set root [file join $work project]
+set child ""
+log_user 0
+set result [catch {
+    spawn bash [file join $runtime scripts loomy-status.sh] --root $root --watch --full
+    set child [exp_pid]
+    expect {
+        -re {Watch internal error; tracking continues} {}
+        eof {error "watch died on injected reducer failure"}
+        timeout {error "error footer missing"}
+    }
+    send "q"
+    expect {eof {} timeout {error "q failed after reducer exception"}}
+    set status [wait]
+    if {[lindex $status 3] != 0} {error "watch error exit: $status"}
+    set f [open [file join $root .loomy logs watch-errors.log] r]
+    set errors [read $f]; close $f
+    if {![regexp {watch reducer exception} $errors]} {error "reducer exception absent in private log"}
+    if {[string first INJECTED_PRIVATE $errors] >= 0} {error "error content leaked into log"}
+} reason]
+if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}
+if {$result} {puts stderr $reason; exit 1}
+puts "W6 injected reducer: footer, bounded content-free log, continued watch and clean q passed"

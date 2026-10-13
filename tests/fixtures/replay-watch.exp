@@ -1,0 +1,71 @@
+source [file join [file dirname [info script]] watchdog.exp]
+set timeout 10
+set repo [lindex $argv 0]
+set work [lindex $argv 1]
+set root [file join $work project]
+set events [file join $repo tests fixtures replay-events.pl]
+set socket [file join $env(TMUX_TMPDIR) replay.sock]
+set child ""
+set maximum 0
+log_user 0
+proc visible {labels state started} {
+    global maximum socket
+    set pending $labels
+    while {[llength $pending]} {
+        # Drain the attached PTY while inspecting complete physical rows in its private pane.
+        expect -timeout 0 { -re {.+} {} eof {error "watch crashed during replay"} timeout {} }
+        set pane [exec tmux -S $socket capture-pane -p -t replay 2>@1]
+        foreach line [split $pane \n] {
+            foreach label $pending {
+                if {[string first $label $line] >= 0 && [regexp $state $line]} {
+                    set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
+                    if {$elapsed > $maximum} {set maximum $elapsed}
+                    if {$elapsed >= 1000} {error "$label visible after $elapsed ms (budget <1000)"}
+                    set index [lsearch -exact $pending $label]
+                    set pending [lreplace $pending $index $index]
+                }
+            }
+        }
+        if {([clock clicks -microseconds]-$started) >= 1000000 && [llength $pending]} {error "missing <1s replay states: $pending"}
+        if {[llength $pending]} {after 40}
+    }
+}
+set result [catch {
+    exec perl $events $work seed 2>@1
+    spawn tmux -S $socket new-session -x 170 -y 70 -s replay bash [file join $repo scripts loomy-status.sh] --root $root --watch --full
+    set child [exp_pid]
+    expect {-re {codex cli cx-cli} {} eof {error "watch died on startup"} timeout {error "watch startup missing"}}
+    set soak_start [clock clicks -milliseconds]
+    for {set trial 1} {$trial <= 40} {incr trial} {
+        if {$trial == 21} {send "a"}
+        set labels [list cxcli$trial cxapp$trial clcli$trial clapp$trial bridge1-$trial bridge2-$trial]
+        set started [clock clicks -microseconds]
+        exec perl $events $work start $trial 2>@1
+        visible $labels {running} $started
+        after 200
+        set started [clock clicks -microseconds]
+        exec perl $events $work end $trial 2>@1
+        visible $labels {done|idle waiting|completed} $started
+        set pane [exec tmux -S $socket capture-pane -p -t replay 2>@1]
+        if {[string first bash-phantom $pane] >= 0} {error "phantom Bash row"}
+        foreach label $labels {
+            set count 0
+            foreach line [split $pane \n] {if {[string first $label $line] >= 0} {incr count}}
+            if {$count != 1} {error "duplicate/missing $label in completed frame: $count"}
+        }
+        # Accelerated bursts, sustained for at least two minutes, with varying tick phases.
+        after [expr {2850+int(rand()*250)}]
+    }
+    set elapsed [expr {[clock clicks -milliseconds]-$soak_start}]
+    if {$elapsed < 120000} {after [expr {120000-$elapsed}]}
+    send "q"
+    expect {eof {} timeout {error "replay q did not exit cleanly"}}
+    set status [wait]
+    if {[lindex $status 3] != 0} {error "replay exited unsuccessfully: $status"}
+    set sessions [catch {exec tmux -S $socket list-sessions 2>@1}]
+    if {!$sessions} {error "leftover tmux session"}
+} reason]
+catch {exec tmux -S $socket kill-server 2>@1}
+if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}
+if {$result} {puts stderr $reason; exit 1}
+puts "REPLAY soak: >=120s, 240 launches/endings, CLI/app tree/list, max $maximum ms, no phantom/duplicate/crash, q clean"

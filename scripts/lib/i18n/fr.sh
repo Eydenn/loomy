@@ -2306,5 +2306,10 @@ _t_fr() {
     'max_parallel: a positive integer (1 to 999) or auto (4)') _T='max_parallel : un entier positif (1 à 999) ou auto (4)' ;;
     '[Loomy] ORCHESTRATED mode: split each request into independent subtasks with disjoint files; launch them together up to max_parallel (default 4), then wait for every result before integration. Use native subagents for roles of the lead family and background bridges across families, following .loomy/scripts/loomy-route.sh. Use one worktree per overlapping scope. After integration run review, security and documentation in parallel on disjoint scopes. Keep routed efforts unchanged; do work yourself only when routing keeps it on the lead.') _T='[Loomy] Mode ORCHESTRATED : découpe chaque demande en sous-tâches indépendantes aux fichiers disjoints ; lance-les ensemble jusqu’à max_parallel (4 par défaut), puis attends tous les résultats avant intégration. Utilise les sous-agents natifs de la famille du lead et les ponts en arrière-plan entre familles, suivant .loomy/scripts/loomy-route.sh. Utilise un worktree par périmètre partagé. Après intégration lance revue, sécurité et documentation en parallèle sur des périmètres disjoints. Conserve les efforts routés ; travaille toi-même seulement si le routage te confie le rôle.' ;;
     '      max_parallel (4 by default: independent workers launched together; 1 to 999; auto: default),') _T='      max_parallel (4 par défaut : agents indépendants lancés ensemble ; 1 à 999 ; auto : valeur par défaut),' ;;
+    'Watch internal error; tracking continues (loomy doctor).') _T='Erreur interne du suivi ; il continue (loomy doctor).' ;;
+    'symlink: live tracking disabled for this source') _T='Lien symbolique : suivi en direct désactivé pour cette source' ;;
+    'tracking file exceeds its bound (%s bytes)') _T='Fichier de suivi au-delà de sa limite (%s octets)' ;;
+    'Recent watch error') _T='Erreur récente du suivi' ;;
+    'Discovering source inventory (%s pending).') _T='Inventaire des sources en cours (%s en attente).' ;;
   esac
 }

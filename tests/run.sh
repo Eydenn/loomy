@@ -1587,6 +1587,17 @@ w47_static_tests() {
   else ok "optional argument arrays tolerate empty expansion under set -u"; fi
 }
 
+# A missing PTY dependency is a named skip, not a successful replay assertion.
+replay_soak_tests() {
+  if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
+    printf 'SKIP replay soak PTY (LOOMY_TEST_NATIVE_PTY=0)\n'
+  elif ! command -v expect >/dev/null 2>&1 || ! command -v tmux >/dev/null 2>&1; then
+    printf 'SKIP replay soak PTY (expect or tmux missing)\n'
+  else
+    run 'two-minute PTY replay' bash "$HERE/replay-soak.sh"
+  fi
+}
+
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
@@ -1599,6 +1610,7 @@ if [[ "${1:-}" == --section ]]; then
     'Announced models') announced_model_tests ;;
     'Haiku 5.5 routing and long-prompt rate') haiku_model_tests ;;
     'Launch boundary') section 'Launch boundary'; run 'single launch point and explicit ownership' bash "$HERE/launch.sh" ;;
+    'S5/W6') section 'S5/W6'; run 'live performance and resilient diagnostics' bash "$HERE/s5-w6.sh"; replay_soak_tests ;;
     'Live growth') section 'Live growth'; run 'checkpoint growth/recovery' bash "$HERE/live-growth.sh" ;;
     'W2/W3 resume and session-only') section 'W2/W3 resume and session-only'; run 'resume regressions' bash "$HERE/resume-app.sh" ;;
     'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
@@ -3440,6 +3452,9 @@ run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash 
 
 section "Launch boundary"
 run "single launch point, local policy and nested bridge ownership" bash "$HERE/launch.sh"
+section "S5/W6"
+run "live performance and resilient diagnostics" bash "$HERE/s5-w6.sh"
+replay_soak_tests
 section "Live growth"
 run "bounded checkpoints and progressive journal reconstruction" bash "$HERE/live-growth.sh"
 

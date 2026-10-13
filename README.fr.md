@@ -76,6 +76,8 @@ loomy start
 
 **5. Suivre en direct** : `loomy start` ouvre déjà le suivi en direct à côté de la session ; `loomy watch` le rouvre n'importe où.
 
+Le suivi continue après une erreur de collecte ou de réduction et affiche un avertissement en pied d’écran. `loomy doctor` signale les erreurs récentes sans contenu de conversation du journal privé borné `.loomy/logs/watch-errors.log`, les liens symboliques de sources qui désactivent le suivi et les journaux/checkpoints trop volumineux. `LOOMY_JOURNAL=0` désactive aussi l’écriture des erreurs. La découverte des sources de quota Codex est mise en cache pendant 15 secondes ; l’inventaire initial des sources est signalé pendant son rattrapage.
+
 > [!TIP]
 > Pour la suite, tape simplement **`loomy`** dans le dossier du projet : il affiche où en est le projet, ce qui est attendu de toi, et propose d'ouvrir ou reprendre la session, de suivre en direct ou de voir le statut.
 

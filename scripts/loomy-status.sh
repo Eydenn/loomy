@@ -176,25 +176,28 @@ loomy_watch_feed() {
   exec perl -MIO::Select -MTime::HiRes=time,stat -MFcntl=O_RDWR,O_APPEND,O_CREAT,O_NOFOLLOW -e '
     my ($root,$cfg,$terminal,$native,$sessions,$reducer,$claude,$projects,$owner,$until,$errors)=@ARGV; $|=1;
     my %reported;
-    $SIG{__WARN__}=sub {
-      my $message=substr(join("",@_),0,2048);
-      return if $reported{$message} || keys(%reported)>=128 || $errors eq "/dev/null";
-      $reported{$message}=1;
-      sysopen my $log,$errors,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
-      flock $log,2 or return; chmod 0600,$log or return;
-      # Keep diagnostics bounded even if older sampler runs filled the private log.
-      truncate $log,0 if -s $log>65536-length($message);
-      print $log $message;
+    my $diagnostics=$native; $diagnostics =~ s{/[^/]+$}{/watch-errors.pl};
+    require $diagnostics;
+    my $failed=0;
+    my $attempt=sub {
+      my ($stage,$action)=@_; my $result=eval {$action->()};
+      if ($@) {Loomy::WatchErrors::record($errors,$stage,"exception"); $failed=1}
+      return $result;
     };
-    require $native; require $reducer; require $claude;
-    my $live=Loomy::LiveState->new;
+    $SIG{__WARN__}=sub {
+      my $kind=join("",@_) =~ /Native checkpoint invalid; reconstructing/ ? "checkpoint-recovering" : "warning";
+      return if $reported{$kind}++;
+      Loomy::WatchErrors::record($errors,"sampler",$kind); $failed=1;
+    };
+    my $live;
+    $attempt->("initialize",sub {require $native; require $reducer; require $claude; $live=Loomy::LiveState->new});
     my $tty; open $tty,"<","/dev/tty" if $terminal;
     my $input=$tty; open $input,"<&",7 or die $! unless $input;
     my $select=IO::Select->new; $select->add($input) if $input;
     my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts session-only);
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
-    my ($state,$claude_state);
+    my ($state,$claude_state,$discovering);
     while (1) {
       last unless kill 0,$owner;
       last if $until && !kill(0,$until);
@@ -204,16 +207,26 @@ loomy_watch_feed() {
       elsif ($buf =~ s/^\e\[B//) { $key="down" }
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
       my $wall=time; my $now=int($ENV{LOOMY_NATIVE_NOW}//$wall);
-      if (Loomy::CodexNative::watch_changed($root,$sessions,$now) || int($wall)!=$maintained) {
-        $state=eval { Loomy::CodexNative::poll($root,$sessions) }; $maintained=int($wall);
-      }
-      if (Loomy::ClaudeNative::watch_changed($root,$projects) || int($wall)!=$claude_maintained) {
-        $claude_state=eval { Loomy::ClaudeNative::poll($root,$projects) };
-        warn $@ if $@; $claude_maintained=int($wall);
-      }
-      $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
-      $live->claude_evidence($claude_state);
-      my @deltas=$live->projections($now);
+      $attempt->("initialize",sub {require $native; require $reducer; require $claude; $live=Loomy::LiveState->new}) unless $live;
+      $attempt->("codex",sub {
+        if (Loomy::CodexNative::watch_changed($root,$sessions,$now) || int($wall)!=$maintained) {
+          $state=Loomy::CodexNative::poll($root,$sessions); $maintained=int($wall);
+        }
+      });
+      $attempt->("claude",sub {
+        if (Loomy::ClaudeNative::watch_changed($root,$projects) || int($wall)!=$claude_maintained) {
+          $claude_state=Loomy::ClaudeNative::poll($root,$projects); $claude_maintained=int($wall);
+        }
+      });
+      my $pending=$state ? ($state->{discovering}//0) : 0;
+      if (!defined($discovering) || $pending!=$discovering) {print "D|$pending\n"; $discovering=$pending}
+      my @deltas;
+      $attempt->("reducer",sub {
+        return unless $live;
+        $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
+        $live->claude_evidence($claude_state); @deltas=$live->projections($now);
+      });
+      if ($failed) {print "W|error\n"; $failed=0}
       my $sig="";
       for my $f (@files) { my @s=stat($f); $sig.=join(":",@s ? @s[0,1,7,9] : "-").";" }
       my ($rows,$cols)=(0,0);
@@ -239,6 +252,8 @@ loomy_watch_coalesce() {
     printf '%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "${watch_rows:-0}" "${watch_cols:-0}" >&9
     local feed_line
     while IFS= read -r feed_line <&10; do
+      if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
+      if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
       if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
       loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
       return 0
@@ -276,7 +291,7 @@ loomy_watch_coalesce() {
         while (($n=sysread($feed,my $char,1)) && $n==1) { $line.=$char; last if $char eq "\n" }
         last unless $line =~ /\n$/;
         chomp $line;
-        if ($line =~ /^N\|/) { push @deltas,$line; next }
+        if ($line =~ /^(?:N|W|D)\|/) { push @deltas,$line; next }
         my @row=split /\|/,$line,-1;
         next unless (@row==4 || @row==6) && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
         ($now,$key,$clock,$rows,$cols)=@row[0,2,3,4,5]; $dirty=($dirty || $row[1]) ? 1 : 0;
@@ -313,8 +328,10 @@ watch_keys() {
   tv word quit; WATCH_KEYS="$WATCH_KEYS · [q] $word"
 }
 
-ai_codex_native_poll "$ROOT"
-ai_claude_native_poll "$ROOT"
+if (( ! WATCH )) && [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
+  ai_codex_native_poll "$ROOT"
+  ai_claude_native_poll "$ROOT"
+fi
 if (( WATCH )); then
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin
@@ -352,6 +369,18 @@ if (( WATCH )); then
   # shellcheck source=loomy-tree.sh
   source "$SCRIPT_DIR/loomy-tree.sh" --library
   loomy_live_init
+  # Internal failures leave the terminal controller alive; no command/source text is logged.
+  set +eu
+  set -E
+  watch_error=0; watch_discovering=0
+  watch_internal_error() {
+    watch_error=1; force_frame=1
+    if ai_journal_enabled "$ROOT"; then
+      perl "$SCRIPT_DIR/lib/watch-errors.pl" "$ROOT/.loomy/logs/watch-errors.log" controller error 2>/dev/null || true
+    fi
+    return 0
+  }
+  trap watch_internal_error ERR
   _ui_term_size
   # The sampler already owns TIOCGWINSZ; reuse it even inside the UI drawing helpers.
   watch_rows=$UI_ROWS; watch_cols=$UI_COLS
@@ -391,6 +420,8 @@ if (( WATCH )); then
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
   while IFS= read -r feed_line <&8; do
+    if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
+    if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
     if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
     loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
@@ -402,7 +433,7 @@ if (( WATCH )); then
     LV_NOW="$now"
     if [[ -n "$watch_note" ]] && (( now >= note_until )); then watch_note=""; force_frame=1; fi
     if (( config_dirty || ! LV_META_READY )); then loomy_live_metadata; fi
-    if (( dirty )); then (( NS_ENABLED )) || loomy_live_poll "$J"; fi
+    if (( dirty && ! NS_ENABLED )); then LOOMY_WATCH_ID=$$ loomy_live_poll "$J"; fi
     old_active=$LV_ACTIVE; old_finished=${#LV_FINISHED[@]}
     if (( dirty || now != state_tick )); then loomy_live_states; state_tick=$now; fi
     [[ "$old_active:${old_finished}" == "$LV_ACTIVE:${#LV_FINISHED[@]}" ]] || force_frame=1
@@ -458,7 +489,7 @@ if (( WATCH )); then
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Reserve the actual banner/footer before deciding how much hierarchy fits.
       loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
-      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="$watch_note"; _ui_chrome
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="$watch_note"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
       watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
@@ -467,15 +498,18 @@ if (( WATCH )); then
         LV_FRAME=""
         LOOMY_WATCH_CAPTURE=1 LOOMY_WATCH_BODY_HEIGHT=$watch_body_height LOOMY_WATCH_PIN=1 LOOMY_WATCH_VIEW=$view LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_native_render
         frame="${LV_FRAME%$'\n'}"; native_frame=1
+      elif [[ ( "$view" == status || "$view" == log ) && ! "$key" && "$dirty" == 0 && "$legacy_stamp" == "$LV_SEQ:$view:$size:$watch_body_height:$watch_cols" ]]; then
+        frame="$legacy_frame"
       elif [[ "$view" == list ]]; then
         frame="$(LOOMY_WATCH_BODY_HEIGHT=$watch_body_height LOOMY_WATCH_PIN=1 LOOMY_WATCH_VIEW=list LOOMY_NO_HEADER=1 LOOMY_TICK=$tick loomy_live_render)"
       elif [[ "$view" == tree ]]; then
-        frame="$(LOOMY_TREE=$tree_mode LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
+        frame="$(LOOMY_WATCH_ID=$$ LOOMY_TREE=$tree_mode LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick bash "$SCRIPT_DIR/loomy-tree.sh" --root "$ROOT" 2>&1)" || true
       else
         extra=(); [[ "$view" == log ]] && extra=(--journal)
         frame="$(LOOMY_WATCH_ID=$$ LOOMY_NO_CLEAR=1 LOOMY_NO_HEADER=1 LOOMY_FORCE_COLOR="${C_RESET:+1}" LOOMY_TICK=$tick LOOMY_HL_DELEG=$hl_d LOOMY_HL_PHASE=$hl_p \
           "$0" --root "$ROOT" "$size" ${extra[@]+"${extra[@]}"} 2>&1)" || true
       fi
+      if (( ! native_frame )); then legacy_stamp="$LV_SEQ:$view:$size:$watch_body_height:$watch_cols"; legacy_frame="$frame"; fi
       # Each line is cut to the terminal width ("…"), colour sequences included: no line wrap,
       # even in a terminal that ignores turning off automatic wrap.
       if (( ! native_frame )); then frame="$(printf '%s\n' "$frame" | ui_clip "$(( UI_COLS - 1 ))")"; fi
@@ -485,7 +519,7 @@ if (( WATCH )); then
         loomy_live_header
         loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
-        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="$watch_note"
+        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="$watch_note"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
         _ui_term_size; _ui_chrome
         (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $scroll_word · $keys"
         UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop

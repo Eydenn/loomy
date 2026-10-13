@@ -69,7 +69,7 @@ sub watch_changed {
     my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
     $watch{$idx}=$sig;
     # Continue bounded catch-up even if the producer stops appending.
-    return $changed || pending_input($root,$sessions,$s) || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
+    return $changed || @{$inventory{$sessions}{queue}//[]} || pending_input($root,$sessions,$s) || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
 }
 
 # sysread has a fixed budget; offsets stop at complete lines, including malformed ones.
@@ -148,13 +148,30 @@ sub discover {
         if (!$d || $d->{sig} ne $sig) {
             opendir my $dh,$dir or next;
             my @names=sort grep { $depth==3 ? /^rollout-.*\.jsonl$/ : /^\d{2,4}$/ } readdir $dh;
+            if ($depth==3) {
+                my @new;
+                for my $name (@names) {
+                    my $path="$dir/$name"; my @file=stat($path);
+                    next unless @file;
+                    my $key="$file[0]:$file[1]";
+                    next if ($inv->{checked}{$path}//'') eq $key || $inv->{queued}{$path};
+                    push @new,$path; $inv->{queued}{$path}=1;
+                }
+                # A newly changed directory precedes the older bootstrap backlog.
+                unshift @{$inv->{queue}},@new;
+            }
             $d=$inv->{dirs}{$dir}={sig=>$sig,names=>\@names};
         }
         if ($depth<3) { push @queue,map { ["$dir/$_",$depth+1] } @{$d->{names}} }
         else { $inv->{paths}{"$dir/$_"}=1 for @{$d->{names}} }
     }
+    for my $path (keys %{$inv->{invalid}}) {
+        my @st=stat($path); next unless @st && join(':',@st[0,1,7,9]) ne $inv->{invalid}{$path};
+        next if $inv->{queued}{$path}; unshift @{$inv->{queue}},$path; $inv->{queued}{$path}=1;
+    }
     my ($read,$bytes)=(0,0);
-    for my $path (sort keys %{$inv->{paths}}) {
+    while (@{$inv->{queue}//[]}) {
+        my $path=shift @{$inv->{queue}}; delete $inv->{queued}{$path};
         next unless safe_path($path) && -f $path;
         my @st=stat($path); my $sig="$st[0]:$st[1]";
         next if ($inv->{checked}{$path}//'') eq $sig;
@@ -164,7 +181,9 @@ sub discover {
         }
         my $version=join(':',@st[0,1,7,9]);
         next if ($inv->{invalid}{$path}//'') eq $version;
-        last if ++$read>32 || $bytes+262144>2097152;
+        if (++$read>32 || $bytes+262144>2097152) {
+            unshift @{$inv->{queue}},$path; $inv->{queued}{$path}=1; last;
+        }
         my $m=metadata($path); $bytes+=$metadata_bytes;
         if (!$m) { $inv->{invalid}{$path}=$version; next }
         delete $inv->{invalid}{$path}; $inv->{checked}{$path}=$sig;
@@ -174,6 +193,7 @@ sub discover {
         my $old=$s->{files}{$path};
         $s->{files}{$path}={meta=>$m,offset=>0} unless $old && ($old->{key}//'') eq $sig;
     }
+    $s->{discovering}=scalar @{$inv->{queue}//[]};
     return $bytes;
 }
 
@@ -367,7 +387,7 @@ sub poll {
     my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $day=int($now/86400);
     if ($s && ($cached{$idx}{pruned_day}//-1)==$day && ($cached{$idx}{poll_sig}//'') eq input_signature($root,$sessions,$now)
         && !(grep {!($_->{at_eof}//0)} values %{$s->{files}//{}})
-        && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s)) {return $s}
+        && !@{$inventory{$sessions}{queue}//[]} && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s)) {return $s}
     $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
     my $dirty=prune_checkpoint($s,$now);
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;

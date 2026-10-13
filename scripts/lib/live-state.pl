@@ -567,8 +567,8 @@ unless (caller) {
     my $dir=abs_path(__FILE__); $dir =~ s{/[^/]+$}{};
     require "$dir/codex-native.pl";
     require "$dir/claude-native.pl";
-    my $native=Loomy::CodexNative::poll($root,$sessions);
-    my $claude=Loomy::ClaudeNative::poll($root,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude").'/projects');
+    my $native=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::CodexNative::poll($root,$sessions);
+    my $claude=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::ClaudeNative::poll($root,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude").'/projects');
     my $state=__PACKAGE__->new; $state->read_journal("$root/.loomy/logs/events.jsonl"); $state->source_evidence($native);
     $state->claude_evidence($claude);
     print "$_\n" for $state->projections($ENV{LOOMY_NATIVE_NOW}//time);

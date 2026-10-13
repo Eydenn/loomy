@@ -76,6 +76,8 @@ loomy start
 
 **5. Follow live**: `loomy start` already opens live tracking beside the session; `loomy watch` reopens it anywhere.
 
+Watch keeps running after a collector/reducer error and shows a footer warning. `loomy doctor` reports recent content-free errors from the private bounded `.loomy/logs/watch-errors.log`, source-directory symlinks that disable tracking, and oversized journals/checkpoints. `LOOMY_JOURNAL=0` also disables error-log writes. Codex quota source discovery is cached for 15 seconds; initial source inventory is explicitly shown while it catches up.
+
 > [!TIP]
 > From then on, just type **`loomy`** in the project folder: it shows where the project stands, what is expected from you, and offers to open or resume the session, follow live, or see the status.
 

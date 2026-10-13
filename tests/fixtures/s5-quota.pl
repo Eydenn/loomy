@@ -1,0 +1,11 @@
+use strict;
+use warnings;
+use JSON::PP qw(decode_json);
+my ($repo,$work,$now)=@ARGV;
+my $dir="$work/empty"; mkdir $dir or die $!;
+my $cache="$work/negative-cache";
+system('perl',"$repo/scripts/lib/quota-source.pl",$dir,$cache,$now,0)==0 or die;
+my @before=stat($cache);
+system('perl',"$repo/scripts/lib/quota-source.pl",$dir,$cache,$now+1,0)==0 or die;
+my @after=stat($cache); die 'negative discovery rewritten' unless "$before[1]:$before[9]" eq "$after[1]:$after[9]";
+open my $f,'<',$cache or die; local $/; my $d=decode_json(<$f>); die unless $d->{checked}==$now && $d->{path} eq '';

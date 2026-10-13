@@ -160,13 +160,13 @@ if ($finding eq 'R1') {
     shell(q{ { sleep 1; rm -f "$2/.loomy/logs/claude-native.idx.bak";
       printf '{}broken' >"$2/.loomy/logs/claude-native.idx"; sleep 3; printf 'q\n'; } |
       bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
-      test "$(grep -c 'Native checkpoint invalid; reconstructing' "$2/.loomy/logs/watch-errors.log")" = 1;
+      test "$(grep -c 'watch sampler checkpoint-recovering' "$2/.loomy/logs/watch-errors.log")" = 1;
       ! grep -q 'Native checkpoint invalid' "$2/stderr"; });
     open my $f,'>',$errors or die; print $f 'x'x70000; close $f;
     shell(q{ { sleep 1; rm -f "$2/.loomy/logs/claude-native.idx.bak";
       printf '{}broken' >"$2/.loomy/logs/claude-native.idx"; sleep 2; printf 'q\n'; } |
       bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
-      grep -q 'Native checkpoint invalid; reconstructing' "$2/.loomy/logs/watch-errors.log"; });
+      grep -q 'watch sampler checkpoint-recovering' "$2/.loomy/logs/watch-errors.log"; });
     die 'watch diagnostics not bounded/private' unless -s $errors<=65536 && ((stat($errors))[2]&0777)==0600;
 } else {die "unknown finding $finding"}
 print "PASS $finding Round 2 structural regression\n";

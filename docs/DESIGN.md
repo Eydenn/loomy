@@ -53,6 +53,44 @@ The design deliberately avoids preloading every specialised role or a large secu
 - `tools/capture-watch.sh`: regenerates the animated README live-view SVG with `tools/capture-watch.sh <en|fr> <out.svg>`, using an isolated disposable project, CLI test stubs and synthetic journal events with live local processes; renders 24 frames through `scripts/loomy-tree.sh --once`, converts them with `tools/ansi2svg.py`, and checks the heading, local-path exclusion and size below 300 KB.
 
 
+## Live performance and resilient watch
+
+The sampler and timer coalescer live for the watch lifetime. Watch-owned snapshots
+skip source collection; the native tree/list renders cached row projections, and
+status/log bodies are reused for unchanged timer frames. Legacy hook-only rendering
+still parses history on changed frames and needs further integration before claiming
+that every view is history-free. Codex discovery caches every date directory, queues
+new/replaced metadata only, and prioritizes changed directories over initial backlog.
+Known eligible old files remain signature-polled for resumed appends. Pending bootstrap
+inventory is shown in the footer. Quota source discovery has a separate 15-second cache,
+including negative results; warm calls stat only the selected file, then read a bounded tail.
+
+`tests/s5-w6.sh` asserts a warm reducer and Bash frame under 150 ms with 50,000
+historical events and 100 active agents, using 10,000 source files and four leads.
+Cold reconstruction is measured separately. The 2026-10-13 sandbox run measured
+about 9.7 s cold inventory/reconstruction, 2.2 ms maximum warm reduction and 47 ms
+new old-date source discovery. **Warm Bash rendering failed at 569 ms**; these figures
+are fixture results, not completed S5 acceptance. `watch-idle.exp` asserts total watch
+CPU below 3% over 60 seconds (Bash and all child processes) on an idle empty project.
+The populated-envelope CPU and real Mac checks remain release gates.
+
+`tests/replay-soak.sh` sources the shared test guard and runs watch in an expect PTY
+with a private tmux socket. Forty accelerated bursts over at least 120 seconds replay
+Claude CLI/app async Agent/notification and ignored Bash notification envelopes,
+Codex spawned-agent rollouts and explicitly nested bridge events. Tree/list launches
+and endings have a strict 1-second maximum with no retry, plus duplicate/phantom,
+crash, q and process/socket cleanup checks. Missing expect/tmux or explicit sandbox
+PTY disablement prints a named SKIP. Linux CI installs both and enables PTY tests.
+The replay and 60-second CPU fixtures were not executed in the sandbox.
+
+Adapter/reducer exceptions and Bash ERR are isolated from the terminal controller.
+Only UTC timestamps, stages and allowlisted error kinds are persisted, never exception
+text or provider content. `.loomy/logs/watch-errors.log` is no-follow, 0600 and bounded
+to 64 KiB under a lock, respecting `LOOMY_JOURNAL=0`. A footer warning stays visible
+and q remains available; fatal external signals and user exits retain normal cleanup.
+Doctor shows the last three validated diagnostics and warns about source-home
+symlinks, journals above 8 MiB, checkpoints above 2 MiB and oversized source shards.
+
 ## Checkpoint and journal policy
 
 S4 native checkpoints use version 2, with a 2 MiB snapshot and content-addressed source

@@ -101,6 +101,19 @@ else
   ui_err "git" "$(t "required — https://git-scm.com/downloads")"; MIN_OK=0
 fi
 
+# Source symlinks are deliberately not followed by the collectors.
+loomy_doctor_tracking() {
+  local kind path detail
+  while IFS=$'\t' read -r kind path detail; do
+    case "$kind" in
+      symlink) ui_warn "$path" "$(t 'symlink: live tracking disabled for this source')" ;;
+      bounds) ui_warn "$path" "$(t 'tracking file exceeds its bound (%s bytes)' "$detail")" ;;
+      error) ui_warn "$(t 'Recent watch error')" "$detail" ;;
+    esac
+  done < <(perl "$SCRIPT_DIR/lib/watch-health.pl" "$ROOT" "${CODEX_HOME:-$HOME/.codex}" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" 2>/dev/null)
+}
+loomy_doctor_tracking
+
 # ---------------------------------------------------------------- CLI IA
 ui_section "$(t "AI CLIS")" "$(t "at least one required; ideal: both, for hybrid mode")"
 HAS_C=0; HAS_X=0

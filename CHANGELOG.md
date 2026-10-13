@@ -5,6 +5,9 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ## Unreleased (0.17.0)
 
 ### Fixed
+- Keep watch alive on collector/reducer exceptions and controller ERR, with a footer warning and content-free 0600 diagnostics bounded to 64 KiB; journaling opt-out also stops diagnostic writes. Doctor reports recent errors, source symlinks and journal/checkpoint overflow.
+- Cache Codex quota source discovery independently for 15 seconds. Retain all-date rollout coverage, queue only new/replaced metadata candidates, prioritize changed dates over initial backlog, and show pending inventory. Watch-owned snapshot helpers do not collect sources again; status/log timer frames reuse their last body.
+- Add a 10,000-source / 50,000-event performance fixture, a strict two-minute structural PTY replay and an idle CPU test; Linux CI explicitly enables PTY checks. The 100-agent warm Bash renderer currently exceeds the 150 ms budget; S5 acceptance remains open pending rendering work and real PTY/Mac validation.
 - Test suites isolate temporary files and tmux servers, stub desktop launchers, reject real AI binaries, and fail on leaked processes; disabled watch journaling creates no logs directory.
 - Claude live tracking combines project hooks with local incremental transcript fallback, keeps concurrent lead sessions separate, and reconciles foreground/background Agent identities and out-of-order stops without duplicate live rows or costs. Missing explicit terminal evidence stays unconfirmed; hookless native costs stay unknown.
 - Native Codex test fixtures keep the seed's clock and rollout path across UTC midnight. The targeted `Native Codex` section isolates inherited UI language and allows an explicit sandbox-only PTY skip; Mac runs still include the terminal check by default.

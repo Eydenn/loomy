@@ -1,0 +1,27 @@
+source [file join [file dirname [info script]] watchdog.exp]
+set timeout 90
+set repo [lindex $argv 0]
+set work [lindex $argv 1]
+set timing [file join $work watch-time]
+set env(CODEX_HOME) [file join $work idle-codex]
+file mkdir [file join $work idle .loomy]
+set env(CLAUDE_CONFIG_DIR) [file join $work idle-claude]
+set child ""
+log_user 0
+set result [catch {
+    # time includes Bash, sampler, coalescer and every child, rather than one sampled PID.
+    spawn bash -c {TIMEFORMAT='%R %U %S'; exec 3>&2; { time bash "$1/scripts/loomy-status.sh" --root "$2/idle" --watch --full 2>&3; } 2>"$2/watch-time"} _ $repo $work
+    set child [exp_pid]
+    after 60000
+    send "q"
+    expect {eof {} timeout {error "idle watch q timed out"}}
+    set status [wait]
+    if {[lindex $status 3] != 0} {error "idle watch crashed: $status"}
+    set f [open $timing r]; set output [read $f]; close $f
+    if {![regexp {(\d+\.\d+) (\d+\.\d+) (\d+\.\d+)\s*$} $output all wall user sys]} {error "idle CPU timing missing"}
+    set cpu [expr {100.0*($user+$sys)/$wall}]
+    if {$wall < 60 || $cpu >= 3} {error "idle watch CPU $cpu% over $wall s (budget <3%)"}
+} reason]
+if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}
+if {$result} {puts stderr $reason; exit 1}
+puts "S5 idle watch CPU: $cpu% over $wall s, including all child processes"

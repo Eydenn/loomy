@@ -983,8 +983,10 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
 ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || exit 1
-ai_codex_native_poll "$ROOT"
-ai_claude_native_poll "$ROOT"
+if [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
+  ai_codex_native_poll "$ROOT"
+  ai_claude_native_poll "$ROOT"
+fi
 J="$(ai_journal_file "$ROOT")"
 TICK="${LOOMY_TICK:-0}"
 now_s="${LOOMY_NATIVE_NOW:-$(date +%s)}"

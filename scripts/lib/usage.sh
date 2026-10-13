@@ -34,14 +34,12 @@ ai_quota() {
     codex)
       local dir="${CODEX_HOME:-$HOME/.codex}/sessions" f mt cache line
       [[ -d "$dir" ]] || return 0
-      # Most recent session log; its last reading is the freshest.
-      f="$(find "$dir" -name '*.jsonl' -type f -mtime -14 2>/dev/null | while IFS= read -r p; do printf '%s\t%s\n' "$(stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null)" "$p"; done | sort -rn | head -1)"
+      # Discovery has its own 15-second cache, including a negative result.
+      cache="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/codex-limits"
+      if [[ "${AI_QUOTA_READ_ONLY:-0}" != 1 ]]; then mkdir -p "${cache%/*}" 2>/dev/null || true; fi
+      f="$(perl "${BASH_SOURCE[0]%/*}/quota-source.pl" "$dir" "$cache.source" "$now" "${AI_QUOTA_READ_ONLY:-0}" 2>/dev/null)"
       [[ -n "$f" ]] || return 0
       mt="${f%%$'\t'*}"; f="${f#*$'\t'}"
-      # Modification time to the second is not enough (a log can grow twice within a second): the size is in the key.
-      mt="$mt $(wc -c <"$f" | tr -d ' ')"
-      # Cache: the reading only changes when that log changes (loomy watch asks every few seconds).
-      cache="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/codex-limits"
       if [[ "$(head -1 "$cache" 2>/dev/null)" == "$mt $f" ]]; then line="$(sed -n '2p' "$cache")"
       else
         # Only the end of the log: readings are frequent, logs can be large.

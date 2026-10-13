@@ -2,7 +2,6 @@ name: tests
 
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -29,4 +28,6 @@ jobs:
           git config --global user.email "ci@loomy.invalid"
           git config --global init.defaultBranch main
       - name: Tests
+        env:
+          LOOMY_TEST_NATIVE_PTY: "1"
         run: bash tests/run.sh

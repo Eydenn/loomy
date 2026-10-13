@@ -2256,3 +2256,6 @@ model unknown	modèle inconnu
 catching up	rattrapage en cours
 native usage unknown	usage natif inconnu
   loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)	  loomy-status.sh --watch [N]     agents et chronos en direct chaque seconde ; touches selon la vue (voir le pied d’écran)
+waiting since %s	en attente depuis %s
+last turn %s	dernier tour %s
+%s turns	%s tours

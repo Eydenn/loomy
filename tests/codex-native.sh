@@ -9,7 +9,7 @@ trap '[[ -z "$OWNER" ]] || { kill "$OWNER" 2>/dev/null || true; wait "$OWNER" 2>
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
-unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL
+unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_UI_LANG LOOMY_FIXTURE_NOW
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"
 PASS=0
@@ -23,6 +23,19 @@ count_start() { json_check 'die unless (grep {$_->{type} eq "delegation_start"} 
 drain_root() {
   perl -MJSON::PP -e 'my ($module,$root,$sessions)=@ARGV; require $module; for(1..256){Loomy::CodexNative::poll($root,$sessions); open my $h,"<","$root/.loomy/logs/codex-native.idx" or die; my $s=decode_json(do{local $/;<$h>}); for my $path(keys %{$s->{files}}){my $f=$s->{files}{$path}; next if $f->{meta}{parent} || $f->{meta}{id}!~/000001$/; exit 0 if $f->{at_eof} && $f->{offset}==(-s $path)}} die "root did not finish bounded catch-up\n";' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
 }
+# Reproduce the old UTC-midnight failure without waiting or changing the host clock.
+ROOT="$WORK/midnight"; export CODEX_HOME="$WORK/midnight-codex"
+LOOMY_FIXTURE_NOW=1791849599 fixture seed
+LOOMY_FIXTURE_NOW=1791849601 fixture root-context
+check 'fixture append retains the seeded UTC date across midnight' perl -MJSON::PP -e '
+  my ($root,$sessions)=@ARGV; open my $f,"<","$root/.fixture-clock" or die;
+  die unless <$f> == 1791849599;
+  my @paths=glob "$sessions/*/*/*/rollout-fixture-00000000-0000-4000-8000-000000000001.jsonl";
+  die unless @paths==1; open my $r,"<",$paths[0] or die;
+  my @rows=map {decode_json($_)} <$r>;
+  die unless @rows==3 && $rows[-1]{type} eq "turn_context" && $rows[-1]{timestamp} eq "2026-10-12T23:59:19Z";
+' "$ROOT" "$CODEX_HOME/sessions"
+ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/codex"
 fixture seed
 check 'first poll discovers three agents' poll
 check 'three distinct starts' count_start
@@ -227,7 +240,8 @@ check 'same-PID sessionless stale context cannot overwrite the selected explicit
 
 ROOT="$WORK/root-repeated-clear"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-repeated-clear-codex"
 fixture compact-seed; fixture root-context
-cp "$CODEX_HOME/sessions/$(date -u +%Y/%m/%d)/rollout-fixture-00000000-0000-4000-8000-000000000001.jsonl" "$ROOT/root-snapshot.jsonl"
+root_rollouts=("$CODEX_HOME"/sessions/*/*/*/rollout-fixture-00000000-0000-4000-8000-000000000001.jsonl)
+cp "${root_rollouts[0]}" "$ROOT/root-snapshot.jsonl"
 poll; fixture root-truncate-empty; poll; fixture root-restore-identical; poll
 check 'identical root context restores after a clear despite identical identity/position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[1]{model} eq "" && $c[2]{model} eq "gpt-6.1-sol";'
 fixture root-truncate-empty; poll
@@ -301,7 +315,9 @@ fixture nine-grow; fixture end-owner
 check 'root and children consume no more than the shared 2 MiB lifecycle budget' perl -e 'my ($module,$root,$sessions)=@ARGV; require $module; my $bytes=0; my $lines=\&Loomy::CodexNative::lines; my $context=\&Loomy::CodexNative::root_context; no warnings "redefine"; local *Loomy::CodexNative::lines=sub {my @r=$lines->(@_); $bytes+=$_[1]{read_bytes}//0 unless $_[0]=~/events\.jsonl$/; return @r}; local *Loomy::CodexNative::root_context=sub {my $before=$bytes; my $n=$context->(@_); $bytes+=$n-($bytes-$before); return $n}; Loomy::CodexNative::poll($root,$sessions); die if $bytes>2097152; printf "Lifecycle read: %d bytes\n",$bytes;' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
 for (( catchup=0; catchup<4; catchup++ )); do poll; done
 check 'root catch-up cannot starve ninth child completion' json_check 'die unless grep {$_->{type} eq "delegation" && ($_->{task}//"") eq "nine10" && $_->{outcome} eq "done"} @native;'
-if command -v expect >/dev/null 2>&1; then
+if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
+  printf 'SKIP native watch PTY: explicitly disabled (lead must run on the Mac)\n'
+elif command -v expect >/dev/null 2>&1; then
   check 'real watch sampler displays identities and refreshes terminal outcomes' expect "$REPO/tests/fixtures/native-watch.exp"
 else printf 'SKIP native watch PTY: expect unavailable\n'; fi
 printf '%s native Codex checks passed\n' "$PASS"

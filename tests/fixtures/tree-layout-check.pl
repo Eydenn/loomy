@@ -37,4 +37,5 @@ if ($advisor) {
     for my $y (7..43) { die "broken advisor border row $y" unless substr($rows[$y],0,1) eq '│' && substr($rows[$y],25,1) eq '│' }
     die 'advisor overlaps roles' if $boxes[0][0]<32;
 }
-die 'invented DONE state' if join("\n",@rows)=~/✓/;
+# Persistent idle agents have a checkmark; an open lead cannot claim completion.
+for (@rows) { die 'invented DONE state' if /✓/ && !/idle|au repos/ }

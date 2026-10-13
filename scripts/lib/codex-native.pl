@@ -149,8 +149,27 @@ sub root_context {
     my $accept=sub {
         my ($line,$position)=@_;
         my $d=eval { decode_json($line) };
-        return unless ref($d) eq 'HASH' && scalar_text($d->{type}) eq 'turn_context';
-        my $p=$d->{payload}; return unless ref($p) eq 'HASH' && identity($p->{turn_id}) && epoch($d->{timestamp});
+        return unless ref($d) eq 'HASH';
+        my $p=$d->{payload};
+        return unless ref($p) eq 'HASH';
+        # A successful parent close call ends the persistent agent, not just its last turn.
+        if (scalar_text($d->{type}) eq 'response_item') {
+            if (($p->{type}//'') eq 'function_call' && scalar_text($p->{name}) =~ /^(?:.*__)?close_agent$/) {
+                my $args=eval { decode_json(scalar_text($p->{arguments})) };
+                my $id=ref($args) eq 'HASH' ? identity($args->{agent_id}//$args->{id}) : '';
+                $f->{close_calls}{identity($p->{call_id})}=$id if $id && identity($p->{call_id});
+            } elsif (($p->{type}//'') eq 'function_call_output') {
+                my $id=delete $f->{close_calls}{identity($p->{call_id})};
+                my $result=eval { decode_json(scalar_text($p->{output})) };
+                my $ts=stamp($d->{timestamp});
+                if ($id && epoch($ts) && ref($result) eq 'HASH' && !$result->{error} && exists $result->{status}) {
+                    $f->{closed_agents}{$id}=$ts if $ts gt ($f->{closed_agents}{$id}//'');
+                }
+            }
+            return;
+        }
+        return unless scalar_text($d->{type}) eq 'turn_context';
+        return unless identity($p->{turn_id}) && epoch($d->{timestamp});
         return if $f->{context} && $position<=$f->{context}{position};
         $f->{context}={position=>$position,ts=>stamp($d->{timestamp}),turn=>identity($p->{turn_id}),
             model=>identity($p->{model}),effort=>identity($p->{effort})};
@@ -367,6 +386,7 @@ sub poll {
             task=>(($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{task}||'Codex agent '.($m->{nickname}||$m->{id}))),nickname=>$m->{nickname},cost_in=>'unknown'};
         my $dead=$owner->{ended} || !alive($owner->{pid});
         if ($budget>0) {
+            $f->{last_observed_ts}//=observed_time($path,$f) if $f->{id} && !$f->{finished};
             $s->{read_rotation}=($rotation+$slot+1)%@paths;
             my $limit=$budget<262144 ? $budget : 262144;
             for my $record (lines($path,$f,$limit)) {
@@ -378,25 +398,28 @@ sub poll {
                 if ($type eq 'event_msg' && $event eq 'task_started' && $turn) {
                     next if epoch($ts)<epoch($owner->{ts})-10;
                     if ($f->{id} && !$f->{finished} && ($f->{turn}//'') ne $turn) {
-                        $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},status=>'unknown',outcome=>'unknown',duration_s=>epoch($ts)-epoch($f->{started})});
+                        my $end=$f->{last_observed_ts}//observed_time($path,$f)//$f->{started};
+                        my $duration=epoch($end)-epoch($f->{started}); $duration=0 if $duration<0;
+                        $emit->("$f->{id}:end",'delegation',$end,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},status=>'unknown',outcome=>'unknown',duration_s=>$duration});
                     }
                     $f->{turn}=$turn; $f->{started}=$ts; $f->{finished}=0;
                     $f->{id}="cn:$m->{id}:$turn"; $f->{model}=''; $f->{effort}='';
-                    $f->{activity}='running'; $f->{last_observed_ts}=$ts;
+                    $f->{activity}='running'; $f->{last_observed_ts}=$ts; delete $f->{activity_ts}; delete $f->{activity_position};
                     $emit->("$f->{id}:start",'delegation_start',$ts,{%$base,id=>$f->{id},turn_id=>$turn,model=>'',effort=>''});
                     $f->{journal_generation}=$generation if $jc->{active}{$f->{id}};
                 } elsif ($type eq 'turn_context' && $turn && $turn eq ($f->{turn}//'')) {
                     $f->{model}=identity($p->{model}); $f->{effort}=identity($p->{effort});
                     $f->{activity}='running'; $f->{last_observed_ts}=$ts;
                     $emit->("$f->{id}:context:$position",'delegation_activity',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>'running'});
-                } elsif ($type eq 'event_msg' && $event =~ /^(task_complete|turn_aborted|task_aborted)$/ && $f->{id} && (($turn && $turn eq ($f->{turn}//'')) || (!$turn && $event ne 'task_complete'))) {
+                } elsif ($type eq 'event_msg' && $event =~ /^(task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/ && $f->{id} && (!$turn || $turn eq ($f->{turn}//'')) && !$f->{finished}) {
                     my $outcome='unknown'; my $text=scalar_text($p->{last_agent_message});
                     $outcome=lc($1) if $text =~ /^\s*STATUS\s*:\s*(done|partial|blocked)\b/im;
-                    $outcome='interrupted' if $event ne 'task_complete';
+                    $outcome='interrupted' if $event =~ /aborted$/;
+                    $outcome='failed' if $event eq 'task_failed';
                     my $duration=epoch($ts)-epoch($f->{started}); $duration=0 if $duration<0;
-                    $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},turn_id=>$turn,model=>$f->{model},effort=>$f->{effort},
-                        status=>($event eq 'task_complete' ? 'ok' : 'interrupted'),outcome=>$outcome,duration_s=>$duration});
-                    $f->{finished}=1;
+                    $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},
+                        status=>($event =~ /complete$/ ? 'ok' : $event eq 'task_failed' ? 'error' : 'interrupted'),outcome=>$outcome,duration_s=>$duration});
+                    $f->{finished}=1; $f->{last_observed_ts}=$ts; delete $f->{activity_ts};
                 } elsif ($f->{id} && !$f->{finished} && ($type eq 'event_msg' || $type eq 'response_item')) {
                     $f->{activity_ts}=$ts;
                     $f->{last_observed_ts}=$ts;
@@ -415,10 +438,18 @@ sub poll {
                 delete $f->{activity_ts};
             }
         }
+        my ($parent)=grep { $_->{meta}{id} eq $m->{parent} } values %{$s->{files}};
+        my $closed=$parent ? $parent->{closed_agents}{$m->{id}} : undef;
+        $closed=undef if $closed && (epoch($closed)<epoch($owner->{ts}) || epoch($closed)<epoch($f->{started}));
+        $dead||=$closed;
         if ($dead && $f->{at_eof} && $f->{id} && !$f->{finished}) {
-            my $ts=$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
+            my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
             $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},status=>'interrupted',outcome=>'interrupted',duration_s=>undef});
             $f->{finished}=1;
+        }
+        if ($dead && $f->{at_eof} && $f->{id}) {
+            my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
+            $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>'done'});
         }
         # Restore only an observed active turn; rotation is not new work or a new delegation.
         if (!$dead && $f->{id} && !$f->{finished} && !$s->{seen}{sha256_hex("$f->{id}:end")} && ($f->{journal_generation}//0)!=$generation && epoch($f->{started})>=epoch($owner->{ts})-10) {

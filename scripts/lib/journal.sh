@@ -209,10 +209,9 @@ ai_display_duration() {
   else printf -v AI_DURATION '%d:%02d' $(( d / 60 )) $(( d % 60 )); fi
 }
 
-# A received native response is not approval; missing terminal evidence stays distinct.
+# Turn lifecycle labels do not confer review approval or change stored outcomes.
 ai_native_end_label() {
-  AI_NATIVE_END="end unconfirmed"
-  [[ "$1" != ok ]] || AI_NATIVE_END="response received"
+  case "$1" in ok) AI_NATIVE_END="done" ;; interrupted) AI_NATIVE_END=interrupted ;; error) AI_NATIVE_END=failed ;; *) AI_NATIVE_END=idle ;; esac
 }
 
 # Tree/watch opt into this formatter; ai_session_log_rows keeps its existing reveal cursor.
@@ -277,18 +276,18 @@ ai_journal_display_events() {
       my $id=text($e->{id}); my $start=$starts{$id}//{};
       my $model=text($e->{model}); my $role=text($e->{role});
       if ($ty eq "delegation_start") {
-        next if text($e->{bridge}) eq "codex-native" && !$done{$id} && exists $activity{$id};
+        next if text($e->{bridge}) eq "codex-native" && ($done{$id} || exists $activity{$id});
         my $bridge=$e->{bridge}//""; my $interrupted=0;
         if (!($e->{id}//"") || !$done{$e->{id}}) {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
           else { $interrupted=!alive($bridge eq "codex-native" ? $e->{owner_pid} : $e->{pid}) }
         }
-        $who=$role; $what=$interrupted ? "interrupted" : "start"; $extra="$model · ".ai_title($e->{task})
+        $who=$role; $what=$interrupted ? "interrupted" : ($bridge eq "codex-native" ? "running" : "start"); $extra="$model · ".ai_title($e->{task})
       }
       elsif ($ty eq "delegation") {
         $who=$role || text($start->{role}); $model ||= text($start->{model}); my $oc=text($e->{outcome});
         $what=$oc eq "unknown" ? "unknown" : (($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed");
-        $what=(text($e->{status}) eq "ok" ? "response received" : "end unconfirmed") if $oc eq "unknown" && text($e->{bridge}) eq "codex-native";
+        $what=(text($e->{status}) eq "ok" ? "done" : text($e->{status}) eq "error" ? "failed" : "idle") if $oc eq "unknown" && text($e->{bridge}) eq "codex-native";
         $what="interrupted" if $oc eq "interrupted" || text($e->{status}) eq "interrupted";
         $extra=duration($e->{duration_s})." · $model"; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
         my $task=task_title($e,$start); $extra.=" · $task" if $task ne "";
@@ -305,6 +304,9 @@ ai_journal_display_events() {
         my $task=task_title($e,$start);
         $task="$who ".substr(text($e->{agent_id}) || $id,-8) if $task eq "";
         $extra="$model · $task";
+      }
+      elsif ($ty eq "agent_closed" && text($e->{bridge}) eq "codex-native") {
+        $who=$role || "agent"; $what="done"; $extra=task_title($e,$start);
       }
       elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }
       elsif ($ty eq "advisor") { $who="advisor"; $what="consulted"; $extra=($e->{calls}//0)." × $model · ".int(($e->{tokens_in}//0)/1000)."k" }

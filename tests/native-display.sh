@@ -16,20 +16,19 @@ check() { local title="$1"; shift; if "$@"; then PASS=$(( PASS + 1 )); printf 'o
 fixture() { perl "$REPO/tests/fixtures/native-display.pl" "$1" "$ROOT" "$$" "${2:-2}"; }
 events() { bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$J"; }
 fixture seed; cp "$J" "$WORK/original-journal"; events >"$WORK/events"
-check 'received, unconfirmed and interrupted native endings remain distinct with task identity' perl -0777 -e 'my $s=<>; die unless $s=~/\|response received\|[^\n]*response_task/ && $s=~/\|end unconfirmed\|[^\n]*superseded_task/ && $s=~/\|interrupted\|[^\n]*aborted_task/; die if $s=~/\|done\||\|unknown\|/;' "$WORK/events"
+check 'done, idle and interrupted turn states retain task identity' perl -0777 -e 'my $s=<>; die unless $s=~/\|done\|[^\n]*response_task/ && $s=~/\|idle\|[^\n]*superseded_task/ && $s=~/\|interrupted\|[^\n]*aborted_task/; die if $s=~/\|unknown\|/;' "$WORK/events"
 check 'one latest actual UTC activity per active turn, without stale start rows or private data' perl -ne 'my @v=split /\|/; if ($v[2]=~/^(waiting|running)$/){++$n; die unless $v[0] eq "2026-01-02T10:00:30Z"} die if /PRIVATE_|\|start\|.*(?:quoted|active_task_2)/; END {die unless $n==2}' "$WORK/events"
 check 'JSON escapes decode safely without changing journal separators' perl -ne 'chomp; die unless (split /\|/,$_, -1)==4; $found=1 if /vocab "quoted" \\path   safe/; END {die unless $found}' "$WORK/events"
 events >"$WORK/events-again"
 check 'unchanged source produces stable rows, not invented heartbeats' cmp "$WORK/events" "$WORK/events-again"
 for lang in en fr; do
-  if [[ "$lang" == en ]]; then received='response received'; unconfirmed='end unconfirmed'; else received='réponse reçue'; unconfirmed='fin non confirmée'; fi
+  if [[ "$lang" == en ]]; then received='done'; unconfirmed='idle'; else received='terminé'; unconfirmed='au repos'; fi
   for mode in live list diagram; do
     args=(); [[ "$mode" != live ]] || args=(--once)
     layout=list; [[ "$mode" != diagram ]] || layout=diagram
     out="$WORK/$lang-$mode"
     NO_COLOR='' LOOMY_FORCE_COLOR=1 LOOMY_LANG="$lang" LOOMY_TREE="$layout" COLUMNS=200 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" ${args[@]+"${args[@]}"} >"$out" 2>&1
-    check "$lang $mode received response is neutral and separate from unconfirmed ending" perl -0777 -e 'my ($a,$b,$f)=@ARGV; open my $h,"<",$f or die; my $s=do{local $/;<$h>}; die unless index($s,$a)>=0 && index($s,$b)>=0; die if $s=~/✓|\? (unknown|inconnu)/;' "$received" "$unconfirmed" "$out"
-    check "$lang $mode unassessed and unconfirmed labels never use green success styling" perl "$REPO/tests/fixtures/native-display-style.pl" "$out" neutral
+    check "$lang $mode displays turn completion and persistent idle state" perl -0777 -e 'my ($a,$b,$f)=@ARGV; open my $h,"<",$f or die; my $s=do{local $/;<$h>}; die unless index($s,$a)>=0 && index($s,$b)>=0; die if $s=~/response received|réponse reçue|\? (unknown|inconnu)/;' "$received" "$unconfirmed" "$out"
     if [[ "$mode" == live ]]; then
       check "$lang live summary counts recap entries without calling unconfirmed turns finished" perl -0777 -e 'my $s=<>; die unless $s=~/3 (?:in recap|dans le récapitulatif)/; die if $s=~/3 (?:finished|terminés)/;' "$out"
     fi
@@ -37,9 +36,9 @@ for lang in en fr; do
 done
 check 'read-side semantic rendering preserves raw lifecycle/outcome records byte for byte' cmp "$J" "$WORK/original-journal"
 fixture finish; events >"$WORK/finished"
-check 'finished native turns suppress even subsequently appended stale activity' perl -0777 -e 'my $s=<>; die if $s=~/\|(running|waiting)\|[^\n]*quoted/; die unless $s=~/2026-01-02T10:00:40Z\|worker\|response received\|[^\n]*quoted/;' "$WORK/finished"
+check 'finished native turns suppress even subsequently appended stale activity' perl -0777 -e 'my $s=<>; die if $s=~/\|(running|waiting)\|[^\n]*quoted/; die unless $s=~/2026-01-02T10:00:40Z\|worker\|done\|[^\n]*quoted/;' "$WORK/finished"
 fixture seed; fixture typed; events >"$WORK/typed"
-check 'malformed optional JSON types fall back to safe observed metadata, not private fields' perl -0777 -e 'my $s=<>; die if $s=~/PRIVATE_|HASH\(|ARRAY\(/; die unless $s=~/2026-01-02T10:00:35Z\|worker\|waiting\|[^\n]*active_task_2/ && $s=~/\|response received\|[^\n]*response_task/;' "$WORK/typed"
+check 'malformed optional JSON types fall back to safe observed metadata, not private fields' perl -0777 -e 'my $s=<>; die if $s=~/PRIVATE_|HASH\(|ARRAY\(/; die unless $s=~/2026-01-02T10:00:35Z\|worker\|waiting\|[^\n]*active_task_2/ && $s=~/\|done\|[^\n]*response_task/;' "$WORK/typed"
 fixture unknown-activity; events >"$WORK/unavailable"
 check 'unavailable latest activity does not revive an older known-running observation' perl -0777 -e 'my $s=<>; die if $s=~/\|(running|waiting)\|[^\n]*quoted/;' "$WORK/unavailable"
 fixture closed; events >"$WORK/closed"

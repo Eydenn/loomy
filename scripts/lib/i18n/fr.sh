@@ -2261,5 +2261,8 @@ _t_fr() {
     'catching up') _T='rattrapage en cours' ;;
     'native usage unknown') _T='usage natif inconnu' ;;
     '  loomy-status.sh --watch [N]     live agents and timers every second; keys depend on the view (see the footer)') _T='  loomy-status.sh --watch [N]     agents et chronos en direct chaque seconde ; touches selon la vue (voir le pied d’écran)' ;;
+    'waiting since %s') _T='en attente depuis %s' ;;
+    'last turn %s') _T='dernier tour %s' ;;
+    '%s turns') _T='%s tours' ;;
   esac
 }

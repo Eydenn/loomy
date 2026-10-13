@@ -22,10 +22,13 @@ foreach identity {consolidation enrichment review} {
 }
 if {$code == 0} {
     exec perl $fixture finish $root $sessions [pid]
-    expect {
-        -exact "partial" {}
-        timeout { set code 1 }
-        eof { set code 1 }
+    foreach outcome {"interrupted" "waiting since"} {
+        expect {
+            -exact $outcome {}
+            timeout { set code 1 }
+            eof { set code 1 }
+        }
+        if {$code != 0} { break }
     }
 }
 catch { send "q" }

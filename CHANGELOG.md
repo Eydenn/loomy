@@ -2,6 +2,11 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased
+
+### Fixed
+- Native Codex test fixtures keep the seed's clock and rollout path across UTC midnight. The targeted `Native Codex` section isolates inherited UI language and allows an explicit sandbox-only PTY skip; Mac runs still include the terminal check by default.
+
 ## 0.16.2 — 2026-10-13
 
 ### Fixed

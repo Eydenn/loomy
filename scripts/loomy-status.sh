@@ -588,9 +588,14 @@ if [[ -s "$JOURNAL" ]]; then
     source "$SCRIPT_DIR/loomy-tree.sh" --library
     loomy_live_init; loomy_live_poll "$JOURNAL"; LV_NOW="$now_s"; loomy_live_states
     LV_WIDTH=$(( UI_COLS - 8 )); LV_ROLE_WIDTH=12
-    for ni in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do
+    native_seen="|"
+    for (( ni=${#LV_ID[@]}-1; ni>=0; ni-- )); do
       [[ "${LV_BRIDGE[ni]:-}" == codex-native ]] || continue
-      while IFS= read -r native_line; do ui_rail "$native_line"; done < <(loomy_live_row "$ni" 0)
+      native_id="${LV_AGENT_ID[ni]:-${LV_ID[ni]}}"
+      [[ "$native_seen" != *"|$native_id|"* ]] || continue
+      native_seen="$native_seen$native_id|"
+      loomy_tree_native_title "native:$ni"; loomy_tree_native_state "$ni"
+      ui_rail "$NS_COLOR$LV_NATIVE_TITLE · ${LV_MODELSHORT[ni]} ${LV_WORD[ni]} · $NS_TEXT${NS_DETAIL:+ · $NS_DETAIL}$C_RESET"
     done
   fi
   # Claude Code direct work (lead agent, native subagents): cost measured by the Stop and SubagentStop hooks.
@@ -641,7 +646,7 @@ if [[ -s "$JOURNAL" ]]; then
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
     all_tok="$(printf '%s\n' "$summary" | awk '/^MODEL/ { s += $5 } END { print s + 0 }')"
-    printf '%s\n' "$summary" | grep '^MODEL' | sort -k5 -rn | while read -r _ m c cost tok onplan; do
+    printf '%s\n' "$summary" | awk '/^MODEL/' | sort -k5 -rn | while read -r _ m c cost tok onplan; do
       # Bar: share of the tokens (comparable across API and subscription).
       width=0
       (( all_tok > 0 )) && width=$(( tok * 24 / all_tok ))
@@ -672,7 +677,9 @@ if [[ -s "$JOURNAL" ]]; then
       if [[ "$st" == "ok" ]]; then case "$oc" in partial) mark="${C_YELLOW}◐${C_RESET}" ;; blocked) mark="${C_YELLOW}■${C_RESET}" ;; unknown) mark="${C_DIM}?${C_RESET}" ;; esac; fi
       # Delegation just finished (loomy watch): highlighted for a few seconds.
       if (( row > n_shown - ${LOOMY_HL_DELEG:-0} )); then mark="${mark}${C_BRAND}${C_BOLD}✦${C_RESET}"; t="${C_BOLD}${t}"; else mark="${mark} "; fi
-      if [[ "$bridge" == codex-native ]]; then val="$(t 'native usage unknown')"
+      if [[ "$bridge" == codex-native ]]; then
+        ai_native_end_label "$st"; val="$(t "$AI_NATIVE_END") · $(t 'native usage unknown')"
+        case "$st" in ok) mark="${C_GREEN}✓${C_RESET}" ;; interrupted) mark="${C_DIM}${C_RED}⊘${C_RESET}" ;; error) mark="${C_RED}✗${C_RESET}" ;; esac
       elif { [[ "$fam" == "claude" ]] && (( PLAN_C )); } || { [[ "$fam" != "claude" ]] && (( PLAN_X )); }; then val="$(printf '%7s' "$(ai_tokens_label "$tk")") tk"
       else val="$(printf '%10s' "$(printf '$%.4f' "$cost")")"; fi
       ui_rail "$mark ${C_DIM}${t}${C_RESET} $(printf '%-11s %-17s %4ss  %s' "$role" "$m" "$d" "$val")  ${C_DIM}${task}${C_RESET}"

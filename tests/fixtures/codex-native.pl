@@ -5,7 +5,14 @@ use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use File::Path qw(make_path);
 my ($action,$root,$sessions,$pid)=@ARGV;
-my $now=time;
+my $now=$ENV{LOOMY_FIXTURE_NOW}//time;
+# Every append belongs to the seed's UTC day, even when the test crosses midnight.
+my $clock="$root/.fixture-clock";
+if (-f $clock) {
+    open my $f,'<',$clock or die $!;
+    chomp($now=<$f>); close $f;
+}
+die 'invalid fixture clock' unless $now =~ /^\d+$/;
 sub ts { strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now+($_[0]//0))) }
 sub id { sprintf '00000000-0000-4000-8000-%012d',$_[0] }
 my $dir="$sessions/".strftime('%Y/%m/%d',gmtime($now));
@@ -25,6 +32,7 @@ sub meta {
 }
 if ($action eq 'seed' || $action eq 'compact-seed') {
     make_path($dir,"$root/.loomy/logs");
+    open my $f,'>',$clock or die $!; print $f "$now\n"; close $f or die $!;
     my $owner={ts=>ts(-60),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid};
     $owner->{session}=id(1) if $action eq 'compact-seed';
     write_json("$root/.loomy/logs/events.jsonl",0,$owner);

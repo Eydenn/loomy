@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"bridge-exec-a"}
+{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","receiver_thread_ids":["native-child-a"]}}
+{"type":"item.completed","item":{"type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"native-child-a","receiver_thread_ids":["native-grandchild-a"]}}
+{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}

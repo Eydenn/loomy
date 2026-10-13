@@ -133,7 +133,7 @@ En option : dans un projet Loomy, `claude` ou `codex` tapé seul (l'outil princi
 loomy worktrees <tâche>
 ```
 
-Deux worktrees séparés pour le mode parallèle
+Deux worktrees par défaut ; `--count N` crée N worktrees numérotés partageant le journal live. Découpe les périmètres indépendants, lance-les ensemble, puis attends tous les résultats avant intégration ; revue, sécurité et documentation sont ensuite parallèles.
 
 ## Suivi et chiffres
 
@@ -314,7 +314,7 @@ loomy config get <clé>
 loomy config set <clé> <valeur>
 ```
 
-Préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `skills` (`auto`, `ask` ou `off`), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : seuil de relais préventif du lead ; `off` : pas de relais préventif ; les refus réels et les quotas épuisés protègent toujours les délégations), `lead_failover` (`auto` par défaut : quand le quota du lead est épuisé, l'autre outil prend la main temporairement et `loomy start` enchaîne les sessions ; `off` : jamais), `quota_room` (80 par défaut : l'outil lead reprend la main dès que son quota passe sous cette part), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut)
+Préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `skills` (`auto`, `ask` ou `off`), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : seuil de relais préventif du lead ; `off` : pas de relais préventif ; les refus réels et les quotas épuisés protègent toujours les délégations), `lead_failover` (`auto` par défaut : quand le quota du lead est épuisé, l'autre outil prend la main temporairement et `loomy start` enchaîne les sessions ; `off` : jamais), `quota_room` (80 par défaut : l'outil lead reprend la main dès que son quota passe sous cette part), `max_parallel` (4 par défaut ; 1–999 agents indépendants ; `auto` rétablit 4), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut)
 
 ### `loomy update` · `loomy version`
 

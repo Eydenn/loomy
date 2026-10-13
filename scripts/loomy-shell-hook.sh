@@ -30,6 +30,7 @@ function _loomy_lead {
   done
   return 1
 }
+# Allowlisted passthrough: this is the user's typed command, not a Loomy model call.
 function claude {
   if [ $# -eq 0 ] && [ "${LOOMY_SHELL_HOOK:-1}" != 0 ] && [ -z "${LOOMY_DELEGATION:-}" ] && command -v loomy >/dev/null 2>&1 && [ "$(_loomy_lead)" = claude ]; then loomy start
   else command claude "$@"; fi

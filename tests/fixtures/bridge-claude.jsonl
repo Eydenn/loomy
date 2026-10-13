@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"bridge-claude-a","cwd":"/fixture/project"}
+{"type":"assistant","sessionId":"bridge-claude-a","message":{"content":[{"type":"tool_use","id":"call-a","name":"Agent","input":{}}]}}
+{"type":"user","sessionId":"bridge-claude-a","toolUseResult":{"agentId":"native-claude-a","status":"async_launched"}}

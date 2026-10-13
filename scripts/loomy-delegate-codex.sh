@@ -14,6 +14,8 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
+# shellcheck source=lib/launch.sh
+source "$SCRIPT_DIR/lib/launch.sh"
 
 ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
 ai_delegate_opts codex "$@" || exit 2
@@ -108,6 +110,9 @@ fi
 DELEG_ID="$(ai_delegation_id)"
 # exec preserves the PID; a same-second handover must have a distinct lifecycle ID.
 [[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || DELEG_ID="$DELEG_ID-codex"
+export LOOMY_EVENT_PARENT_ID="${LOOMY_PARENT_ID:-}"
+export LOOMY_PARENT_ID="$DELEG_ID" LOOMY_ATTEMPT="$DELEG_ID"
+export LOOMY_CLI_MANAGED=1 LOOMY_CLI_ID="$DELEG_ID"
 STARTED="$(date +%s)"
 START_MODEL="$MODEL"
 CHILD_PID=""
@@ -137,7 +142,7 @@ delegate_finish() {
   delegate_stop_child
   if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
     duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
-    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"estimate\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"estimate\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
   fi
   rm -rf "$TMP"
@@ -148,11 +153,9 @@ trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
 ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
-ai_delegate_provider_guard codex
+loomy_cli_check codex "$ROLE" "$MODEL" || exit $?
 run_codex() {
-  loomy_guard_real_cli codex "$CODEX" || return $?
-  LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
-    "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
+  loomy_cli_bridge_exec codex "$ROLE" "$1" -- exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
     --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
 }
 set +e
@@ -193,7 +196,7 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   OUTCOME="$(ai_result_outcome "$(cat "$TMP/last.txt" 2>/dev/null)")"
   FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 FINAL_WRITTEN=1
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$(cat "$TMP/last.txt" 2>/dev/null || true)"

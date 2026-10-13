@@ -67,7 +67,7 @@ if ($finding eq 'R1') {
     die 'late completion lost' unless poll()->{sessions}{lead}{calls}{silent}{state} eq 'done';
     launch('inferred',315); returned('inferred','other',316);
     rows($path,{base('assistant',500),message=>{stop_reason=>undef,content=>[]}});
-    die 'lead evidence did not interrupt silent child at EOF' unless poll()->{sessions}{lead}{calls}{inferred}{state} eq 'interrupted';
+    die 'G2: lead evidence interrupted child within its own lease' unless poll()->{sessions}{lead}{calls}{inferred}{state} eq 'running';
     notification('inferred','completed',510);
     die 'completion could not override interruption' unless poll()->{sessions}{lead}{calls}{inferred}{state} eq 'done';
     die 'correction not projected' unless state()->{agents}{'claude:lead:inferred'}{state} eq 'done';
@@ -88,7 +88,7 @@ if ($finding eq 'R1') {
     my $s=Loomy::ClaudeNative::poll($replay,$projects);
     die 'head catch-up inferred interruption before EOF' if !$s->{files}{$file}{at_eof} && $s->{sessions}{lead}{calls}{replay}{ended};
     for (1..12) {$s=Loomy::ClaudeNative::poll($replay,$projects)}
-    die 'EOF did not infer interruption' unless $s->{sessions}{lead}{calls}{replay}{state} eq 'interrupted';
+    die 'G2: EOF fabricated a terminal without child evidence' if $s->{sessions}{lead}{calls}{replay}{ended};
     rows($file,{sessionId=>'lead',cwd=>$replay,type=>'queue-operation',timestamp=>ts(510),operation=>'enqueue',content=>'<task-notification><tool-use-id>replay</tool-use-id><status>completed</status></task-notification>'});
     $s=Loomy::ClaudeNative::poll($replay,$projects);
     die 'real-clock head replay completion lost' unless $s->{sessions}{lead}{calls}{replay}{state} eq 'done';
@@ -155,16 +155,18 @@ if ($finding eq 'R1') {
     shell(q{cd "$1"; CLAUDE_CONFIG_DIR="${3%/projects}" perl scripts/lib/live-state.pl "$2" "$2/no-codex" >"$2/live";
       grep -q '^N|A|claude:lead:relative|' "$2/live"; },$projects);
 } elsif ($finding eq 'R10') {
-    # Malformed checkpoints fail each maintenance tick; distinct runs also exercise the size cap.
-    my $idx="$root/.loomy/logs/claude-native.idx";
-    open my $f,'>',$idx or die; print $f '{}broken'; close $f;
+    # Reconstruction now repairs malformed checkpoints at startup. Inject during sampling to test diagnostics.
     my $errors="$root/.loomy/logs/watch-errors.log";
-    shell(q{ { sleep 4; printf 'q\n'; } | bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
-      test "$(grep -c 'Claude checkpoint invalid' "$2/.loomy/logs/watch-errors.log")" = 1;
-      ! grep -q 'Claude checkpoint invalid' "$2/stderr"; });
-    open $f,'>',$errors or die; print $f 'x'x70000; close $f;
-    shell(q{ { sleep 2; printf 'q\n'; } | bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
-      grep -q 'Claude checkpoint invalid' "$2/.loomy/logs/watch-errors.log"; });
+    shell(q{ { sleep 1; rm -f "$2/.loomy/logs/claude-native.idx.bak";
+      printf '{}broken' >"$2/.loomy/logs/claude-native.idx"; sleep 3; printf 'q\n'; } |
+      bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
+      test "$(grep -c 'Native checkpoint invalid; reconstructing' "$2/.loomy/logs/watch-errors.log")" = 1;
+      ! grep -q 'Native checkpoint invalid' "$2/stderr"; });
+    open my $f,'>',$errors or die; print $f 'x'x70000; close $f;
+    shell(q{ { sleep 1; rm -f "$2/.loomy/logs/claude-native.idx.bak";
+      printf '{}broken' >"$2/.loomy/logs/claude-native.idx"; sleep 2; printf 'q\n'; } |
+      bash "$1/scripts/loomy-status.sh" --root "$2" --watch >"$2/frame" 2>"$2/stderr";
+      grep -q 'Native checkpoint invalid; reconstructing' "$2/.loomy/logs/watch-errors.log"; });
     die 'watch diagnostics not bounded/private' unless -s $errors<=65536 && ((stat($errors))[2]&0777)==0600;
 } else {die "unknown finding $finding"}
 print "PASS $finding Round 2 structural regression\n";

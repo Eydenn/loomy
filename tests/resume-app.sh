@@ -48,7 +48,7 @@ check 'target invokes no provider' bash -c '! grep -qE "^(claude|codex)" "$1"' _
 rm -f "$ROOT/.loomy/failover" "$ROOT/.loomy/session-only"
 check 'Claude newest transcript is resumed' start --app
 log="$(find "$ROOT/.loomy/logs" -name 'desktop-resume.*' | head -1)"
-check 'Claude detached resume arguments' grep -qx $'claude\t--desktop\t--resume\t88888888-8888-8888-8888-888888888888' "$log"
+check 'Claude detached resume arguments' grep -qx $'claude\t--desktop\t--resume\t88888888-8888-8888-8888-888888888888\t--model\tclaude-opus-5-5' "$log"
 check 'resume log is 0600' perl -e 'die unless ((stat($ARGV[0]))[2]&0777)==0600' "$log"
 check 'Claude resume uses no new-session URL' bash -c '! grep -q "claude://" "$1"' _ "$STUB_LOG"
 export STUB_APP_VERSION=2.1.284

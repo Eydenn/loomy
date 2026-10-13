@@ -84,6 +84,21 @@ if ($finding eq 'G2') {
     die 'failure retry did not back off' if $calls;
     # Advance the monotonic fixture without a real five-second sleep.
     {no warnings 'redefine'; my $future=time()+6; local *Time::HiRes::time=sub {$future}; die 'backoff did not resume' unless defined Loomy::ClaudeNative::poll($root,$projects)}
+} elsif ($finding eq 'arrival-race') {
+    launch(); returned(); poll();
+    child_record(4);
+    my $original=\&Loomy::ClaudeNative::read_transcript; my $injected=0;
+    {no warnings 'redefine'; local *Loomy::ClaudeNative::read_transcript=sub {
+        my $used=$original->(@_);
+        if (!$injected++ && $_[1] eq $path) {
+            rows($path,{base('assistant',6),message=>{content=>[{type=>'tool_use',name=>'Agent',id=>'late-source',input=>{subagent_type=>'late-source'}}]}});
+            rows($journal,{type=>'delegation_start',bridge=>'subagent',family=>'claude',session=>'lead',id=>'late-hook',role=>'late-hook',background=>JSON::PP::true,ts=>ts(6)});
+        }
+        return $used;
+    }; poll()}
+    my $s=poll();
+    die 'concurrent source was sealed as inspected' unless $s->{sessions}{lead}{calls}{'late-source'};
+    die 'concurrent hook offset skipped' unless $s->{sessions}{lead}{calls}{'late-hook'};
 } elsif ($finding eq 'growth') {
     open my $f,'>',$journal or die;
     for my $i (1..24900) {
@@ -141,9 +156,9 @@ if ($finding eq 'G2') {
     die 'migration duplicated terminal' unless $ends==grep {$_->{type} eq 'delegation'} events();
     die 'migration duplicated active start' unless $starts==grep {$_->{type} eq 'delegation_start'} events();
     printf "v1 >4 MiB / 65,000 keys migrated: v2 %d bytes\n",-s $idx;
-} elsif ($finding eq 'crash-codex' || $finding eq 'crash-claude') {
+} elsif ($finding =~ /^(?:crash|reconstruct)-(?:codex|claude)$/) {
     my ($idx,$saved,$ends,$usage);
-    if ($finding eq 'crash-codex') {
+    if ($finding =~ /codex$/) {
         system($^X,"$repo/tests/fixtures/codex-native.pl",'seed',$root,$sessions,$$)==0 or die;
         Loomy::CodexNative::poll($root,$sessions); $idx="$dir/codex-native.idx"; $saved=read_state($idx);
         system($^X,"$repo/tests/fixtures/codex-native.pl",'finish',$root,$sessions,$$)==0 or die;
@@ -154,13 +169,15 @@ if ($finding eq 'G2') {
     rows($journal,{type=>'usage',ts=>ts(5),tool=>'claude',cost_usd=>0.25});
     $ends=grep {$_->{type} eq 'delegation'} events(); $usage=grep {$_->{type} eq 'usage'} events(); die 'no terminal fixture' unless $ends;
     # Restore precisely the checkpoint preceding append, then restart in a fresh interpreter.
-    write_state($idx,$saved);
-    my $module=$finding eq 'crash-codex' ? 'codex-native.pl' : 'claude-native.pl';
-    my $source=$finding eq 'crash-codex' ? $sessions : $projects;
+    if ($finding =~ /^reconstruct-/) {
+        for my $p ($idx,"$idx.bak") {open my $broken,'>',$p or die; print $broken '{"version":'; close $broken}
+    } else {write_state($idx,$saved)}
+    my $module=$finding =~ /codex$/ ? 'codex-native.pl' : 'claude-native.pl';
+    my $source=$finding =~ /codex$/ ? $sessions : $projects;
     system($^X,"$repo/scripts/lib/$module",$root,$source)==0 or die 'restart failed';
     die 'restart duplicated terminal' unless $ends==grep {$_->{type} eq 'delegation'} events();
     die 'restart duplicated usage' unless $usage==grep {$_->{type} eq 'usage'} events();
-} elsif ($finding eq 'crash-batch') {
+} elsif ($finding eq 'crash-batch' || $finding eq 'reconstruct-batch') {
     system($^X,"$repo/tests/fixtures/codex-native.pl",'seed',$root,$sessions,$$)==0 or die;
     my $s=Loomy::CodexNative::poll($root,$sessions); my $idx="$dir/codex-native.idx"; my $saved=read_state($idx);
     my ($source)=grep {$s->{files}{$_}{meta}{parent}} sort keys %{$s->{files}};
@@ -176,7 +193,9 @@ if ($finding eq 'G2') {
         my $count=0; for my $p (@archives,$journal) {open my $h,'<',$p or die; while (<$h>) {my $e=decode_json($_); $count++ if $e->{type} eq 'delegation'}} return $count;
     };
     my $ends=$terminal_count->(); die 'batch terminal fixture incomplete' if $ends<15000;
-    write_state($idx,$saved);
+    if ($finding eq 'reconstruct-batch') {
+        for my $p ($idx,"$idx.bak") {open my $broken,'>',$p or die; print $broken '{"version":'; close $broken}
+    } else {write_state($idx,$saved)}
     system($^X,'-e',q{
         my ($module,$root,$sessions)=@ARGV; require $module;
         for (1..100) {
@@ -237,7 +256,9 @@ if ($finding eq 'G2') {
     Loomy::LiveState::checkpoint_save($idx,{version=>2,seen=>{retained=>1,next=>1}});
     open my $f,'>',$idx or die; print $f '{"version":'; close $f;
     die 'valid backup not recovered' unless Loomy::LiveState::checkpoint_load($idx)->{seen}{retained};
-    unlink "$idx.bak"; my $ok=eval {Loomy::LiveState::checkpoint_load($idx); 1}; die 'corrupt checkpoint silently reset' if $ok;
+    unlink "$idx.bak"; my $rebuilt=Loomy::LiveState::checkpoint_load($idx);
+    die 'corrupt checkpoint silently reset' unless $rebuilt->{reconstructing};
+    die 'damaged evidence not preserved' unless glob "$idx.invalid-*";
 } elsif ($finding eq 'shards') {
     my $idx="$dir/codex-native.idx"; my %files=map {("/source/$_",{key=>"1:$_",offset=>$_,meta=>{id=>"source$_",cwd=>$root},padding=>'x'x350})} 1..6000;
     my $s={version=>2,files=>\%files,seen=>{safe=>1}}; Loomy::LiveState::checkpoint_save($idx,$s);

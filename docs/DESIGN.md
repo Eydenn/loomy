@@ -21,7 +21,7 @@ The decisions behind the main choices are recorded in [`docs/adr/`](adr/README.m
 - The integrated tree journal reads a bounded 400-record JSON tail, keeps task identity and the latest useful observed activity per active native turn, and honors tool/PID/session closure and explicit reopening. Received responses remain distinct from unconfirmed endings and approval; these read-side labels never rewrite the raw journal. The historical detailed CLI journal remains unchanged.
 - `scripts/lib/hooks.sh`: merges missing Claude lifecycle hooks (`SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `UserPromptSubmit`, and `PreToolUse` matched to `Agent|Task`) into `.claude/settings.json` during installation and project repair. Existing user hooks, status line and file permissions are preserved; invalid JSON is left untouched.
 - `scripts/lib/codex-native.pl`: local native Codex rollout adapter, loaded in the watch sampler and called once for snapshots. Project/parent ownership, per-turn lifecycle, observed root model/effort and last-observed activity feed the existing journal. Private cursors and recoverable context revisions support bounded head/tail reading, invalidation and deduplication; source freshness is separate from model identity. Native owner PIDs are explicit, conversations/tool arguments are not exported, usage is unknown, and distinct native identities remain separate tree nodes. See ADR-0007 for limits; phases are still lead-maintained.
-- `scripts/lib/claude-native.pl`: Claude CLI/Code-tab hooks and bounded incremental transcript tails feed the shared `live-state.pl` projection. Agent calls and transcript agent IDs are aliased within each session, including stops preceding returns; asynchronous launch returns never finish a child. Explicit transcript stop/error metadata fills missing hooks, with unknown usage and a 120-second source-presence lease. Separate Claude/Codex leads remain visible together. The private checkpoint stores structural metadata only (optional existing hook task labels obey `LOOMY_JOURNAL_TASKS`); warm watch polls signatures every 200 ms. Source replay does not add costs. Atomic checkpoint recovery and large-history bounds remain the W1 S4 gate; full CPU and real-app checks remain S5 gates.
+- `scripts/lib/claude-native.pl`: Claude CLI/Code-tab hooks and bounded incremental transcript tails feed the shared `live-state.pl` projection. Agent calls and transcript agent IDs are aliased within each session, including stops preceding returns; asynchronous launch returns never finish a child. Explicit transcript stop/error metadata fills missing hooks, with unknown usage and a 120-second source-presence lease. Separate Claude/Codex leads remain visible together. The private checkpoint stores structural metadata only (optional existing hook task labels obey `LOOMY_JOURNAL_TASKS`); warm watch polls signatures every 200 ms. Source replay does not add costs. Atomic v2 checkpoint recovery, progressive reconstruction and bounded history are verified by the S4 fixtures below; full CPU and real-app checks remain S5 gates.
 - `scripts/lib/failover.sh`: temporary lead relay. The brief's lead (the master) never changes; the state is `.loomy/failover` (`master`, `acting`, `since`, `reason`, `resume_at`, optional `manual=1`). `lf_decide` returns the lead tool and a kind (`normal`, `handover`, `continue`, `return`) from the quotas (`quota_switch`, `quota_room`, `lead_failover`, `LOOMY_NO_SWITCH`), `lf_apply` records it and journals `lead_failover` / `lead_return`. `loomy start --lead codex|claude` explicitly selects a temporary lead; manual relays persist when the master has room, but automatic relay can return to the master if the acting lead saturates and the master has room. `--lead auto` or `--lead <master>` explicitly returns to the brief's lead; manual relays are shown as `(manual)`. The chain loop of `loomy-start.sh` (6 sessions at most, `LOOMY_CHAIN_DELAY` seconds to cancel) starts the next session; `loomy-context.sh` prints the prepare and return notices (prompt hook, at most every 10 minutes, Claude Code only) and the start context lines; `loomy-status.sh` and `loomy-statusline.sh` show it (⇄). See ADR-0006.
 - `scripts/lib/config.sh`: user preferences (`~/.config/loomy/config`): Claude and Codex plans, to compare the API value consumed with the subscription price, language, screen mode, pinned models.
 - `scripts/lib/phases.sh`: the ten bootstrap phases, each with what the lead agent does and what the user must do. Single source for `loomy status`, `loomy watch` and `loomy start`.
@@ -70,8 +70,12 @@ content changes. Journal append/flush precedes checkpoint replacement; recovery 
 replays the saved journal suffix, following archive successor links across rotations.
 Codex journal records carry source inode/offset evidence; Claude records carry semantic
 checkpoint signatures. A damaged checkpoint recovers from a valid backup; if neither
-copy is valid, collection pauses and preserves both files. Progressive reconstruction
-without a usable checkpoint remains an explicit follow-up.
+copy is valid, both are preserved as private `.invalid-<device>-<inode>` files.
+Collectors reconstruct journal state progressively (2 MiB per poll), crossing archived
+segments before reading sources; Codex restores source inode/offset evidence and Claude
+restores semantic signatures. Overflow still pauses explicitly. Read-only collection
+recovers interrupted rotations but leaves monthly rotation to journal writes.
+Consumed offsets never skip hooks appended concurrently during source collection.
 
 All journal writers and rotation share `events.lock`. Rotation runs monthly or at 8 MiB,
 keeps immutable inode-named archive segments and carries structural snapshots of every
@@ -86,16 +90,50 @@ rotation are cold-path work; the warm-frame budget does not measure those operat
 Claude child liveness uses its own 15-minute source lease; newer lead/sibling activity
 never fabricates a terminal. Ordinary source timestamps/mtime stay in memory rather
 than changing activity signatures. Historical lead replay prefilters unrelated tool
-results before JSON decoding; failed polls retain discovery state and back off five
+results before JSON decoding and caps each lead window at 1.5 MiB within the 2 MiB
+shared source budget (one-shot compile/projection CPU headroom); failed polls retain discovery state and back off five
 seconds. `tests/live-growth.sh` covers these Round 4 fixes, 50,000-event idle growth,
 65,000-key migration, pruning, crash recovery across multiple rotations, corruption,
-shards, private modes and idempotent repair. The lead registers it in `tests/run.sh`
-after the concurrent test-boundary ticket finishes.
-**W2/W3 — desktop resume and session-only routing.** `scripts/lib/resume.pl` reuses native metadata/slug helpers read-only: Codex date directories are inspected newest first, at most 256 KiB of metadata per candidate, stopping at the first matching project/subfolder lead; Claude transcript filenames identify the newest root session. Live Claude cwd ownership or a fresh transcript with a live journal owner prevents desktop handover. `loomy-start.sh` uses the shared `launch.sh` check/run/spawn API when available, with a temporary test-guard-only fallback. Terminal `--lead <tool> --only` owns `.loomy/session-only` with its PID; routing ignores and cleans dead owners, and start removes its own marker on exit. Desktop-only overrides are refused until a session-owned lifetime is available. The brief remains unchanged.
+shards, private modes and idempotent repair. It is registered in `tests/run.sh` with the launch, resume,
+availability, live and watch-exit suites.
+**W2/W3 — desktop resume and session-only routing.** `scripts/lib/resume.pl` reuses native metadata/slug helpers read-only: Codex date directories are inspected newest first, at most 256 KiB of metadata per candidate, stopping at the first matching project/subfolder lead; Claude transcript filenames identify the newest root session. Live Claude cwd ownership or a fresh transcript with a live journal owner prevents desktop handover. `loomy-start.sh` uses the shared `launch.sh` check/run/spawn/meta API. Terminal `--lead <tool> --only` owns `.loomy/session-only` with its PID; routing ignores and cleans dead owners, and start removes its own marker on exit. Desktop-only overrides are refused until a session-owned lifetime is available. The brief remains unchanged.
 ## W47 — parallel requests and coherence
 
 - Project repair is limited to project/session opening commands (`home`, `start`, `resume`, `init`, `install`, `task`, `tasks`, `audit`, `review`) and Claude session start; read-only `status`, `watch` and `route` do not repair a project.
-- Managed orchestration and templates split requests into disjoint subtasks, launch native roles of the lead family together and use bridges only across families. Background bridges are all awaited before integration; review, security and documentation then run together with disjoint scopes. Routed efforts remain unchanged. `max_parallel` defaults to 4 in this contract; configuration validation and the per-message hook need the owning ticket in `scripts/lib/config.sh`, `bin/loomy` and `scripts/loomy-context.sh`.
+- Managed orchestration and templates split requests into disjoint subtasks, launch native roles of the lead family together and use bridges only across families. Background bridges are all awaited before integration; review, security and documentation then run together with disjoint scopes. Routed efforts remain unchanged. `max_parallel` defaults to 4; `loomy config set max_parallel N` accepts 1–999 (`auto` restores 4). The prompt reminder includes the configured cap.
 - `loomy worktrees <task> [base] --count N` creates numbered branches `loomy/<task>/<n>` and paths `<repo>-<task>-<n>`; the legacy family pair remains the default. Worktrees link to the main project's `.loomy`, so every bridge writes into the same watch journal. Preflight rejects existing branches/paths and a tracked `.loomy` at the base before creating any worktree.
 - `loomy stats` counts completed requests from Claude request/lead-stop evidence and Codex lead rollout user turns/terminal events (one user record per turn, no prompt output). Incomplete requests are excluded. Parallelism = summed worker durations / the union of their active intervals; 1x is sequential, 2x is two fully overlapping workers. These lifecycle measurements are independent of native usage/cost, which remain unknown. Rollout discovery is read-only, scans the local session history only when stats is requested, and accepts project subfolders and worktrees sharing `.loomy`.
 - Row allocation reserves state/outcome and elapsed, shrinking task, then model, then effort bar; extremely narrow rows wrap identity. The dictionary test builds in its private work directory and never rewrites a tracked file; translation discovery handles both shell quote styles.
+### Single launch point
+
+- `scripts/lib/launch.sh` owns provider process execution: `loomy_cli_resolve`,
+  `loomy_cli_check`, `loomy_cli_run`, `loomy_cli_spawn`, and `loomy_cli_meta`.
+  Feedback version reporting and repair metadata calls use the same boundary.
+  The test guard runs first; model calls require catalog validation and provider
+  availability. Bridges retain W8 handover/pause semantics; ordinary callers return
+  75 on unavailable providers. Metadata calls and bounded probes use only the guard
+  and do not write model lifecycle events.
+- Bridges use the central lifecycle writers, retaining their usage, outcome,
+  permissions and resumption data. A bridge worker keeps a process group for signal
+  cleanup. Detached runners own their end event, after the provider returns.
+- `LOOMY_PARENT_ID` and `LOOMY_ATTEMPT` identify the bridge and its unique attempt in
+  the child environment; optional `LOOMY_PARENT_SESSION` / `LOOMY_PARENT_AGENT` carry
+  upstream ownership. Launch-control flags are removed from the provider environment
+  so nested Loomy launches cannot reuse the enclosing bridge's lifecycle.
+- Codex remains ephemeral: its live JSON stream emits sanitized `bridge_link`
+  records for `thread.started` and native spawn receiver IDs. No prompt or tool
+  payload enters these events. Claude receives a unique `--session-id`; the matching
+  transcript belongs to that bridge by explicit ID, with evidence `launch-session-id`.
+  No session is paired by cwd, time or role. The reducer consumes
+  `session_key`, `parent_delegation`, `attempt_id`, and optional `parent_session`,
+  including late links. Bridged sessions disappear as separate leads and their children
+  retain explicit nested parents in both views; mismatched attempts never attach.
+- Terminal lead starts and Claude desktop handovers use the same boundary. Metadata
+  checks use `loomy_cli_meta`; app/window openers use `loomy_cli_app`, which guards
+  resolved executable paths and writes `app_open`, without inventing a model lifecycle. Interactive leads retain the
+  terminal foreground group and project hooks; provider transport receives redirected stdin.
+  The generated shell-hook passthrough of the user's typed command is the only exception.
+- LM Studio uses provider class `local` (Claude as its transport): the test guard and
+  start/end journal apply, without cloud availability or validated-chain checks.
+  The model belongs to the user. Hook-only journals keep legacy request/model groups;
+  actual transcript/rollout evidence enables the native session hierarchy.

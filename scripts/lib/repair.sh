@@ -47,7 +47,7 @@ ai_tool_paths() {
     seen="$seen|$r|"; printf '%s\n' "$p"
   done
 }
-ai_tool_version_of() { loomy_guard_real_cli "${1##*/}" "$1" || return $?; "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_tool_version_of() { local tool=claude; [[ "$1" != *codex* ]] || tool=codex; _loomy_launch_load; LOOMY_CLI_META_BIN="$1" loomy_cli_meta "$tool" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
 ai_tool_min() { if [[ "$1" == "claude" ]]; then echo "$AI_MIN_CLAUDE_VERSION"; else echo "$AI_MIN_CODEX_VERSION"; fi; }
 
 # ai_tool_state <claude|codex>: "ok <version> <path>", "old <version> <path>", "broken - <path>" or "missing".
@@ -119,7 +119,7 @@ ai_repair_tool() {
       npm) _rp_run "$tool" "$(t "%s: update with npm" "$label")" "npm install -g --prefix $(printf '%q' "$(_rp_npm_prefix "$first")") $pkg@latest" && return 0 ;;
       brew) _rp_run "$tool" "$(t "%s: update with Homebrew" "$label")" "brew upgrade --cask $cask 2>/dev/null || brew upgrade $cask" && return 0 ;;
       app) _rp_run "$tool" "$(t "%s: point to the Codex CLI shipped with the updated app" "$label")" "b=$(printf '%q' "$(ai_codex_bin 2>/dev/null)"); [ -x \"\$b\" ] && mkdir -p \"\$HOME/.local/bin\" && printf '#!/bin/sh\nexec \"%s\" \"\$@\"\n' \"\$b\" > \"\$HOME/.local/bin/codex\" && chmod +x \"\$HOME/.local/bin/codex\"" && return 0 ;;
-      *) [[ "$tool" == "claude" ]] && _rp_run "$tool" "$(t "%s: built-in update" "$label")" "$(printf '%q' "$first") update" && return 0 ;;
+      *) [[ "$tool" == "claude" ]] && _rp_run "$tool" "$(t "%s: built-in update" "$label")" "source $(printf '%q' "${BASH_SOURCE[0]%/*}/models.sh"); _loomy_launch_load; LOOMY_CLI_META_BIN=$(printf '%q' "$first") loomy_cli_meta claude update" && return 0 ;;
     esac
     # 2. Reinstall with the same method.
     case "$m" in

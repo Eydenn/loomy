@@ -292,24 +292,12 @@ _ai_realpath() {
   echo "$p"
 }
 
-# Tests must explicitly trust the resolved stub directory, including app-bundled binaries.
-loomy_guard_real_cli() {
-  [[ "${LOOMY_TEST_GUARD:-}" == 1 ]] || return 0
-  local name="$1" binary message stubs
-  binary="$(command -v "${2:-$1}" 2>/dev/null || true)"
-  if [[ "$binary" == */* && -f "$binary" && -x "$binary" ]]; then
-    binary="$(_ai_realpath "$binary")"
-    binary="$(cd "$(dirname "$binary")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "${binary##*/}")" || binary=""
-  else
-    binary=""
-  fi
-  stubs="${LOOMY_TEST_STUBS:-}"
-  if [[ -n "$stubs" && "$binary" == "$stubs/"* ]]; then return 0; fi
-  message="loomy: test guard: refusing to launch real $name (${binary:-not found})"
-  printf '%s\n' "$message" >&2
-  if [[ -n "${LOOMY_TEST_GUARD_LOG:-}" ]]; then printf '%s\n' "$message" >>"$LOOMY_TEST_GUARD_LOG"; fi
-  return 97
+# Launch API is lazy-loaded: model catalog reads remain free of provider launches.
+_loomy_launch_load() {
+  declare -F loomy_cli_run >/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/launch.sh"
 }
+# Compatibility with projects installed before the single launch point.
+loomy_guard_real_cli() { _loomy_launch_load; _loomy_cli_test_guard "$@"; }
 
 # Codex CLI: the PATH first (links resolved), then the binaries shipped with the desktop apps.
 ai_codex_bin() {
@@ -354,8 +342,8 @@ _ai_bundled_codex() {
 ai_has_claude() { command -v claude >/dev/null 2>&1; }
 ai_has_codex() { ai_codex_bin >/dev/null 2>&1; }
 
-ai_claude_version() { loomy_guard_real_cli claude || return $?; claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
-ai_codex_version() { local binary; binary="$(ai_codex_bin)" || return $?; loomy_guard_real_cli codex "$binary" || return $?; "$binary" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_claude_version() { _loomy_launch_load; loomy_cli_meta claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_codex_version() { _loomy_launch_load; loomy_cli_meta codex --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
 
 # ai_version_ge <a> <b>: true when version a >= b (numeric x.y.z).
 ai_version_ge() {
@@ -705,15 +693,11 @@ loomy_slug() {
 
 # Bound real probes without depending on GNU timeout (macOS ships Perl).
 _ai_probe_run() {
-  loomy_guard_real_cli "${1##*/}" "$1" || return $?
-  local seconds="${LOOMY_MODEL_PROBE_TIMEOUT:-10}"
-  [[ "$seconds" =~ ^[1-9][0-9]*$ ]] || seconds=10
-  perl -e '
-    my $seconds=shift; my $pid=fork(); defined $pid or die "fork: $!";
-    if (!$pid) { setpgrp(0,0); exec @ARGV or die "exec: $!" }
-    $SIG{ALRM}=sub { kill "KILL", -$pid; kill "KILL", $pid; waitpid($pid,0); exit 124 };
-    alarm $seconds; waitpid($pid,0); alarm 0; exit (($? & 127) ? 128+($? & 127) : $? >> 8);
-  ' "$seconds" "$@"
+  local tool=codex
+  [[ "$1" != *claude* ]] || tool=claude
+  shift
+  _loomy_launch_load
+  LOOMY_CLI_PROBE=1 loomy_cli_run "$tool" probe "" -- "$@"
 }
 
 # Parse only provider error payloads. Agent prose and command output are untrusted evidence.
@@ -721,40 +705,44 @@ ai_delegate_error() {
   local parsed
   parsed="$(perl -MJSON::PP -e '
     my ($family,$rc,$file)=@ARGV; open my $f,"<",$file or die "$file: $!";
-    my (@messages,$terminal,$failed); $terminal="";
+    my (@messages,@plain,$terminal,$failed,$final); $terminal="";
     while (<$f>) {
-      my $e=eval { decode_json($_) }; next unless ref($e) eq "HASH";
+      my $e=eval { decode_json($_) }; if (ref($e) ne "HASH") { push @plain,$_ if $rc != 0; next }
       if ($family eq "claude") {
         if ($e->{is_error}) { $failed=1; push @messages,$e->{result} if !ref($e->{result}) && defined $e->{result} }
       } else {
         my $type=$e->{type}//"";
-        if ($type eq "turn.started") { @messages=(); $terminal="" }
+        if ($type eq "turn.started") { @messages=(); @plain=(); $terminal=""; $final="" }
         if ($type eq "error") { push @messages,$e->{message} if !ref($e->{message}) && defined $e->{message} }
         if ($type eq "turn.failed" || $type eq "turn.completed") {
-          $terminal=$type;
-          push @messages,$e->{error}{message} if $type eq "turn.failed" && ref($e->{error}) eq "HASH" && !ref($e->{error}{message}) && defined $e->{error}{message};
+          $terminal=$type; $final="";
+          $final=$e->{error}{message} if $type eq "turn.failed" && ref($e->{error}) eq "HASH" && !ref($e->{error}{message}) && defined $e->{error}{message};
         }
       }
     }
     $failed=($rc != 0 || ($family eq "codex" ? $terminal eq "turn.failed" : $failed));
     print (($failed ? "1" : "0"), "\n");
-    print join("\n",@messages) if $failed;
+    print (defined($final) && length($final) ? $final : @messages ? join("\n",@messages) : join("",@plain)) if $failed;
   ' "$1" "$3" "$2")"
   AI_ERROR_FAILED="${parsed%%$'\n'*}"
   AI_ERROR_TEXT="${parsed#*$'\n'}"
+  [[ "$parsed" == *$'\n'* ]] || AI_ERROR_TEXT=""
   [[ "$AI_ERROR_FAILED" == 1 ]] || AI_ERROR_TEXT=""
 }
 
 # ai_model_probe <claude|codex> <model>: one tiny real call ("OK"), without tools; true when the model answers.
 ai_model_probe() {
   local tmpf rc=0
+  AI_PROBE_STATUS=0
   AI_PROBE_OUTPUT=""
   if [[ "$1" == "claude" ]]; then
     AI_PROBE_OUTPUT="$(cd "${TMPDIR:-/tmp}" && _ai_probe_run claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$2" --effort low --tools "" --strict-mcp-config 2>&1 </dev/null)" || rc=$?
+    AI_PROBE_STATUS=$rc
     (( rc == 0 )) && grep -q '"is_error":false' <<<"$AI_PROBE_OUTPUT"
   else
     tmpf="$(mktemp)"
     AI_PROBE_OUTPUT="$(_ai_probe_run "$(ai_codex_bin 2>/dev/null || echo codex)" exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral -o "$tmpf" "Reply exactly: OK" </dev/null 2>&1)" || rc=$?
+    AI_PROBE_STATUS=$rc
     if (( rc == 0 )) && grep -q OK "$tmpf"; then rc=0; else rc=1; fi
     rm -f "$tmpf"; return "$rc"
   fi
@@ -867,7 +855,4 @@ ai_delegate_banner_extra() {
 
 # ai_delegate_journal_start <root> <id> <bridge> <role> <family> <model> <effort> <sandbox> <task> <requested 0|1> <off> <why>
 # delegation_start event of the bridges: id, pid, bridge, role, family, model, effort, sandbox, then requested / off_routing / why, then task.
-ai_delegate_journal_start() {
-  local req=false; [[ "${10}" == "1" ]] && req=true
-  ai_journal_write "$1" "\"type\":\"delegation_start\",\"id\":\"$2\",\"pid\":$$,\"bridge\":\"$3\",\"role\":\"$4\",\"family\":\"$5\",\"model\":\"$6\",\"effort\":\"$7\",\"sandbox\":\"$8\",\"requested\":$req,\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"off_routing\":\"${11}\",\"why\":$(ai_json_str "$(ai_task_excerpt "${12}")"),\"task\":$(ai_json_str "$(ai_task_excerpt "$9")")"
-}
+ai_delegate_journal_start() { _loomy_launch_load; loomy_cli_bridge_start "$@"; }

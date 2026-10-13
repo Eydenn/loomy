@@ -182,10 +182,16 @@ ai_provider_refusal() {
     my $now=shift; local $/; my $s=<STDIN>; my $epoch;
     if ($s =~ /(?:resets_at|reset_at|resume_at)["\s:=]+([0-9]{10})/i || $s =~ /\|([0-9]{10})(?:\D|$)/) { $epoch=$1 }
     elsif ($s =~ /(?:retry_after|retry-after|resets_in_seconds)["\s:=]+([0-9]+)/i) { $epoch=$now+$1 }
-    elsif ($s =~ /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) {
+    elsif ($s =~ /\bin\s+(?=\d)(?:(\d+)\s+days?\s*)?(?:(\d+)\s+hours?\s*)?(?:(\d+)\s+minutes?)?/i && defined($1 // $2 // $3)) { $epoch=$now+($1//0)*86400+($2//0)*3600+($3//0)*60 }
+    elsif ($s =~ /try again at\s+(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?)?/i) {
+      my ($y,$mo,$d,$h,$mi,$sec,$zone)=($1,$2,$3,$4//0,$5//0,$6//0,$7//"");
+      $epoch=eval {length($zone) ? timegm($sec,$mi,$h,$d,$mo-1,$y) : timelocal($sec,$mi,$h,$d,$mo-1,$y)};
+      if (defined($epoch) && $zone =~ /([+-])(\d{2}):?(\d{2})/) { $epoch-=($1 eq "+" ? 1 : -1)*($2*3600+$3*60) }
+    }
+    elsif ($s =~ /(?:resets?|try again at)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) {
       my ($h,$m,$ap)=($1,$2//0,lc $3); my @t=localtime($now);
       if ($h>=1 && $h<=12 && $m<60) { $h=$h%12+($ap eq "pm" ? 12 : 0); $epoch=eval {timelocal(0,$m,$h,$t[3],$t[4],$t[5])}; $epoch+=86400 if defined($epoch) && $epoch<=$now }
-    } elsif ($s =~ /resets?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i) {
+    } elsif ($s =~ /(?:resets?|try again at)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i) {
       my ($mon,$day)=(lc $1,$2); my %mon=map { (qw(jan feb mar apr may jun jul aug sep oct nov dec))[$_]=>$_ } 0..11;
       my @t=localtime($now); $epoch=eval {timelocal(0,0,0,$day,$mon{$mon},$t[5])};
       $epoch=eval {timelocal(0,0,0,$day,$mon{$mon},$t[5]+1)} if defined($epoch) && $epoch<=$now;
@@ -264,7 +270,7 @@ ai_delegate_provider_guard() {
   ai_delegate_changed_files
   if (( can_switch )); then
     t "Provider %s unavailable (%s): %s handed to %s once." "$family" "$reason" "$ROLE" "$other" >&2; echo >&2
-    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"handed_over\",\"outcome\":\"handed_over\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"handed_over\",\"outcome\":\"handed_over\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
     local fwd=()
     [[ -z "$O_EFFORT" ]] || fwd+=(--effort "$O_EFFORT")
@@ -274,7 +280,7 @@ ai_delegate_provider_guard() {
     # Replace the bridge after closing its event so the destination owns signal cleanup.
     rm -rf "$TMP"
     trap - EXIT INT TERM HUP
-    LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-$O_MODEL}" LOOMY_FAILOVER_FROM="$family" \
+    LOOMY_ATTEMPT="" LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-$O_MODEL}" LOOMY_FAILOVER_FROM="$family" \
       exec bash "$SCRIPT_DIR/loomy-delegate-$other.sh" "$ROLE" ${fwd[@]+"${fwd[@]}"} "$TASK"
   fi
   resume="$(ai_provider_reset "$family")"
@@ -284,7 +290,7 @@ ai_delegate_provider_guard() {
     (( other_reset >= resume )) || resume="$other_reset"
   fi
   id="$DELEG_ID"
-  ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"paused\",\"outcome\":\"waiting_for_reset\",\"resume_at\":$resume,\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+  loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"paused\",\"outcome\":\"waiting_for_reset\",\"resume_at\":$resume,\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
   FINAL_WRITTEN=1
   # A resumed handover starts a fresh attempt on its original bridge (including writer permissions).
   local relaunch resume_family="${LOOMY_FAILOVER_FROM:-$family}" resume_model="${LOOMY_REQUESTED_MODEL:-$O_MODEL}"

@@ -52,10 +52,8 @@ if [[ "$fp_hook" == "prompt" ]]; then
       print JSON::PP->new->utf8->canonical->encode({type=>"request", ts=>strftime("%Y-%m-%dT%H:%M:%SZ", gmtime), id=>"r".time."-".$$, session=>$d->{session_id}//"", excerpt=>$excerpt});
     ' 2>/dev/null)"
     if [[ -n "$fp_event" ]]; then
-      perl -MFcntl=O_WRONLY,O_APPEND,O_NOFOLLOW -e '
-        sysopen my $f,$ARGV[0],O_WRONLY|O_APPEND|O_NOFOLLOW or exit;
-        flock $f,2 or exit; print $f $ARGV[1]."\n";
-      ' "$P_ROOT/.loomy/logs/events.jsonl" "$fp_event" 2>/dev/null
+      # Prompt writes share the rotation lock and cannot land in an archived inode.
+      ai_journal_write "$P_ROOT" "${fp_event:1:${#fp_event}-2}"
     fi
   fi
   # Front matter read line by line (ai_mode, ai_lead): no sed, no subshell.
@@ -91,7 +89,11 @@ if [[ "$fp_hook" == "prompt" ]]; then
     tv p_msg "[Loomy] The Loomy setup of this project is not finished (START.md is still there). Before any other work, resume it where it stopped (phase in .loomy/state), or tell the user it has to be finished first and ask them."
   fi
   if (( p_orch )); then
-    tv p_orch_msg "[Loomy] ORCHESTRATED mode: you are the orchestrator, not the executor. Route each role as .loomy/scripts/loomy-route.sh says: Claude roles to the subagents of .claude/agents/ (Agent tool, in the foreground), Codex roles through .loomy/scripts/loomy-delegate-codex.sh. Do the work yourself only when the routing keeps it on the lead."
+    tv p_orch_msg "[Loomy] ORCHESTRATED mode: split each request into independent subtasks with disjoint files; launch them together up to max_parallel (default 4), then wait for every result before integration. Use native subagents for roles of the lead family and background bridges across families, following .loomy/scripts/loomy-route.sh. Use one worktree per overlapping scope. After integration run review, security and documentation in parallel on disjoint scopes. Keep routed efforts unchanged; do work yourself only when routing keeps it on the lead."
+    # Configured quota cap is included without sourcing the model catalog on every prompt.
+    # shellcheck source=lib/config.sh
+    source "$SCRIPT_DIR/lib/config.sh"
+    p_orch_msg="$p_orch_msg max_parallel=$(loomy_config_get max_parallel)."
     p_msg="${p_msg:+$p_msg }$p_orch_msg"
   fi
   if (( p_try )); then

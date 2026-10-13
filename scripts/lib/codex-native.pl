@@ -50,6 +50,18 @@ sub input_signature {
     my $sig=join(';',map { my @st=Time::HiRes::stat($_); join(':',$_,@st ? @st[0,1,7,9] : '-') } sort keys %paths);
     return $sig;
 }
+sub pending_input {
+    my ($root,$sessions,$s)=@_;
+    return 1 if ($s->{journal}{read_sig}//'') ne Loomy::LiveState::file_signature("$root/.loomy/logs/events.jsonl");
+    for my $path (keys %{$s->{files}//{}}) {
+        return 1 if ($s->{files}{$path}{read_sig}//'') ne Loomy::LiveState::file_signature($path);
+    }
+    for my $dir (keys %{$inventory{$sessions}{dirs}//{}}) {
+        my @st=Time::HiRes::stat($dir);
+        return 1 if ($inventory{$sessions}{dirs}{$dir}{sig}//'') ne (@st ? join(':',@st[0,1,9]) : '-');
+    }
+    return 0;
+}
 sub watch_changed {
     my ($root,$sessions,$now)=@_; my $idx="$root/.loomy/logs/codex-native.idx";
     my $s=$cached{$idx} ? $cached{$idx}{state} : {};
@@ -57,7 +69,7 @@ sub watch_changed {
     my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
     $watch{$idx}=$sig;
     # Continue bounded catch-up even if the producer stops appending.
-    return $changed || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
+    return $changed || pending_input($root,$sessions,$s) || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
 }
 
 # sysread has a fixed budget; offsets stop at complete lines, including malformed ones.
@@ -355,11 +367,11 @@ sub poll {
     my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $day=int($now/86400);
     if ($s && ($cached{$idx}{pruned_day}//-1)==$day && ($cached{$idx}{poll_sig}//'') eq input_signature($root,$sessions,$now)
         && !(grep {!($_->{at_eof}//0)} values %{$s->{files}//{}})
-        && ($s->{journal}{at_eof}//0)) {return $s}
+        && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s)) {return $s}
     $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
     my $dirty=prune_checkpoint($s,$now);
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
-    Loomy::LiveState::journal_rotate($journal);
+    Loomy::LiveState::recover_rotation($journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -387,6 +399,11 @@ sub poll {
         my $line=$record->[0];
         my $d=eval { decode_json($line) }; next unless Loomy::LiveState::valid_event($d);
         $s->{seen}{identity($d->{native_key})}=epoch($d->{ts}) || $now if identity($d->{native_key});
+        if ($s->{reconstructing} && ($d->{bridge}//'') eq 'codex-native' && identity($d->{agent_id})
+            && scalar_text($d->{source_offset}) =~ /^\d+$/) {
+            my $aid=identity($d->{agent_id}); my $prior=$s->{recovery_sources}{$aid};
+            $s->{recovery_sources}{$aid}=$d if !$prior || epoch($d->{ts})>=epoch($prior->{ts});
+        }
         # Recover consumed source positions before bounded event keys age out.
         my $recovered=$replay_files{identity($d->{agent_id})}; my $f=$recovered ? $recovered->[1] : undef;
         if ($f && $f->{meta}{parent} && identity($d->{id}) && scalar_text($d->{source_offset}) =~ /^\d+$/
@@ -451,6 +468,24 @@ sub poll {
     if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s); return $s }
     $dirty=1 if ($jc->{read_bytes}//0);
     my $discovery_bytes=discover($s,$sessions,$root,$now)//0; $dirty=1 if $discovery_bytes;
+    # Replay fences survive event-key pruning; only matching source inodes are seekable.
+    for my $path (keys %{$s->{files}//{}}) {
+        my $f=$s->{files}{$path}; my $d=$s->{recovery_sources}{$f->{meta}{id}} or next;
+        next unless $f->{meta}{parent}; my @st=stat($path);
+        if (@st && "$st[0]:$st[1]" eq scalar_text($d->{source_inode}) && $d->{source_offset}<=$st[7]) {
+            $f->{key}=scalar_text($d->{source_inode}); $f->{offset}=0+$d->{source_offset};
+            $f->{id}=identity($d->{id}); $f->{turn}=identity($d->{turn_id});
+            my $ts=epoch($d->{ts}); my $duration=scalar_text($d->{duration_s});
+            $f->{started}=($d->{type}//'') eq 'delegation_start' ? stamp($d->{ts})
+                : strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($ts-($duration =~ /^\d+(?:\.\d+)?$/ ? $duration : 0)));
+            $f->{last_observed_ts}=stamp($d->{ts}); $f->{finished}=($d->{type}//'') eq 'delegation' ? 1 : 0;
+            $f->{activity}=scalar_text($d->{activity}//$d->{state})||'unknown';
+            $f->{model}=identity($d->{model}); $f->{effort}=identity($d->{effort});
+            $f->{journal_generation}=$generation; delete $f->{read_sig};
+        } else {$f->{replay_fence}=epoch($d->{ts})}
+        delete $s->{recovery_sources}{$f->{meta}{id}}; $dirty=1;
+    }
+    if ($s->{reconstructing} && $jc->{at_eof} && $input eq $journal) {delete $s->{reconstructing}; $dirty=1}
     if (($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0') {
         for my $f (values %{$s->{files}//{}}) { $f->{meta}{task}=''; $f->{meta}{nickname}='' }
     }
@@ -683,7 +718,8 @@ sub poll {
     }
     # The append and checkpoint share one lock; crash recovery replays only unseen native keys.
     $out->flush or die 'native journal flush failed'; $out->sync or die 'native journal sync failed';
-    my @end=stat($out); $jc->{offset}=$end[7]; $jc->{key}="$end[0]:$end[1]";
+    # Do not skip external owner/hooks appended between the read and our writes.
+    my @end=stat($out);
     if ($end[7]>=8388608) {close $out; Loomy::LiveState::journal_rotate($journal)}
     prune_checkpoint($s,$now) if $dirty;
     save($idx,$s) if $dirty;

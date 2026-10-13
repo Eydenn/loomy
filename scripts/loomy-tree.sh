@@ -436,6 +436,8 @@ loomy_live_poll() {
       last unless $l =~ /\n$/;
       my $d=eval { decode_json($l) }; next unless ref($d) eq "HASH";
       my $type=$d->{type}//""; next if ref($type) || $type eq "";
+      # Hook-only normalized records serve the shared projection, not a second legacy row.
+      next if ($d->{bridge}//"") eq "claude-native" && ($d->{source}//"") eq "hook";
       ++$seq;
       if ($type eq "session") {
         my $id=($d->{tool}//"")."|".($d->{session} || "pid".($d->{pid}//0));
@@ -617,7 +619,7 @@ loomy_live_cache_row() {
   LV_FLAGS[i]="$flags"
 }
 loomy_live_row() {
-  local i="$1" finished="$2" mark elapsed text outcome="" suffix="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" task="" room
+  local i="$1" finished="$2" reserved mark elapsed text outcome="" suffix="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" task="" room
   _ui_pad "${LV_LABEL[i]}" "$LV_ROLE_WIDTH"; label="$UI_PADDED"
   if (( finished )); then
     elapsed="${LV_DURATION[i]:-0}"; mark=✓; outcome="${LV_OUTCOME[i]:-done}"; color="$C_GREEN"
@@ -646,28 +648,29 @@ loomy_live_row() {
   model=" ${LV_MODELSHORT[i]}"; bars=" ${LV_BAR[i]}"
   # Task shrinks first, then model, then effort bar; evidence and elapsed are reserved.
   [[ -n "$suffix" ]] || { if (( finished )); then suffix=" · $(t "$outcome")"; else suffix=" · $(t 'running')"; fi; }
-  suffix=" ${LV_WORD[i]}$suffix · $LV_TIME"
+  [[ "$outcome" != lost ]] || suffix=""
+  reserved=" ${LV_WORD[i]} $(printf '%5s' "$LV_TIME")$suffix"
   printf -v text '  %s %s %-6s' "$mark" "$label" "${LV_TOOL[i]}"
-  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#reserved} ))
   if (( room < 0 )); then
     room=$(( ${#model} + room )); (( room >= 0 )) || room=0
     ai_task_title "$model" "$room"; model="$AI_TASK_TITLE"
   fi
-  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#reserved} ))
   if (( room < 0 )); then bars=""; fi
-  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#reserved} ))
   if (( room < 0 )); then
     # Extremely narrow rows keep identity on a separate line.
     loomy_live_line "$color$text$model$bars$C_RESET"
-    text=""; model=""; bars=""; room=$(( LV_WIDTH - ${#suffix} ))
+    text=""; model=""; bars=""; room=$(( LV_WIDTH - ${#reserved} ))
     LV_ROW_LINES=2
   else LV_ROW_LINES=1; fi
   task=""
   if (( room > 2 )); then ai_task_title "${LV_TASK[i]}" "$(( room - 2 ))"; task="${AI_TASK_TITLE:+  $AI_TASK_TITLE}"; fi
-  if (( ${#suffix} > LV_WIDTH )); then
-    loomy_native_line '' '' '' "${suffix% · *}" "$LV_TIME"
+  if (( ${#reserved} > LV_WIDTH )); then
+    loomy_native_line '' '' '' "${LV_WORD[i]}$suffix" "$LV_TIME"
     LV_ROW_LINES=$(( LV_ROW_LINES + 1 ))
-  else loomy_live_line "$color$text$model$bars$task$suffix$C_RESET"; fi
+  else loomy_live_line "$color$text$model$bars ${LV_WORD[i]} $(printf '%5s' "$LV_TIME")$task$suffix$C_RESET"; fi
   if [[ -n "$flags" ]]; then loomy_live_line "   $flags"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
 }
 

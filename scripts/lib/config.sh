@@ -19,10 +19,11 @@ loomy_config_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config"; }
 
 # loomy_config_get <key> [default]
 loomy_config_get() {
-  local file v
+  local file v fallback="${2:-}"
+  [[ "$1" != max_parallel || -n "$fallback" ]] || fallback=4
   file="$(loomy_config_file)"
   [[ -f "$file" ]] && v="$(sed -n "s/^$1=//p" "$file" | tail -1)"
-  echo "${v:-${2:-}}"
+  echo "${v:-$fallback}"
 }
 
 # loomy_config_set <key> <value>

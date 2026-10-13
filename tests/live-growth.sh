@@ -10,7 +10,7 @@ export LOOMY_NATIVE_NOW=1791853207 LOOMY_FIXTURE_NOW=1791853200
 export LOOMY_JOURNAL=1 LOOMY_JOURNAL_TASKS=1
 mkdir -p "$HOME"
 PASS=0
-for finding in G2 G3 G4 G6 growth prune migration crash-codex crash-claude crash-batch rotation corruption backup shards repair privacy; do
+for finding in G2 G3 G4 G6 arrival-race growth prune migration crash-codex crash-claude reconstruct-codex reconstruct-claude crash-batch reconstruct-batch rotation corruption backup shards repair privacy; do
   perl "$REPO/tests/fixtures/growth-live.pl" "$REPO" "$WORK" "$finding"
   PASS=$((PASS+1)); printf 'PASS S4 %s\n' "$finding"
 done

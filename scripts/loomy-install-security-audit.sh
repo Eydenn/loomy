@@ -16,4 +16,4 @@ fi
 
 exec npx skills add https://github.com/cloudflare/security-audit-skill \
   --skill security-audit \
-  "${SCOPE_ARGS[@]}"
+  ${SCOPE_ARGS[@]+"${SCOPE_ARGS[@]}"}

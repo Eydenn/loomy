@@ -12,33 +12,9 @@
 #   loomy-start.sh --only       routes every role to --lead codex|claude for this terminal session
 #   loomy-start.sh --root <dir> works on another project folder
 
-# S3 owns the launch policy; this temporary fallback only enforces the existing test guard.
-loomy_start_launch_init() {
-  local lib
-  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/launch.sh"
-  if [[ -f "$lib" ]]; then
-    # shellcheck source=/dev/null
-    source "$lib"
-  elif ! declare -F loomy_cli_run >/dev/null 2>&1; then
-    loomy_cli_check() { loomy_guard_real_cli "$1" "$( [[ "$1" == codex ]] && ai_codex_bin || echo claude)"; }
-    loomy_cli_run() {
-      local tool="$1" role="$2" model="$3"; shift 4
-      loomy_cli_check "$tool" "$role" "$model" || return $?
-      loomy_guard_real_cli "$tool" "$1" || return $?
-      "$@"
-    }
-    loomy_cli_spawn() {
-      local tool="$1" role="$2" model="$3"; shift 4
-      loomy_cli_check "$tool" "$role" "$model" || return $?
-      loomy_guard_real_cli "$tool" "$1" || return $?
-      nohup "$@" </dev/null &
-      LOOMY_START_SPAWN_PID=$!
-      sleep 0.2
-      kill -0 "$LOOMY_START_SPAWN_PID" 2>/dev/null || wait "$LOOMY_START_SPAWN_PID"
-    }
-  fi
-}
-loomy_start_launch_init
+# Every provider launch uses the shared guard, policy and lifecycle boundary.
+# shellcheck source=lib/launch.sh
+source "${BASH_SOURCE[0]%/*}/lib/launch.sh"
 
 # Private watch launcher; deletes itself when started.
 watch_script() {
@@ -73,16 +49,16 @@ open_in_app() {
     if [[ -n "$session" ]]; then url="codex://threads/$session"; else url="codex://threads/new?prompt=$ep"; fi
   else
     url="claude://code/new?folder=$ef&q=$ep"
-    version="$(loomy_cli_run claude lead "$MODEL" -- claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    version="$(loomy_cli_meta claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
     if [[ -n "$session" && -n "$version" ]] && ai_version_ge "$version" 2.1.285; then
       mkdir -p "$ROOT/.loomy/logs"
       log="$(umask 077; mktemp "$ROOT/.loomy/logs/desktop-resume.XXXXXXXX")" || return 1
-      if (cd "$ROOT" && loomy_cli_spawn claude lead "$MODEL" -- claude --desktop --resume "$session" </dev/null >"$log" 2>&1); then
+      if (cd "$ROOT" && loomy_cli_spawn claude lead "$MODEL" -- --desktop --resume "$session" </dev/null >"$log" 2>&1); then
         url=""
       fi
     fi
   fi
-  if [[ -n "$url" ]] && ! loomy_cli_run "$TOOL" lead "$MODEL" -- open "$url" >/dev/null 2>&1; then
+  if [[ -n "$url" ]] && ! loomy_cli_app "$TOOL" open "$url" >/dev/null 2>&1; then
     ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1
   fi
   ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
@@ -92,7 +68,7 @@ open_in_app() {
   [[ -z "$wt" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && wt=0 || wt=1; }
   if (( wt )) && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script)"
-    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
+    if loomy_cli_app "$TOOL" osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
     else ui_info "$(t "live tracking: loomy watch")"; fi
   fi
   return 0
@@ -134,7 +110,7 @@ loomy_open_orchestrator() {
   elif [[ "$(uname -s)" == Darwin ]] && command -v osascript >/dev/null 2>&1; then
     launch="$(mktemp "${TMPDIR:-/tmp}/loomy-open-XXXXXXXX")" || return 1
     printf '#!/bin/bash\nrm -f -- "$0"\nexec %s\n' "$command" >"$launch"
-    if ! loomy_cli_run "$LOOMY_OPEN_TOOL" lead "$R_MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $launch\"" >/dev/null 2>&1; then rm -f "$launch"; return 1; fi
+    if ! loomy_cli_app "$LOOMY_OPEN_TOOL" osascript -e "tell application \"Terminal\" to do script \"/bin/bash $launch\"" >/dev/null 2>&1; then rm -f "$launch"; return 1; fi
   else
     return 1
   fi
@@ -350,7 +326,7 @@ start_with_watch() {
   fi
   if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script $$)"
-    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
+    if loomy_cli_app "$TOOL" osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in the next iTerm2 pane, closed with the session")"
       return 0
     fi
@@ -393,7 +369,7 @@ start_with_watch() {
   fi
   if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script $$)"
-    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
+    if loomy_cli_app "$TOOL" osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in a new Terminal window, closed with the session")"
       return 0
     fi
@@ -516,7 +492,7 @@ while :; do
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$,\"pid_role\":\"owner\""
   fi
-  rc=0; loomy_cli_run "$TOOL" lead "$MODEL" -- "${AGENT_CMD[@]}" || rc=$?
+  rc=0; loomy_cli_run "$TOOL" lead "$MODEL" -- "${AGENT_CMD[@]:1}" || rc=$?
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"codex\",\"pid\":$$"
   fi

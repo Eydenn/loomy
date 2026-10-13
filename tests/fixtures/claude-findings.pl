@@ -59,7 +59,7 @@ if ($finding eq 'F1') {
     die 'milliseconds lost' unless $end->{source_ts} eq ts(4) && $end->{duration_s}==3;
     launch('silent',6); returned('silent','c',6); poll(); $ENV{LOOMY_NATIVE_NOW}=$clock+200;
     rows($path,{base('assistant',200),message=>{stop_reason=>undef,content=>[]}}); $s=poll();
-    die 'silent child still running' unless $s->{sessions}{lead}{calls}{silent}{state} eq 'interrupted';
+    die 'lead activity fabricated child interruption (G2)' unless $s->{sessions}{lead}{calls}{silent}{state} eq 'running';
 } elsif ($finding eq 'F3') {
     launch('open',1); poll(); my $v=state();
     die 'fresh agent interrupted' unless grep {/\|A\|.*\|running\|/} $v->projections($clock+7);
@@ -108,13 +108,16 @@ if ($finding eq 'F1') {
     Loomy::ClaudeNative::watch_changed($root,$projects);
     notification('call','completed',4);
     die 'change not detected' unless Loomy::ClaudeNative::watch_changed($root,$projects);
-    sysopen my $lock,$idx,O_RDWR or die $!; flock($lock,LOCK_EX|LOCK_NB) or die $!;
+    sysopen my $lock,"$idx.lock",O_RDWR or die $!; flock($lock,LOCK_EX|LOCK_NB) or die $!;
     die 'contended poll unexpectedly succeeded' if defined Loomy::ClaudeNative::poll($root,$projects);
     close $lock;
+    # G6 uses a five-second retry lease and a stable lock, not the replaceable checkpoint inode.
+    no warnings 'redefine'; my $future=Time::HiRes::time()+6; local *Time::HiRes::time=sub {$future};
     die 'failed poll consumed signature' unless Loomy::ClaudeNative::watch_changed($root,$projects);
     die 'retry lost completion' unless poll()->{sessions}{lead}{calls}{call}{state} eq 'done';
     launch('throw',5);
     {no warnings 'redefine';local *Loomy::ClaudeNative::read_transcript=sub {die 'injected failure'};eval {poll()};die 'exception not exercised' unless $@}
+    $future+=6;
     die 'exception consumed signature' unless Loomy::ClaudeNative::watch_changed($root,$projects);
     poll();
 } elsif ($finding eq 'F8') {

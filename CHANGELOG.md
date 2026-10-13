@@ -2,7 +2,7 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## Unreleased
+## Unreleased (0.17.0)
 
 ### Fixed
 - Test suites isolate temporary files and tmux servers, stub desktop launchers, reject real AI binaries, and fail on leaked processes; disabled watch journaling creates no logs directory.
@@ -12,7 +12,39 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ### W2/W3 — desktop resume and session-only routing
 - Watch `o` and `loomy start --app` reopen the latest local Codex project thread or Claude session (Claude CLI ≥ 2.1.285), with the existing prefilled new-session fallback and an explicit refusal for busy Claude sessions.
 - Terminal `loomy start --lead codex|claude --only` routes all roles to one validated tool chain without editing the brief or copying the project; watch/route display the choice, and exit, `--lead auto` or a dead owner clears it.
-- Start launch paths use the shared CLI launch API when present; desktop `--only` remains refused pending a session lifetime owner.
+- Start launch paths use the shared CLI launch API; desktop `--only` remains refused pending a session lifetime owner.
+
+### Checkpoint and journal policy
+
+- Bound native v2 checkpoints and source shards; migrate large v1 indices without
+  dropping active cursors, preserve valid backups, and save only changed state atomically.
+- Recover journal appends before source replay across monthly/8 MiB rotation; carry open
+  structural snapshots without usage, bound incremental/display reads and recap detail.
+- Fix Round 4 G2/G3/G4/G6: Claude child-owned leases, large-result replay prefilter,
+  semantic activity deduplication and five-second failed-poll backoff; add growth regressions.
+
+### Parallel requests and coherence
+
+- Audit cross review selects the other available model family; pretty logs hide agent alias metadata and round durations. Feedback triage defaults to Haiku 5.5.
+- Managed orchestration and EN/FR templates describe parallel disjoint subtasks, native roles of the lead family, and parallel review/security/docs without changing efforts. Routing displays the native Codex invocation hint.
+- Worktrees share the main project's `.loomy`; `--count N` creates numbered independent subtasks while preserving the default Codex/Claude pair.
+- Stats report completed request elapsed time (including Codex rollout user turns) and worker-time / active-wall-time parallelism; native costs stay unknown.
+- Row allocation preserves state/outcome and elapsed before optional task/model/bar detail. Native watch fixture cleans up on Tcl exceptions; UTC fixture clock and `partial` assertion were already protected.
+- Dictionary checks build in private test space; missing-translation checks include single quotes (`waiting`). Retired pin examples use a validated current model; project-repair documentation lists the actual opening commands. Cloudflare audit installation is documented as a separate exception to the managed skill catalog. Removed two unused functions after caller search.
+- Configure `max_parallel` (default 4) with `loomy config set max_parallel N`; prompt reminders require independent parallel splits and waiting for all results. Optional audit installer arrays tolerate Bash 3.2 empty expansion.
+
+### Single launch point
+
+- Centralize provider execution, test guards, bounded probes and bridge lifecycle
+  writes; preserve provider handover/pause and usage metadata.
+- Link ephemeral Codex threads/native spawn IDs and explicit Claude session IDs to
+  their bridge attempts without guessing by role, cwd or time.
+- Prefer final provider failure messages over retry noise, classify plain stderr
+  refusals, parse dated/relative reset messages, and warn on doctor probe timeouts.
+- All provider starts, including terminal/app resume and LM Studio, use the launch boundary. Local user-owned models get the guard and lifecycle journal without cloud quota/catalog validation; app openers are guarded and recorded separately.
+- The reducer consumes explicit bridge session/parent/attempt links in both tree and live views, preserving nested ownership without merging concurrent same-role bridges.
+- Damaged primary/backup checkpoints are preserved and rebuilt from journal segments in bounded polls. Source replay retains fences and terminal/usage counts.
+- Read-only collection does not rotate the journal; consumed offsets never skip hooks arriving during collection. Hook-only projects keep request/model grouping and the legacy recap.
 
 ## 0.16.2 — 2026-10-13
 
@@ -906,22 +938,3 @@ First pre-release, 100% terminal.
 - **Log** (`.loomy/logs/events.jsonl`, local, excluded from Git): start and end of each delegation with role, model, effort, duration, tokens and cost (real for Claude, estimated for Codex), and phase changes.
 - **Live tracking in the terminal** (`loomy status`, `loomy watch`): phases, running delegations with their timer, cost per model, plans (API cost, or value consumed against the subscription price), latest delegations, Git.
 - **Test suite** (`tests/run.sh`): every command in real conditions, without network or token, thanks to `claude` and `codex` doubles.
-
-
-## Unreleased — S4 checkpoint and journal policy
-
-- Bound native v2 checkpoints and source shards; migrate large v1 indices without
-  dropping active cursors, preserve valid backups, and save only changed state atomically.
-- Recover journal appends before source replay across monthly/8 MiB rotation; carry open
-  structural snapshots without usage, bound incremental/display reads and recap detail.
-- Fix Round 4 G2/G3/G4/G6: Claude child-owned leases, large-result replay prefilter,
-  semantic activity deduplication and five-second failed-poll backoff; add growth regressions.
-### Unreleased — W47 audit and parallel requests
-
-- Audit cross review selects the other available model family; pretty logs hide agent alias metadata and round durations. Feedback triage defaults to Haiku 5.5.
-- Managed orchestration and EN/FR templates describe parallel disjoint subtasks, native roles of the lead family, and parallel review/security/docs without changing efforts. Routing displays the native Codex invocation hint.
-- Worktrees share the main project's `.loomy`; `--count N` creates numbered independent subtasks while preserving the default Codex/Claude pair.
-- Stats report completed request elapsed time (including Codex rollout user turns) and worker-time / active-wall-time parallelism; native costs stay unknown.
-- Row allocation preserves state/outcome and elapsed before optional task/model/bar detail. Native watch fixture cleans up on Tcl exceptions; UTC fixture clock and `partial` assertion were already protected.
-- Dictionary checks build in private test space; missing-translation checks include single quotes (`waiting`). Retired pin examples use a validated current model; project-repair documentation lists the actual opening commands. Cloudflare audit installation is documented as a separate exception to the managed skill catalog. Removed two unused functions after caller search.
-- Integration follow-up: configure/validate `max_parallel` and update the per-message hook in their owning ticket. The static check exposes the existing optional empty `SCOPE_ARGS` expansion in the separate audit installer (outside W47's write scope).

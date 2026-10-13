@@ -595,7 +595,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | `loomy review` | Independent cross review of the changes | `--working` `--staged` |
 | `loomy effort` | Reasoning effort of the lead agent or a role | `<level>` `<role> <level>` `--list` `--reset` |
 | `loomy shell-hook [install\|remove]` | Typing claude or codex alone goes through loomy start | `install` `remove` |
-| `loomy worktrees <task>` | Two worktrees for parallel mode | — |
+| `loomy worktrees <task> [base] --count N` | Numbered worktrees sharing the live journal (default: family pair) | — |
 
 ### Tracking and figures
 
@@ -642,8 +642,10 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | 🧍&nbsp;**SOLO** | a single tool does everything | small projects, tight budget |
 | 👀&nbsp;**REVIEW** | one implements, the other reviews the diff | substantial changes |
 | 🔁&nbsp;**HANDOFF** | clean checkpoint + `.loomy/docs/HANDOFF.md`, the other takes over | switching tools midway |
-| 🌳&nbsp;**PARALLEL** | two worktrees, disjoint scopes | truly independent work |
+| 🌳&nbsp;**PARALLEL** | disjoint subtasks/worktrees, launched together | wait for all before integration |
 | 🎯&nbsp;**ORCHESTRATED** | the lead agent delegates each role to the best model of both families | **recommended** when both tools are installed |
+
+Set `loomy config set max_parallel N` (default 4; 1–999; `auto` restores 4). Split independent file scopes and launch them together, using native agents of the lead family and bridges across families. After integration, review, security and documentation run in parallel; wait for every result. Efforts keep their routed values.
 
 ---
 

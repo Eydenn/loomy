@@ -115,7 +115,12 @@ if [[ -n "$SUB" ]]; then
 fi
 IN_PROJECT=0; [[ -f "$ROOT/.loomy/brief.md" ]] && IN_PROJECT=1
 
-ver() { case "${1##*/}" in claude|codex) loomy_guard_real_cli "${1##*/}" "$1" || return $? ;; esac; "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true; }
+ver() {
+  case "$1" in
+    claude|codex) _loomy_launch_load; loomy_cli_meta "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true ;;
+    *) "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true ;;
+  esac
+}
 LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 
 body() {
@@ -132,7 +137,7 @@ body() {
   echo "| bash | ${BASH_VERSION%%(*} |"
   echo "| git | $(ver git --version) |"
   echo "| Claude Code | $(ver claude --version || true) |"
-  echo "| Codex | $(ver "$(ai_codex_bin 2>/dev/null || echo codex)" --version || true) |"
+  echo "| Codex | $(ver codex --version || true) |"
   echo "| gh | $(ver gh --version) |"
   echo "| Terminal | ${TERM_PROGRAM:-?} · TERM=${TERM:-?}$( [[ -n "${TMUX:-}" ]] && echo " · tmux") |"
   if (( IN_PROJECT )); then

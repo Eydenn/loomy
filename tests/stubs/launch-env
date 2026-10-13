@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Records only the launch contract; no provider, personal data or network.
+set -eu
+printf 'delegation=%s\n' "${LOOMY_DELEGATION:-}"
+IFS= read -r input || true
+printf 'input=%s\n' "${input:-}"

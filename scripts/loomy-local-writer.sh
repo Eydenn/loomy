@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/journal.sh
-source "$SCRIPT_DIR/lib/journal.sh"
+source "$SCRIPT_DIR/lib/launch.sh"
 
 ROOT=""; CHECK=0; TASK=""
 while [[ $# -gt 0 ]]; do
@@ -41,14 +41,10 @@ command -v claude >/dev/null 2>&1 || { echo "claude CLI not found" >&2; exit 1; 
 # Empty configuration folder: no plugins, hooks or memory sent to the local model (they slow it down a lot).
 CFG="$(mktemp -d "${TMPDIR:-/tmp}/loomy-local.XXXXXX")" || exit 1
 trap 'rm -rf "$CFG"' EXIT
-loomy_guard_real_cli claude || exit $?
-start="$(date +%s)"
 out="$(ANTHROPIC_BASE_URL="$URL" ANTHROPIC_AUTH_TOKEN="$TOKEN" ANTHROPIC_API_KEY="" CLAUDE_CONFIG_DIR="$CFG" \
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 CLAUDE_CODE_MAX_CONTEXT_TOKENS=60000 \
-  claude -p --model "$MODEL" --tools "" --strict-mcp-config "$TASK" </dev/null 2>/dev/null)"
+  loomy_cli_run local documenter "$MODEL" -- -p --model "$MODEL" --tools "" --strict-mcp-config "$TASK" </dev/null 2>/dev/null)"
 rc=$?
-dur=$(( $(date +%s) - start ))
 status="ok"; (( rc == 0 )) && [[ -n "$out" ]] || status="failed"
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"l$(date +%s)$$\",\"bridge\":\"local\",\"role\":\"documenter\",\"family\":\"local\",\"model\":$(ai_json_str "$MODEL"),\"effort\":\"-\",\"profile\":\"-\",\"sandbox\":\"text-only\",\"status\":\"$status\",\"duration_s\":$dur,\"tokens_in\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"local\",\"files_changed\":0"
 [[ "$status" == "ok" ]] || { echo "local model failed (code $rc)" >&2; exit 1; }
 printf '%s\n' "$out"

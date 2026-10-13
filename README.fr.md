@@ -595,7 +595,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | `loomy review` | Relecture croisée indépendante des changements | `--working` `--staged` |
 | `loomy effort` | Effort de raisonnement de l'orchestrateur ou d'un rôle | `<niveau>` `<rôle> <niveau>` `--list` `--reset` |
 | `loomy shell-hook [install\|remove]` | claude ou codex tapé seul passe par loomy start | `install` `remove` |
-| `loomy worktrees <tâche>` | Deux worktrees pour le mode parallèle | — |
+| `loomy worktrees <tâche> [base] --count N` | Worktrees numérotés partageant le journal live (par défaut : paire par famille) | — |
 
 ### Suivi et chiffres
 
@@ -642,8 +642,10 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | 🧍&nbsp;**SOLO** | un seul outil fait tout | petits projets, budget serré |
 | 👀&nbsp;**REVIEW** | l'un implémente, l'autre relit le diff | changements substantiels |
 | 🔁&nbsp;**HANDOFF** | point d'arrêt propre + `.loomy/docs/HANDOFF.md`, l'autre reprend | changement d'outil en cours de route |
-| 🌳&nbsp;**PARALLEL** | deux worktrees, périmètres disjoints | chantiers vraiment indépendants |
+| 🌳&nbsp;**PARALLEL** | sous-tâches/worktrees disjoints, lancés ensemble | attendre tous les résultats avant intégration |
 | 🎯&nbsp;**ORCHESTRATED** | l'orchestrateur délègue chaque rôle au meilleur modèle des deux familles | **recommandé** quand les deux outils sont installés |
+
+Configure `loomy config set max_parallel N` (4 par défaut ; 1–999 ; `auto` rétablit 4). Découpe les périmètres de fichiers indépendants et lance-les ensemble, avec les sous-agents natifs de la famille du lead et les ponts entre familles. Après intégration, revue, sécurité et documentation sont parallèles ; attends tous les résultats. Les efforts conservent leurs valeurs routées.
 
 ---
 

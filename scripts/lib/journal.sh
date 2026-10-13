@@ -131,7 +131,8 @@ ai_journal_canonical() {
       next if $alias{$e->{id}//""};
       next if ($e->{bridge}//"") eq "claude-native" && ($e->{type}//"") eq "delegation" && $terminal{($e->{session}//"")."|".($e->{id}//"")}!=$i;
       if (($e->{type}//"") =~ /^(?:delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/) {
-        my $key=JSON::PP->new->canonical->encode($e); next if $seen{$key}++;
+        my %identity=%$e; delete $identity{snapshot};
+        my $key=JSON::PP->new->canonical->encode(\%identity); next if $seen{$key}++;
       }
       print $raw;
     }

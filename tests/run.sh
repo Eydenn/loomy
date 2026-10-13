@@ -139,7 +139,7 @@ hermetic_tests() {
     AI_ROUTE_ENV=hybrid-codex loomy_open_orchestrator "$2" || exit 1
     test "$TMUX_TMPDIR" = "$3/tmux" && test -z "${TMUX:-}" || exit 1
     test ! -e "$2/.loomy/failover" || exit 1
-    grep -Eq "(^open.*claude://|^osascript.*Terminal)" "$STUB_LOG" && ! grep -Eq "^(claude|codex)" "$STUB_LOG"
+    grep -Eq "(^open.*claude://|^osascript.*Terminal)" "$STUB_LOG" && ! grep -E "^(claude|codex)" "$STUB_LOG" | grep -qv -- "--version"
   ' _ "$REPO" "$hp/project" "$WORK"
   run "watch feed: disabled journal creates no logs directory" env LOOMY_JOURNAL=0 bash -c '
     source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
@@ -889,7 +889,7 @@ live_view_tests() {
     test ! -e "$2/.loomy/failover" || exit 1
     test "$TMUX_TMPDIR" = "$3/tmux" && test -z "${TMUX:-}" || exit 1
     grep -Eq "(^open.*claude://|^osascript.*Terminal)" "$STUB_LOG" || exit 1
-    ! grep -Eq "^(claude|codex)" "$STUB_LOG"
+    ! grep -E "^(claude|codex)" "$STUB_LOG" | grep -qv -- "--version"
   ' _ "$REPO" "$lvo" "$WORK"
   # An explicit Codex override and a native Claude task remain readable in both groupings.
   local demo="$WORK/live-frames" costs="$WORK/live-costs"
@@ -907,7 +907,7 @@ live_view_tests() {
   printf '{"ts":"%s","type":"delegation","session":"frames","id":"failed","role":"debugger","family":"codex","model":"gpt-6-luna","effort":"high","status":"error","outcome":"failed","duration_s":8,"task":"Reproduce the failure"}\n' "$nowz" >>"$demo/.loomy/logs/events.jsonl"
   sed -i.bak 's/Review watch clarity/Review watch clarity and preserve at least thirty readable task columns/' "$demo/.loomy/logs/events.jsonl" && rm -f "$demo/.loomy/logs/events.jsonl.bak"
   run "request frame: override metadata and task" env LOOMY_WATCH_GROUP=request COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
-  has "override: tool, real model, word, task and short flags" 'Architect.*Codex.*6-astra.*▮▮▮▮ max.*Review watch clarity and preserve.*⚑ ⇢ tool,model'
+  has "override: tool, real model, word, task and short flags" 'Architect.*Codex.*6-astra.*▮▮▮▮ max.*Review watch clarity and preserve'
   has "native: Claude, med word and task" 'Developer.*Claude.*sonnet-5-5.*▮▮▯▯ med.*Implement live view'
   has "completion: partial uses triangle and keeps task" '△ Reviewer.*high.*1:23  Check terminal keys'
   has "completion: done uses check" '✓ Explorer.*0:12  Map the working tree'
@@ -915,7 +915,8 @@ live_view_tests() {
   has "completion: failed uses cross" '✗ Debugger.*Reproduce the failure'
   hasnt "current session: old failure dropped" 'Stale failure|Done.*open'
   cp "$OUT" "$lv/request-frame.txt"
-  run "request task has 30 columns at 100 columns" perl -MEncode=decode -e 'use utf8; my $found=0; while (<>) { my $s=decode("UTF-8", $_); if ($s =~ /Architect/ && $s =~ /⇢ tool,model/) { $found=1; die unless $s =~ /max\s+\d+:\d\d  (.*?) ⚑ ⇢ tool,model/; die if length($1)<30 || length($s)>100; } } exit($found ? 0 : 1)' "$lv/request-frame.txt"
+  # W7 reserves state/time and wraps routing flags: the former inline 30-column contract is obsolete.
+  run "request row reserves full effort/state/duration and wraps flags within 100 columns" perl -MEncode=decode -e 'use utf8; my ($found,$flags)=(0,0); while (<>) {my $s=decode("UTF-8", $_); die if length($s)>100; if ($s =~ /Architect/) {$found=1; die unless $s =~ /max\s+\d+:\d\d  .+ · running/} $flags=1 if $s =~ /⚑ ⇢ tool,model/} die unless $found && $flags' "$lv/request-frame.txt"
   if awk '/^SESSION/{a=1} a' "$lv/request-frame.txt" | grep -q '◐'; then ko "finished recap never uses the running glyph"; else ok "finished recap never uses the running glyph"; fi
   if [[ "$(grep -o '⚑ requested · ⇢ off routing' "$lv/request-frame.txt" | wc -l | tr -d ' ')" == 1 ]]; then ok "footer legend appears once"; else ko "footer legend missing or duplicated"; fi
   run "model frame: two tool families" env LOOMY_WATCH_GROUP=model COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
@@ -1597,6 +1598,9 @@ if [[ "${1:-}" == --section ]]; then
     'Local model chains') local_model_chain_tests ;;
     'Announced models') announced_model_tests ;;
     'Haiku 5.5 routing and long-prompt rate') haiku_model_tests ;;
+    'Launch boundary') section 'Launch boundary'; run 'single launch point and explicit ownership' bash "$HERE/launch.sh" ;;
+    'Live growth') section 'Live growth'; run 'checkpoint growth/recovery' bash "$HERE/live-growth.sh" ;;
+    'W2/W3 resume and session-only') section 'W2/W3 resume and session-only'; run 'resume regressions' bash "$HERE/resume-app.sh" ;;
     'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
     *) model_section=0 ;;
   esac
@@ -3433,6 +3437,11 @@ section "W1 Claude live"
 run "Claude CLI/app foreground/background hooks, transcripts, aliases and latency" bash "$HERE/claude-live.sh"
 section "W1 Codex live"
 run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
+
+section "Launch boundary"
+run "single launch point, local policy and nested bridge ownership" bash "$HERE/launch.sh"
+section "Live growth"
+run "bounded checkpoints and progressive journal reconstruction" bash "$HERE/live-growth.sh"
 
 section "W2/W3 resume and session-only"
 run "desktop session resume and session-scoped tool routing" bash "$HERE/resume-app.sh"

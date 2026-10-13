@@ -133,7 +133,7 @@ Optional: in a Loomy project, `claude` or `codex` typed alone (the project's lea
 loomy worktrees <task>
 ```
 
-Two separate worktrees for parallel mode
+Two worktrees by default; `--count N` creates N numbered worktrees sharing the live journal. Split independent scopes, launch together, then wait for all results before integration; review/security/documentation run in parallel afterwards.
 
 ## Tracking and figures
 
@@ -312,7 +312,7 @@ loomy config get <key>
 loomy config set <key> <value>
 ```
 
-Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: preventive lead relay threshold; `off`: no preventive relay; real refusals and exhausted quotas still protect delegations), `lead_failover` (`auto` by default: when the lead's quota runs out, the other tool leads temporarily and `loomy start` chains the sessions; `off`: never), `quota_room` (80 by default: the lead tool takes the lead back once its quota is below this share), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
+Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: preventive lead relay threshold; `off`: no preventive relay; real refusals and exhausted quotas still protect delegations), `lead_failover` (`auto` by default: when the lead's quota runs out, the other tool leads temporarily and `loomy start` chains the sessions; `off`: never), `quota_room` (80 by default: the lead tool takes the lead back once its quota is below this share), `max_parallel` (4 by default; 1–999 independent workers; `auto` restores 4), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
 
 ### `loomy update` · `loomy version`
 

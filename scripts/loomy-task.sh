@@ -168,8 +168,6 @@ if (( PRINT )) || ! ui_is_interactive; then
 fi
 ui_end "$(t "opening %s…" "$tool_label") · $(t "live tracking in another terminal: loomy watch")"
 cd "$ROOT" || exit 1
-if [[ "$TOOL" == "codex" ]] || ! grep -qs "loomy-context.sh" "$ROOT/.claude/settings.json"; then
-  ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"$TOOL\",\"pid\":$$"
-fi
-loomy_guard_real_cli "$TOOL" "${AGENT_CMD[0]}" || exit $?
-ui_exec "${AGENT_CMD[@]}"
+_loomy_launch_load
+UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM
+loomy_cli_run "$TOOL" lead "$MODEL" -- "${AGENT_CMD[@]:1}"

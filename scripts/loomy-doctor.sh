@@ -382,6 +382,7 @@ if (( LIVE )); then
     ui_wait_end
     case "$routed" in *" $key "*) used="$(t "used by this project")" ;; *) used="" ;; esac
     if (( ok )); then ui_ok "$model" "$(t "answers")${used:+ · $used}"
+    elif [[ "${AI_PROBE_STATUS:-0}" == 124 ]]; then ui_warn "$model" "${why:-$(t "failed")} · $used"
     elif [[ -n "$used" ]]; then ui_err "$model" "${why:-$(t "failed")} · $used"; MIN_OK=0
     else ui_warn "$model" "${why:-$(t "failed")} · $(t "not used by the current routing")"; missing_ideal "$model"; fi
   done

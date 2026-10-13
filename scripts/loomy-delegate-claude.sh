@@ -14,6 +14,8 @@ source "$SCRIPT_DIR/lib/journal.sh"
 source "$SCRIPT_DIR/lib/memory.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
+# shellcheck source=lib/launch.sh
+source "$SCRIPT_DIR/lib/launch.sh"
 
 ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
 ai_delegate_opts claude "$@" || exit 2
@@ -114,18 +116,17 @@ $(ai_result_contract)"
 loomy_guard_real_cli claude claude || exit $?
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-claude.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+LOOMY_CLI_SESSION_ID="$(perl -e 'printf "%08x-%04x-4%03x-8%03x-%012x",rand(2**32),rand(2**16),rand(2**12),rand(2**12),rand(2**48)')"
+export LOOMY_CLI_SESSION_ID
 run_claude() {
-  loomy_guard_real_cli claude claude || return $?
   if (( WRITES )); then
     # Like Codex's workspace-write sandbox: file edits accepted in the project, shell commands only inside Claude
     # Code's sandbox (filesystem limited to the project, no network); anything else is refused, never asked.
-    LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
-      claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
+    loomy_cli_bridge_exec claude "$ROLE" "$1" -- -p "$PROMPT" --session-id "$LOOMY_CLI_SESSION_ID" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" --permission-mode acceptEdits \
       --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
   else
-    LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
-      claude -p "$PROMPT" --output-format json --max-turns "$MAX_TURNS" \
+    loomy_cli_bridge_exec claude "$ROLE" "$1" -- -p "$PROMPT" --session-id "$LOOMY_CLI_SESSION_ID" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" \
       --disallowedTools "Edit,Write,NotebookEdit"
   fi
@@ -142,6 +143,9 @@ fi
 DELEG_ID="$(ai_delegation_id)"
 # exec preserves the PID; a same-second handover must have a distinct lifecycle ID.
 [[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || DELEG_ID="$DELEG_ID-claude"
+export LOOMY_EVENT_PARENT_ID="${LOOMY_PARENT_ID:-}"
+export LOOMY_PARENT_ID="$DELEG_ID" LOOMY_ATTEMPT="$DELEG_ID"
+export LOOMY_CLI_MANAGED=1 LOOMY_CLI_ID="$DELEG_ID"
 STARTED="$(date +%s)"
 START_MODEL="$MODEL"
 CHILD_PID=""
@@ -171,7 +175,7 @@ delegate_finish() {
   delegate_stop_child
   if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
     duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
-    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"reported\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"reported\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
   fi
   rm -rf "$TMP"
@@ -182,7 +186,7 @@ trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
 ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
-ai_delegate_provider_guard claude
+loomy_cli_check claude "$ROLE" "$MODEL" || exit $?
 set +e
 run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
 CHILD_PID=$!
@@ -196,7 +200,7 @@ set -e
 ai_delegate_error claude "$TMP/out.json" "$STATUS"
 if [[ "$AI_ERROR_FAILED" == 1 ]]; then
   (( STATUS != 0 )) || STATUS=1
-  AI_ERROR_TEXT="${AI_ERROR_TEXT}$(cat "$TMP/err.log")"
+  [[ -n "$AI_ERROR_TEXT" ]] || AI_ERROR_TEXT="$(cat "$TMP/err.log")"
   ERROR_CLASS="$(ai_model_error_class "$AI_ERROR_TEXT")"
   case "$ERROR_CLASS" in
     saturated) ai_provider_refusal claude "$AI_ERROR_TEXT"; ai_delegate_provider_guard claude saturated ;;
@@ -231,7 +235,7 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
   AFTER="$(git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
-ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 FINAL_WRITTEN=1
 # Shared memory: the task and the full result, for the next sessions and the other tool.
 MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"

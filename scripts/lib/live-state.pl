@@ -49,7 +49,28 @@ sub checkpoint_load {
         warn "Native checkpoint recovered from backup\n" if $candidate ne $path;
         return $s;
     }
-    die "Native checkpoint invalid or exceeds 32 MiB; collector paused\n" if $exists;
+    if ($exists) {
+        # Keep damaged evidence untouched while bounded journal replay rebuilds a separate generation.
+        for my $candidate ($path,"$path.bak") {
+            next unless -e $candidate;
+            die 'unsafe damaged checkpoint' unless safe_path($candidate) && -f $candidate;
+            my @st=stat($candidate); my $saved="$candidate.invalid-$st[0]-$st[1]";
+            die 'unsafe checkpoint quarantine' unless safe_path($saved) && !-e $saved;
+            rename $candidate,$saved or die 'checkpoint preservation failed'; chmod 0600,$saved or die;
+        }
+        my $dir=$path; $dir =~ s{/[^/]+$}{};
+        my @segments;
+        if (safe_path("$dir/archive") && -d "$dir/archive") {
+            opendir my $archive,"$dir/archive" or die 'archive reconstruction open failed';
+            @segments=sort {(stat($a))[9]<=>(stat($b))[9] || $a cmp $b}
+                grep {safe_path($_) && -f $_}
+                map {"$dir/archive/$_"} grep {/^events-\d{4}-\d{2}-\d+-\d+\.jsonl$/} readdir $archive;
+        }
+        my $cursor={};
+        if (@segments) {my @st=stat($segments[0]); $cursor={key=>"$st[0]:$st[1]",offset=>0}}
+        warn "Native checkpoint invalid; reconstructing from journal in bounded polls\n";
+        return {version=>2,reconstructing=>1,journal=>$cursor};
+    }
     return {};
 }
 sub load_shards {
@@ -111,8 +132,9 @@ sub checkpoint_save {
         $keep{text($_)}=1 for @{ref($old) eq 'HASH' ? ($old->{source_shards}//[]) : []};
     }
     my $dir=$path; $dir =~ s{/[^/]+$}{}; my $base=$path; $base =~ s{.*/}{};
-    opendir my $h,$dir or return;
-    for my $name (readdir $h) {
+    opendir my $h,$dir or return; my @names=readdir $h;
+    return if grep {/^\Q$base\E\.invalid-/} @names; # Preserve damaged evidence and its shards.
+    for my $name (@names) {
         next unless $name =~ /^\Q$base\E\.(files-[0-9a-f]{64})$/;
         unlink "$dir/$name" unless $keep{$1} || !safe_path("$dir/$name");
     }
@@ -161,7 +183,7 @@ sub journal_rotate {
             next unless valid_event($e); my $type=text($e->{type});
             my $sid=text($e->{session_key}) || join(':',text($e->{tool}//$e->{family}),text($e->{session}));
             my $key="$sid|".text($e->{id}); my $ts=epoch($e->{source_ts}//$e->{ts});
-            if ($type =~ /^session(?:_observed|_context|_activity)?$/) {
+            if ($type eq 'bridge_link' || $type =~ /^session(?:_observed|_context|_activity)?$/) {
                 my $k="$sid|$type"; $last{$k}=$e if !$last{$k} || $ts>=epoch($last{$k}{source_ts}//$last{$k}{ts});
             } elsif ($type eq 'delegation_start') {$open{$key}=$e unless $closed{$key}}
             elsif ($type eq 'delegation_activity') {$activity{$key}=$e if !$activity{$key} || $ts>=epoch($activity{$key}{source_ts}//$activity{$key}{ts})}
@@ -172,7 +194,9 @@ sub journal_rotate {
     }
     my @keep=(values %last,values %open,map {$activity{$_}} grep {exists $activity{$_}} keys %open);
     $_->{snapshot}=JSON::PP::true for @keep;
-    my $snapshot=join('',map {encode_json($_)."\n"} sort {epoch($a->{ts})<=>epoch($b->{ts}) || text($a->{type}) cmp text($b->{type})} @keep);
+    my $canonical=JSON::PP->new->canonical;
+    my $snapshot=join('',map {$canonical->encode($_)."\n"}
+        sort {epoch($a->{ts})<=>epoch($b->{ts}) || text($a->{type}) cmp text($b->{type}) || $canonical->encode($a) cmp $canonical->encode($b)} @keep);
     die 'journal active snapshot exceeds 8 MiB; rotation paused' if length($snapshot)>=8388608;
     my @st=stat($path); my $dest="$archive/events-$month-$st[0]-$st[1].jsonl";
     die 'unsafe archive segment' unless safe_path($dest) && !-e $dest;
@@ -239,7 +263,7 @@ sub valid_event {
     my ($d)=@_; return 0 unless ref($d) eq 'HASH';
     my $ts=epoch($d->{source_ts}//$d->{ts}); my $now=$ENV{LOOMY_NATIVE_NOW}//time;
     return 0 unless $ts && $ts<=$now+300 && text($d->{type}) ne '';
-    return 0 if grep {exists $d->{$_} && ref($d->{$_})} qw(type tool family session session_key agent_id parent_agent_id id schema state status pid owner_pid ts source_ts);
+    return 0 if grep {exists $d->{$_} && ref($d->{$_})} qw(type tool family session session_key agent_id parent_agent_id parent_delegation attempt_id parent_session id schema state status pid owner_pid ts source_ts);
     return 0 if text($d->{type}) =~ /^delegation(?:_start|_activity)?$/ && text($d->{id}) eq '';
     return 0 if text($d->{schema}) eq '2' && text($d->{type}) =~ /^delegation(?:_start|_activity)?$/
         && (text($d->{agent_id}) eq '' || text($d->{session_key}) eq '' || text($d->{tool}//$d->{family}) !~ /^(codex|claude)$/);
@@ -257,9 +281,18 @@ sub consume {
     my ($self,$d)=@_; return unless valid_event($d); my $type=text($d->{type}); my $ts=epoch($d->{source_ts}//$d->{ts});
     my $tool=text($d->{tool}//$d->{family});
     my $key=text($d->{session_key});
-    $self->{native}=1 if text($d->{schema}) eq '2' && $tool =~ /^(codex|claude)$/;
+    $self->{native}=1 if $type ne 'bridge_link' && text($d->{schema}) eq '2' && $tool =~ /^(codex|claude)$/ && text($d->{source}) ne 'hook';
     # Claude hooks are projected by the adapter using the same scoped keys as transcripts.
     return if text($d->{bridge}) eq 'subagent' && text($d->{schema}) ne '2';
+    if ($type eq 'bridge_link') {
+        return unless $tool =~ /^(codex|claude)$/ && $key eq "$tool:".text($d->{session})
+            && text($d->{session}) =~ /^[A-Za-z0-9_.:-]{1,100}$/ && text($d->{parent_delegation}) ne '';
+        my $prior=$self->{links}{$key};
+        return if $prior && $ts<($prior->{seen}//0);
+        $self->{links}{$key}={bridge=>text($d->{parent_delegation}),attempt=>text($d->{attempt_id}),
+            parent=>text($d->{parent_session}),seen=>$ts};
+        return;
+    }
     if ($type eq 'session') {
         return unless $tool =~ /^(codex|claude)$/;
         $key="$tool:".(text($d->{session}) || 'pid'.text($d->{pid}));
@@ -363,6 +396,7 @@ sub consume {
         $turn->{status}=text($d->{status}); $turn->{duration}=defined $d->{duration_s} && !ref($d->{duration_s}) ? text($d->{duration_s}) : '—';
     }
     $turn->{$_}=text($d->{$_}) for grep { defined $d->{$_} && !ref($d->{$_}) } qw(model effort task role);
+    $turn->{attempt}=text($d->{attempt_id}) if text($d->{attempt_id}) ne '';
     $turn->{seen}=$ts if $ts>$turn->{seen};
     $a->{latest}=$id if $a->{latest} eq '' || ($fresh && $type eq 'delegation_start' && $ts>=(($self->{turns}{$a->{latest}}//{})->{started}//0));
     if ($a->{latest} eq $id) {
@@ -457,6 +491,16 @@ sub claude_evidence {
 sub wire {
     my @row=@_; for (@row) { $_=text($_); s/[\x00-\x1f\x7f|]/ /g } return join('|',@row);
 }
+# Recompute explicit ownership at projection time: links can arrive after native starts.
+sub bridge_owner {
+    my ($self,$key,$visited)=@_; return unless !$visited->{$key}++;
+    my $link=$self->{links}{$key} or return;
+    my $t=$self->{turns}{$link->{bridge}} or return;
+    return if $link->{attempt} ne '' && ($t->{attempt}//'') ne '' && $link->{attempt} ne $t->{attempt};
+    my $a=$self->{agents}{$t->{agent}} or return;
+    my $up=$self->bridge_owner($a->{session},$visited);
+    return {group=>$up ? $up->{group} : $a->{session},bridge=>$a->{key},parent=>$link->{parent}};
+}
 sub projections {
     my ($self,$now)=@_; my @out=@{delete $self->{deleted}//[]};
     if ($self->{native} && !$self->{sent}{native}) { push @out,'N|native|1'; $self->{sent}{native}=1 }
@@ -464,7 +508,13 @@ sub projections {
         next unless $key =~ /^G:(.*)$/; my $sid=$1;
         unless ($self->{sessions}{$sid}) { push @out,wire('N','D',$sid); delete $self->{sent}{$key} }
     }
+    my %owned;
+    for my $key (keys %{$self->{links}//{}}) {
+        my $owner=$self->bridge_owner($key,{}) or next; $owned{$key}=$owner;
+        if (delete $self->{sent}{"G:$key"}) {push @out,wire('N','D',$key)}
+    }
     for my $key (sort keys %{$self->{sessions}}) {
+        next if $owned{$key};
         my $s=$self->{sessions}{$key}; my $pid=$s->{pid}//0;
         my $alive=$pid =~ /^\d+$/ && $pid>1 && (kill(0,$pid) || $! == EPERM);
         my $live=!$s->{unassigned} && !$s->{closed} && ($alive || ($s->{seen}>0 && $now-$s->{seen}<=120));
@@ -491,13 +541,22 @@ sub projections {
         # Completed agents close with an observed owner; absent PIDs remain source-owned.
         $agent_state='done' if $t->{ended} && (($session->{closed}//0) || $dead);
         my $turns=$turn_counts{$key}//0;
-        my $row=wire('N','A',$key,$a->{session},$a->{parent},$agent_state,$a->{role},$a->{task},$a->{model},$a->{effort},
+        my $owner=$owned{$key}//$owned{$a->{session}};
+        my $group=$owner ? $owner->{group} : $a->{session};
+        my $parent=$a->{parent};
+        if ($owner) {
+            my $explicit=$owner->{parent} ne '' ? ($key =~ /^(.*?):/ ? "$1:$owner->{parent}" : '') : '';
+            $parent=$explicit ne '' && $self->{agents}{$explicit} ? $explicit
+                : $self->{agents}{$parent} ? $parent : $owner->{bridge};
+        }
+        my $row=wire('N','A',$key,$group,$parent,$agent_state,$a->{role},$a->{task},$a->{model},$a->{effort},
             int($t->{started}//0),($t->{ended} ? int($t->{ended}) : ''),$t->{duration},$t->{outcome},$a->{latest},int($a->{seen}),$interrupted ? 'interrupted' : $expired ? 'unknown' : $t->{state},$turns);
         push @out,$row if ($self->{sent}{"A:$key"}//'') ne $row; $self->{sent}{"A:$key"}=$row;
     }
     for my $key (sort keys %{$self->{turns}}) {
         my $t=$self->{turns}{$key}; next unless $t->{ended};
-        my $row=wire('N','T',$key,$t->{session},$t->{agent},$t->{state},$t->{outcome},int($t->{started}//0),int($t->{ended}),$t->{duration},$t->{model},$t->{role});
+        my $owner=$owned{$t->{agent}}//$owned{$t->{session}};
+        my $row=wire('N','T',$key,$owner ? $owner->{group} : $t->{session},$t->{agent},$t->{state},$t->{outcome},int($t->{started}//0),int($t->{ended}),$t->{duration},$t->{model},$t->{role});
         push @out,$row if ($self->{sent}{"T:$key"}//'') ne $row; $self->{sent}{"T:$key"}=$row;
     }
     return @out;

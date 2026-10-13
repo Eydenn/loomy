@@ -26,11 +26,24 @@ sub input_signature {
     my %p=map {$_=>1} ($projects,$idx,"$root/.loomy/logs/events.jsonl",keys %{$s->{files}//{}},keys %{$inv->{dirs}//{}},keys %{$inv->{invalid}//{}});
     return join(';',map {$_ . ':' . signature($_)} sort keys %p);
 }
+# Signatures are committed only for bytes/inventory actually inspected during the poll.
+sub pending_input {
+    my ($root,$projects,$s)=@_;
+    return 1 if ($s->{journal}{read_sig}//'') ne signature("$root/.loomy/logs/events.jsonl");
+    for my $path (keys %{$s->{files}//{}}) {
+        return 1 if ($s->{files}{$path}{read_sig}//'') ne signature($path);
+    }
+    for my $dir (keys %{$inventory{$projects}{dirs}//{}}) {
+        return 1 if ($inventory{$projects}{dirs}{$dir}{sig}//'') ne signature($dir);
+    }
+    return 0;
+}
 sub watch_changed {
     my ($root,$projects)=@_; my $idx="$root/.loomy/logs/claude-native.idx";
     my $s=$cache{$idx}{state}//{}; my $sig=input_signature($root,$projects);
-    my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig; $watch{$idx}=$sig;
-    return $changed || due($s) || ($s->{journal} && !($s->{journal}{at_eof}//0))
+    my $committed=$cache{$idx}{poll_sig};
+    my $changed=!defined($committed) || $committed ne $sig; $watch{$idx}=$sig;
+    return $changed || pending_input($root,$projects,$s) || due($s) || ($s->{journal} && !($s->{journal}{at_eof}//0))
         || grep {!($_->{at_eof}//0)} values %{$s->{files}//{}};
 }
 # Only an explicit terminal envelope ends a Claude call; the reducer owns its 15-minute lease.
@@ -64,6 +77,7 @@ sub child_activity {
     # Legacy inferred interruptions are provisional; explicit stops remain terminal.
     if (($c->{status}//'') eq 'interrupted' && !$c->{terminal_evidence} && epoch($ts)>epoch($c->{ended})) {
         delete @$c{qw(ended status outcome)};
+        $c->{reopened}=1; # A correction must publish once even if the state signature was running before.
     }
     $c->{seen}=$ts if epoch($ts)>epoch($c->{seen});
     $c->{state}='running' unless $c->{ended};
@@ -364,6 +378,7 @@ sub poll_locked {
     my $idx="$dir/claude-native.idx"; my $journal="$dir/events.jsonl"; return unless safe($idx) && safe($journal);
     my $day=int(($ENV{LOOMY_NATIVE_NOW}//time)/86400);
     if ($cache{$idx} && ($cache{$idx}{pruned_day}//-1)==$day && ($cache{$idx}{poll_sig}//'') eq input_signature($root,$projects) && !due($cache{$idx}{state})
+        && !pending_input($root,$projects,$cache{$idx}{state})
         && ($cache{$idx}{state}{journal}{at_eof}//0) && !grep {!($_->{at_eof}//0)} values %{$cache{$idx}{state}{files}//{}}) {return $cache{$idx}{state}}
     umask 0077;
     sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
@@ -380,7 +395,7 @@ sub poll_locked {
         }
     }
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
-    Loomy::LiveState::journal_rotate($journal);
+    Loomy::LiveState::recover_rotation($journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($out,LOCK_EX|LOCK_NB) or return; chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -390,17 +405,35 @@ sub poll_locked {
         if (text($e->{bridge}) eq 'claude-native' && text($e->{checkpoint_key}) ne '') {
             $s->{sent}{text($e->{checkpoint_key})}=text($e->{checkpoint_value});
         }
+        if ($s->{reconstructing} && text($e->{bridge}) eq 'claude-native') {
+            my $sid=id($e->{session}); my $cid=id($e->{turn_id});
+            if ($sid) {
+                my $lead=session($s,$sid); touch($lead,text($e->{source_ts}//$e->{ts}));
+                if ($cid) {
+                    my $c=call($lead,$cid); my $type=text($e->{type});
+                    $c->{$_}=text($e->{$_}) for grep {exists $e->{$_}} qw(role task model effort state outcome status);
+                    $c->{started}=text($e->{source_ts}//$e->{ts}) if $type eq 'delegation_start';
+                    if ($type eq 'delegation') {
+                        $c->{ended}=text($e->{source_ts}//$e->{ts});
+                        $c->{state}=text($e->{status}) eq 'ok' ? 'done' : text($e->{status}) eq 'error' ? 'failed' : text($e->{status});
+                    }
+                    $c->{seen}=text($e->{source_ts}//$e->{ts});
+                }
+            }
+        }
         hook($s,$e);
     }
-    if ($input ne $journal || !$jc->{at_eof}) {Loomy::LiveState::checkpoint_save($idx,$s); return $s}
+    if ($input ne $journal || !$jc->{at_eof}) {prune($s,\$dirty); Loomy::LiveState::checkpoint_save($idx,$s); return $s}
 
+    if ($s->{reconstructing}) {delete $s->{reconstructing}; $dirty=1}
     my $discovered=discover($s,$projects,$root);
     $dirty=1 if $discovered || ($jc->{read_bytes}//0);
     my $budget=2097152-$discovered;
     my @paths=sort keys %{$s->{files}//{}}; my $rotation=$s->{rotation}//0;
     for my $slot (0..$#paths) {
         last if $budget<=0; my $path=$paths[($rotation+$slot)%@paths]; my $f=$s->{files}{$path};
-        my $cap=$f->{meta}{agent} ? 262144 : 2097152;
+        # Cold one-shot polls also pay module/projection costs: leave CPU headroom below 80 ms.
+        my $cap=$f->{meta}{agent} ? 262144 : 1572864;
         my $limit=$budget<$cap ? $budget : $cap;
         my $used=read_transcript($s,$path,$f,$limit);
         $budget-=$used; $dirty=1 if $used;
@@ -421,7 +454,8 @@ sub poll_locked {
             $c->{state}='unknown' if $catchup && !$c->{ended} && epoch($lead->{seen})-epoch($c->{seen}//$c->{started})>900;
         }
         if (($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0') {$_->{task}='' for values %{$lead->{calls}}}
-        my $base={session_key=>"claude:$sid",session=>$sid,surface=>$lead->{surface},agent_id=>$sid};
+        my $source=(grep {$_->{meta}{id} eq $sid} values %{$s->{files}//{}}) ? 'transcript' : 'hook';
+        my $base={source=>$source,session_key=>"claude:$sid",session=>$sid,surface=>$lead->{surface},agent_id=>$sid};
         $emit->("session:$sid",'session_observed',$lead->{seen},{%$base,state=>$lead->{state},source_active=>1,cwd_relative=>$lead->{cwd_relative}//'.',evidence=>'source lease'});
         $emit->("context:$sid",'session_context',$lead->{seen},{%$base,model=>$lead->{model}//'',effort=>$lead->{effort}//''}) if $lead->{model};
         for my $cid (sort keys %{$lead->{calls}}) {
@@ -434,6 +468,7 @@ sub poll_locked {
             }
             # Start and terminal signatures have fixed semantic identities; late model changes use activity.
             unless ($s->{sent}{"start:$turn"}) {$emit->("start:$turn",'delegation_start',$c->{started},$b) if $c->{started}}
+            delete $s->{sent}{"context:$turn"} if delete $c->{reopened};
             $emit->("context:$turn",'delegation_activity',$c->{seen}//$c->{started}//$lead->{seen},
                 {%$b,state=>$c->{state}}) if $c->{started} && !$c->{ended};
             {
@@ -443,8 +478,7 @@ sub poll_locked {
         }
     }
     $out->flush or die 'Claude journal flush failed'; $out->sync or die 'Claude journal sync failed';
-    # Our own normalized writes need not be decoded on the next tick; leave pending raw hooks intact.
-    if ($jc->{at_eof}) { seek $out,0,2; $jc->{offset}=tell($out); $jc->{read_sig}=signature($journal) }
+    # Keep the consumed offset: hooks appended during source collection must be replayed next poll.
     if (-s $journal>=8388608) {close $out; Loomy::LiveState::journal_rotate($journal)}
     prune($s,\$dirty);
     Loomy::LiveState::checkpoint_save($idx,$s) if $dirty;

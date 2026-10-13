@@ -19,6 +19,8 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/config.sh"
 # shellcheck source=lib/usage.sh
 source "$SCRIPT_DIR/lib/usage.sh"
+# shellcheck source=lib/launch.sh
+source "$SCRIPT_DIR/lib/launch.sh"
 # Subscription (1) or API (0) per tool: a subscription shows its quota and tokens, the API its cost.
 PLAN_C=0; loomy_on_plan claude && PLAN_C=1
 PLAN_X=0; loomy_on_plan codex && PLAN_X=1
@@ -195,6 +197,7 @@ loomy_watch_feed() {
     my $input=$tty; open $input,"<&",7 or die $! unless $input;
     my $select=IO::Select->new; $select->add($input) if $input;
     my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts session-only);
+    push @files,$ENV{LOOMY_SESSION_ONLY} if ($ENV{LOOMY_SESSION_ONLY}//"") =~ /^\Q$root\E\/\.loomy\/session-only-\d+-[A-Za-z0-9]+$/;
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
     my ($state,$claude_state,$discovering);
@@ -554,9 +557,7 @@ if (( WATCH )); then
         watch_note=""; open_rc=0
         watch_note="$(env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null 2>&1 8<&-)" || open_rc=$?
         if (( open_rc )); then
-          # Only the explicit busy-session refusal (3) explains itself; any other failure leaves stale warnings
-          # of an earlier route (e.g. "opening in the terminal"), so it gets the generic note.
-          if (( open_rc == 3 )); then watch_note="$(printf '%s\n' "$watch_note" | tail -1)"; else watch_note=""; fi
+          watch_note="$(loomy_cli_open_note "$open_rc" "$watch_note")"
           [[ -n "$watch_note" ]] || watch_note="$(t "Could not open the orchestrator; watch is still running.")"
           note_until=$(( now + 5 ))
         else

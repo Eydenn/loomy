@@ -4,6 +4,17 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ## Unreleased (0.17.0)
 
+### Breaking
+- Route only catalog-validated chains: remove `gpt-6-astra`, `gpt-6-sol`, `claude-sonnet-5` and `claude-haiku-4-5` from built-in routing. Validate `chain.*` and `model.*` overrides against the current catalog; `models_mode` supports `latest` only. `loomy models --thrifty` is removed (exit 2); budget profiles still control effort.
+- Treat provider saturation as provider-wide: hand over once to the other provider, preserving requested metadata, or pause with exit 75 and `resume_at` when neither can serve. Never silently retry a weaker sibling model. Rejected-model (`ko`) evidence expires after one hour; doctor reports each provider's availability verdict.
+
+### Release review
+- Preserve identical native activity across same-second owner close/reopen boundaries. Give every launch caller a shared pause/invalid-model diagnostic; a missing model in Codex's local cache warns without blocking a validated launch.
+- Scope `--only` markers to the owner PID and process birth time, export them to its descendants and preserve other live sessions. Desktop Claude resume ignores print delegates and recognizes interactive npm/node processes.
+- Record the real owned child PID on Bash 3.2, pass explicit provider names to version/probe helpers and skip upcoming probes during provider pauses. Upcoming probes remain bounded, tool-free/read-only and cannot promote routing candidates.
+- Resolve symlinked project roots before checking diagnostic paths, retain the newest two damaged checkpoints and report their count/bytes in doctor. Keep specific guard/macOS opener refusals in the watch footer.
+- Isolate all test PATHs/provider homes, allow at most three seconds for PTY supervisor teardown, retain provider-wide failover assertions and restrict push CI to `main`.
+
 ### Fixed
 - Keep watch alive on collector/reducer exceptions and controller ERR, with a footer warning and content-free 0600 diagnostics bounded to 64 KiB; journaling opt-out also stops diagnostic writes. Doctor reports recent errors, source symlinks and journal/checkpoint overflow.
 - Cache Codex quota source discovery independently for 15 seconds. Retain all-date rollout coverage, queue only new/replaced metadata candidates, prioritize changed dates over initial backlog, and show pending inventory. Watch-owned snapshot helpers do not collect sources again; status/log timer frames reuse their last body.

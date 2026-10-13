@@ -81,7 +81,7 @@ Starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--wat
 
 `--lead codex|claude` temporarily selects the lead tool without changing the brief, replacing `AI_ROUTE_ENV=hybrid-codex loomy start` for this use. A switch starts a new session with the handoff and shared state prompt, even with `--resume`; repeating the acting tool keeps the session choice and adds no relay event. `--lead auto` or the brief's lead clears the relay and starts that lead with the return prompt. Manual relays stay until an explicit return, except when the acting tool reaches its quota threshold and the master has room. A missing tool is refused (exit 2); a saturated quota or pay-per-use plan produces a warning and remains allowed. Works with `--app` and tracking; `--print` previews without writing state.
 
-`--only` routes every role to the explicit lead during the terminal session, without changing the brief or copying the project. Watch and `loomy route` display the choice; session exit or `--lead auto` clears it, and a dead owner PID is cleaned. Without `--lead codex|claude`, exit status is 2. `--print` creates no marker. `--only` keeps the launch in the terminal even with `start_in=app`; `--only --app` is refused because the app exposes no session-owned process.
+`--only` routes every role to the explicit lead during the terminal session, without changing the brief or copying the project. Watch and `loomy route` display the choice; only descendants inherit its PID/birth-time marker, and session exit removes its own marker. Another terminal or `--lead auto` preserves other live sessions. Without `--lead codex|claude`, exit status is 2. `--print` creates no marker. `--only` keeps the launch in the terminal even with `start_in=app`; `--only --app` is refused because the app exposes no session-owned process.
 
 `--app` and `o` in watch reopen the latest Codex thread of the project (including subfolders), or the latest Claude session with `claude --desktop --resume` (CLI ≥ 2.1.285). A Claude session busy in a terminal is refused with a `/desktop` hint; no other window opens. Without a compatible session, with an older Claude CLI, or if launch fails, the usual link opens a new conversation with the prompt prefilled, never sent. An active relay’s acting lead is respected.
 
@@ -263,6 +263,8 @@ loomy models --issue
 ```
 
 Validated current model chains and new candidates to evaluate; `--issue` suggests candidates on GitHub. `chain.<family>.<tier>` only accepts catalog-validated models for that tier; unknown ids are refused explicitly. `--thrifty` is retired (exit 2); the Thrifty budget profile still lowers effort.
+
+Announced-model discovery may run one bounded, read-only/tool-free probe per day, never while its provider is paused. A successful candidate probe does not promote it into routing. Codex’s local model cache is advisory; a missing entry warns without blocking a validated model.
 
 ### `loomy skills [suggest|add|remove|update|catalog]`
 

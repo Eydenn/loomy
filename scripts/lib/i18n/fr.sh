@@ -2311,5 +2311,8 @@ _t_fr() {
     'tracking file exceeds its bound (%s bytes)') _T='Fichier de suivi au-delà de sa limite (%s octets)' ;;
     'Recent watch error') _T='Erreur récente du suivi' ;;
     'Discovering source inventory (%s pending).') _T='Inventaire des sources en cours (%s en attente).' ;;
+    'paused until %s (both providers saturated)') _T='en pause jusqu’à %s (les deux fournisseurs sont saturés)' ;;
+    'model not validated: %s') _T='modèle non validé : %s' ;;
+    'damaged tracking checkpoints (files / bytes): %s') _T='checkpoints de suivi endommagés (fichiers / octets) : %s' ;;
   esac
 }

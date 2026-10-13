@@ -33,6 +33,7 @@ sub file_signature {
 }
 sub checkpoint_load {
     my ($path)=@_; my $exists=0;
+    checkpoint_prune_invalid($path);
     for my $candidate ($path,"$path.bak") {
         next unless -e $candidate; $exists=1;
         next unless safe_path($candidate) && -f $candidate && -s $candidate<=33554432;
@@ -58,6 +59,7 @@ sub checkpoint_load {
             die 'unsafe checkpoint quarantine' unless safe_path($saved) && !-e $saved;
             rename $candidate,$saved or die 'checkpoint preservation failed'; chmod 0600,$saved or die;
         }
+        checkpoint_prune_invalid($path);
         my $dir=$path; $dir =~ s{/[^/]+$}{};
         my @segments;
         if (safe_path("$dir/archive") && -d "$dir/archive") {
@@ -72,6 +74,19 @@ sub checkpoint_load {
         return {version=>2,reconstructing=>1,journal=>$cursor};
     }
     return {};
+}
+sub checkpoint_prune_invalid {
+    my ($path)=@_; my $dir=$path; $dir =~ s{/[^/]+$}{};
+    my $base=$path; $base =~ s{.*/}{};
+    return unless safe_path($dir);
+    opendir my $h,$dir or return;
+    my @old=sort {(stat($b))[9]<=>(stat($a))[9] || $b cmp $a}
+        grep {safe_path($_) && -f $_}
+        map {"$dir/$_"} grep {/^\Q$base\E(?:\.bak)?\.invalid-\d+-\d+$/} readdir $h;
+    return if @old<=2;
+    splice @old,0,2;
+    # Only obsolete quarantine evidence is removed; live checkpoints and symlinks are untouched.
+    if (@old) {unlink $_ or die 'checkpoint quarantine pruning failed' for @old}
 }
 sub load_shards {
     my ($path,$s)=@_; my $refs=delete $s->{source_shards};

@@ -259,6 +259,19 @@ if ($finding eq 'G2') {
     unlink "$idx.bak"; my $rebuilt=Loomy::LiveState::checkpoint_load($idx);
     die 'corrupt checkpoint silently reset' unless $rebuilt->{reconstructing};
     die 'damaged evidence not preserved' unless glob "$idx.invalid-*";
+} elsif ($finding eq 'quarantine') {
+    my $idx="$dir/codex-native.idx";
+    for my $n (1..5) {
+        my $p="$idx.invalid-1-$n";
+        open my $f,'>',$p or die; print $f 'damaged'; close $f; utime $clock+$n,$clock+$n,$p;
+    }
+    symlink "$idx.invalid-1-5","$idx.invalid-1-99" or die;
+    Loomy::LiveState::checkpoint_load($idx);
+    my @kept=grep {!-l $_} glob "$idx.invalid-*";
+    die 'quarantine retention lost newest evidence' unless @kept==2 && -f "$idx.invalid-1-4" && -f "$idx.invalid-1-5";
+    die 'quarantine followed a symlink' unless -l "$idx.invalid-1-99";
+    my $out=`perl "$repo/scripts/lib/watch-health.pl" "$root" "$work/codex" "$work/claude"`;
+    die 'doctor quarantine measurement absent' unless $out =~ /quarantine\t.*codex-native.idx\t2 \/ 14/;
 } elsif ($finding eq 'shards') {
     my $idx="$dir/codex-native.idx"; my %files=map {("/source/$_",{key=>"1:$_",offset=>$_,meta=>{id=>"source$_",cwd=>$root},padding=>'x'x350})} 1..6000;
     my $s={version=>2,files=>\%files,seen=>{safe=>1}}; Loomy::LiveState::checkpoint_save($idx,$s);

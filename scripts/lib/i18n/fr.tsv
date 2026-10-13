@@ -2309,3 +2309,6 @@ symlink: live tracking disabled for this source	Lien symbolique : suivi en direc
 tracking file exceeds its bound (%s bytes)	Fichier de suivi au-delà de sa limite (%s octets)
 Recent watch error	Erreur récente du suivi
 Discovering source inventory (%s pending).	Inventaire des sources en cours (%s en attente).
+paused until %s (both providers saturated)	en pause jusqu’à %s (les deux fournisseurs sont saturés)
+model not validated: %s	modèle non validé : %s
+damaged tracking checkpoints (files / bytes): %s	checkpoints de suivi endommagés (fichiers / octets) : %s

@@ -6,7 +6,7 @@ WORK="$(mktemp -d /tmp/loomy-resume-app.XXXXXX)"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/home/.codex"
-export LOOMY_HOME="$REPO" NO_COLOR=1 LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0
+export LOOMY_HOME="$REPO" NO_COLOR=1 LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0
 export LOOMY_START_WATCH=0 AI_SESSION_REPROBED=1 LOOMY_NO_SWITCH=1
 unset AI_ROUTE_ENV LOOMY_WATCH_TOOL CODEX_THREAD_ID LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$WORK/stubs"
@@ -43,6 +43,7 @@ export AI_ROUTE_ENV=claude
 check 'active relay overrides stale environment in app opener' start --orchestrator
 check 'relay reopens existing Codex thread' grep -q 'codex://threads/33333333' "$STUB_LOG"
 # Target discovery may neither launch a provider nor write/clean state.
+rm -f "$ROOT/.loomy/session-only"
 printf 'tool=codex\nowner_pid=2147483647\n' >"$ROOT/.loomy/session-only"
 : >"$STUB_LOG"
 check 'target is read-only and ignores inherited AI_ROUTE_ENV' bash -c 'source "$1/scripts/lib/models.sh"; SCRIPT_DIR="$1/scripts"; source "$SCRIPT_DIR/loomy-start.sh" --open-library; loomy_orchestrator_target "$2"; [[ "$LOOMY_OPEN_TOOL" == codex && -f "$2/.loomy/session-only" ]]' _ "$REPO" "$ROOT"
@@ -71,11 +72,20 @@ check 'fresh transcript with live journal owner blocks app launch' failed 3 --ap
 check 'busy message is explicit' grep -q 'busy in a terminal: use /desktop' "$OUT"
 check 'busy session launches nothing' test ! -s "$STUB_LOG"
 check 'watch opener propagates busy status without terminal fallback' failed 3 --orchestrator
+export STUB_BUSY_PID="$$" STUB_BUSY_ROOT="$ROOT" STUB_BUSY_ARGS='claude --print OK'
+check 'print delegate with a live journal owner does not block resume' start --app
+unset STUB_BUSY_ARGS
 rm -f "$ROOT/.loomy/logs/events.jsonl"
 export STUB_BUSY_PID=2147483646 STUB_BUSY_ROOT="$ROOT"
 check 'running Claude process cwd blocks even without journal' failed 3 --app
 check 'busy process launches nothing' test ! -s "$STUB_LOG"
-unset STUB_BUSY_PID STUB_BUSY_ROOT AI_ROUTE_ENV
+export STUB_BUSY_ARGS='claude -p OK'
+check 'print delegate does not block app resume' start --app
+export STUB_BUSY_COMM=node STUB_BUSY_ARGS='node /fake/node_modules/@anthropic-ai/claude-code/cli.js'
+check 'npm interactive Claude is busy' failed 3 --app
+export STUB_BUSY_ARGS='node /fake/node_modules/@anthropic-ai/claude-code/cli.js --print=OK'
+check 'npm print delegate does not block app resume' start --app
+unset STUB_BUSY_PID STUB_BUSY_ROOT STUB_BUSY_ARGS STUB_BUSY_COMM AI_ROUTE_ENV
 check '--only without explicit lead is usage error' failed 2 --only --new
 check '--only with auto is usage error' failed 2 --lead auto --only --new
 check '--only desktop combination fails explicitly without a durable owner' failed 2 --lead codex --only --app
@@ -89,32 +99,40 @@ test_guard_cleanup() {
 }
 for tool in codex claude; do
   : >"$STUB_LOG"; rm -f "$WORK/cli-pid"
-  STUB_SLEEP=30 STUB_PID_FILE="$WORK/cli-pid" bash "$REPO/scripts/loomy-start.sh" --root "$ROOT" --lead "$tool" --only --new --no-watch >"$OUT" 2>&1 &
+  only_out="$WORK/only-$tool"; mkdir -p "$only_out"
+  STUB_ONLY_ROOT="$ROOT" STUB_ONLY_REPO="$REPO" STUB_ONLY_OUT="$only_out" STUB_SLEEP=30 STUB_PID_FILE="$WORK/cli-pid" bash "$REPO/scripts/loomy-start.sh" --root "$ROOT" --lead "$tool" --only --new --no-watch >"$OUT" 2>&1 &
   start_pid=$!
   for (( i=0; i<100; i++ )); do [[ ! -s "$WORK/cli-pid" ]] || break; sleep 0.1; done
-  check "$tool only session writes marker" test -f "$ROOT/.loomy/session-only"
+  check "$tool descendant checks completed" test -f "$only_out/ready"
+  marker="$(cat "$only_out/marker")"
+  check "$tool only session writes its own marker" test -f "$marker"
   cli_pid="$(cat "$WORK/cli-pid")"
   for role in lead architect debugger security reviewer developer executor explorer documenter; do
-    actual="$(AI_ROUTE_ENV=hybrid-claude bash "$REPO/scripts/loomy-route.sh" --root "$ROOT" get "$role")"
+    actual="$(cat "$only_out/$role")"
     check "$tool only routes $role to validated tool chain" perl -e 'my ($s,$t)=@ARGV; die unless $s =~ /^\Q$t\E /; die if $t eq "codex" && $s !~ /gpt-6(?:\.1-sol|-luna) /; die if $t eq "claude" && $s !~ /claude-(?:opus|sonnet|haiku)-5-5 /' "$actual" "$tool"
   done
   check 'brief remains byte-for-byte unchanged' cmp "$WORK/brief-original" "$ROOT/.loomy/brief.md"
-  bash "$REPO/scripts/loomy-route.sh" --root "$ROOT" >"$WORK/route-output" 2>&1
+  cp "$only_out/route" "$WORK/route-output"
   check 'route header exposes only mode' grep -q "lead $tool · only" "$WORK/route-output"
-  bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/phases.sh"; source "$1/scripts/lib/usage.sh"; source "$1/scripts/loomy-tree.sh" --library; ROOT="$2"; loomy_live_init; loomy_live_metadata; loomy_live_header; printf "%s\n" "$LV_HEADER"' _ "$REPO" "$ROOT" >"$WORK/header"
+  cp "$only_out/header" "$WORK/header"
   check 'watch header exposes only mode' grep -q "lead $tool · only" "$WORK/header"
-  LOOMY_UI_LANG=fr bash "$REPO/scripts/loomy-route.sh" --root "$ROOT" >"$WORK/route-fr" 2>&1
+  cp "$only_out/fr" "$WORK/route-fr"
   check 'French route marker is translated' grep -q "lead $tool · uniquement" "$WORK/route-fr"
+  actual="$(LOOMY_SESSION_ONLY="$marker" bash "$REPO/scripts/loomy-route.sh" --root "$ROOT" get lead)"
+  check 'unrelated terminal cannot adopt inherited marker' bash -c '[[ "$1" == claude\ * ]]' _ "$actual"
+  check 'another lead launch succeeds' start --lead auto --new
+  check 'another lead never deletes live only marker' test -f "$marker"
   kill -TERM "$cli_pid"; wait "$start_pid" || true
   cli_pid=""; start_pid=""
-  check 'session end removes marker' test ! -f "$ROOT/.loomy/session-only"
+  check 'session end removes its marker' test ! -f "$marker"
 done
 printf 'tool=codex\nowner_pid=%s\n' "$$" >"$ROOT/.loomy/session-only"
-check '--lead auto clears override' start --lead auto --new
-check 'auto removes marker' test ! -f "$ROOT/.loomy/session-only"
+check '--lead auto ignores legacy live override' start --lead auto --new
+check 'auto preserves another live legacy marker' test -f "$ROOT/.loomy/session-only"
 printf 'tool=codex\nowner_pid=2147483647\n' >"$ROOT/.loomy/session-only"
 actual="$(bash "$REPO/scripts/loomy-route.sh" --root "$ROOT" get lead)"
 check 'dead owner cannot override lead' bash -c '[[ "$1" == claude\ * ]]' _ "$actual"
 check 'dead marker cleaned' test ! -f "$ROOT/.loomy/session-only"
+check 'reused PID with a different birth stamp cannot apply routing' bash -c 'source "$1/scripts/lib/models.sh"; p="$2/.loomy/session-only-$$-wrongbirth"; printf "tool=codex\nowner_pid=%s\nowner_start=wrongbirth\n" "$$" >"$p"; LOOMY_SESSION_ONLY="$p"; ai_session_only_read "$2"; test -z "$AI_SESSION_ONLY" && test ! -f "$p"' _ "$REPO" "$ROOT"
 check 'all launches stayed hermetic' test ! -s "$LOOMY_TEST_GUARD_LOG"
 printf 'PASS %s desktop resume/session-only checks\n' "$PASS"

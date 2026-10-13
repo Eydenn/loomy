@@ -108,6 +108,7 @@ loomy_doctor_tracking() {
     case "$kind" in
       symlink) ui_warn "$path" "$(t 'symlink: live tracking disabled for this source')" ;;
       bounds) ui_warn "$path" "$(t 'tracking file exceeds its bound (%s bytes)' "$detail")" ;;
+      quarantine) ui_info "$(t 'damaged tracking checkpoints (files / bytes): %s' "$detail")" ;;
       error) ui_warn "$(t 'Recent watch error')" "$detail" ;;
     esac
   done < <(perl "$SCRIPT_DIR/lib/watch-health.pl" "$ROOT" "${CODEX_HOME:-$HOME/.codex}" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" 2>/dev/null)
@@ -122,7 +123,7 @@ if ai_has_claude; then
   # Several copies in the PATH: the first one runs, whatever the others are (a frequent cause of "the update changed nothing").
   n_c="$(ai_tool_paths claude | wc -l | tr -d ' ')"
   if (( n_c > 1 )); then
-    ui_info "$(t "%s copies of claude in the PATH, the first one runs: %s" "$n_c" "$(ai_tool_paths claude | while IFS= read -r p; do printf '%s (%s, %s) ' "${p/#$HOME/~}" "$(ai_tool_method claude "$p")" "$(ai_tool_version_of "$p")"; done)")"
+    ui_info "$(t "%s copies of claude in the PATH, the first one runs: %s" "$n_c" "$(ai_tool_paths claude | while IFS= read -r p; do printf '%s (%s, %s) ' "${p/#$HOME/~}" "$(ai_tool_method claude "$p")" "$(ai_tool_version_of claude "$p")"; done)")"
   fi
   if ai_version_ge "${v:-0.0.0}" "$AI_MIN_CLAUDE_VERSION"; then
     HAS_C=1; ui_ok "claude $v" "Claude Code · $(command -v claude | sed "s|^$HOME|~|")"

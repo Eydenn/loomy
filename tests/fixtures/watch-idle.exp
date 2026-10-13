@@ -17,6 +17,13 @@ set result [catch {
     expect {eof {} timeout {error "idle watch q timed out"}}
     set status [wait]
     if {[lindex $status 3] != 0} {error "idle watch crashed: $status"}
+    # Inspect only our known PTY group: pgrep/sysmond can be unavailable in a sandbox.
+    set teardown_present [expr {![catch {watchdog_exec /bin/kill -0 -- -$child 2>@1}]}]
+    set teardown_polls 0
+    while {![catch {watchdog_exec /bin/kill -0 -- -$child 2>@1}]} {
+        if {$teardown_polls >= 15} {error "idle watch PTY group leaked after 3s"}
+        after 200; incr teardown_polls
+    }
     set f [open $timing r]; set output [read $f]; close $f
     if {![regexp {(\d+\.\d+) (\d+\.\d+) (\d+\.\d+)\s*$} $output all wall user sys]} {error "idle CPU timing missing"}
     set cpu [expr {100.0*($user+$sys)/$wall}]
@@ -25,3 +32,4 @@ set result [catch {
 if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}
 if {$result} {puts stderr $reason; exit 1}
 puts "S5 idle watch CPU: $cpu% over $wall s, including all child processes"
+puts "S5 PTY group teardown: present at EOF=$teardown_present, settled after $teardown_polls polls (200ms, maximum 3s)"

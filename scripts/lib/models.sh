@@ -167,7 +167,9 @@ ai_model_usable() {
   if [[ -f "$state" ]]; then
     awk -F'[=:]' -v m="$m" -v now="$(date +%s)" '$1 == m && $2 == "ko" && NF == 3 && now - $3 < 3600 {hit=1} END {exit !hit}' "$state" 2>/dev/null && return 1
   fi
-  if [[ "$fam" == "codex" && -f "$cache" ]] && ! grep -qF "\"$m\"" "$cache"; then return 1; fi
+  if [[ "$fam" == "codex" && -f "$cache" ]] && ! grep -qF "\"$m\"" "$cache"; then
+    t "%s missing from Codex's local catalog" "$m" >&2; echo >&2
+  fi
   return 0
 }
 # ai_model_pick <family> <tier>: the validated chain head, even when a probe is needed.
@@ -489,19 +491,39 @@ ai_resolve() {
   fi
 }
 
-# Session routing is owned by the start process, never by the durable brief.
+# Session routing is inherited by descendants, with a process birth identity against PID reuse.
+ai_process_stamp() { LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | tr -cd 'A-Za-z0-9'; }
 ai_session_only_read() {
-  local root="$1" mode="${2:-}" line tool="" pid="" file="$1/.loomy/session-only"
+  local root="$1" mode="${2:-}" line tool="" pid="" stamp="" current="" file="${LOOMY_SESSION_ONLY:-}" legacy="$1/.loomy/session-only"
   AI_SESSION_ONLY=""
+  # Old releases left one project-global marker; ignore live owners, clean only dead ones.
+  if [[ -f "$legacy" && ! -L "$legacy" && "$mode" != readonly ]]; then
+    pid="$(sed -n 's/^owner_pid=//p' "$legacy")"
+    if [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) && ! kill -0 "$pid" 2>/dev/null; then rm -f "$legacy"; fi
+  fi
+  case "$file" in "$root/.loomy/session-only-"*) ;; *) return 0 ;; esac
   [[ -f "$file" && ! -L "$file" ]] || return 0
   while IFS= read -r line; do
-    case "$line" in tool=*) tool="${line#*=}" ;; owner_pid=*) pid="${line#*=}" ;; esac
+    case "$line" in tool=*) tool="${line#*=}" ;; owner_pid=*) pid="${line#*=}" ;; owner_start=*) stamp="${line#*=}" ;; esac
   done <"$file"
   case "$tool" in codex|claude) ;; *) return 0 ;; esac
-  if [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) && kill -0 "$pid" 2>/dev/null; then
-    AI_SESSION_ONLY="$tool"
+  [[ "$pid" =~ ^[0-9]+$ && "$stamp" =~ ^[A-Za-z0-9]+$ && "$file" == "$root/.loomy/session-only-$pid-$stamp" ]] || return 0
+  if (( pid > 1 )) && kill -0 "$pid" 2>/dev/null; then
+    current="$(ai_process_stamp "$pid")" || return 0
+    [[ -n "$current" ]] || return 0
+    if [[ "$current" != "$stamp" ]]; then
+      [[ "$mode" == readonly ]] || rm -f "$file" 2>/dev/null || true
+      return 0
+    fi
+    # An inherited token alone must not let an unrelated terminal adopt another session.
+    local ancestor="$$" depth=0
+    while [[ "$ancestor" =~ ^[0-9]+$ ]] && (( ancestor > 1 && depth < 128 )); do
+      if [[ "$ancestor" == "$pid" ]]; then AI_SESSION_ONLY="$tool"; break; fi
+      ancestor="$(ps -p "$ancestor" -o ppid= 2>/dev/null | tr -d ' ')" || return 0
+      depth=$((depth+1))
+    done
   elif [[ "$mode" != readonly ]]; then
-    rm -f "$root/.loomy/session-only" 2>/dev/null || true
+    rm -f "$file" 2>/dev/null || true
   fi
 }
 
@@ -693,8 +715,7 @@ loomy_slug() {
 
 # Bound real probes without depending on GNU timeout (macOS ships Perl).
 _ai_probe_run() {
-  local tool=codex
-  [[ "$1" != *claude* ]] || tool=claude
+  local tool="$1"
   shift
   _loomy_launch_load
   LOOMY_CLI_PROBE=1 loomy_cli_run "$tool" probe "" -- "$@"
@@ -741,7 +762,7 @@ ai_model_probe() {
     (( rc == 0 )) && grep -q '"is_error":false' <<<"$AI_PROBE_OUTPUT"
   else
     tmpf="$(mktemp)"
-    AI_PROBE_OUTPUT="$(_ai_probe_run "$(ai_codex_bin 2>/dev/null || echo codex)" exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral -o "$tmpf" "Reply exactly: OK" </dev/null 2>&1)" || rc=$?
+    AI_PROBE_OUTPUT="$(_ai_probe_run codex exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral -o "$tmpf" "Reply exactly: OK" </dev/null 2>&1)" || rc=$?
     AI_PROBE_STATUS=$rc
     if (( rc == 0 )) && grep -q OK "$tmpf"; then rc=0; else rc=1; fi
     rm -f "$tmpf"; return "$rc"
@@ -775,12 +796,14 @@ ai_models_reprobe() {
 ai_upcoming_probe_daily() {
   local f today e fam m
   [[ -n "$AI_UPCOMING" ]] || return 0
+  declare -F ai_provider_saturated >/dev/null || source "${BASH_SOURCE[0]%/*}/usage.sh"
   f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/upcoming.checked"; today="$(date +%Y-%m-%d)"
   [[ "$(cat "$f" 2>/dev/null)" == "$today" ]] && return 0
   mkdir -p "$(dirname "$f")" 2>/dev/null && echo "$today" >"$f" 2>/dev/null || return 0
   (
     for e in $AI_UPCOMING; do
       fam="${e%%:*}"; m="${e##*:}"
+      ai_provider_saturated "$fam" && continue
       grep -qx "$m=ok" "$(ai_models_state_file)" 2>/dev/null && continue
       if [[ "$fam" == "claude" ]]; then ai_has_claude || continue; else ai_has_codex || continue; fi
       if ai_model_probe "$fam" "$m"; then ai_model_mark "$m" ok; echo "$m" >>"${f%/*}/upcoming.new"; fi

@@ -2,7 +2,9 @@
 use strict;
 use warnings;
 use Fcntl qw(O_RDONLY O_NOFOLLOW);
+use Cwd qw(abs_path);
 my ($root,$codex,$claude)=@ARGV;
+$root=abs_path($root)//exit;
 for my $path ($codex,"$claude/projects") {
     print "symlink\t$path\t0\n" if -l $path;
 }
@@ -17,14 +19,19 @@ for my $entry (['events.jsonl',8388608],['codex-native.idx',2097152],['claude-na
     print "bounds\t$path\t".(-s $path)."\n" if safe($path) && -f $path && -s $path>$bound;
 }
 for my $tool (qw(codex claude)) {
-    opendir my $d,$dir or next; my $total=0;
+    opendir my $d,$dir or next; my $total=0; my ($invalid,$invalid_bytes)=(0,0);
     for my $name (readdir $d) {
+        if ($name =~ /^\Q$tool\E-native\.idx(?:\.bak)?\.invalid-\d+-\d+$/) {
+            my $path="$dir/$name";
+            if (safe($path) && -f $path) {++$invalid; $invalid_bytes+=-s $path}
+        }
         next unless $name =~ /^\Q$tool\E-native\.idx\.files-[0-9a-f]{64}$/;
         my $path="$dir/$name"; next unless safe($path) && -f $path;
         my $bytes=-s $path; $total+=$bytes;
         print "bounds\t$path\t$bytes\n" if $bytes>262144;
     }
     print "bounds\t$dir/$tool-native.idx.files-*\t$total\n" if $total>16777216;
+    print "quarantine\t$dir/$tool-native.idx\t$invalid / $invalid_bytes\n" if $invalid;
 }
 my $errors="$dir/watch-errors.log";
 if (safe($errors) && sysopen(my $f,$errors,O_RDONLY|O_NOFOLLOW)) {

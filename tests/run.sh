@@ -1173,24 +1173,35 @@ release_defects_tests() {
   printf 'plan_claude=pro\nplan_codex=business\n' >"$qcfg/loomy/config"
   for from in codex claude; do
     if [[ "$from" == codex ]]; then
-      to=claude; model=gpt-6-astra
+      to=claude; model=gpt-6.1-sol
       printf '{"type":"event_msg","payload":{"rate_limits":{"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >"$qhome/sessions/r.jsonl"
       printf 'five_hour_pct=20\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
     else
-      to=codex; model=opus
+      to=codex; model=claude-opus-5-5
       printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' "$(( $(date +%s) + 3600 ))" >"$qhome/sessions/r.jsonl"
       printf 'five_hour_pct=100\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
     fi
     : >"$rd/.loomy/logs/events.jsonl"
     run "$from model-only quota failover" env XDG_CONFIG_HOME="$qcfg" CODEX_HOME="$qhome" bash -c 'cd "$1"; "$2" delegate "$3" reviewer --model "$4" "model-only request"' _ "$rd" "$LOOMY" "$from" "$model"
-    has "$from failover banner explains requested model and actual destination" "requested \($model\)"
+    has "$from failover banner explains provider-wide saturation and actual destination" "Provider $from unavailable \(saturated\).*handed to $to once"
     run "$from failover preserves requested metadata in both events" perl -MJSON::PP -e '
-      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die; my @e=map { decode_json($_) } <$f>; die unless @e==4;
+      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die; my @e=grep {($_->{type}//"") =~ /^(delegation_start|delegation)$/} map { decode_json($_) } <$f>; die "expected four lifecycle events" unless @e==4;
       for (@e) { die unless $_->{requested} && $_->{requested_model} eq $model }
       my @dest=grep {$_->{family} eq $family} @e; die unless @dest==2;
       for (@dest) { die unless $_->{model} ne $model }
       my @handover=grep {($_->{status}//"") eq "handed_over"} @e; die unless @handover==1 && $handover[0]{model} eq $model;
     ' "$rd/.loomy/logs/events.jsonl" "$model" "$to"
+    printf '{"type":"event_msg","payload":{"rate_limits":{"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >"$qhome/sessions/r.jsonl"
+    printf 'five_hour_pct=100\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
+    : >"$rd/.loomy/logs/events.jsonl"
+    fails "$from requested model pauses when both providers are saturated" 75 env XDG_CONFIG_HOME="$qcfg" CODEX_HOME="$qhome" bash -c 'cd "$1"; "$2" delegate "$3" reviewer --model "$4" "model-only paused request"' _ "$rd" "$LOOMY" "$from" "$model"
+    run "$from paused attempt preserves request metadata in both events" perl -MJSON::PP -e '
+      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die;
+      my @e=grep {($_->{type}//"") =~ /^(delegation_start|delegation)$/} map {decode_json($_)} <$f>;
+      die unless @e==2; for (@e) {die unless $_->{requested} && $_->{requested_model} eq $model && $_->{family} eq $family}
+      die unless $e[1]{status} eq "paused" && $e[1]{resume_at}>time;
+    ' "$rd/.loomy/logs/events.jsonl" "$model" "$from"
+
   done
 }
 # Persistent native agents: source timestamps, turn rows, agent boxes and observed routing.

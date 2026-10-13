@@ -9,4 +9,5 @@ case "${1:-}" in
     printf 'claude'; printf '\t%s' "$@"; printf '\n'
     exit "${STUB_DESKTOP_FAIL:-0}" ;;
 esac
+[[ -z "${STUB_ONLY_OUT:-}" ]] || bash "$STUB_ONLY_REPO/tests/fixtures/session-only.sh"
 exec "$LOOMY_TEST_ORIGINAL_STUBS/claude" "$@"

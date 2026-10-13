@@ -40,11 +40,15 @@ sub journal {
 }
 sub busy {
     my ($id,$path)=@_;
+    my %print_owners;
     # A real terminal process owns the folder even before its first transcript write.
-    if (open my $ps,'-|','ps','-axo','pid=,comm=') {
+    if (open my $ps,'-|','ps','-axo','pid=,comm=,args=') {
         while (<$ps>) {
-            next unless /^\s*(\d+)\s+(?:.*\/)?claude\s*$/;
-            my $pid=$1; my $cwd='';
+            next unless /^\s*(\d+)\s+(\S+)\s+(.+)$/;
+            my ($pid,$comm,$args)=($1,$2,$3); my $cwd='';
+            next unless $comm =~ m{(?:^|/)claude$} ||
+                ($comm =~ m{(?:^|/)node$} && $args =~ m{(?:^|\s)\S*(?:/claude(?:\.js)?|/claude-code/\S+)(?:\s|$)});
+            if ($args =~ /(?:^|\s)(?:-p|--print)(?:\s|=|$)/) {$print_owners{$pid}=1; next}
             if (-d "/proc/$pid") { $cwd=readlink("/proc/$pid/cwd")//'' }
             elsif (open my $ls,'-|','lsof','-a','-p',$pid,'-d','cwd','-Fn') {
                 while (<$ls>) { $cwd=$1 if /^n(.*)\n$/ } close $ls;
@@ -64,7 +68,7 @@ sub busy {
         if (($d->{type}//'') eq 'session' && ($d->{event}//'') eq 'end') { delete $owners{$pid}; next }
         $owners{$pid}=1 if ($d->{pid_role}//'') eq 'owner' || (($d->{type}//'') eq 'session' && ($d->{event}//'') eq 'start');
     }
-    return scalar grep { Loomy::CodexNative::alive($_) } keys %owners;
+    return scalar grep { !$print_owners{$_} && Loomy::CodexNative::alive($_) } keys %owners;
 }
 if ($tool eq 'codex') { print codex("$home/.codex/sessions",0); exit 0 }
 my $dir="$home/.claude/projects/".Loomy::ClaudeNative::slug($root);

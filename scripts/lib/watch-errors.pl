@@ -4,9 +4,14 @@ use strict;
 use warnings;
 use Fcntl qw(O_RDWR O_APPEND O_CREAT O_NOFOLLOW LOCK_EX);
 use POSIX qw(strftime);
+use Cwd qw(abs_path);
 sub record {
     my ($path,$stage,$kind)=@_;
     return if !$path || $path eq '/dev/null' || ($ENV{LOOMY_JOURNAL}//1) eq '0';
+    # A project may be reached through a symlink; links inside its private tree remain refused.
+    return unless $path =~ m{\A(.*?)(/\.loomy/.*)\z};
+    my ($root,$suffix)=(abs_path($1),$2); return unless defined $root;
+    $path="$root$suffix";
     my $parent=$path;
     while ($parent ne '') { return if -l $parent; $parent =~ s{/[^/]*$}{} }
     $stage='internal' unless ($stage//'') =~ /\A[a-z-]{1,40}\z/;

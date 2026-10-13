@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+[[ "${1:-}" == --version || -z "${STUB_ONLY_OUT:-}" ]] || bash "$STUB_ONLY_REPO/tests/fixtures/session-only.sh"
 case "${1:-}" in
   --version|exec) exec "$LOOMY_TEST_ORIGINAL_STUBS/codex" "$@" ;;
   *) exec "$LOOMY_TEST_ORIGINAL_STUBS/codex" exec "$@" ;;

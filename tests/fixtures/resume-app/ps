@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
-[[ -z "${STUB_BUSY_PID:-}" ]] || printf '%s claude\n' "$STUB_BUSY_PID"
+case "$*" in
+  *pid=,comm=,args=*) [[ -z "${STUB_BUSY_PID:-}" ]] || printf '%s %s %s\n' "$STUB_BUSY_PID" "${STUB_BUSY_COMM:-claude}" "${STUB_BUSY_ARGS:-claude}" ;;
+  *lstart=*) kill -0 "$2" 2>/dev/null && printf 'fixture%s\n' "$2" ;;
+  *ppid=*)
+    if [[ "${STUB_ONLY_DESCENDANT:-0}" == 1 && -n "${LOOMY_SESSION_ONLY:-}" ]]; then
+      sed -n 's/^owner_pid=//p' "$LOOMY_SESSION_ONLY"
+    else printf '1\n'; fi ;;
+  *) exec /bin/ps "$@" ;;
+esac
 exit 0

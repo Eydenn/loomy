@@ -213,3 +213,5 @@ availability, live and watch-exit suites.
   start/end journal apply, without cloud availability or validated-chain checks.
   The model belongs to the user. Hook-only journals keep legacy request/model groups;
   actual transcript/rollout evidence enables the native session hierarchy.
+
+Release boundary: launch validation shares pause/invalid-model diagnostics; local Codex caches are advisory and probes obey provider pauses. Terminal-only routing inherits owner PID/birth-time markers only through descendants. Diagnostics canonicalize the project root, reject links below it and retain two damaged checkpoint generations; doctor reports their count and bytes. Test gates isolate provider homes/PATH and allow a bounded three-second supervisor teardown grace.

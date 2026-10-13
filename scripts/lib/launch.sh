@@ -40,19 +40,23 @@ loomy_cli_resolve() {
   [[ -z "${LOOMY_CLI_META_BIN:-}" ]] || LOOMY_CLI_BIN="$LOOMY_CLI_META_BIN"
   [[ -n "$LOOMY_CLI_BIN" && -x "$LOOMY_CLI_BIN" ]] || return 127
 }
-loomy_cli_check() {
+_loomy_cli_check() {
   local tool="$1" role="$2" model="$3" valid tier chain
   # Guard before all quota/cache work, even when resolution would otherwise fail.
   loomy_cli_resolve "$tool" || { _loomy_cli_test_guard "$tool" || return $?; return 127; }
   _loomy_cli_test_guard "$tool" "$LOOMY_CLI_BIN" || return $?
-  [[ "$tool" != local && "${LOOMY_CLI_PROBE:-0}" != 1 ]] || return 0
+  [[ "$tool" != local ]] || return 0
+  declare -F ai_provider_saturated >/dev/null || source "${BASH_SOURCE[0]%/*}/usage.sh"
+  if [[ "${LOOMY_CLI_PROBE:-0}" == 1 ]]; then
+    if ai_provider_saturated "$tool"; then LOOMY_CLI_RESUME_AT="$(ai_provider_reset "$tool")"; return 75; fi
+    return 0
+  fi
   valid=0
   for tier in TOP MID FAST; do
     _ai_ascii_upper "$tool"; eval "chain=\"\$AI_VALIDATED_${_AI_ASCII_UPPER}_${tier}\""
     case " $chain " in *" $model "*) [[ -z "$model" ]] || valid=1 ;; esac
   done
   (( valid )) || return 2
-  declare -F ai_provider_saturated >/dev/null || source "${BASH_SOURCE[0]%/*}/usage.sh"
   if [[ "${LOOMY_CLI_MANAGED:-0}" == 1 && "${LOOMY_CLI_BRIDGE_CHECKED:-0}" != 1 ]]; then
     ai_delegate_provider_guard "$tool"
   elif ai_provider_saturated "$tool" || ! ai_model_usable "$model" "$tool"; then
@@ -60,6 +64,32 @@ loomy_cli_check() {
     return 75
   fi
   [[ -n "$role" ]]
+}
+
+# Every launch caller shares the same actionable validation/pause diagnostic.
+loomy_cli_check_message() {
+  case "$1" in
+    75)
+      t "paused until %s (both providers saturated)" "${LOOMY_CLI_RESUME_AT:-$(ai_provider_reset "$2")}" >&2; echo >&2 ;;
+    2) t "model not validated: %s" "$3" >&2; echo >&2 ;;
+  esac
+  return 0
+}
+loomy_cli_check() {
+  local rc=0
+  _loomy_cli_check "$@" || rc=$?
+  (( rc == 0 )) || loomy_cli_check_message "$rc" "$1" "$3"
+  return "$rc"
+}
+
+# Preserve specific opener refusals in watch's footer without stale route warnings.
+loomy_cli_open_note() {
+  local rc="$1" output="$2" platform
+  platform="$(t 'Desktop apps: macOS only')"
+  if [[ "$output" == *"$platform"* ]]; then printf '%s' "$platform"
+  elif (( rc == 3 || rc == 97 )); then printf '%s\n' "$output" | sed '/^[[:space:]]*$/d' | tail -1
+  fi
+  return 0
 }
 loomy_cli_meta() (
   case "${2:-}" in --version|update|login|auth) ;; *) return 2 ;; esac
@@ -135,9 +165,6 @@ loomy_cli_run() (
   # A lead session is not a delegation: it keeps its ids for child links but never counts as one in the journal.
   local journal_ends=1
   [[ "${LOOMY_CLI_MANAGED:-0}" != 1 && "${LOOMY_CLI_PROBE:-0}" != 1 && "$role" != lead ]] || journal_ends=0
-  if (( journal_ends )); then
-    loomy_cli_end "$root" "\"type\":\"delegation_start\",$body,\"pid\":${BASHPID:-$$}"
-  fi
   _loomy_cli_finish() {
     local status="$1"
     trap - EXIT INT TERM HUP
@@ -181,7 +208,10 @@ loomy_cli_run() (
     else
       perl -e 'setpgrp(0,0); delete @ENV{qw(LOOMY_CLI_MANAGED LOOMY_CLI_BRIDGE_CHECKED LOOMY_CLI_ID LOOMY_CLI_SESSION_ID LOOMY_EVENT_PARENT_ID LOOMY_CLI_DETACHED)}; exec @ARGV or die $!' "$LOOMY_CLI_BIN" "$@" <&0 &
     fi
-    child=$!; wait "$child" || rc=$?; child=""
+    child=$!
+    # $! is the actual owned child on Bash 3.2 too; $$ identifies the caller of this subshell.
+    if (( journal_ends )); then loomy_cli_end "$root" "\"type\":\"delegation_start\",$body,\"pid\":$child"; fi
+    wait "$child" || rc=$?; child=""
   fi
   return "$rc"
 )

@@ -47,7 +47,7 @@ ai_tool_paths() {
     seen="$seen|$r|"; printf '%s\n' "$p"
   done
 }
-ai_tool_version_of() { local tool=claude; [[ "$1" != *codex* ]] || tool=codex; _loomy_launch_load; LOOMY_CLI_META_BIN="$1" loomy_cli_meta "$tool" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_tool_version_of() { local tool="$1"; shift; _loomy_launch_load; LOOMY_CLI_META_BIN="$1" loomy_cli_meta "$tool" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
 ai_tool_min() { if [[ "$1" == "claude" ]]; then echo "$AI_MIN_CLAUDE_VERSION"; else echo "$AI_MIN_CODEX_VERSION"; fi; }
 
 # ai_tool_state <claude|codex>: "ok <version> <path>", "old <version> <path>", "broken - <path>" or "missing".
@@ -58,7 +58,7 @@ ai_tool_state() {
   first="$(ai_tool_paths "$1" | head -1)"
   if [[ -z "$first" && "$1" == "codex" ]]; then first="$(ai_codex_bin 2>/dev/null || true)"; fi
   [[ -n "$first" ]] || { echo "missing"; return 0; }
-  v="$(ai_tool_version_of "$first")"
+  v="$(ai_tool_version_of "$1" "$first")"
   if [[ -z "$v" ]]; then echo "broken - $first"
   elif ai_version_ge "$v" "$(ai_tool_min "$1")"; then echo "ok $v $first"
   else echo "old $v $first"; fi
@@ -130,7 +130,7 @@ ai_repair_tool() {
     # 3. An older copy first in the PATH hides a good one: the older copy is removed.
     while IFS= read -r p; do
       [[ "$p" == "$first" ]] && continue
-      other="$(ai_tool_version_of "$p")"
+      other="$(ai_tool_version_of "$tool" "$p")"
       [[ -n "$other" ]] && ai_version_ge "$other" "$(ai_tool_min "$tool")" && { good="$p"; break; }
     done < <(ai_tool_paths "$tool")
     if [[ -n "$good" ]]; then

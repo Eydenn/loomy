@@ -163,7 +163,7 @@ fi
 # Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
-if [[ "$LEAD" == auto && "$MODE" != print ]]; then rm -f "$ROOT/.loomy/session-only"; fi
+if (( ! ONLY )) && [[ "$MODE" != orchestrator ]]; then unset LOOMY_SESSION_ONLY; fi
 if [[ "$MODE" == orchestrator ]]; then loomy_open_orchestrator "$ROOT"; exit $?; fi
 # A repository with only an audit (loomy audit), no Loomy project: start resumes the audit.
 if [[ ! -f "$BRIEF" && -f "$ROOT/.loomy/audit.md" ]]; then exec bash "$SCRIPT_DIR/loomy-audit.sh" --root "$ROOT" --resume; fi
@@ -464,11 +464,13 @@ if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
 ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
 if (( ONLY )); then
-  # Install only when the foreground session really starts; --print remains read-only.
-  [[ ! -L "$ROOT/.loomy/session-only" ]] || exit 1
-  (umask 077; printf 'tool=%s\nowner_pid=%s\n' "$TOOL" "$$" >"$ROOT/.loomy/session-only")
-elif [[ -n "$LEAD" ]]; then
-  rm -f "$ROOT/.loomy/session-only"
+  # Each owner gets a private marker; other terminal sessions keep their own routing.
+  owner_start="$(ai_process_stamp "$$")"; [[ -n "$owner_start" ]] || exit 1
+  export LOOMY_SESSION_ONLY="$ROOT/.loomy/session-only-$$-$owner_start"
+  [[ ! -e "$LOOMY_SESSION_ONLY" && ! -L "$LOOMY_SESSION_ONLY" ]] || exit 1
+  (umask 077; set -o noclobber; printf 'tool=%s\nowner_pid=%s\nowner_start=%s\n' "$TOOL" "$$" "$owner_start" >"$LOOMY_SESSION_ONLY")
+else
+  unset LOOMY_SESSION_ONLY
 fi
 if (( ! ONLY )); then lf_apply "$ROOT" "$LEAD"; fi
 LEAD=""
@@ -477,9 +479,9 @@ LEAD=""
 # quota ran out, or the master has room again), the other tool takes over after a short delay.
 UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM
 start_session_cleanup() {
-  local owner=""
-  [[ ! -f "$ROOT/.loomy/session-only" ]] || owner="$(sed -n 's/^owner_pid=//p' "$ROOT/.loomy/session-only")"
-  [[ "$owner" != "$$" ]] || rm -f "$ROOT/.loomy/session-only"
+  if (( ONLY )) && [[ "${LOOMY_SESSION_ONLY:-}" == "$ROOT/.loomy/session-only-$$-$owner_start" ]]; then
+    rm -f "$LOOMY_SESSION_ONLY"
+  fi
   return 0
 }
 trap start_session_cleanup EXIT

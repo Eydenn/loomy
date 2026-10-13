@@ -103,6 +103,26 @@ check test ! -f "$XDG_CONFIG_HOME/loomy/models.state"
 printf '%s\n' '---' 'name: timeout fixture' 'ai_mode: ORCHESTRATED' 'ai_lead: codex' 'budget: equilibre' '---' >"$ROOT/.loomy/brief.md"
 check expect_rc 0 bash "$REPO/scripts/loomy-doctor.sh" --root "$ROOT" --live --compact
 unset STUB_SLEEP LOOMY_MODEL_PROBE_TIMEOUT
+# Every caller gets a clear shared validation/pause message; local caches remain advisory.
+check expect_rc 2 loomy_cli_check codex lead gpt-9-unknown
+check grep -q 'model not validated: gpt-9-unknown' "$WORK/output"
+printf '{"models":[{"slug":"foreign-model"}]}\n' >"$CODEX_HOME/models_cache.json"
+check expect_rc 0 loomy_cli_check codex lead gpt-6.1-sol
+check grep -q "gpt-6.1-sol missing from Codex's local catalog" "$WORK/output"
+rm "$CODEX_HOME/models_cache.json"
+ai_provider_refusal codex 'rate limit retry_after: 600'
+ai_provider_refusal claude 'usage limit retry_after: 600'
+check expect_rc 75 loomy_cli_check codex lead gpt-6.1-sol
+check grep -q 'paused until .* (both providers saturated)' "$WORK/output"
+check expect_rc 75 env LOOMY_CLI_PROBE=1 bash -c 'source "$1/scripts/lib/launch.sh"; loomy_cli_check codex probe ""' _ "$REPO"
+check bash -c 'source "$1/scripts/lib/models.sh"; AI_UPCOMING="codex:gpt-announced claude:claude-announced"; export STUB_LOG="$2"; ai_upcoming_probe_daily; wait; test ! -s "$2"' _ "$REPO" "$WORK/upcoming-calls"
+rm "$XDG_CONFIG_HOME/loomy/codex-availability" "$XDG_CONFIG_HOME/loomy/claude-availability"
+check bash -c 'source "$1/scripts/lib/launch.sh"; test "$(loomy_cli_open_note 97 "loomy: test guard: refusing to launch real open")" = "loomy: test guard: refusing to launch real open"; test "$(loomy_cli_open_note 1 "Desktop apps: macOS only / opening in the terminal")" = "Desktop apps: macOS only"; test -z "$(loomy_cli_open_note 1 stale-warning)"' _ "$REPO"
+# Explicit provider names survive misleading installation paths.
+check bash -c 'source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/models.sh"; test "$(ai_tool_version_of codex "$LOOMY_TEST_STUBS/codex")" = 0.160.0; _ai_probe_run codex exec -m gpt-6.1-sol --ephemeral -o "$2" "Reply exactly: OK"; grep -q OK "$2"' _ "$REPO" "$WORK/probe-answer"
+# A detached runner, rather than its caller, owns the journal lifetime on Bash 3.2.
+check bash -c 'set -e; source "$1/scripts/lib/launch.sh"; export ROOT="$2/pid-project" STUB_SLEEP=2; mkdir -p "$ROOT/.loomy"; loomy_cli_spawn claude reviewer claude-sonnet-5-5 -- -p OK --output-format json >"$2/pid-output"; perl -MJSON::PP -e '\''my ($p,$caller)=@ARGV; open my $f,"<",$p or die; my ($e)=grep {$_->{type} eq "delegation_start"} map {decode_json($_)} <$f>; die unless $e->{pid}>1 && $e->{pid}!=$caller && kill(0,$e->{pid});'\'' "$ROOT/.loomy/logs/events.jsonl" "$$"; wait "$LOOMY_CLI_PID"' _ "$REPO" "$WORK"
+check bash "$REPO/tests/fixtures/guard-poll.sh" "$REPO" "$WORK"
 # Source static scan: literal commands, variable binaries and generated launcher arrays.
 printf 'Launch functional assertions: %s passed\n' "$PASS"
 files=()

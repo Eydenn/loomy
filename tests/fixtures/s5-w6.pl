@@ -42,5 +42,13 @@ my $out=`perl "$repo/scripts/lib/watch-health.pl" "$root" "$work/codex-link" "$w
 my @warnings=$out =~ /symlink/g; die 'doctor source warnings absent' unless @warnings==2;
 die 'doctor bounds warning absent' unless $out =~ /bounds\t.*claude-native.idx\t2097153/;
 die 'doctor recent errors absent' unless $out =~ /error\t.*watch-errors.log\t.*watch reducer exception/;
+symlink $root,"$work/project-link" or die;
+Loomy::WatchErrors::record("$work/project-link/.loomy/logs/watch-errors.log",'controller','error');
+my $linked=`perl "$repo/scripts/lib/watch-health.pl" "$work/project-link" "$work/codex-link" "$work/claude-link-home"`;
+die 'symlink project hid diagnostics' unless $linked =~ /watch controller error/ && $linked =~ /bounds/;
+symlink "$work/escape.log","$logs/unsafe.log" or die;
+Loomy::WatchErrors::record("$work/project-link/.loomy/logs/unsafe.log",'controller','error');
+die 'symlink below root accepted' if -e "$work/escape.log";
+unlink "$logs/unsafe.log";
 unlink "$logs/claude-native.idx";
 print "old-date append/creation, diagnostic bounds/mode/opt-out, doctor symlinks/bounds/errors passed\n";

@@ -120,18 +120,25 @@ ai_journal_write() {
 # Canonical hook/transcript lifecycle; snapshots preserve state without new usage.
 ai_journal_canonical() {
   perl -MJSON::PP -e '
-    my (@events,%native,%alias,%seen,%terminal);
+    my (@events,%native,%alias,%seen,%terminal,%owners,%lifetimes);
     while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; push @events,[$_,$e];
+      my $pid=$e->{owner_pid}//$e->{pid};
+      $owners{$e->{id}}=($e->{tool}//$e->{family}//"")."|$pid" if $e->{id} && defined($pid) && !ref($pid) && $pid =~ /^\d+$/ && $pid>1;
       $native{($e->{session}//"")."|".($e->{turn_id}//"")}=1 if ($e->{bridge}//"") eq "claude-native" && $e->{turn_id};
       $alias{$e->{alias_id}}=1 if ($e->{type}//"") eq "agent_alias" && $e->{alias_id};
       $terminal{($e->{session}//"")."|".($e->{id}//"")}=$#events if ($e->{bridge}//"") eq "claude-native" && ($e->{type}//"") eq "delegation";
     }
     for my $i (0..$#events) {my ($raw,$e)=@{$events[$i]};
+      my $pid=$e->{owner_pid}//$e->{pid};
+      my $owner=defined($pid) && !ref($pid) && $pid =~ /^\d+$/ && $pid>1 ? ($e->{tool}//$e->{family}//"")."|$pid" : $owners{$e->{id}//""}//"";
+      # Only this owners observations cross the close barrier; unrelated rows and terminals stay deduplicated.
+      ++$lifetimes{$owner} if $owner ne "" && ($e->{type}//"") eq "session" && ($e->{event}//"") eq "end";
       next if ($e->{bridge}//"") eq "subagent" && $native{($e->{session}//"")."|".($e->{id}//"")};
       next if $alias{$e->{id}//""};
       next if ($e->{bridge}//"") eq "claude-native" && ($e->{type}//"") eq "delegation" && $terminal{($e->{session}//"")."|".($e->{id}//"")}!=$i;
       if (($e->{type}//"") =~ /^(?:delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/) {
         my %identity=%$e; delete $identity{snapshot};
+        $identity{owner_lifetime}=$lifetimes{$owner}//0 if $owner ne "" && ($e->{type}//"") =~ /^(delegation_start|delegation_activity|session)$/;
         my $key=JSON::PP->new->canonical->encode(\%identity); next if $seen{$key}++;
       }
       print $raw;

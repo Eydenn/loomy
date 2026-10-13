@@ -11,7 +11,11 @@ my $injected=0;
 no warnings 'redefine';
 *read_journal=sub {die "INJECTED_PRIVATE_REDUCER_ERROR" unless $injected++; goto &$original};
 PERL
-{ sleep 2; printf 'q\n'; } | bash "$runtime/scripts/loomy-status.sh" --root "$root" --watch >"$WORK/error-frame" 2>"$WORK/error-stderr"
+{
+  # Wait for the injected reducer observation, rather than racing a cold sampler's first frame.
+  for (( i=0; i<100; i++ )); do [[ ! -s "$root/.loomy/logs/watch-errors.log" ]] || break; sleep 0.1; done
+  printf 'q\n'
+} | bash "$runtime/scripts/loomy-status.sh" --root "$root" --watch >"$WORK/error-frame" 2>"$WORK/error-stderr"
 grep -q 'watch reducer exception' "$root/.loomy/logs/watch-errors.log"
 if grep -q 'INJECTED_PRIVATE' "$root/.loomy/logs/watch-errors.log" "$WORK/error-stderr"; then
   printf 'FAIL reducer diagnostic content leaked\n' >&2; exit 1

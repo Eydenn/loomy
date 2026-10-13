@@ -400,7 +400,7 @@ The lead’s preventive relay threshold remains separate: `loomy config set quot
 
 `loomy start --lead codex|claude` selects a temporary manual lead (shown as `(manual)`, kept even when the master has room, with automatic quota relay still protecting the acting lead), replacing `AI_ROUTE_ENV` for this use; `loomy start --lead auto` or `--lead <master>` returns to the brief's lead.
 
-`loomy start --lead codex --only` (or `--lead claude --only`) routes every role to that tool for the terminal session. No brief or project folder is copied or changed. Watch and `loomy route` show “lead codex · only”. Session exit or `--lead auto` clears the choice; a dead owner PID is ignored and cleaned. `--print` remains read-only. `--only` requires an explicit lead and a terminal session (`--new` or `--resume`); desktop apps expose no session-owned process to bound the choice.
+`loomy start --lead codex --only` (or `--lead claude --only`) routes every role to that tool for the terminal session. No brief or project folder is copied or changed. Watch and `loomy route` show “lead codex · only”. Only descendants inherit the choice through a PID/birth-time marker. Session exit removes its own marker; another terminal or `--lead auto` preserves other live sessions. `--print` remains read-only. `--only` requires an explicit lead and a terminal session (`--new` or `--resume`); desktop apps expose no session-owned process to bound the choice.
 
 The relay is kept in `.loomy/failover`, shown by `loomy status` and `loomy watch` (⇄), and journaled (`lead_failover`, `lead_return`).
 

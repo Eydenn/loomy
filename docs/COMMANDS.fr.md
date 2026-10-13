@@ -81,7 +81,7 @@ Démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print
 
 `--lead codex|claude` choisit temporairement l'outil lead sans modifier le brief et remplace `AI_ROUTE_ENV=hybrid-codex loomy start` pour cet usage. Un changement ouvre une nouvelle session avec le prompt de passation et d'état partagé, même avec `--resume` ; redemander l'outil actif conserve le choix de session et n'ajoute aucun événement de relais. `--lead auto` ou l'outil lead du brief efface le relais et le démarre avec le prompt de retour. Le relais manuel persiste jusqu'au retour explicite, sauf si l'outil actif atteint le seuil de quota et que le lead du brief a de la marge. Un outil absent est refusé (code 2) ; un quota saturé ou une offre à l'usage provoque un avertissement et reste autorisé. Compatible avec `--app` et le suivi ; `--print` affiche un aperçu sans écrire d'état.
 
-`--only` route tous les rôles vers le lead explicite pendant la session terminal, sans modifier le brief ni copier le projet. Le choix apparaît dans le suivi et `loomy route`, disparaît à la fin de session ou avec `--lead auto`, et un PID propriétaire mort est nettoyé. Sans `--lead codex|claude`, le code de sortie est 2. `--print` ne crée pas de marqueur. `--only` conserve le lancement terminal même si `start_in=app` ; `--only --app` est refusé, car l’app ne fournit pas de processus propre à la session.
+`--only` route tous les rôles vers le lead explicite pendant la session terminal, sans modifier le brief ni copier le projet. Le choix apparaît dans le suivi et `loomy route`, seuls les descendants héritent du marqueur PID/date de démarrage, et la fin de session retire son propre marqueur. Un autre terminal ou `--lead auto` préserve les autres sessions vivantes. Sans `--lead codex|claude`, le code de sortie est 2. `--print` ne crée pas de marqueur. `--only` conserve le lancement terminal même si `start_in=app` ; `--only --app` est refusé, car l’app ne fournit pas de processus propre à la session.
 
 `--app` et `o` dans le suivi rouvrent le dernier fil Codex du projet (sous-dossiers inclus) ou la dernière session Claude avec `claude --desktop --resume` (CLI ≥ 2.1.285). Une session Claude occupée dans un terminal est refusée avec une indication `/desktop` ; aucune autre fenêtre n’est ouverte. En l’absence de session compatible, avec un ancien CLI Claude ou si le lancement échoue, le lien habituel ouvre une nouvelle conversation avec le prompt pré-rempli, jamais envoyé. Le lead actif d’un relais est respecté.
 
@@ -159,14 +159,12 @@ des événements est incrémentale, donc le rattrapage peut demander plusieurs
 passes. La collecte enregistre l'identité du thread et du tour, ainsi que la
 dernière activité observée, sans recopier les messages, arguments d'outils ou
 conversations. Un résultat absent reste inconnu, pas une tâche réussie ; l'usage
-et le coût Codex natif ne sont pas inventés. Voir l'[ADR-0007](adr/0007-native-codex-observability.md)
-pour les limites. La phase reste la dernière information enregistrée par
-l'orchestrateur, pas un avancement déduit automatiquement.
+et le coût Codex natif ne sont pas inventés. Voir l'[ADR-0007](adr/0007-native-codex-observability.md) pour les limites.
+La phase reste la dernière information enregistrée par l'orchestrateur, pas un avancement déduit automatiquement.
 
 Le modèle et l'effort de la session Codex principale viennent de ses contextes
 observés, y compris après un changement. Le rattrapage est signalé séparément ;
-une information invalidée est effacée plutôt qu'affichée comme actuelle ou devinée
-depuis la configuration.
+une information invalidée est effacée plutôt qu'affichée comme actuelle ou devinée depuis la configuration.
 
 Si plusieurs sessions d'outils restent ouvertes, `LOOMY_WATCH_TOOL=codex loomy watch`
 (ou `claude`) choisit explicitement la session affichée. Ce filtre facultatif ne
@@ -265,6 +263,8 @@ loomy models --issue
 ```
 
 Chaînes de modèles actuels validés et nouveaux candidats à évaluer ; `--issue` propose les candidats sur GitHub. `chain.<famille>.<niveau>` accepte seulement les modèles validés du catalogue pour ce niveau ; les identifiants inconnus sont refusés. `--thrifty` est retiré (code 2) ; le profil de budget Économe continue de baisser l’effort.
+
+La découverte de modèles annoncés peut lancer une sonde quotidienne bornée, en lecture seule/sans outils, jamais pendant une pause du fournisseur. Une sonde réussie ne promeut pas le candidat dans le routage. Le cache local des modèles Codex est indicatif ; une entrée absente avertit sans bloquer un modèle validé.
 
 ### `loomy skills [suggest|add|remove|update|catalog]`
 

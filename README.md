@@ -251,7 +251,7 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 - **`loomy report`**: the project's figures (bootstrap, tasks, delegations by role and model, tokens, cost).
   - `--md` writes it as Markdown in `docs/reports/`, to keep in the repository.
   - `--all` compares every Loomy project on the machine.
-- **`loomy models`**: the model chains in use and the new models to evaluate. You can put a new model at the head of its chain with up to two fallbacks, switch to low-cost mode (`--thrifty on`: the fallbacks first), or suggest it on GitHub (`--issue`, one issue per model, no duplicates).
+- **`loomy models`**: validated current model chains and new candidates to evaluate. Suggest candidates on GitHub (`--issue`, one issue per model). `--thrifty` is retired; the Thrifty budget profile still lowers effort. A candidate needs catalog validation before routing.
 
 `loomy start` still opens a free session.
 
@@ -381,14 +381,14 @@ Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 
 `loomy watch` notifies you when a quota crosses 80 %, then 95 %.
 
-**Automatic switch near the end of a quota.** From 95 % of a subscription quota (or when the tool reports its limit reached), the work moves to the other tool, if it is installed and has room left:
-- a delegation to Codex (executor, reviewer…) is run by Claude, on the model and effort the routing gives that role on the Claude side, and vice versa;
-- a role that writes, moved to Claude, gets accepted edits and shell commands only inside Claude Code's sandbox (the project folder, no network), like Codex's `workspace-write` sandbox; read-only roles stay read-only;
-- the lead agent receives the same kind of answer as usual; the switch is announced, logged (⇄ in `status`, `log` and `stats`) and shown in the plans section;
-- `loomy start` opens the lead agent session on the other tool when its own is nearly exhausted (`LOOMY_NO_SWITCH=1 loomy start` to keep it);
-- no ping-pong: a switched delegation never switches back, and nothing moves when both tools are exhausted.
+**Provider availability for delegations.** A real refusal (quota, credits or rate limit), or a quota reading at 100 % / reached, hands the role to the other installed provider with room. At 95–99 %, a delegation still attempts work:
+- the role runs on the other provider’s validated current model and routed effort;
+- a writing role moved to Claude gets accepted edits and shell commands inside Claude Code’s sandbox (the project folder, no network); read-only roles stay read-only;
+- the handover is announced and logged as `handed_over`, separate from failures;
+- there is one handover per call, with no retry on a sibling model of the saturated provider;
+- if neither provider can serve, the bridge exits 75 with `paused` / `waiting_for_reset` and `resume_at`; the lead waits until that epoch, then relaunches the saved task/options from `.loomy/memory/delegations/<id>.md` and reviews partial file changes.
 
-Threshold: `loomy config set quota_switch 90` (a percentage), or `off` to never switch.
+The lead’s preventive relay threshold remains separate: `loomy config set quota_switch 90` (a percentage), or `off` to disable preventive relays. A real provider refusal still protects delegations.
 
 **Lead relay when a subscription runs out.** The lead set in the brief never changes; the other tool only stands in for it for a while:
 - at 90 % (switch threshold minus 5), a Claude Code lead is told at each message (at most every 10 minutes) to finish the step, write `.loomy/docs/HANDOFF.md` and `STATE.md`, commit and end the session; Codex has no per-message hook, so a Codex lead is warned by `loomy watch` and at session start only;
@@ -555,8 +555,8 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
 | GPT&#8209;6.1&#8209;Sol | 2 / 10 | about $1.50 per DeepSWE task | — | DeepSWE 75.2 % (vendor) | every Codex role except execution, from 0.7.2 |
-| GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | fallback for GPT-6.1 Sol |
-| GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | fallback at the top tier, or forced: `loomy config set model.codex.top gpt-6-astra` |
+| GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | historical; excluded from automatic routing |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | historical; excluded from automatic routing |
 | Claude&nbsp;Sonnet&nbsp;5.5 | 2 / 10 | $0.41 → $7.60 | — | 70.6 % (vendor) | developer, reviewer (Claude), Thrifty lead agent |
 | Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | $0.55 → $5.98 | not published | **59.6 %** | 🏆 lead agent and specialists |
 | Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | $7.63 | 62 | 55.8 % | ❌ superseded by Opus 5.5 |
@@ -566,7 +566,7 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
   - It scores 66.6 % on bounded fixes for $0.22, against $2.74 for Sol.
   - On long autonomous terminal work it drops to 13 %.
   - So it executes precise tickets under the lead agent, nothing more.
-- 🐎 **GPT-6.1 Sol runs the Codex side.** It matches Astra on DeepSWE (75.2 % against 74.8 %) for about a fifth of the cost, and Astra was found less reliable lately in real use: Astra stays as its fallback, and can be forced with `loomy config set model.codex.top gpt-6-astra` (`auto` to go back).
+- 🐎 **GPT-6.1 Sol runs the Codex side.** It matches Astra on DeepSWE (75.2 % against 74.8 %) for about a fifth of the cost, and Astra was found less reliable lately in real use: only validated current models are routed. A saturated provider hands the role to the other once; when neither can serve it, the delegation pauses until the expected reset.
 
 ---
 
@@ -614,7 +614,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | `loomy route` | Role → model → effort matrix | `lead` `get <role>` `markdown` `claude-agents` |
 | `loomy delegate codex <role> "…"` | Hand a role to Codex | — |
 | `loomy delegate claude <role> "…"` | Hand a role to Claude, read-only | — |
-| `loomy models` | Model chains and new models to evaluate | `--thrifty on\|off` `--issue` |
+| `loomy models` | Model chains and new models to evaluate | `--issue` |
 | `loomy skills [suggest\|add\|remove\|update\|catalog]` | Official skills of the project, and why | `suggest "…"` `add <name>` `remove <name>` `update` `catalog` |
 | `loomy audit` | Security audit of a repository | `--resume` `--print` `--yes` `--scope <folders>` `--depth quick\|standard\|deep` `--fixes report\|plan\|branch` |
 

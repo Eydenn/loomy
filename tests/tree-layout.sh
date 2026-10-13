@@ -2,9 +2,9 @@
 # Isolated ANSI geometry regressions; optional output directory for parent visual review.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-tree-layout.XXXXXX")"
-WORK="$(cd "$WORK" && pwd -P)"
-trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d "/tmp/loomy-tree-layout.XXXXXX")"
+# shellcheck source=lib/guard.sh
+source "$REPO/tests/lib/guard.sh"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"

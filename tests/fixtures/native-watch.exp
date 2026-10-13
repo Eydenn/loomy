@@ -1,7 +1,8 @@
+source [file join [file dirname [info script]] watchdog.exp]
 # End-to-end sampler refresh: no CLI agents, network, or transcript data.
 set timeout 20
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
-set work [file normalize [exec mktemp -d /tmp/loomy-native-pty.XXXXXX]]
+set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-native-pty.XXXXXX]]
 set root [file join $work project]
 set home [file join $work home]
 set sessions [file join $work codex sessions]

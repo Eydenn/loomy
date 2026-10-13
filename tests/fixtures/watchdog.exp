@@ -1,0 +1,33 @@
+# Bound direct fixture runs, Tcl exec calls and every PTY controller separately.
+if {![info exists env(TMPDIR)]} {set env(TMPDIR) /tmp}
+set watchdog [file join [file dirname [info script]] watchdog.pl]
+trap {
+    if {[info exists parent] && [file isdirectory $parent]} {file delete -force $parent}
+    if {[info exists work] && [file isdirectory $work]} {file delete -force $work}
+    exit 143
+} {SIGTERM SIGHUP SIGINT}
+if {![info exists env(LOOMY_EXPECT_BOUNDED)]} {
+    set env(LOOMY_EXPECT_BOUNDED) 1
+    set parent [exec mktemp -d $env(TMPDIR)/loomy-expect.XXXXXX 2>@1]
+    set env(TMPDIR) $parent
+    set env(LOOMY_WATCHDOG_CLEANUP) $parent
+    set code [catch {exec perl $watchdog [expr {[info exists env(LOOMY_TEST_SUITE_TIMEOUT)] ? $env(LOOMY_TEST_SUITE_TIMEOUT) : 900}] expect $argv0 {*}$argv <@stdin >@stdout 2>@stderr} result options]
+    file delete -force $parent
+    if {$code} {
+        if {[dict exists $options -errorcode] && [lindex [dict get $options -errorcode] 0] eq "CHILDSTATUS"} {
+            exit [lindex [dict get $options -errorcode] 2]
+        }
+        puts stderr $result; exit 1
+    }
+    exit 0
+}
+rename spawn watchdog_spawn
+proc spawn {args} {
+    global watchdog
+    uplevel 1 [list watchdog_spawn env LOOMY_WATCHDOG_PTY=1 perl $watchdog 300 {*}$args]
+}
+rename exec watchdog_exec
+proc exec {args} {
+    global watchdog
+    uplevel 1 [list watchdog_exec perl $watchdog 300 {*}$args]
+}

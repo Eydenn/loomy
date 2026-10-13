@@ -13,6 +13,8 @@ source "$SCRIPT_DIR/lib/models.sh"
 source "$SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/config.sh
 source "$SCRIPT_DIR/lib/config.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
 # shellcheck source=lib/repair.sh
 source "$SCRIPT_DIR/lib/repair.sh"
 
@@ -46,6 +48,7 @@ if [[ -z "$ROOT" ]]; then
   else ROOT="$(ai_project_root)"; fi
 fi
 ROOT="$(cd "$ROOT" && pwd)"
+(( LIVE || FIX )) || AI_QUOTA_READ_ONLY=1
 
 MIN_OK=1          # minimum requirements met
 IDEAL_MISSING=""  # missing ideal items, comma separated
@@ -226,9 +229,11 @@ if [[ -n "$age" ]] && (( age > 60 )); then ui_warn "$(t "catalog from %s" "$AI_C
 else ui_ok "$(t "catalog from %s" "$AI_CATALOG_DATE")" "$(t "$AI_CATALOG_SOURCE")"; fi
 newcat="$(bash "$SCRIPT_DIR/loomy-catalog-check.sh" 2>/dev/null || true)"
 [[ -n "$newcat" ]] && ui_warn "$(t "catalog from %s published" "$newcat")" "$(t "loomy update --catalog")"
-# Models of a chain refused on this machine (fallback in progress): to test again after a plan change.
-ko="$(grep '=ko$' "$(ai_models_state_file)" 2>/dev/null | cut -d= -f1 | paste -sd ',' - | sed 's/,/, /g' || true)"
-[[ -n "$ko" ]] && ui_info "$(t "unavailable here (fallback used): %s · to retest: loomy doctor --live" "$ko")"
+ko="$(awk -F'[=:]' '$2 == "ko" {print $1}' "$(ai_models_state_file)" 2>/dev/null | paste -sd ',' - || true)"
+if [[ -n "$ko" ]]; then
+  reset="$(awk -F'[=:]' '$2 == "ko" && $3 > last {last=$3} END {print last+3600}' "$(ai_models_state_file)")"
+  ui_warn "$(t "Provider model unavailable: %s" "$ko")" "$(t "other provider or pause; recheck within one hour") · $(t "until %s (epoch %s)" "$(_ai_reset_label "$reset")" "$reset")"
+fi
 
 ui_section "$(t "ROUTING")"
 ui_ok "$(ai_env_label "$AI_ENV")" "$(t "%s profile" "$(ai_profile_label "$AI_PROFILE")")"
@@ -355,37 +360,52 @@ if (( LIVE )); then
   # Models used by the current routing: a failure there is blocking, elsewhere it's a warning.
   routed=" "
   for r in $AI_ROLES; do ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"; routed="$routed$R_FAMILY:$R_MODEL "; done
-  # Every model of the catalog chains (fallbacks included); the result is remembered for this machine.
+  # Every model of the current validated catalog chains; the result is remembered for this machine.
   keys=""
   for m in $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST; do keys="$keys claude:$m"; done
   for m in $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST; do keys="$keys codex:$m"; done
-  # Announced models not in a chain yet: tested too (a success puts them at the head of their chain).
-  for e in $AI_UPCOMING; do case "$keys " in *":${e##*:} "*) ;; *) keys="$keys ${e%%:*}:${e##*:}" ;; esac; done
+  keys="$(printf '%s\n' $keys | sort -u)"
   for key in $keys; do
     fam="${key%%:*}"; model="${key#*:}"
-    if [[ "$fam" == "claude" ]]; then
-      (( HAS_C )) || continue
-      ui_wait "$(t "Testing %s" "$model")"
-      out="$(cd "${TMPDIR:-/tmp}" && claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$model" --effort low 2>&1 || true)"
-      if grep -q '"is_error":false' <<<"$out"; then ok=1; why=""
-      else ok=0; why="$(printf '%s' "$out" | grep -oE '"result":"[^"]{0,120}' | head -1 | sed 's/"result":"//' || true)"; fi
+    if [[ "$fam" == "claude" ]]; then (( HAS_C )) || continue; else (( HAS_X )) || continue; fi
+    ai_provider_saturated "$fam" && continue
+    ui_wait "$(t "Testing %s" "$model")"
+    ok=0; why=""
+    if ai_model_probe "$fam" "$model"; then ok=1; ai_model_mark "$model" ok
     else
-      (( HAS_X )) || continue
-      tmpf="$(mktemp)"
-      ui_wait "$(t "Testing %s" "$model")"
-      if "$CODEX_BIN" exec -m "$model" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
-           -o "$tmpf" "Reply exactly: OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; then ok=1; why=""
-      else ok=0; why="$(t "no answer (connection, plan or model name)")"; fi
-      rm -f "$tmpf"
+      why="$(t "no answer (connection, plan or model name)")"
+      case "$(ai_model_error_class "$AI_PROBE_OUTPUT")" in
+        model) ai_model_mark "$model" ko ;;
+        saturated) ai_provider_refusal "$fam" "$AI_PROBE_OUTPUT"; ui_wait_end; continue ;;
+      esac
     fi
     ui_wait_end
-    if (( ok )); then ai_model_mark "$model" ok; else ai_model_mark "$model" ko; fi
     case "$routed" in *" $key "*) used="$(t "used by this project")" ;; *) used="" ;; esac
     if (( ok )); then ui_ok "$model" "$(t "answers")${used:+ · $used}"
     elif [[ -n "$used" ]]; then ui_err "$model" "${why:-$(t "failed")} · $used"; MIN_OK=0
     else ui_warn "$model" "${why:-$(t "failed")} · $(t "not used by the current routing")"; missing_ideal "$model"; fi
   done
 fi
+
+# One availability verdict per provider, including refusals observed by --live.
+for fam in claude codex; do
+  detail=""; state=""
+  if ai_provider_saturated "$fam"; then
+    reset="$(ai_provider_reset "$fam")"; other="$(ai_switch_family "$fam" strict)"
+    state="$(t "PAUSED")"; [[ -z "$other" ]] || state="$(t "HANDOVER to %s" "$other")"
+    detail="$(ai_provider_reason "$fam") · $(t "until %s (epoch %s)" "$(_ai_reset_label "$reset")" "$reset")"
+  fi
+  for tier in top mid fast; do
+    _ai_ascii_upper "${fam}_${tier}"; key="$_AI_ASCII_UPPER"
+    chain=""; selected=""
+    eval "chain=\"\$AI_CHAIN_${key}\"; selected=\"\$AI_MODEL_${key}\""
+    if [[ "$selected" != "${chain%% *}" ]]; then
+      [[ -n "$state" ]] || state="$(t "DOWNGRADED")"
+      detail="${detail:+$detail · }$tier: ${chain%% *} → $selected"
+    fi
+  done
+  if [[ -n "$state" ]]; then ui_warn "$(t "Provider %s: %s" "$fam" "$state")" "$detail"; missing_ideal "$fam"; fi
+done
 
 # ---------------------------------------------------------------- bilan
 ui_section "$(t "SUMMARY")"

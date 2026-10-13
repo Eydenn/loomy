@@ -2,9 +2,9 @@
 # Read-only native end labels, coalesced source activity and count-only ANSI emphasis.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-native-display.XXXXXX")"
-WORK="$(cd "$WORK" && pwd -P)"
-trap '(( BASH_SUBSHELL != 0 )) || rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d "/tmp/loomy-native-display.XXXXXX")"
+# shellcheck source=lib/guard.sh
+source "$REPO/tests/lib/guard.sh"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_HOME="$REPO" NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Never contact LaunchServices; only explicitly declared apps are available.
+set -euo pipefail
+if [[ -n "${STUB_LOG:-}" ]]; then printf 'open'; printf '\t%s' "$@"; printf '\n'; fi >>"${STUB_LOG:-/dev/null}"
+if [[ "${1:-}" == -Ra ]]; then
+  for app in ${STUB_APPS:-}; do [[ "$app" != "${2:-}" ]] || exit 0; done
+  exit 1
+fi
+exit 0

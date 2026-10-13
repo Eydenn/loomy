@@ -30,7 +30,9 @@ Les rôles qui écrivent modifient le répertoire de travail ; le script liste l
 
 Choisis le rôle d'après l'intention du travail (conception → architecte, implémentation → développeur ou exécutant, relecture → relecteur, etc.), pas d'après le modèle que l'utilisateur nomme. Quand l'utilisateur nomme un modèle ou un effort (« une conception par Sol high »), garde le rôle et passe-les en options : `--model <id> --effort <niveau> --why "user request"` ; ajoute `--write` quand ce rôle doit produire des fichiers (un document de conception, par exemple). L'option l'emporte sur le routage et le journal l'enregistre comme demandée et hors routage.
 
-En fin de quota d'abonnement (95 % par défaut), un bridge peut confier le rôle à l'autre outil, avec le modèle que le routage prévoit pour ce rôle de ce côté ; il l'annonce sur stderr et le journalise. Rien ne change pour toi : même appel, même type de réponse ; vérifie le résultat comme d'habitude.
+Un refus réel du fournisseur (quota, crédits ou débit), ou un quota à 100 % / atteint, passe le rôle à l’autre fournisseur disponible une fois. Les modèles partagent le quota de leur fournisseur ; ne réessaie pas un modèle voisin ni un repli non validé.
+
+Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
 
 Un orchestrateur Codex utilise aussi `loomy-delegate-codex.sh` pour faire tourner un rôle sur son propre modèle routé, par exemple GPT-6-Luna en max pour l'exécutant.
 

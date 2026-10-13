@@ -21,25 +21,44 @@ if [[ -n "${STUB_SLEEP:-}" ]]; then
   stub_sleep_pid=$!
   wait "$stub_sleep_pid"
 fi
-out=""; dir="."; sandbox="read-only"; prompt=""
+model=""; out=""; dir="."; sandbox="read-only"; prompt=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift ;;
     -C) dir="$2"; shift ;;
     -s) sandbox="$2"; shift ;;
-    -m|-c) shift ;;
+    -m) model="$2"; shift ;;
+    -c) shift ;;
     --*) ;;
     *) prompt="$1" ;;
   esac
   shift
 done
+# Provider-specific errors leave the other CLI usable for failover tests.
+if [[ -n "${STUB_CODEX_CREDITS_DEPLETED:-}" ]]; then
+  echo '{"type":"error","message":"workspace_member_credits_depleted"}'; exit 1
+fi
+if [[ -n "${STUB_CODEX_ERROR:-}" ]]; then
+  case "$STUB_CODEX_ERROR" in
+    \{*) printf '%s\n' "$STUB_CODEX_ERROR" ;;
+    *) printf '%s' "$STUB_CODEX_ERROR" | perl -MJSON::PP -0777 -ne 'print encode_json({type=>"turn.failed",error=>{message=>$_}}),"\n"' ;;
+  esac
+  [[ -z "${STUB_WRITE:-}" || "$sandbox" != workspace-write ]] || echo partial >"$dir/partial.txt"
+  exit "${STUB_CODEX_ERROR_EXIT:-1}"
+fi
+for m in ${STUB_UNKNOWN_MODELS:-}; do
+  if [[ "$model" == "$m" ]]; then printf '{"type":"turn.failed","error":{"message":"unknown model: %s"}}\n' "$m"; exit 1; fi
+done
 if [[ -n "${STUB_FAIL:-}" ]]; then echo '{"type":"error","message":"simulated failure"}'; exit 1; fi
-text="answer from the codex double"
+text="${STUB_CODEX_TEXT:-answer from the codex double}"
 case "$prompt" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields.
+# shellcheck disable=SC2016  # Literal response contract, without command expansion.
 case "$prompt" in *"STATUS: done | partial | blocked"*) text="$(printf 'STATUS: partial\nSUMMARY: answer from the codex double\nFINDINGS:\n- [low] a.txt:1 — stub\nFILES:\n- none\nCHECKS:\n- `true` — passed\nRISKS:\n- none\nNEXT: finish it')" ;; esac
 if [[ -n "${STUB_WRITE:-}" && "$sandbox" == "workspace-write" ]]; then echo "written by the double" >"$dir/fichier_doublure.txt"; fi
 echo '{"type":"thread.started","thread_id":"stub"}'
+[[ -z "${STUB_CODEX_NONFATAL:-}" ]] || printf '%s' "$STUB_CODEX_NONFATAL" | perl -MJSON::PP -0777 -ne 'print encode_json({type=>"error",message=>$_}),"\n"'
+printf '%s' "$text" | perl -MJSON::PP -0777 -ne 'print encode_json({type=>"item.completed",item=>{type=>"agent_message",text=>$_}}),"\n"'
 echo '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":200}}'
 [[ -n "$out" ]] && printf '%s\n' "$text" >"$out"
 exit 0

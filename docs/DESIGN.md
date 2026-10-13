@@ -21,6 +21,7 @@ The decisions behind the main choices are recorded in [`docs/adr/`](adr/README.m
 - The integrated tree journal reads a bounded 400-record JSON tail, keeps task identity and the latest useful observed activity per active native turn, and honors tool/PID/session closure and explicit reopening. Received responses remain distinct from unconfirmed endings and approval; these read-side labels never rewrite the raw journal. The historical detailed CLI journal remains unchanged.
 - `scripts/lib/hooks.sh`: merges missing Claude lifecycle hooks (`SessionStart`, `SessionEnd`, `Stop`, `SubagentStop`, `UserPromptSubmit`, and `PreToolUse` matched to `Agent|Task`) into `.claude/settings.json` during installation and project repair. Existing user hooks, status line and file permissions are preserved; invalid JSON is left untouched.
 - `scripts/lib/codex-native.pl`: local native Codex rollout adapter, loaded in the watch sampler and called once for snapshots. Project/parent ownership, per-turn lifecycle, observed root model/effort and last-observed activity feed the existing journal. Private cursors and recoverable context revisions support bounded head/tail reading, invalidation and deduplication; source freshness is separate from model identity. Native owner PIDs are explicit, conversations/tool arguments are not exported, usage is unknown, and distinct native identities remain separate tree nodes. See ADR-0007 for limits; phases are still lead-maintained.
+- `scripts/lib/claude-native.pl`: Claude CLI/Code-tab hooks and bounded incremental transcript tails feed the shared `live-state.pl` projection. Agent calls and transcript agent IDs are aliased within each session, including stops preceding returns; asynchronous launch returns never finish a child. Explicit transcript stop/error metadata fills missing hooks, with unknown usage and a 120-second source-presence lease. Separate Claude/Codex leads remain visible together. The private checkpoint stores structural metadata only (optional existing hook task labels obey `LOOMY_JOURNAL_TASKS`); warm watch polls signatures every 200 ms. Source replay does not add costs. Atomic checkpoint recovery and large-history bounds remain the W1 S4 gate; full CPU and real-app checks remain S5 gates.
 - `scripts/lib/failover.sh`: temporary lead relay. The brief's lead (the master) never changes; the state is `.loomy/failover` (`master`, `acting`, `since`, `reason`, `resume_at`, optional `manual=1`). `lf_decide` returns the lead tool and a kind (`normal`, `handover`, `continue`, `return`) from the quotas (`quota_switch`, `quota_room`, `lead_failover`, `LOOMY_NO_SWITCH`), `lf_apply` records it and journals `lead_failover` / `lead_return`. `loomy start --lead codex|claude` explicitly selects a temporary lead; manual relays persist when the master has room, but automatic relay can return to the master if the acting lead saturates and the master has room. `--lead auto` or `--lead <master>` explicitly returns to the brief's lead; manual relays are shown as `(manual)`. The chain loop of `loomy-start.sh` (6 sessions at most, `LOOMY_CHAIN_DELAY` seconds to cancel) starts the next session; `loomy-context.sh` prints the prepare and return notices (prompt hook, at most every 10 minutes, Claude Code only) and the start context lines; `loomy-status.sh` and `loomy-statusline.sh` show it (⇄). See ADR-0006.
 - `scripts/lib/config.sh`: user preferences (`~/.config/loomy/config`): Claude and Codex plans, to compare the API value consumed with the subscription price, language, screen mode, pinned models.
 - `scripts/lib/phases.sh`: the ten bootstrap phases, each with what the lead agent does and what the user must do. Single source for `loomy status`, `loomy watch` and `loomy start`.
@@ -45,6 +46,48 @@ The decisions behind the main choices are recorded in [`docs/adr/`](adr/README.m
 - `scripts/loomy-statusline.sh`: Claude Code status line segment. Besides saving quotas, it shows the bootstrap phase while setup is unfinished and the number of running delegations whose process is alive; it appends the segment to the user's own status line (run with a 2 second limit) or shows a short Loomy line. It never fails.
 - `tests/run.sh`: end-to-end test suite, without network or token (`claude` and `codex` doubles in `tests/stubs/`). `--section 'Native Codex'` runs the native rollout regressions alone; their fixture clock is saved at seed so appends and snapshots survive UTC midnight. `LOOMY_TEST_NATIVE_PTY=0` explicitly skips its terminal test in a restricted sandbox; the default Mac run keeps that test enabled.
 
+**Test hermeticity.** Every suite sources `tests/lib/guard.sh`: temporary files and tmux sockets stay inside its disposable work directory, desktop launchers are stubs, and AI launch sites reject binaries outside the declared stub directory under `LOOMY_TEST_GUARD=1`. Exit cleanup reports and stops leaked processes before removing the work directory; the main suite also checks remaining sessions and guard violations.
+
 The design deliberately avoids preloading every specialised role or a large security workflow into every session.
 
 - `tools/capture-watch.sh`: regenerates the animated README live-view SVG with `tools/capture-watch.sh <en|fr> <out.svg>`, using an isolated disposable project, CLI test stubs and synthetic journal events with live local processes; renders 24 frames through `scripts/loomy-tree.sh --once`, converts them with `tools/ansi2svg.py`, and checks the heading, local-path exclusion and size below 300 KB.
+
+
+## Checkpoint and journal policy
+
+S4 native checkpoints use version 2, with a 2 MiB snapshot and content-addressed source
+inventory shards of at most 256 KiB each (16 MiB total). Finished detail expires after
+seven days; the recap retains at most 1,000 turns, and the reducer at most 32 per agent.
+Codex keeps at most 8,000 recent event keys plus current retained turn identities.
+Pruning keeps source offsets and replay fences; unfinished work is never discarded to
+meet a size limit. Overflow pauses persistence explicitly. Valid v1 checkpoints are
+read completely up to 32 MiB and migrated by project repair or the next collector poll.
+
+The persistent adapters cache state and signatures; unchanged polls neither decode nor
+rewrite checkpoints. Stable per-checkpoint locks protect 0600 temporary-file, sync and
+rename writes, retaining the last valid backup. Large source shards save only when their
+content changes. Journal append/flush precedes checkpoint replacement; recovery first
+replays the saved journal suffix, following archive successor links across rotations.
+Codex journal records carry source inode/offset evidence; Claude records carry semantic
+checkpoint signatures. A damaged checkpoint recovers from a valid backup; if neither
+copy is valid, collection pauses and preserves both files. Progressive reconstruction
+without a usable checkpoint remains an explicit follow-up.
+
+All journal writers and rotation share `events.lock`. Rotation runs monthly or at 8 MiB,
+keeps immutable inode-named archive segments and carries structural snapshots of every
+open session/agent, tagged `snapshot`, without copying usage or terminal events. A private
+rotation marker recovers the archive/snapshot rename gap after a crash. Readers seek
+before decoding, consume at most 2 MiB per poll and retry partial lines; malformed or
+oversized records are skipped. Display tails are bounded to 8 MiB and 64 KiB per line.
+The reducer rejects invalid fields, orphan activity, backward terminals and timestamps
+more than five minutes ahead of the observation clock. Historical reconstruction and
+rotation are cold-path work; the warm-frame budget does not measure those operations.
+
+Claude child liveness uses its own 15-minute source lease; newer lead/sibling activity
+never fabricates a terminal. Ordinary source timestamps/mtime stay in memory rather
+than changing activity signatures. Historical lead replay prefilters unrelated tool
+results before JSON decoding; failed polls retain discovery state and back off five
+seconds. `tests/live-growth.sh` covers these Round 4 fixes, 50,000-event idle growth,
+65,000-key migration, pruning, crash recovery across multiple rotations, corruption,
+shards, private modes and idempotent repair. The lead registers it in `tests/run.sh`
+after the concurrent test-boundary ticket finishes.

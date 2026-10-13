@@ -251,7 +251,7 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 - **`loomy report`** : les chiffres du projet (démarrage, tâches, délégations par rôle et par modèle, tokens, coût).
   - `--md` l'écrit en Markdown dans `docs/reports/`, à garder dans le dépôt.
   - `--all` compare tous les projets Loomy de la machine.
-- **`loomy models`** : les chaînes de modèles utilisées et les nouveaux modèles à évaluer. Tu peux placer un nouveau modèle en tête de sa chaîne avec deux replis au plus, passer en mode économe (`--thrifty on` : les replis d'abord), ou le suggérer sur GitHub (`--issue`, un ticket par modèle, sans doublon).
+- **`loomy models`** : chaînes de modèles actuels validés et nouveaux candidats à évaluer. Propose les candidats sur GitHub (`--issue`, un ticket par modèle). `--thrifty` est retiré ; le profil Économe continue de baisser l’effort. Un candidat doit être validé dans le catalogue avant routage.
 
 `loomy start` ouvre toujours une session libre.
 
@@ -381,14 +381,14 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 
 `loomy watch` te prévient quand un quota dépasse 80 %, puis 95 %.
 
-**Bascule automatique en fin de quota.** À partir de 95 % d'un quota d'abonnement (ou quand l'outil signale sa limite atteinte), le travail passe à l'autre outil, s'il est installé et a encore de la marge :
-- une délégation à Codex (exécutant, relecteur…) est faite par Claude, avec le modèle et l'effort que le routage prévoit pour ce rôle côté Claude, et inversement ;
-- un rôle qui écrit, basculé vers Claude, a ses modifications acceptées et ses commandes limitées au bac à sable de Claude Code (dossier du projet, pas de réseau), comme le bac à sable `workspace-write` de Codex ; les rôles en lecture seule le restent ;
-- l'orchestrateur reçoit le même type de réponse que d'habitude ; la bascule est annoncée, journalisée (⇄ dans `status`, `log` et `stats`) et indiquée dans la section forfaits ;
-- `loomy start` ouvre la session de l'orchestrateur sur l'autre outil quand le sien est presque épuisé (`LOOMY_NO_SWITCH=1 loomy start` pour le garder) ;
-- pas d'aller-retour : une délégation basculée ne rebascule jamais, et rien ne bouge quand les deux outils sont épuisés.
+**Disponibilité des fournisseurs pour les délégations.** Un refus réel (quota, crédits ou débit), ou un quota à 100 % / limite atteinte, passe le rôle à l’autre fournisseur installé qui a de la marge. À 95–99 %, une délégation tente encore le travail :
+- le rôle utilise le modèle actuel validé et l’effort routé de l’autre fournisseur ;
+- un rôle d’écriture passé à Claude obtient les modifications et commandes shell dans le sandbox de Claude Code (dossier du projet, sans réseau) ; les rôles de lecture restent en lecture seule ;
+- le passage est annoncé et journalisé comme `handed_over`, séparément des échecs ;
+- il y a un seul passage par appel, sans réessai sur un modèle voisin du fournisseur saturé ;
+- si aucun fournisseur ne peut répondre, le bridge sort avec le code 75, `paused` / `waiting_for_reset` et `resume_at` ; le lead attend cet epoch, puis relance la tâche et les options sauvegardées dans `.loomy/memory/delegations/<id>.md` et relit les modifications partielles.
 
-Seuil : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour ne jamais basculer.
+Le seuil de relais préventif du lead reste distinct : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour désactiver les relais préventifs. Un refus réel du fournisseur continue de protéger les délégations.
 
 **Relais de l'agent principal quand un forfait s'épuise.** L'agent principal défini dans le brief ne change jamais ; l'autre outil le remplace seulement pour un temps :
 - à 90 % (seuil de bascule moins 5), un agent principal Claude Code est prévenu à chaque message (au plus toutes les 10 minutes) de terminer l'étape, d'écrire `.loomy/docs/HANDOFF.md` et `STATE.md`, de committer et de terminer la session ; Codex n'a pas de hook par message, donc un agent principal Codex n'est prévenu que par `loomy watch` et au démarrage de la session ;
@@ -554,10 +554,10 @@ Les skills donnent aux agents une méthode éprouvée pour un type de travail (t
 | Modèle | 💵 Prix ($ par million de tokens, entrée / sortie) | Coût par tâche AA | Indice de codage AA | Terminal-Bench 4.0 | 🏷️ Rôle attribué |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
-| GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | développeur, relecteur (Codex) |
 | GPT&#8209;6.1&#8209;Sol | 2 / 10 | environ 1,50 $ par tâche DeepSWE | — | DeepSWE 75,2 % (éditeur) | tous les rôles Codex sauf l'exécution, depuis la 0.7.2 |
-| GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | repli au niveau top, ou forcé : `loomy config set model.codex.top gpt-6-astra` |
-| Claude&nbsp;Sonnet&nbsp;5 | 2 / 10 | — | — | — | développeur, relecteur (Claude) |
+| GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | historique ; exclu du routage automatique |
+| GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | historique ; exclu du routage automatique |
+| Claude&nbsp;Sonnet&nbsp;5.5 | 2 / 10 | 0,41 → 7,60 $ | — | 70,6 % (éditeur) | développeur, relecteur (Claude), orchestrateur Économe |
 | Claude&nbsp;Opus&nbsp;5.5 | 4 / 20 | 0,55 → 5,98 $ | non publié | **59,6 %** | 🏆 orchestrateur et spécialistes |
 | Claude&nbsp;Fable&nbsp;5.1 | 10 / 50 | 7,63 $ | 62 | 55,8 % | ❌ remplacé par Opus 5.5 |
 
@@ -566,7 +566,7 @@ Les skills donnent aux agents une méthode éprouvée pour un type de travail (t
   - Il fait 66,6 % sur des corrections bornées pour 0,22 $, contre 2,74 $ pour Sol.
   - Sur le travail long et autonome en terminal, il tombe à 13 %.
   - Il exécute donc des tickets précis sous l'orchestrateur, jamais plus.
-- 🐎 **GPT-6.1 Sol tient tout le côté Codex.** Il égale Astra sur DeepSWE (75,2 % contre 74,8 %) pour environ un cinquième du coût, et Astra s'est montré moins fiable ces derniers temps en usage réel : Astra reste son repli, et peut être forcé avec `loomy config set model.codex.top gpt-6-astra` (`auto` pour revenir).
+- 🐎 **GPT-6.1 Sol tient tout le côté Codex.** Il égale Astra sur DeepSWE (75,2 % contre 74,8 %) pour environ un cinquième du coût, et Astra s'est montré moins fiable ces derniers temps en usage réel : seuls les modèles actuels validés sont routés. Un fournisseur saturé passe le rôle à l’autre une seule fois ; si aucun ne peut répondre, la délégation est mise en pause jusqu’au reset attendu.
 
 ---
 
@@ -614,7 +614,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | `loomy route` | Matrice rôle → modèle → effort | `lead` `get <rôle>` `markdown` `claude-agents` |
 | `loomy delegate codex <rôle> "…"` | Confier un rôle à Codex | — |
 | `loomy delegate claude <rôle> "…"` | Confier un rôle à Claude, en lecture seule | — |
-| `loomy models` | Chaînes de modèles et nouveaux modèles à évaluer | `--thrifty on\|off` `--issue` |
+| `loomy models` | Chaînes de modèles et nouveaux modèles à évaluer | `--issue` |
 | `loomy skills [suggest\|add\|remove\|update\|catalog]` | Skills officiels du projet, et pourquoi | `suggest "…"` `add <nom>` `remove <nom>` `update` `catalog` |
 | `loomy audit` | Audit de sécurité d'un dépôt | `--resume` `--print` `--yes` `--scope <dossiers>` `--depth quick\|standard\|deep` `--fixes report\|plan\|branch` |
 

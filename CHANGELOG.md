@@ -5,6 +5,8 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ## Unreleased
 
 ### Fixed
+- Test suites isolate temporary files and tmux servers, stub desktop launchers, reject real AI binaries, and fail on leaked processes; disabled watch journaling creates no logs directory.
+- Claude live tracking combines project hooks with local incremental transcript fallback, keeps concurrent lead sessions separate, and reconciles foreground/background Agent identities and out-of-order stops without duplicate live rows or costs. Missing explicit terminal evidence stays unconfirmed; hookless native costs stay unknown.
 - Native Codex test fixtures keep the seed's clock and rollout path across UTC midnight. The targeted `Native Codex` section isolates inherited UI language and allows an explicit sandbox-only PTY skip; Mac runs still include the terminal check by default.
 
 ## 0.16.2 — 2026-10-13
@@ -899,3 +901,13 @@ First pre-release, 100% terminal.
 - **Log** (`.loomy/logs/events.jsonl`, local, excluded from Git): start and end of each delegation with role, model, effort, duration, tokens and cost (real for Claude, estimated for Codex), and phase changes.
 - **Live tracking in the terminal** (`loomy status`, `loomy watch`): phases, running delegations with their timer, cost per model, plans (API cost, or value consumed against the subscription price), latest delegations, Git.
 - **Test suite** (`tests/run.sh`): every command in real conditions, without network or token, thanks to `claude` and `codex` doubles.
+
+
+## Unreleased — S4 checkpoint and journal policy
+
+- Bound native v2 checkpoints and source shards; migrate large v1 indices without
+  dropping active cursors, preserve valid backups, and save only changed state atomically.
+- Recover journal appends before source replay across monthly/8 MiB rotation; carry open
+  structural snapshots without usage, bound incremental/display reads and recap detail.
+- Fix Round 4 G2/G3/G4/G6: Claude child-owned leases, large-result replay prefilter,
+  semantic activity deduplication and five-second failed-poll backoff; add growth regressions.

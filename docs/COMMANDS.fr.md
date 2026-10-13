@@ -247,15 +247,18 @@ Confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, 
 
 Options avant le texte de la tâche (elles l'emportent sur `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`) : `--model <id>` (lettres, chiffres, `. _ -` ; pour Claude un id `claude-*` ou `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (remplace le sandbox du rôle ; sur Claude, `--write` est refusé hors basculement de quota), `--why "raison"` (par exemple `user request`). Une option ou une variable utilisée marque la délégation `requested` dans le journal ; ce qui s'écarte du routage du projet (outil, modèle, effort, sandbox) est listé dans `off_routing`, et `why` garde la raison (masquée par `LOOMY_JOURNAL_TASKS=0`). Exemple : `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
 
+Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
+
+Les délégations se mettent en pause seulement après un refus réel ou à 100 % / limite atteinte ; le seuil de relais préventif configurable du lead reste distinct.
+
 ### `loomy models`
 
 ```bash
 loomy models
-loomy models --thrifty on|off
 loomy models --issue
 ```
 
-Chaînes de modèles et nouveaux modèles à évaluer ; tête de chaîne avec deux replis (cette machine), `--thrifty on|off`, `--issue` (suggestion GitHub)
+Chaînes de modèles actuels validés et nouveaux candidats à évaluer ; `--issue` propose les candidats sur GitHub. `chain.<famille>.<niveau>` accepte seulement les modèles validés du catalogue pour ce niveau ; les identifiants inconnus sont refusés. `--thrifty` est retiré (code 2) ; le profil de budget Économe continue de baisser l’effort.
 
 ### `loomy skills [suggest|add|remove|update|catalog]`
 
@@ -305,7 +308,7 @@ loomy config get <clé>
 loomy config set <clé> <valeur>
 ```
 
-Préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `skills` (`auto`, `ask` ou `off`), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : à partir de cette part d'un quota d'abonnement, le travail passe à l'autre outil ; `off` : jamais), `lead_failover` (`auto` par défaut : quand le quota du lead est épuisé, l'autre outil prend la main temporairement et `loomy start` enchaîne les sessions ; `off` : jamais), `quota_room` (80 par défaut : l'outil lead reprend la main dès que son quota passe sous cette part), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut)
+Préférences : `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no` : `loomy start` n'ouvre plus le suivi à côté), `start_in` (`app` : `loomy start` ouvre l'app de bureau), `memory` (`off` : la mémoire partagée n'est plus redonnée), `skills` (`auto`, `ask` ou `off`), `notify` (`no` : pas de notifications dans `loomy watch`), `quota_switch` (95 par défaut : seuil de relais préventif du lead ; `off` : pas de relais préventif ; les refus réels et les quotas épuisés protègent toujours les délégations), `lead_failover` (`auto` par défaut : quand le quota du lead est épuisé, l'autre outil prend la main temporairement et `loomy start` enchaîne les sessions ; `off` : jamais), `quota_room` (80 par défaut : l'outil lead reprend la main dès que son quota passe sous cette part), `delegation_format` (`structured`, `free` ou `auto` : le choix de chaque projet), `lang` (`fr`, `en` ou `auto` : langue de l'interface, détectée par défaut)
 
 ### `loomy update` · `loomy version`
 

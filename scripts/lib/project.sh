@@ -138,6 +138,10 @@ _lp_agent_untouched() {
 # loomy_project_migrate <root>: .ai/ (Loomy before 0.9) → .loomy/docs/, references updated in the agents' files.
 loomy_project_migrate() {
   local r="$1" f
+  # Upgrade native cursors once, without touching provider sources or recording new events.
+  if [[ -d "$r/.loomy/logs" && ! -f "$r/.loomy/logs/checkpoint-v2" ]]; then
+    perl "$(dirname "${BASH_SOURCE[0]}")/live-state.pl" --migrate "$r" || true
+  fi
   [[ -d "$r/.ai" && ! -e "$r/.loomy/docs" && -d "$r/.loomy" ]] || return 0
   if git -C "$r" ls-files --error-unmatch .ai >/dev/null 2>&1 || [[ -n "$(git -C "$r" ls-files .ai 2>/dev/null | head -1)" ]]; then
     git -C "$r" mv .ai .loomy/docs >/dev/null 2>&1 || mv "$r/.ai" "$r/.loomy/docs"
@@ -208,6 +212,7 @@ Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, r
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
+- Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
 - Contexte fiable : après chaque demande terminée et vérifiée, mets à jour la documentation durable qu'elle touche (`PROJECT.md`, `ARCHITECTURE.md`, un ADR dans `docs/decisions/` pour une décision importante), puis fais un commit cohérent (un par demande, message clair) si le brief autorise les commits ; sinon prépare-le et signale-le. Ne pousse que si le brief l'autorise. Le dépôt, ses commits et sa documentation sont la mémoire durable du projet.
 - Mémoire partagée : tiens `.loomy/memory/STATE.md` à jour (fait, en cours, décisions, suite ; en anglais, en style télégraphique, 40 lignes au plus, en remplaçant ce qui est dépassé : il est écrit pour les modèles, au moindre coût) après chaque étape importante et avant de finir une session. C'est ce qui garde le fil d'une session à l'autre, après un compactage et entre Claude Code et Codex. Les résultats complets des délégations sont dans `.loomy/memory/delegations/` : pour donner des constats à un rôle, indique-lui le fichier plutôt que d'en recopier le contenu.
 - Un problème qui vient de Loomy lui-même (pas du projet) : prépare le retour avec `loomy feedback --print "…"` et propose-le à l'utilisateur ; il ne part jamais sans son accord.
@@ -223,6 +228,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
+- Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
 - Reliable context: after each finished and verified request, update the durable documentation it touches (`PROJECT.md`, `ARCHITECTURE.md`, an ADR in `docs/decisions/` for an important decision), then make one coherent commit (one per request, clear message) if the brief allows commits; otherwise prepare it and say so. Push only if the brief allows it. The repository, its commits and its documentation are the project's durable memory.
 - Shared memory: keep `.loomy/memory/STATE.md` up to date (done, in progress, decisions, next; English, telegraphic, 40 lines at most, replacing what is outdated: it is written for the models, at the lowest cost) after each important step and before ending a session. This is what keeps the thread from one session to the next, after a compaction, and between Claude Code and Codex. The full results of the delegations are in `.loomy/memory/delegations/`: to give findings to a role, point it to the file rather than copying its content.
 - A problem coming from Loomy itself (not the project): prepare the feedback with `loomy feedback --print "…"` and offer it to the user; it is never sent without their approval.

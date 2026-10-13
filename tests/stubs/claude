@@ -22,11 +22,16 @@ if [[ -n "${STUB_SLEEP:-}" ]]; then
   stub_sleep_pid=$!
   wait "$stub_sleep_pid"
 fi
+if [[ -n "${STUB_CLAUDE_RESULT_ERROR:-}" ]]; then
+  printf '%s' "$STUB_CLAUDE_RESULT_ERROR" | perl -MJSON::PP -0777 -ne 'print encode_json({type=>"result",is_error=>JSON::PP::true,result=>$_}),"\n"'
+  exit "${STUB_CLAUDE_ERROR_EXIT:-0}"
+fi
+if [[ -n "${STUB_CLAUDE_ERROR:-}" ]]; then printf '%s\n' "$STUB_CLAUDE_ERROR" >&2; exit 1; fi
 # STUB_UNKNOWN_MODELS="a b": those model ids are refused, like a model not released yet.
 for m in ${STUB_UNKNOWN_MODELS:-}; do
   case " $* " in *" --model $m "*) printf '{"type":"result","subtype":"error","is_error":true,"result":"model not found: %s"}\n' "$m"; exit 1 ;; esac
 done
-text="answer from the claude double"
+text="${STUB_CLAUDE_TEXT:-answer from the claude double}"
 case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields (newlines escaped for the JSON output).
 case "$*" in *"STATUS: done | partial | blocked"*) text='STATUS: blocked\nSUMMARY: answer from the claude double\nFINDINGS:\n- none\nFILES:\n- none\nCHECKS:\n- none\nRISKS:\n- missing access\nNEXT: grant access' ;; esac

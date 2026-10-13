@@ -2,8 +2,8 @@
 # Models: the chains in use, and new models to evaluate. Bash 3.2 compatible.
 #   loomy-models.sh                  chains per tool and tier (✓ available, ✗ refused), then the new models spotted in
 #                                 Codex's model list, the vendors' APIs when a key is set, and the published catalog;
-#                                 in a terminal, offers to put a new model at the head of its chain (two fallbacks kept)
-#   loomy-models.sh --thrifty on|off prefer the first available fallback over the newest model (low-cost mode)
+#                                 candidates must be validated in the published catalog before routing
+#   loomy-models.sh --thrifty on|off deprecated: refused; only validated current models are routed
 #   loomy-models.sh --issue          opens (or updates) a GitHub suggestion issue per new model, after your approval
 # A chain chosen here only applies to this machine (loomy config chain.<tool>.<tier>); the catalog is unchanged.
 set -uo pipefail
@@ -23,19 +23,15 @@ while [[ $# -gt 0 ]]; do
     --root) shift ;;
     --issue) ISSUE=1 ;;
     --yes|-y) YES=1 ;;
-    --thrifty) THRIFTY="${2:-}"; shift ;;
+    --thrifty) THRIFTY="${2:-on}"; [[ $# -lt 2 ]] || shift ;;
     -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//; s/loomy-models.sh/loomy models/g' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s (loomy models --help)" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
 if [[ -n "$THRIFTY" ]]; then
-  case "$THRIFTY" in
-    on) loomy_config_set models_mode thrifty; t "Low-cost model mode on: the first available fallback of each chain is used."; echo ;;
-    off) loomy_config_set models_mode auto; t "Low-cost model mode off: the newest available model of each chain is used."; echo ;;
-    *) t "--thrifty: on or off" >&2; echo >&2; exit 2 ;;
-  esac
-  exit 0
+  t "--thrifty is retired: only validated current models are routed. Use the Thrifty budget profile for lower effort." >&2; echo >&2
+  exit 2
 fi
 
 # ---------------------------------------------------------------- known models
@@ -98,8 +94,8 @@ newcat="$(bash "$SCRIPT_DIR/loomy-catalog-check.sh" 2>/dev/null || true)"
 
 # ---------------------------------------------------------------- display
 ui_clear
-ui_banner "$(t "Models")" "${C_RESET}${C_DIM}$(t "catalog of %s" "$AI_CATALOG_DATE")$(grep -qx 'models_mode=thrifty' "$(loomy_config_file)" 2>/dev/null && printf ' · %s' "$(t "low-cost mode")")${C_RESET}"
-ui_section "$(t "CHAINS")" "$(t "newest first; the first available one is used")"
+ui_banner "$(t "Models")" "${C_RESET}${C_DIM}$(t "catalog of %s" "$AI_CATALOG_DATE")${C_RESET}"
+ui_section "$(t "CHAINS")" "$(t "validated head only; unavailable models hand over or pause")"
 for fam in claude codex; do
   for tier in top mid fast; do
     k="$(printf '%s' "${fam}_${tier}" | tr 'a-z' 'A-Z')"
@@ -115,11 +111,11 @@ for fam in claude codex; do
   done
 done
 if [[ -n "$AI_UPCOMING" ]]; then
-  ui_section "$(t "ANNOUNCED")" "$(t "tested once a day; used as soon as they answer")"
+  ui_section "$(t "ANNOUNCED")" "$(t "tested once a day; catalog validation required before routing")"
   for e in $AI_UPCOMING; do
     m="${e##*:}"; tier="${e#*:}"; tier="${tier%%:*}"
-    if grep -qx "$m=ok" "$(ai_models_state_file)" 2>/dev/null; then ui_rail "${C_GREEN}✓${C_RESET} $m  ${C_DIM}$(t "available · heads %s" "${e%%:*}.$tier")${C_RESET}"
-    else ui_rail "${C_DIM}○ $m  $(t "not available yet · will head %s" "${e%%:*}.$tier")${C_RESET}"; fi
+    if grep -qx "$m=ok" "$(ai_models_state_file)" 2>/dev/null; then ui_rail "${C_GREEN}✓${C_RESET} $m  ${C_DIM}$(t "available · awaiting validation for %s" "${e%%:*}.$tier")${C_RESET}"
+    else ui_rail "${C_DIM}○ $m  $(t "not available yet · candidate for %s" "${e%%:*}.$tier")${C_RESET}"; fi
   done
 fi
 ui_section "$(t "NEW MODELS")"
@@ -127,7 +123,7 @@ if [[ -n "$newcat" ]]; then ui_rail "${C_YELLOW}!${C_RESET} $(t "a newer catalog
 if (( ! ${#CANDS[@]} )); then
   ui_info "$(t "none spotted (Codex model list%s)" "$( [[ -n "${ANTHROPIC_API_KEY:-}${OPENAI_API_KEY:-}" ]] && printf ', %s' "$(t "vendor APIs")")")"
   [[ -z "${ANTHROPIC_API_KEY:-}${OPENAI_API_KEY:-}" ]] && ui_info "$(t "with ANTHROPIC_API_KEY or OPENAI_API_KEY set, the vendors' model lists are checked too")"
-  ui_end "$(t "low-cost mode: loomy models --thrifty on")"
+  ui_end "$(t "only validated current models are routed")"
   exit 0
 fi
 for c in "${CANDS[@]}"; do
@@ -135,17 +131,8 @@ for c in "${CANDS[@]}"; do
   ui_rail "${C_BRAND}✦${C_RESET} ${C_BOLD}$m${C_RESET}  ${C_DIM}${c#*|} · $(t "tier %s" "$fam.$tier")${C_RESET}"
 done
 
-# ---------------------------------------------------------------- put at the head of a chain
-if ui_is_interactive; then
-  for c in "${CANDS[@]}"; do
-    m="${c%%|*}"; fam="$(family_of "$m")"; tier="$(tier_of "$m")"; k="$(printf '%s' "${fam}_${tier}" | tr 'a-z' 'A-Z')"
-    eval "chain=\"\${AI_CHAIN_$k:-}\""
-    new="$m $(printf '%s' "$chain" | cut -d' ' -f1-2)"; new="$(printf '%s' "$new" | sed 's/ *$//')"
-    UI_DESCS=("$(t "This machine only: %s. The previous models stay as fallbacks." "$(printf '%s' "$new" | sed 's/ / → /g')")" "$(t "Keeps the catalog's chain.")")
-    ui_choose "$(t "Try %s at the head of %s?" "$m" "$fam.$tier")" 1 "$(t "Yes, put it first")" "$(t "No")"
-    if [[ "$UI_INDEX" == "0" ]]; then loomy_config_set "chain.$fam.$tier" "$(printf '%s' "$new" | sed 's/ /, /g')"; ui_ok "$(t "chain %s: %s" "$fam.$tier" "$new")"; fi
-  done
-fi
+# Candidates are informational until the catalog validates them; never silently install a filtered chain.
+ui_info "$(t "New candidates require catalog validation before routing: loomy models --issue")"
 
 # ---------------------------------------------------------------- GitHub suggestion issues
 if (( ISSUE )); then
@@ -169,4 +156,4 @@ Suggested tier: \`$fam.$tier\`. To evaluate before the catalog is published (doc
     fi
   done
 fi
-ui_end "$(t "suggest them on GitHub: loomy models --issue · low-cost mode: loomy models --thrifty on")"
+ui_end "$(t "suggest them on GitHub: loomy models --issue")"

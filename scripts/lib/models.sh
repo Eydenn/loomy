@@ -29,22 +29,21 @@ if [[ ${#_ui_probe} != 1 ]]; then
 fi
 unset _ui_probe _l _locs
 
-AI_CATALOG_DATE="2026-10-08"
+AI_CATALOG_DATE="2026-10-13"
 AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # downloaded catalog prices: "model=input output cache;…"
 AI_PRICES_LONG_EXTRA=""  # downloaded long-prompt prices: "model=threshold input output cache;…"
 AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 
-# Model chains per tier: the first model available on this machine is used, the next ones are
-# fallbacks (not everyone has access to the latest models). The downloaded catalog can replace them.
-AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"                # best reasoning, agentic coding, office work
-AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5 claude-sonnet-5" # everyday work (Sonnet 5 as fallback)
-AI_CHAIN_CLAUDE_FAST="claude-haiku-5-5 claude-haiku-4-5" # research, summaries, bounded tickets (Haiku 4.5 as fallback)
-AI_CHAIN_CODEX_TOP="gpt-6.1-sol gpt-6-astra"         # GPT-6.1 Sol first (close to Astra for a fifth of the cost); Astra as fallback, or pinned: loomy config set model.codex.top gpt-6-astra
-AI_CHAIN_CODEX_MID="gpt-6.1-sol gpt-6-sol"           # workhorse, workflows (GPT-6 Sol as fallback)
-AI_CHAIN_CODEX_FAST="gpt-6-luna"                     # cheapest capable executor
-# Announced models (not out yet): probed at most once a day; as soon as one answers on this machine, it heads its
-# chain, the current model staying as its fallback. "family:tier:model" entries; the catalog can replace them.
+# Only validated current models are routed; availability failures cross providers or pause.
+AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"
+AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5"
+AI_CHAIN_CLAUDE_FAST="claude-haiku-5-5"
+AI_CHAIN_CODEX_TOP="gpt-6.1-sol"
+AI_CHAIN_CODEX_MID="gpt-6.1-sol"
+AI_CHAIN_CODEX_FAST="gpt-6-luna"
+# Announced models are probed daily for availability; catalog validation is required before routing.
+# "family:tier:model" entries; the catalog can replace them.
 AI_UPCOMING=""
 
 # Uppercase the ASCII routing keys without starting printf/tr subprocesses while this library is sourced.
@@ -96,83 +95,91 @@ _ai_catalog_load() {
   AI_UPCOMING="$up_new"
 }
 _ai_catalog_load "$(ai_catalog_file)"
+# Validate against the catalog before local overrides are loaded.
+ai_chain_valid() {
+  local family="$1" tier="$2" value="$3" k chain m
+  _ai_ascii_upper "${family}_${tier}"; k="$_AI_ASCII_UPPER"
+  eval "chain=\"\$AI_VALIDATED_${k}\""
+  for m in $(printf '%s' "$value" | tr ',' ' '); do
+    case " $chain " in *" $m "*) ;; *) t "Model %s is not validated for %s.%s." "$m" "$family" "$tier" >&2; echo >&2; return 2 ;; esac
+  done
+}
+
 # Chain set on this machine (loomy models, or loomy config set chain.<family>.<tier> "new, fallback, fallback"):
-# replaces the catalog's chain for that tier. Up to three model ids.
+# reorders only validated catalog entries for that tier. Up to three model ids.
 _ai_local_chains() {
-  local f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" line k v
+  local f="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" line k v chain m current
   [[ -f "$f" ]] || return 0
   while IFS= read -r line; do
     if [[ "$line" =~ ^chain\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._,\ -]*)$ ]]; then
       _ai_ascii_upper "${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"; k="$_AI_ASCII_UPPER"
       v="$(printf '%s' "${BASH_REMATCH[3]}" | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//' | cut -d' ' -f1-3)"
       [[ " $v" == *" -"* || -z "$v" ]] && continue
-      eval "AI_CHAIN_${k}=\"\$v\""
+      eval "current=\"\$AI_CHAIN_${k}\""
+      chain=""
+      for m in $v; do
+        case " $current " in *" $m "*) chain="${chain:+$chain }$m" ;; esac
+      done
+      [[ -z "$chain" ]] || eval "AI_CHAIN_${k}=\"\$chain\""
     fi
   done <"$f"
 }
+for _key in CLAUDE_TOP CLAUDE_MID CLAUDE_FAST CODEX_TOP CODEX_MID CODEX_FAST; do
+  eval "AI_VALIDATED_${_key}=\"\$AI_CHAIN_${_key}\""
+done
+unset _key
 _ai_local_chains
-# Announced model that answered on this machine (models.state): it heads its chain.
-_ai_upcoming_promote() {
-  local e fam tier m k chain st
-  st="${XDG_CONFIG_HOME:-$HOME/.config}/loomy/models.state"
-  for e in $AI_UPCOMING; do
-    fam="${e%%:*}"; tier="${e#*:}"; tier="${tier%%:*}"; m="${e##*:}"
-    grep -qx "$m=ok" "$st" 2>/dev/null || continue
-    _ai_ascii_upper "${fam}_${tier}"; k="$_AI_ASCII_UPPER"
-    eval "chain=\"\${AI_CHAIN_${k}:-}\""
-    case " $chain " in *" $m "*) continue ;; esac
-    eval "AI_CHAIN_${k}=\"\$m \$chain\""
-  done
-}
-_ai_upcoming_promote
+# Announced models are probed for availability; routing promotion requires catalog validation.
 
-# Model availability on this machine (~/.config/loomy/models.state, "model=ok|ko"): written by
-# loomy doctor --live and by the bridges when a model is refused. Codex: its local model list is authoritative.
+# A refusal of a model is temporary; quota and transport failures never poison this cache.
 ai_models_state_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/models.state"; }
+ai_model_error_class() {
+  if grep -qiE 'workspace_member_credits_depleted|credits?[_ -]*(depleted|exhausted)|insufficient[_ -]*(credits|quota)|quota.*(exceeded|exhausted|reached)|usage[_ -]*limit|rate[_ -]*limit|plan.*(exhausted|limit)|hit your (session )?limit|5[- ]hour limit reached|weekly limit reached|credit balance is too low|out of.*credits|too many requests' <<<"$1"; then
+    echo saturated
+  elif grep -qiE 'unknown model|model_not_found|model.*(not found|does not exist)|model.*may not exist|model.*not have access|not have access.*model|no access.*model|model.*no access|does not support this model|invalid model|not_found_error' <<<"$1"; then
+    echo model
+  else
+    echo other
+  fi
+}
 ai_model_mark() {
-  local f; f="$(ai_models_state_file)"
-  mkdir -p "$(dirname "$f")" 2>/dev/null || return 0
-  { grep -v "^$1=" "$f" 2>/dev/null || true; echo "$1=$2"; } >"$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
-  return 0
+  local f tmp value="$2"; f="$(ai_models_state_file)"
+  mkdir -p "${f%/*}" 2>/dev/null || return 0
+  [[ "$value" != "ko" ]] || value="ko:$(date +%s)"
+  tmp="$(mktemp "$f.XXXXXX")" || return 0
+  { awk -F= -v m="$1" '$1 != m' "$f" 2>/dev/null || true; echo "$1=$value"; } >"$tmp"
+  mv "$tmp" "$f"
+}
+ai_models_expire() {
+  local f now tmp expired
+  f="$(ai_models_state_file)"; [[ -f "$f" ]] || return 0
+  now="$(date +%s)"
+  expired="$(awk -F'[=:]' -v now="$now" '$2 == "ko" && (NF < 3 || now - $3 >= 3600) {print $1}' "$f")"
+  [[ -n "$expired" ]] || return 0
+  printf '%s\n' "$expired" >>"$f.reprobe"
+  tmp="$(mktemp "$f.XXXXXX")" || return 0
+  awk -F'[=:]' -v now="$now" '!($2 == "ko" && (NF < 3 || now - $3 >= 3600))' "$f" >"$tmp"
+  mv "$tmp" "$f"
 }
 ai_model_usable() {
-  local m="$1" fam="$2" cache="${CODEX_HOME:-$HOME/.codex}/models_cache.json"
-  grep -qx "$m=ko" "$(ai_models_state_file)" 2>/dev/null && return 1
+  local m="$1" fam="$2" state cache="${CODEX_HOME:-$HOME/.codex}/models_cache.json"
+  state="$(ai_models_state_file)"
+  if [[ -f "$state" ]]; then
+    awk -F'[=:]' -v m="$m" -v now="$(date +%s)" '$1 == m && $2 == "ko" && NF == 3 && now - $3 < 3600 {hit=1} END {exit !hit}' "$state" 2>/dev/null && return 1
+  fi
   if [[ "$fam" == "codex" && -f "$cache" ]] && ! grep -qF "\"$m\"" "$cache"; then return 1; fi
   return 0
 }
-# ai_model_pick <family> <tier>: first available model of the chain (the chain's first when none is).
+# ai_model_pick <family> <tier>: the validated chain head, even when a probe is needed.
+# Refused models cross providers in the bridges; selecting a weaker sibling is never automatic.
 ai_model_pick() {
-  local chain m fam="$1" k skip=0
+  local chain k
   _ai_ascii_upper "${1}_${2}"; k="$_AI_ASCII_UPPER"
   eval "chain=\"\${AI_CHAIN_${k}:-}\""
-  # Thrifty model mode (loomy models --thrifty on): the first available fallback rather than the newest model.
-  if grep -qx 'models_mode=thrifty' "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/config" 2>/dev/null; then
-    local n=0; for m in $chain; do ai_model_usable "$m" "$fam" && n=$(( n + 1 )); done
-    (( n >= 2 )) && skip=1
-  fi
-  for m in $chain; do
-    ai_model_usable "$m" "$fam" || continue
-    (( skip )) && { skip=0; continue; }
-    echo "$m"; return 0
-  done
   echo "${chain%% *}"
 }
-# ai_model_next <family> <model>: next fallback in its chain (empty when there is none), for the bridges.
-ai_model_next() {
-  local fam="$1" m="$2" t chain seen c k
-  for t in TOP MID FAST; do
-    _ai_ascii_upper "$fam"; k="${_AI_ASCII_UPPER}_$t"
-    eval "chain=\"\${AI_CHAIN_${k}:-}\""
-    seen=0
-    for c in $chain; do
-      if (( seen )) && ai_model_usable "$c" "$fam"; then echo "$c"; return 0; fi
-      [[ "$c" == "$m" ]] && seen=1
-    done
-    (( seen )) && return 0
-  done
-  return 0
-}
+# Compatibility for callers asking for a fallback: provider-level handover replaces model retries.
+ai_model_next() { return 0; }
 
 # Model of each tier: AI_MODEL_* environment variable, otherwise the pinned model (loomy config set
 # model.<family>.<tier> <model>), otherwise the first available model of the chain.
@@ -285,6 +292,25 @@ _ai_realpath() {
   echo "$p"
 }
 
+# Tests must explicitly trust the resolved stub directory, including app-bundled binaries.
+loomy_guard_real_cli() {
+  [[ "${LOOMY_TEST_GUARD:-}" == 1 ]] || return 0
+  local name="$1" binary message stubs
+  binary="$(command -v "${2:-$1}" 2>/dev/null || true)"
+  if [[ "$binary" == */* && -f "$binary" && -x "$binary" ]]; then
+    binary="$(_ai_realpath "$binary")"
+    binary="$(cd "$(dirname "$binary")" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "${binary##*/}")" || binary=""
+  else
+    binary=""
+  fi
+  stubs="${LOOMY_TEST_STUBS:-}"
+  if [[ -n "$stubs" && "$binary" == "$stubs/"* ]]; then return 0; fi
+  message="loomy: test guard: refusing to launch real $name (${binary:-not found})"
+  printf '%s\n' "$message" >&2
+  if [[ -n "${LOOMY_TEST_GUARD_LOG:-}" ]]; then printf '%s\n' "$message" >>"$LOOMY_TEST_GUARD_LOG"; fi
+  return 97
+}
+
 # Codex CLI: the PATH first (links resolved), then the binaries shipped with the desktop apps.
 ai_codex_bin() {
   # LOOMY_CODEX_BIN: explicit Codex CLI path (unusual install); if it isn't executable, Codex is considered missing.
@@ -328,8 +354,8 @@ _ai_bundled_codex() {
 ai_has_claude() { command -v claude >/dev/null 2>&1; }
 ai_has_codex() { ai_codex_bin >/dev/null 2>&1; }
 
-ai_claude_version() { claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
-ai_codex_version() { "$(ai_codex_bin)" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_claude_version() { loomy_guard_real_cli claude || return $?; claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_codex_version() { local binary; binary="$(ai_codex_bin)" || return $?; loomy_guard_real_cli codex "$binary" || return $?; "$binary" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
 
 # ai_version_ge <a> <b>: true when version a >= b (numeric x.y.z).
 ai_version_ge() {
@@ -345,10 +371,7 @@ ai_version_ge() {
   return 0
 }
 
-# Claude CLI alias used when an old CLI refuses an explicit model id.
-ai_claude_alias() {
-  case "$1" in *opus*) echo "opus" ;; *sonnet*) echo "sonnet" ;; *haiku*) echo "haiku" ;; *) echo "$1" ;; esac
-}
+# Explicit model ids are required: aliases on old CLIs can select an unvalidated model.
 
 # ---------------------------------------------------------------- routage
 
@@ -457,10 +480,6 @@ ai_route() {
     codex:MID) R_MODEL="$AI_MODEL_CODEX_MID" ;;
     codex:FAST) R_MODEL="$AI_MODEL_CODEX_FAST" ;;
   esac
-  # Haiku 4.5 (Haiku 5.5 unavailable on this machine) is not good enough for code tickets: Sonnet, as before 0.14.
-  if [[ "$family:$role:$tier" == "claude:executor:FAST" && "$R_MODEL" == claude-haiku-4-5* ]]; then
-    tier="MID"; R_MODEL="$AI_MODEL_CLAUDE_MID"; (( R_EFFORT_SET )) || effort="medium"
-  fi
   R_FAMILY="$family"; R_TIER="$tier"; R_EFFORT="$effort"
 }
 
@@ -584,6 +603,11 @@ ai_env_for() {
 # Honours the AI_ROUTE_ENV / AI_ROUTE_PROFILE overrides. AI_LEAD_MASTER is the brief's lead (AI_LEAD is the acting one
 # during a relay).
 ai_detect_env() {
+  # Resolve session availability after argument parsing; help does not call a provider.
+  if [[ "${BASH_SOURCE[1]:-}" == */loomy-start.sh && "${PRINT_ONLY:-0}" == 0 && -z "${AI_SESSION_REPROBED:-}" ]]; then
+    AI_SESSION_REPROBED=1
+    ai_models_reprobe >/dev/null 2>&1 &
+  fi
   local root="$1" brief
   brief="$root/.loomy/brief.md"
   AI_MODE="$(_ai_brief_get "$brief" ai_mode)"; AI_MODE="${AI_MODE:-SOLO}"
@@ -655,21 +679,87 @@ loomy_slug() {
   echo "${s:-my-project}"
 }
 
+# Bound real probes without depending on GNU timeout (macOS ships Perl).
+_ai_probe_run() {
+  loomy_guard_real_cli "${1##*/}" "$1" || return $?
+  local seconds="${LOOMY_MODEL_PROBE_TIMEOUT:-10}"
+  [[ "$seconds" =~ ^[1-9][0-9]*$ ]] || seconds=10
+  perl -e '
+    my $seconds=shift; my $pid=fork(); defined $pid or die "fork: $!";
+    if (!$pid) { setpgrp(0,0); exec @ARGV or die "exec: $!" }
+    $SIG{ALRM}=sub { kill "KILL", -$pid; kill "KILL", $pid; waitpid($pid,0); exit 124 };
+    alarm $seconds; waitpid($pid,0); alarm 0; exit (($? & 127) ? 128+($? & 127) : $? >> 8);
+  ' "$seconds" "$@"
+}
+
+# Parse only provider error payloads. Agent prose and command output are untrusted evidence.
+ai_delegate_error() {
+  local parsed
+  parsed="$(perl -MJSON::PP -e '
+    my ($family,$rc,$file)=@ARGV; open my $f,"<",$file or die "$file: $!";
+    my (@messages,$terminal,$failed); $terminal="";
+    while (<$f>) {
+      my $e=eval { decode_json($_) }; next unless ref($e) eq "HASH";
+      if ($family eq "claude") {
+        if ($e->{is_error}) { $failed=1; push @messages,$e->{result} if !ref($e->{result}) && defined $e->{result} }
+      } else {
+        my $type=$e->{type}//"";
+        if ($type eq "turn.started") { @messages=(); $terminal="" }
+        if ($type eq "error") { push @messages,$e->{message} if !ref($e->{message}) && defined $e->{message} }
+        if ($type eq "turn.failed" || $type eq "turn.completed") {
+          $terminal=$type;
+          push @messages,$e->{error}{message} if $type eq "turn.failed" && ref($e->{error}) eq "HASH" && !ref($e->{error}{message}) && defined $e->{error}{message};
+        }
+      }
+    }
+    $failed=($rc != 0 || ($family eq "codex" ? $terminal eq "turn.failed" : $failed));
+    print (($failed ? "1" : "0"), "\n");
+    print join("\n",@messages) if $failed;
+  ' "$1" "$3" "$2")"
+  AI_ERROR_FAILED="${parsed%%$'\n'*}"
+  AI_ERROR_TEXT="${parsed#*$'\n'}"
+  [[ "$AI_ERROR_FAILED" == 1 ]] || AI_ERROR_TEXT=""
+}
+
 # ai_model_probe <claude|codex> <model>: one tiny real call ("OK"), without tools; true when the model answers.
 ai_model_probe() {
-  local out tmpf
+  local tmpf rc=0
+  AI_PROBE_OUTPUT=""
   if [[ "$1" == "claude" ]]; then
-    out="$(cd "${TMPDIR:-/tmp}" && claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$2" --effort low --tools "" --strict-mcp-config 2>&1 </dev/null || true)"
-    grep -q '"is_error":false' <<<"$out"
+    AI_PROBE_OUTPUT="$(cd "${TMPDIR:-/tmp}" && _ai_probe_run claude -p "Reply exactly: OK" --output-format json --max-turns 1 --model "$2" --effort low --tools "" --strict-mcp-config 2>&1 </dev/null)" || rc=$?
+    (( rc == 0 )) && grep -q '"is_error":false' <<<"$AI_PROBE_OUTPUT"
   else
     tmpf="$(mktemp)"
-    "$(ai_codex_bin 2>/dev/null || echo codex)" exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral \
-      -o "$tmpf" "Reply exactly: OK" </dev/null >/dev/null 2>&1 && grep -q OK "$tmpf"; local rc=$?
-    rm -f "$tmpf"; return $rc
+    AI_PROBE_OUTPUT="$(_ai_probe_run "$(ai_codex_bin 2>/dev/null || echo codex)" exec -m "$2" -c model_reasoning_effort=low -s read-only --skip-git-repo-check --ephemeral -o "$tmpf" "Reply exactly: OK" </dev/null 2>&1)" || rc=$?
+    if (( rc == 0 )) && grep -q OK "$tmpf"; then rc=0; else rc=1; fi
+    rm -f "$tmpf"; return "$rc"
   fi
 }
+# Re-probe rejected models on session start / doctor, including entries expired at library load.
+ai_models_reprobe() {
+  local f models m fam pending="" current
+  ai_models_expire
+  current=" $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST "
+  f="$(ai_models_state_file)"
+  models="$( { awk -F'[=:]' '$2 == "ko" {print $1}' "$f" 2>/dev/null; cat "$f.reprobe" 2>/dev/null || true; } | sort -u)"
+  for m in $models; do
+    case "$current" in *" $m "*) ;; *) continue ;; esac
+    case "$m" in claude-*) fam=claude; ai_has_claude || { pending="$pending$m"$'\n'; continue; } ;; gpt-*) fam=codex; ai_has_codex || { pending="$pending$m"$'\n'; continue; } ;; *) continue ;; esac
+    if declare -F ai_provider_saturated >/dev/null && ai_provider_saturated "$fam"; then pending="$pending$m"$'\n'; continue; fi
+    if ai_model_probe "$fam" "$m"; then ai_model_mark "$m" ok
+    else
+      case "$(ai_model_error_class "$AI_PROBE_OUTPUT")" in
+        model) ai_model_mark "$m" ko ;;
+        saturated) declare -F ai_provider_refusal >/dev/null && ai_provider_refusal "$fam" "$AI_PROBE_OUTPUT"; pending="$pending$m"$'\n' ;;
+        *) pending="$pending$m"$'\n' ;;
+      esac
+    fi
+  done
+  if [[ -f "$f.reprobe" ]]; then printf '%s' "$pending" >"$f.reprobe"; fi
+  return 0
+}
 # ai_upcoming_probe_daily: probes the announced models not available yet, at most once a day, in the background.
-# A model that answers is marked ok (models.state) and heads its chain from the next command on.
+# A model that answers is marked ok (models.state); it is not promoted into routing automatically.
 ai_upcoming_probe_daily() {
   local f today e fam m
   [[ -n "$AI_UPCOMING" ]] || return 0

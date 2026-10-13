@@ -1,3 +1,4 @@
+source [file join [file dirname [info script]] watchdog.exp]
 # Real PTY, real sampler, synthetic slow renderer and private throwaway project only.
 set timeout 15
 log_user 0

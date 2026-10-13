@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Never run AppleScript or open a terminal window.
+set -euo pipefail
+if [[ -n "${STUB_LOG:-}" ]]; then printf 'osascript'; printf '\t%s' "$@"; printf '\n'; fi >>"${STUB_LOG:-/dev/null}"
+exit 0

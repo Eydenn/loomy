@@ -170,20 +170,36 @@ watch_notify() {
 # One persistent sampler waits on the terminal and watches cheap local file signatures.
 # Foreground stty avoids the SIGTTIN/stty race of a background Bash read -s.
 loomy_watch_feed() {
-  exec perl -MIO::Select -MTime::HiRes=time,stat -e '
-    my ($root,$cfg,$terminal,$native,$sessions,$reducer)=@ARGV; $|=1;
-    require $native; require $reducer;
+  umask 077
+  local errors=/dev/null
+  ai_journal_enabled "$ROOT" && ai_journal_prepare "$ROOT" && errors="$ROOT/.loomy/logs/watch-errors.log" || true
+  exec perl -MIO::Select -MTime::HiRes=time,stat -MFcntl=O_RDWR,O_APPEND,O_CREAT,O_NOFOLLOW -e '
+    my ($root,$cfg,$terminal,$native,$sessions,$reducer,$claude,$projects,$owner,$until,$errors)=@ARGV; $|=1;
+    my %reported;
+    $SIG{__WARN__}=sub {
+      my $message=substr(join("",@_),0,2048);
+      return if $reported{$message} || keys(%reported)>=128 || $errors eq "/dev/null";
+      $reported{$message}=1;
+      sysopen my $log,$errors,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
+      flock $log,2 or return; chmod 0600,$log or return;
+      # Keep diagnostics bounded even if older sampler runs filled the private log.
+      truncate $log,0 if -s $log>65536-length($message);
+      print $log $message;
+    };
+    require $native; require $reducer; require $claude;
     my $live=Loomy::LiveState->new;
     my $tty; open $tty,"<","/dev/tty" if $terminal;
-    my $select=IO::Select->new; $select->add($tty) if $tty;
+    my $input=$tty; open $input,"<&",7 or die $! unless $input;
+    my $select=IO::Select->new; $select->add($input) if $input;
     my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts);
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
-    my ($last,$buf,$last_tick,$maintained)=("","",0,0);
-    my $state;
+    my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
+    my ($state,$claude_state);
     while (1) {
+      last unless kill 0,$owner;
+      last if $until && !kill(0,$until);
       my $key="";
-      if ($tty && $select->can_read(0.20)) { my $n=sysread($tty,my $input,32); last unless defined $n; $buf.=$input if $n }
-      elsif (!$tty) { select undef,undef,undef,0.20 }
+      if ($select->can_read(0.20)) { my $n=sysread($input,my $bytes,32); last unless defined($n) && $n; $buf.=$bytes }
       if ($buf =~ s/^\e\[A//) { $key="up" }
       elsif ($buf =~ s/^\e\[B//) { $key="down" }
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
@@ -191,7 +207,12 @@ loomy_watch_feed() {
       if (Loomy::CodexNative::watch_changed($root,$sessions,$now) || int($wall)!=$maintained) {
         $state=eval { Loomy::CodexNative::poll($root,$sessions) }; $maintained=int($wall);
       }
+      if (Loomy::ClaudeNative::watch_changed($root,$projects) || int($wall)!=$claude_maintained) {
+        $claude_state=eval { Loomy::ClaudeNative::poll($root,$projects) };
+        warn $@ if $@; $claude_maintained=int($wall);
+      }
       $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
+      $live->claude_evidence($claude_state);
       my @deltas=$live->projections($now);
       my $sig="";
       for my $f (@files) { my @s=stat($f); $sig.=join(":",@s ? @s[0,1,7,9] : "-").";" }
@@ -209,7 +230,7 @@ loomy_watch_feed() {
       }
       $last=$sig;
     }
-  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions" "$AI_LIVE_STATE_LIB"
+  ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions" "$AI_LIVE_STATE_LIB" "$AI_CLAUDE_NATIVE_LIB" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" "$$" "$UNTIL" "$errors" 2>/dev/null
 }
 
 # A slow frame must not queue old clocks ahead of input. Read no further than the first key.
@@ -220,16 +241,32 @@ loomy_watch_coalesce() {
     while IFS= read -r feed_line <&10; do
       if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
       loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
-      break
+      return 0
     done
-    return 0
+    return 1
   fi
-  perl -MIO::Select -e '
+  # The server PID must be the Perl reader, so cleanup cannot wait on a blocked shell.
+  local runner=(perl)
+  [[ "${LOOMY_WATCH_SERVER:-0}" != 1 ]] || runner=(exec perl)
+  "${runner[@]}" -MIO::Select -e '
     $|=1; my $server=$ENV{LOOMY_WATCH_SERVER};
+    my ($owner,$dir)=splice @ARGV,-2;
+    $SIG{PIPE}=sub {exit 0}; $SIG{TERM}=sub {exit 0};
+    END {if ($server && $dir) {unlink "$dir/request"; rmdir $dir}}
+    my $pending="";
     my $requests; open $requests,"<&",9 or die $! if $server;
     while (1) {
     my @args=@ARGV;
-    if ($server) { my $request=<$requests>; last unless defined $request; chomp $request; @args=split /\|/,$request,-1 }
+    if ($server) {
+        my $ready=IO::Select->new($requests);
+        while ($pending !~ /\n/) {
+            exit 0 if getppid()==1 || !kill(0,$owner);
+            next unless $ready->can_read(1);
+            my $n=sysread($requests,my $bytes,4096); exit 0 unless defined($n) && $n;
+            $pending.=$bytes;
+        }
+        $pending =~ s/^([^\n]*)\n//; @args=split /\|/,$1,-1;
+    }
     my ($now,$dirty,$key,$clock,$rows,$cols)=@args; my @deltas;
     if ($key eq "") {
       open my $feed,"<&",8 or die "watch feed unavailable: $!";
@@ -249,7 +286,7 @@ loomy_watch_coalesce() {
     print join("|",$now,$dirty,$key,$clock,($server ? ($rows//0,$cols//0) : ())),"\n";
     last unless $server;
     }
-  ' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${watch_rows:-0}" "${watch_cols:-0}"
+  ' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${watch_rows:-0}" "${watch_cols:-0}" "$$" "${WATCH_PIPE:-}"
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
@@ -277,6 +314,7 @@ watch_keys() {
 }
 
 ai_codex_native_poll "$ROOT"
+ai_claude_native_poll "$ROOT"
 if (( WATCH )); then
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin
@@ -286,12 +324,13 @@ if (( WATCH )); then
     (( BASH_SUBSHELL == 0 )) || return 0
     [[ -z "$KEY_READER" ]] || { kill "$KEY_READER" 2>/dev/null || true; wait "$KEY_READER" 2>/dev/null || true; }
     [[ -z "$COALESCER" ]] || { kill "$COALESCER" 2>/dev/null || true; wait "$COALESCER" 2>/dev/null || true; }
-    exec 8<&- 9<&- 10<&-
-    [[ -z "$WATCH_PIPE" ]] || { rm -f "$WATCH_PIPE/request"; rmdir "$WATCH_PIPE"; }
+    KEY_READER=""; COALESCER=""
+    exec 7<&- 8<&- 9<&- 10<&-
+    [[ -z "$WATCH_PIPE" ]] || { rm -f "$WATCH_PIPE/request"; rmdir "$WATCH_PIPE" 2>/dev/null || true; WATCH_PIPE=""; }
     UI_PAGE_L=(); _ui_restore
     [[ -z "$WATCH_STTY" ]] || stty "$WATCH_STTY" 2>/dev/null || true
   }
-  trap 'watch_cleanup; exit 0' INT TERM
+  trap 'exit 0' INT TERM HUP
   trap watch_cleanup EXIT
   printf '\033[?25l' >&2
   terminal=0
@@ -299,6 +338,8 @@ if (( WATCH )); then
     terminal=1; WATCH_STTY="$(stty -g 2>/dev/null || true)"
     stty -echo -icanon min 1 time 0 2>/dev/null || true
   fi
+  # Process substitutions replace stdin with /dev/null; preserve the controller input explicitly.
+  exec 7<&0
   exec 8< <(loomy_watch_feed "$terminal")
   KEY_READER=$!
   WATCH_PIPE="$(mktemp -d "${TMPDIR:-/tmp}/loomy-watch-feed.XXXXXX")"
@@ -352,7 +393,8 @@ if (( WATCH )); then
   while IFS= read -r feed_line <&8; do
     if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
     loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
-    LOOMY_WATCH_INLINE=1 loomy_watch_coalesce "$now" "$dirty" "$key" "$LV_CLOCK"
+    [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
+    LOOMY_WATCH_INLINE=1 loomy_watch_coalesce "$now" "$dirty" "$key" "$LV_CLOCK" || break
     config_dirty=$dirty
     if (( native_dirty )); then dirty=1; native_dirty=0; fi
     case "$key" in q|Q) break ;; esac
@@ -483,7 +525,7 @@ if (( WATCH )); then
         fi
         if (( terminal )); then stty -echo -icanon min 1 time 0 2>/dev/null || true; fi ;;
 
-      s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { watch_cleanup; trap - EXIT INT TERM; exec bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT"; } ;;
+      s|S) [[ -z "$UNTIL" ]] && (( ! IN_PANE )) && { watch_cleanup; trap - EXIT INT TERM HUP; exec bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT"; } ;;
     esac
     [[ -z "$key" ]] || force_frame=1
     # Tracking opened by loomy start --watch: it closes with the agent session.
@@ -592,7 +634,7 @@ else
         if (s == "") s = field("ts"); if (index($0, "\"phase\":\"done\"")) e = field("ts") }
       e == "" && index($0, "\"type\":\"delegation\",") { n++; add() }
       e == "" && (index($0, "\"type\":\"usage\"") || index($0, "\"type\":\"advisor\"")) { add() }
-      END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT"))"
+      END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT" | ai_journal_canonical))"
     s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
@@ -642,7 +684,7 @@ if [[ -s "$JOURNAL" ]]; then
   ui_section "$(t "ACTIVITY")"
   # Running delegations: a start without an end (a single read of the log), whose process is still running.
   now_s="$(date +%s)"
-  awk '
+  ai_journal_canonical <"$JOURNAL" | awk '
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
     /"bridge":"codex-native"/ { next }
@@ -650,7 +692,7 @@ if [[ -s "$JOURNAL" ]]; then
       line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" substr(field("task"), 1, 60); next }
     /"type":"delegation",/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
     END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) { split(line[order[i]], f, "|"); k = f[3] "|" f[4]
-            print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' "$JOURNAL" |
+            print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' |
   while IFS='|' read -r pid ts role m task est; do
     [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || continue
     since="$(ai_ts_epoch "$ts")"
@@ -719,23 +761,24 @@ if [[ -s "$JOURNAL" ]]; then
     ui_info "$(t "no finished delegation yet")"
     ui_rail "${C_DIM}  $(t "they show up here as soon as the lead agent hands a task to Claude or Codex")${C_RESET}"
   else
-    summary="$(grep '"type":"delegation"' "$JOURNAL" | awk -v pc="$PLAN_C" -v px="$PLAN_X" '
+    summary="$(ai_journal_canonical <"$JOURNAL" | grep '"type":"delegation"' | awk -v pc="$PLAN_C" -v px="$PLAN_X" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       { if (field("bridge") == "codex-native") { n++; native++; if (field("status") != "ok") err++; next }
         m = field("model"); f = field("family"); plan = (f == "claude" ? pc : px) + 0
         tk = num("tokens_in") + num("tokens_out"); calls[m]++; tok[m] += tk; mp[m] = plan
         if (plan) { ptok += tk } else { cost[m] += num("cost_usd"); total += num("cost_usd"); api++ }
-        n++; if (field("status") != "ok") err++ }
-      END { printf "TOTAL %d %.4f %d %d %d %d\n", n, total, err, api, ptok, native
+        n++; st=field("status"); if (st == "paused") paused++; else if (st == "handed_over") handed++; else if (st != "ok") err++ }
+      END { printf "TOTAL %d %.4f %d %d %d %d %d %d\n", n, total, err, api, ptok, native, paused, handed
             for (m in calls) printf "MODEL %s %d %.4f %d %d\n", m, calls[m], cost[m], tok[m], mp[m] }')"
-    read -r _ n_calls total_cost n_err n_api plan_tok n_native <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
+    read -r _ n_calls total_cost n_err n_api plan_tok n_native n_paused n_handed <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
     # API part: its cost; subscription part: its tokens (the quota is in the plans lines).
     d_val=""
     (( n_api > 0 )) && d_val="${C_BOLD}\$${total_cost}${C_RESET}"
     (( n_api < n_calls - n_native )) && d_val="${d_val:+$d_val · }${C_BOLD}$(ai_tokens_label "$plan_tok")${C_RESET} $(t "tokens")"
     (( n_native == 0 )) || d_val="${d_val:+$d_val · }$(t 'native usage unknown')"
     ui_kv "$(t "Delegations")" "${C_BOLD}${n_calls}${C_RESET} · ${d_val}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
+    (( n_paused == 0 && n_handed == 0 )) || ui_kv "$(t 'Availability')" "$(t '%s paused' "$n_paused") · $(t '%s handed over' "$n_handed")"
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
     all_tok="$(printf '%s\n' "$summary" | awk '/^MODEL/ { s += $5 } END { print s + 0 }')"
@@ -753,9 +796,9 @@ if [[ -s "$JOURNAL" ]]; then
     ui_rail ""
     ui_rail "${C_DIM}$(t "Latest delegations")${C_RESET}"
     fi
-    n_shown="$(grep -c '"type":"delegation",' "$JOURNAL" || true)"; (( n_shown > last_n )) && n_shown=$last_n
+    n_shown="$(ai_journal_canonical <"$JOURNAL" | grep -c '"type":"delegation",' || true)"; (( n_shown > last_n )) && n_shown=$last_n
     row=0
-    grep '"type":"delegation"' "$JOURNAL" | tail -"$last_n" | awk '
+    ai_journal_canonical <"$JOURNAL" | grep '"type":"delegation"' | tail -"$last_n" | awk '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
       { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' |
@@ -765,6 +808,7 @@ if [[ -s "$JOURNAL" ]]; then
       ep="$(ai_ts_epoch "$t")"
       if [[ -n "$ep" ]]; then t="$(date -r "$ep" +%H:%M 2>/dev/null || date -d "@$ep" +%H:%M)"; else t="${t:11:5}"; fi
       mark="${C_GREEN}✓${C_RESET}"; [[ "$st" != "ok" ]] && mark="${C_RED}✗${C_RESET}"
+      case "$st" in paused) mark="${C_YELLOW}Ⅱ${C_RESET}"; task="$(t 'paused') · $task" ;; handed_over) mark="${C_YELLOW}⇄${C_RESET}"; task="$(t 'handed over') · $task" ;; esac
       [[ "$oc" != unknown ]] || mark="${C_DIM}?${C_RESET}"
       # Structured result: partial or blocked means the task is not done, even when the call succeeded.
       if [[ "$st" == "ok" ]]; then case "$oc" in partial) mark="${C_YELLOW}◐${C_RESET}" ;; blocked) mark="${C_YELLOW}■${C_RESET}" ;; unknown) mark="${C_DIM}?${C_RESET}" ;; esac; fi

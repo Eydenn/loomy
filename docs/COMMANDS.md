@@ -245,15 +245,18 @@ Hands a role to Claude, read-only (architect, debugger, security, reviewer, expl
 
 Options before the task text (they win over `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`): `--model <id>` (letters, digits, `. _ -`; for Claude a `claude-*` id or `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (override the role's sandbox; on Claude, `--write` is refused outside a quota failover), `--why "reason"` (for example `user request`). Any option or variable used marks the delegation `requested` in the journal; what differs from the project's routing (tool, model, effort, sandbox) is listed in `off_routing`, and `why` keeps the reason (hidden by `LOOMY_JOURNAL_TASKS=0`). Example: `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
 
+Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
+
+Delegations pause only after a real refusal or at 100 % / reached; the lead session’s configurable early relay threshold stays separate.
+
 ### `loomy models`
 
 ```bash
 loomy models
-loomy models --thrifty on|off
 loomy models --issue
 ```
 
-Model chains and new models to evaluate; head of a chain with two fallbacks (this machine), `--thrifty on|off`, `--issue` (GitHub suggestion)
+Validated current model chains and new candidates to evaluate; `--issue` suggests candidates on GitHub. `chain.<family>.<tier>` only accepts catalog-validated models for that tier; unknown ids are refused explicitly. `--thrifty` is retired (exit 2); the Thrifty budget profile still lowers effort.
 
 ### `loomy skills [suggest|add|remove|update|catalog]`
 
@@ -303,7 +306,7 @@ loomy config get <key>
 loomy config set <key> <value>
 ```
 
-Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: from this share of a subscription quota, work moves to the other tool; `off`: never), `lead_failover` (`auto` by default: when the lead's quota runs out, the other tool leads temporarily and `loomy start` chains the sessions; `off`: never), `quota_room` (80 by default: the lead tool takes the lead back once its quota is below this share), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
+Preferences (`list`, `get`, `set`): `plan_claude`, `plan_codex`, `plan_claude_price`, `plan_codex_price`, `start_watch` (`no`: `loomy start` no longer opens tracking alongside), `start_in` (`app`: `loomy start` opens the desktop app), `memory` (`off`: the shared memory is no longer given back), `skills` (`auto`, `ask` or `off`), `notify` (`no`: no notifications in `loomy watch`), `quota_switch` (95 by default: preventive lead relay threshold; `off`: no preventive relay; real refusals and exhausted quotas still protect delegations), `lead_failover` (`auto` by default: when the lead's quota runs out, the other tool leads temporarily and `loomy start` chains the sessions; `off`: never), `quota_room` (80 by default: the lead tool takes the lead back once its quota is below this share), `delegation_format` (`structured`, `free` or `auto`: each project's choice), `lang` (`fr`, `en` or `auto`: interface language, detected by default)
 
 ### `loomy update` · `loomy version`
 

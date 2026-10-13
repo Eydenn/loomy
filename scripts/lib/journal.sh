@@ -15,6 +15,24 @@ ai_journal_enabled() {
 # The sampler loads the same Perl module in-process; one-shot commands use this wrapper.
 AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
 AI_LIVE_STATE_LIB="${AI_CODEX_NATIVE_LIB%/*}/live-state.pl"
+AI_CLAUDE_NATIVE_LIB="${AI_CODEX_NATIVE_LIB%/*}/claude-native.pl"
+ai_claude_native_poll() {
+  ai_journal_enabled "$1" || return 0
+  ai_journal_prepare "$1" || return 0
+  perl "$AI_CLAUDE_NATIVE_LIB" "$1" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" 2>/dev/null || true
+}
+
+# A Stop hook proves the lead turn is idle; it does not close the reusable session.
+ai_journal_claude_idle() {
+  local sid ts
+  sid="$(printf '%s' "$2" | perl -MJSON::PP -e '
+    local $/; my $d=eval {decode_json(<STDIN>)}; exit unless ref($d) eq "HASH";
+    my $id=$d->{session_id}; print $id if defined($id) && !ref($id) && $id =~ /\A[A-Za-z0-9_.:-]{1,100}\z/;
+  ' 2>/dev/null)"
+  [[ -n "$sid" ]] || return 0
+  ts="$(perl -MTime::HiRes=time -MPOSIX=strftime -e 'my $n=time; print strftime("%Y-%m-%dT%H:%M:%S",gmtime($n)).sprintf(".%03dZ",int(($n-int($n))*1000))')"
+  ai_journal_write "$1" "\"type\":\"session_activity\",\"tool\":\"claude\",\"session\":$(ai_json_str "$sid"),\"state\":\"idle\"" "$ts"
+}
 ai_codex_native_poll() {
   ai_journal_enabled "$1" || return 0
   [[ -d "${CODEX_HOME:-$HOME/.codex}/sessions" ]] || return 0
@@ -45,6 +63,21 @@ ai_journal_prepare() {
   ' "$1/.loomy/logs" 2>/dev/null
 }
 
+# Legacy/untrusted logs can contain huge lines: bound bytes before splitting or canonicalizing.
+ai_journal_tail() {
+  perl -MFcntl=O_RDONLY,O_NOFOLLOW -e '
+    my ($path,$limit)=@ARGV; $limit=4000 unless defined($limit) && $limit =~ /^\d+$/;
+    exit if -l $path || !-f $path;
+    sysopen my $f,$path,O_RDONLY|O_NOFOLLOW or exit;
+    my $size=-s $f; my $start=$size>8388608 ? $size-8388608 : 0;
+    seek $f,$start,0 or exit; sysread($f,my $raw,8388608);
+    $raw =~ s/^[^\n]*\n// if $start;
+    my $end=rindex($raw,"\n"); exit if $end<0;
+    my @rows=grep {length($_)<=65536} split /\n/,substr($raw,0,$end+1);
+    splice @rows,0,@rows-$limit if @rows>$limit; print "$_\n" for @rows;
+  ' "$1" "${2:-4000}"
+}
+
 # Escapes a string for JSON (quotes, backslash, newlines, tabs, control characters).
 ai_json_str() {
   local s="$1"
@@ -54,23 +87,16 @@ ai_json_str() {
 }
 
 # ai_journal_write <root> <JSON pairs without braces, e.g. "type":"phase","phase":"build">
-# Monthly archive: on the first event of a new month, the previous month's log moves to
-# .loomy/logs/archive/events-YYYY-MM.jsonl. The latest session events follow into the new log
-# (open / closed state of the current session). Reading the whole history: ai_journal_all.
-_ai_journal_rotate() (
-  umask 077
-  local file="$1" month now dir mfile
-  [[ -s "$file" ]] || return 0
-  # Month of the current log: recorded separately (copied session events keep their original date).
-  mfile="$(dirname "$file")/month"; now="$(date -u +%Y-%m)"
-  month="$(cat "$mfile" 2>/dev/null || true)"
-  [[ -n "$month" ]] || month="$(head -1 "$file" | sed -n 's/^{"ts":"\([0-9]\{4\}-[0-9]\{2\}\).*/\1/p')"
-  [[ "$month" =~ ^[0-9]{4}-[0-9]{2}$ ]] || month="$now"
-  if [[ "$month" == "$now" ]]; then printf '%s\n' "$now" >"$mfile"; return 0; fi
-  dir="$(dirname "$file")/archive"; mkdir -p "$dir" 2>/dev/null || return 0
-  cat "$file" >>"$dir/events-$month.jsonl" && { grep '"type":"session"' "$file" | tail -4 >"$file.tmp" || true; } && mv "$file.tmp" "$file"
-  printf '%s\n' "$now" >"$mfile"
-)
+# Monthly or 8 MiB rotation uses immutable inode-named archive segments. All open sessions
+# and agents carry structural snapshots, without usage. Reading full history: ai_journal_all.
+_ai_journal_rotate() {
+  perl -e '
+    my ($module,$path)=@ARGV; require $module;
+    my $dir=$path; $dir =~ s{/[^/]+$}{};
+    my $lock=Loomy::LiveState::journal_lock($dir,1) or exit;
+    Loomy::LiveState::journal_rotate($path);
+  ' "$AI_LIVE_STATE_LIB" "$1"
+}
 
 # ai_journal_all <root>: the whole log, archives included, in order.
 ai_journal_all() {
@@ -85,11 +111,31 @@ ai_journal_write() {
   ai_journal_enabled "$root" || return 0
   file="$(ai_journal_file "$root")"
   ai_journal_prepare "$root" || return 0
-  _ai_journal_rotate "$file" 2>/dev/null || true
-  perl -MFcntl=O_WRONLY,O_APPEND,O_CREAT,O_NOFOLLOW -MPOSIX=strftime -e '
-    my ($path,$body)=@ARGV; sysopen my $f,$path,O_WRONLY|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or exit;
-    flock $f,2 or exit; print $f "{\"ts\":\"".strftime("%Y-%m-%dT%H:%M:%SZ",gmtime)."\",$body}\n";
-  ' "$file" "$body" 2>/dev/null || true
+  perl -e '
+    my ($module,$path,$body,$ts)=@ARGV; require $module;
+    Loomy::LiveState::journal_append($path,$body,$ts);
+  ' "$AI_LIVE_STATE_LIB" "$file" "$body" "${3:-}" 2>/dev/null || true
+}
+
+# Canonical hook/transcript lifecycle; snapshots preserve state without new usage.
+ai_journal_canonical() {
+  perl -MJSON::PP -e '
+    my (@events,%native,%alias,%seen,%terminal);
+    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; push @events,[$_,$e];
+      $native{($e->{session}//"")."|".($e->{turn_id}//"")}=1 if ($e->{bridge}//"") eq "claude-native" && $e->{turn_id};
+      $alias{$e->{alias_id}}=1 if ($e->{type}//"") eq "agent_alias" && $e->{alias_id};
+      $terminal{($e->{session}//"")."|".($e->{id}//"")}=$#events if ($e->{bridge}//"") eq "claude-native" && ($e->{type}//"") eq "delegation";
+    }
+    for my $i (0..$#events) {my ($raw,$e)=@{$events[$i]};
+      next if ($e->{bridge}//"") eq "subagent" && $native{($e->{session}//"")."|".($e->{id}//"")};
+      next if $alias{$e->{id}//""};
+      next if ($e->{bridge}//"") eq "claude-native" && ($e->{type}//"") eq "delegation" && $terminal{($e->{session}//"")."|".($e->{id}//"")}!=$i;
+      if (($e->{type}//"") =~ /^(?:delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/) {
+        my $key=JSON::PP->new->canonical->encode($e); next if $seen{$key}++;
+      }
+      print $raw;
+    }
+  '
 }
 
 # ai_usage_record <racine> <transcription .jsonl> <lead|subagent> [type d'agent]
@@ -217,7 +263,7 @@ ai_native_end_label() {
 
 # Tree/watch opt into this formatter; ai_session_log_rows keeps its existing reveal cursor.
 ai_journal_display_events() {
-  tail -n 400 "$1" | perl -MJSON::PP -MErrno=EPERM -e "$AI_TITLE_PERL"'
+  ai_journal_tail "$1" 4000 | ai_journal_canonical | tail -n 400 | perl -MJSON::PP -MErrno=EPERM -MPOSIX=strftime -e "$AI_TITLE_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
     sub duration { my $d=text($_[0]); return "—" unless $d =~ /^\d+(?:\.\d+)?$/; $d=int($d); return $d>=3600 ? sprintf("%d h %02d",$d/3600,$d%3600/60) : sprintf("%d:%02d",$d/60,$d%60) }
     sub alive { my $p=$_[0]//0; return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
@@ -225,6 +271,7 @@ ai_journal_display_events() {
     sub task_title { my ($e,$start)=@_; return ai_title(defined $e->{task} && !ref($e->{task}) ? $e->{task} : $start->{task}) }
     sub session_key { my $e=$_[0]; return text($e->{tool}//$e->{family})."|".(text($e->{session}) || "pid".text($e->{owner_pid}//$e->{pid}//0)) }
     sub agent_key { my $e=$_[0]; return session_key($e)."|".text($e->{parent_session})."|".(text($e->{agent_id}) || text($e->{id})) }
+    sub native { text($_[0]{bridge}) =~ /^(codex|claude)-native$/ }
     sub owner_key {
       my $e=$_[0]; my $pid=text($e->{owner_pid}//$e->{pid});
       return "" unless $pid =~ /^\d+$/ && $pid>1;
@@ -242,6 +289,14 @@ ai_journal_display_events() {
     }
     my (@events,%done,%sessions,%starts,%activity,%agents,%owner_ends,%owner_opens);
     while (<STDIN>) { my $e=eval { decode_json($_) }; push @events,$e if ref($e) eq "HASH" }
+    # Raw Claude hooks and normalized transcript evidence describe the same execution.
+    my (%normalized,%aliased);
+    for my $e (@events) {
+      next unless text($e->{bridge}) eq "claude-native";
+      $normalized{text($e->{session})."|".text($e->{turn_id})}=1 if text($e->{turn_id}) ne "";
+      $aliased{text($e->{alias_id})}=1 if text($e->{type}) eq "agent_alias";
+    }
+    @events=grep { !(text($_->{bridge}) eq "subagent" && $normalized{text($_->{session})."|".text($_->{id})}) && !$aliased{text($_->{id})} } @events;
     for my $i (0..$#events) {
       my $e=$events[$i]; my $id=text($e->{id}); my $ts=text($e->{ts});
       if (($e->{type}//"") eq "session") {
@@ -257,7 +312,7 @@ ai_journal_display_events() {
       }
       $done{$id}=1 if ($e->{type}//"") eq "delegation" && $id ne "";
       $starts{$id}=$e if ($e->{type}//"") eq "delegation_start" && $id ne "";
-      if (text($e->{bridge}) eq "codex-native" && $id ne "" && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/) {
+      if (native($e) && $id ne "" && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/) {
         if (text($e->{type}) eq "delegation_activity") {
           $activity{$id}=$i if !exists $activity{$id} || $ts ge text($events[$activity{$id}]{ts});
         }
@@ -266,7 +321,7 @@ ai_journal_display_events() {
     # Closed turns must not hide the same agents newer active turn, even if stale activity was appended late.
     for my $e (@events) {
       my $id=text($e->{id}); my $ts=text($e->{ts});
-      next unless text($e->{bridge}) eq "codex-native" && $id ne "" && !$done{$id} && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/;
+      next unless native($e) && $id ne "" && !$done{$id} && text($e->{type}) =~ /^(delegation_start|delegation_activity)$/;
       my $key=agent_key($e);
       $agents{$key}={id=>$id,ts=>$ts} if !$agents{$key} || $ts ge $agents{$key}{ts};
     }
@@ -277,29 +332,32 @@ ai_journal_display_events() {
       my $id=text($e->{id}); my $start=$starts{$id}//{};
       my $model=text($e->{model}); my $role=text($e->{role});
       if ($ty eq "delegation_start") {
-        next if text($e->{bridge}) eq "codex-native" && ($done{$id} || exists $activity{$id});
+        next if native($e) && ($done{$id} || exists $activity{$id});
         my $bridge=$e->{bridge}//""; my $interrupted=0;
         if (!($e->{id}//"") || !$done{$e->{id}}) {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
-          else { $interrupted=($bridge eq "codex-native" && ($e->{schema}//0)==2 && !text($e->{owner_pid})) ? 0 : !alive($bridge eq "codex-native" ? $e->{owner_pid} : $e->{pid}) }
+          else { $interrupted=(native($e) && ($e->{schema}//0)==2 && !text($e->{owner_pid})) ? 0 : !alive(native($e) ? $e->{owner_pid} : $e->{pid}) }
         }
-        $who=$role; $what=$interrupted ? "interrupted" : ($bridge eq "codex-native" ? "running" : "start"); $extra="$model · ".ai_title($e->{task})
+        $who=$role; $what=$interrupted ? "interrupted" : (native($e) ? "running" : "start"); $extra="$model · ".ai_title($e->{task})
       }
       elsif ($ty eq "delegation") {
         $who=$role || text($start->{role}); $model ||= text($start->{model}); my $oc=text($e->{outcome});
         $what=$oc eq "unknown" ? "unknown" : (($e->{status}//"") eq "ok" ? ($oc =~ /^(partial|blocked)$/ ? $oc : "done") : "failed");
-        $what=(text($e->{status}) eq "ok" ? "done" : text($e->{status}) eq "error" ? "failed" : "idle") if $oc eq "unknown" && text($e->{bridge}) eq "codex-native";
+        $what=(text($e->{status}) eq "ok" ? "done" : text($e->{status}) eq "error" ? "failed" : "idle") if $oc eq "unknown" && native($e);
+        $what="handed over" if text($e->{status}) eq "handed_over";
+        $what="paused" if text($e->{status}) eq "paused";
         $what="interrupted" if $oc eq "interrupted" || text($e->{status}) eq "interrupted";
-        $extra=duration($e->{duration_s})." · $model"; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
+        $extra=duration($e->{duration_s})." · $model";
+        $extra.=" · until ".strftime("%H:%M",localtime($e->{resume_at})) if text($e->{status}) eq "paused" && ($e->{resume_at}//"") =~ /^\d+$/; $extra.=" · ⇄ $e->{failover_from}" if $e->{failover_from};
         my $task=task_title($e,$start); $extra.=" · $task" if $task ne "";
       }
-      elsif ($ty eq "delegation_activity" && text($e->{bridge}) eq "codex-native") {
+      elsif ($ty eq "delegation_activity" && native($e)) {
         next if $done{$id} || !exists $activity{$id} || $activity{$id}!=$i || $agents{agent_key($e)}{id} ne $id;
         my $owner=$e->{owner_pid}//$start->{owner_pid};
         my $observed={%$start,%$e,owner_pid=>$owner,session=>($e->{session}//$start->{session}),tool=>($e->{tool}//$e->{family}//$start->{tool}//$start->{family})};
         next if (!alive($owner) && !(($e->{schema}//0)==2 && !text($owner))) || owner_closed($observed,\%owner_ends,\%owner_opens,$i+1);
         next unless text($e->{ts}) =~ /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/;
-        $what=text($e->{activity}); next unless $what eq "running" || $what eq "waiting";
+        $what=text($e->{state}//$e->{activity}); next unless $what eq "running" || $what eq "waiting";
         $who=$role || text($start->{role}) || "agent";
         $model ||= text($start->{model});
         my $task=task_title($e,$start);
@@ -326,7 +384,8 @@ ai_journal_display_events() {
 # A session is open when it started, hasn't ended, and its process (Claude Code or Codex) is still running.
 # ai_ts_epoch <ISO UTC timestamp>: seconds since 1970 (macOS or GNU date), empty when unreadable.
 ai_ts_epoch() {
-  date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null || date -u -d "$1" +%s 2>/dev/null || true
+  local stamp="${1%%.*}"; [[ "$1" != *.* ]] || stamp="${stamp}Z"
+  date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$stamp" +%s 2>/dev/null || date -u -d "$stamp" +%s 2>/dev/null || true
 }
 
 ai_session_state() {
@@ -455,11 +514,11 @@ ai_journal_agent_finish() {
       exit if $done{$id};
       $stop=$stops{$aid} if $aid ne "";
       # A background launch returns before its agent finishes, including when Claude chose async execution.
-      exit if $mode ne "failure" && !$stop && ($starts{$id}{background} || $r->{isAsync});
+      exit if $mode ne "failure" && !$stop && ($starts{$id}{background} || $r->{isAsync} || ($r->{status}//"") eq "async_launched");
     }
     my $s=$starts{$id}; exit unless $s;
-    my @t=($s->{ts}//"") =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)Z$/;
-    my $dur=@t ? ($stop ? $stop->{ended_at} : $now)-timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) : 0; $dur=0 if $dur<0;
+    my @t=($s->{ts}//"") =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
+    my $dur=@t ? ($stop ? $stop->{ended_at} : $now)-(timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0])+($t[6]//0)) : 0; $dur=0 if $dur<0;
     my $text=ref($r->{content}) eq "ARRAY" ? join("\n",map { ref($_) eq "HASH" ? ($_->{text}//"") : "" } @{$r->{content}}) : ($r->{content}//"");
     emit({type=>"delegation",id=>$id,agent_id=>$aid,bridge=>"subagent",family=>"claude",role=>$s->{role},model=>($stop && $stop->{model} ? $stop->{model} : $s->{model}),effort=>$s->{effort},status=>($mode eq "failure" ? "error" : "ok"),duration_s=>$dur,task=>$s->{task},tokens_in=>0,tokens_cached=>0,tokens_out=>0,cost_usd=>0,cost_in=>"usage",outcome=>($stop ? $stop->{outcome} : outcome($text))});
   ' "$root/.loomy/logs/events.jsonl" "$mode" "$offset" "$result" 2>/dev/null || true

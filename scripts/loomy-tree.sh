@@ -17,7 +17,7 @@ fi
 loomy_live_init() {
   LV_SELECTION=""; LV_SELECTED_SEQ=0; LV_ROLE_WIDTH=12; LV_OFFSET=0; LV_FILE_KEY=""; LV_SEQ=0; LV_SESSION_SEQ=0; LV_SESSION=""; LV_SESSION_PID=0; LV_SESSION_TOOL=""; LV_SESSION_OPEN=0; LV_ACTIVITY=0; LV_USAGE=0; LV_SESSION_MODEL=""; LV_SESSION_EFFORT=""; LV_META_READY=0
   LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=()
-  LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=(); LV_OBSERVED=(); LV_TURN_END=(); LV_CLOSED=()
+  LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_RESUME=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=(); LV_OBSERVED=(); LV_TURN_END=(); LV_CLOSED=()
   LV_REQ_ID=(); LV_REQ_TEXT=(); LV_REQ_TS=(); LV_REQ_SID=(); LV_REQUEST=-1
   NS_ENABLED=0; NS_G=(); NS_A=(); NS_T=(); NS_LAYOUT_KEY=""
   LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=(); LV_SESSION_CONTEXT_FRESHNESS=""; LV_CONTEXT_NOTE=""
@@ -30,7 +30,11 @@ loomy_native_accept() {
   if [[ "$kind" == native ]]; then NS_ENABLED=1; return 0; fi
   case "$kind" in
     D) for row in ${NS_G[@]+"${NS_G[@]}"}; do [[ "$row" == "N|G|$key|"* ]] || groups+=("$row"); done
-       NS_G=("${groups[@]}") ;;
+       NS_G=(${groups[@]+"${groups[@]}"}) ;;
+    X) for row in ${NS_A[@]+"${NS_A[@]}"}; do [[ "$row" == "N|A|$key|"* ]] || groups+=("$row"); done
+       NS_A=(${groups[@]+"${groups[@]}"}) ;;
+    Y) for row in ${NS_T[@]+"${NS_T[@]}"}; do [[ "$row" == "N|T|$key|"* ]] || groups+=("$row"); done
+       NS_T=(${groups[@]+"${groups[@]}"}) ;;
     G) for (( i=0; i<${#NS_G[@]}; i++ )); do [[ "${NS_G[i]}" != "N|G|$key|"* ]] || found=$i; done
        if (( found < 0 )); then NS_G+=("$line"); else NS_G[found]="$line"; fi ;;
     A) for (( i=0; i<${#NS_A[@]}; i++ )); do [[ "${NS_A[i]}" != "N|A|$key|"* ]] || found=$i; done
@@ -333,8 +337,8 @@ loomy_live_poll() {
   # Like ai_codex_native_poll, keep adapter diagnostics out of the fitted frame.
   while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
   (( ! NS_ENABLED )) || return 0
-  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness key off i found selection selected attributed
-  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness; do
+  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
+  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at; do
     case "$kind" in
       RESET) loomy_live_init; continue ;;
       OFFSET) LV_FILE_KEY="$ts"; LV_OFFSET="$id"; continue ;;
@@ -396,7 +400,7 @@ loomy_live_poll() {
         found=$(( ${#LV_ID[@]} - 1 )); LV_TOOL[found]="$tool"; LV_BRIDGE[found]="$bridge"; LV_REQUESTED[found]="$requested"; LV_OFF[found]="$offroute"; LV_AGENT_ID[found]="$agentid"; loomy_live_cache_row "$found" ;;
       delegation:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
-        LV_DONE=$(( LV_DONE + 1 )); [[ "$status" == ok ]] || LV_ERRORS=$(( LV_ERRORS + 1 ))
+        LV_DONE=$(( LV_DONE + 1 )); case "$status" in ok|paused|handed_over) ;; *) LV_ERRORS=$(( LV_ERRORS + 1 )) ;; esac
         [[ "$status" != interrupted ]] || outcome=interrupted
         found=-1
         for (( i=0; i<${#LV_ID[@]}; i++ )); do [[ "${LV_ID[i]}" != "$id" ]] || found=$i; done
@@ -415,7 +419,7 @@ loomy_live_poll() {
         loomy_live_cache_row "$found"
         [[ -z "$agentid" ]] || LV_AGENT_ID[found]="$agentid"
         LV_TURN_END[found]="$ts"
-        LV_FIN[found]=1; LV_DURATION[found]="$duration"; LV_COST[found]="$cost"; LV_STATUS[found]="$status"; LV_OUTCOME[found]="$outcome"; LV_END_SEQ[found]=$LV_SEQ ;;
+        LV_RESUME[found]="$resume_at"; LV_FIN[found]=1; LV_DURATION[found]="$duration"; LV_COST[found]="$cost"; LV_STATUS[found]="$status"; LV_OUTCOME[found]="$outcome"; LV_END_SEQ[found]=$LV_SEQ ;;
     esac
   done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
@@ -469,7 +473,7 @@ loomy_live_poll() {
       $d->{pid}=$d->{owner_pid}//0 if ($d->{bridge}//"") eq "codex-native";
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
-      my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness));
+      my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at));
       for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
@@ -613,8 +617,13 @@ loomy_live_row() {
   _ui_pad "${LV_LABEL[i]}" "$LV_ROLE_WIDTH"; label="$UI_PADDED"
   if (( finished )); then
     elapsed="${LV_DURATION[i]:-0}"; mark=✓; outcome="${LV_OUTCOME[i]:-done}"; color="$C_GREEN"
-    [[ "${LV_STATUS[i]}" == ok || "$outcome" == unknown || "$outcome" == lost || "$outcome" == interrupted ]] || outcome=failed
-    case "$outcome" in blocked) mark=■; color="$C_YELLOW" ;; partial) mark=△; color="$C_YELLOW" ;; failed) mark=✗; color="$C_RED" ;; interrupted) mark=⊘; suffix=" · $(t 'interrupted')"; color="$C_DIM$C_RED" ;; unknown) mark='?'; color="$C_DIM" ;; lost) mark="! $(t 'lost')"; color="$C_YELLOW" ;; esac
+    [[ "${LV_STATUS[i]}" != paused ]] || outcome=paused
+    [[ "${LV_STATUS[i]}" != handed_over ]] || outcome=handed_over
+    [[ "$outcome" == paused || "$outcome" == handed_over || "${LV_STATUS[i]}" == ok || "$outcome" == unknown || "$outcome" == lost || "$outcome" == interrupted ]] || outcome=failed
+    case "$outcome" in
+      paused) mark=Ⅱ; color="$C_YELLOW"; suffix=" · $(t 'paused')"; [[ ! "${LV_RESUME[i]:-}" =~ ^[0-9]+$ ]] || suffix=" · $(t 'paused until %s' "$(_ai_reset_label "${LV_RESUME[i]}")")" ;;
+      handed_over) mark=⇄; color="$C_YELLOW"; suffix=" · $(t 'handed over')" ;;
+      blocked) mark=■; color="$C_YELLOW" ;; partial) mark=△; color="$C_YELLOW" ;; failed) mark=✗; color="$C_RED" ;; interrupted) mark=⊘; suffix=" · $(t 'interrupted')"; color="$C_DIM$C_RED" ;; unknown) mark='?'; color="$C_DIM" ;; lost) mark="! $(t 'lost')"; color="$C_YELLOW" ;; esac
     if [[ "${LV_BRIDGE[i]:-}" == codex-native ]]; then
       ai_native_end_label "${LV_STATUS[i]}"; suffix=" · $(t "$AI_NATIVE_END")"
       [[ "$AI_NATIVE_END" != "done" ]] || mark=✓
@@ -691,6 +700,20 @@ loomy_live_metadata() {
   LV_PHASE="$phase"; LV_PHASE_LABEL="$(loomy_phase_label "$phase")"
   name="$(_ai_brief_get "$ROOT/.loomy/brief.md" name)"; LV_NAME="${name:-${ROOT##*/}}"
   LV_QUOTA="$(ai_quota_line "$LV_LEAD_TOOL")"
+  local fam tier key chain selected other availability=""
+  for fam in claude codex; do
+    if ai_provider_saturated "$fam"; then
+      other="$(ai_switch_family "$fam" strict)"
+      if [[ -n "$other" ]]; then availability="${availability:+$availability · }$fam: $(t 'handed over') → $other"
+      else availability="${availability:+$availability · }$fam: $(t 'paused until %s' "$(_ai_reset_label "$(ai_provider_reset "$fam")")")"; fi
+    fi
+    for tier in top mid fast; do
+      _ai_ascii_upper "${fam}_${tier}"; key="$_AI_ASCII_UPPER"
+      eval "chain=\"\$AI_CHAIN_${key}\"; selected=\"\$AI_MODEL_${key}\""
+      [[ "$selected" == "${chain%% *}" ]] || availability="${availability:+$availability · }$fam.$tier: $(t 'DOWNGRADED') ${chain%% *} → $selected"
+    done
+  done
+  LV_QUOTA="${availability}${availability:+${LV_QUOTA:+ · }}${LV_QUOTA}"
   LV_GROUP="${LOOMY_WATCH_GROUP:-$(loomy_config_get watch_group request)}"; [[ "$LV_GROUP" == model ]] || LV_GROUP=request
   LV_META_READY=1
 }
@@ -969,6 +992,7 @@ done
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
 ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || exit 1
 ai_codex_native_poll "$ROOT"
+ai_claude_native_poll "$ROOT"
 J="$(ai_journal_file "$ROOT")"
 TICK="${LOOMY_TICK:-0}"
 now_s="${LOOMY_NATIVE_NOW:-$(date +%s)}"
@@ -1232,6 +1256,8 @@ if (( DIAGRAM )); then
             elif [[ "$RS_OC" == "unknown" ]]; then
               if [[ "${LV_BRIDGE[RS_I]:-}" == codex-native ]]; then ai_native_end_label "$RS_ST"; tv w "$AI_NATIVE_END"; stl="✓ $w"
               else tv w "unknown"; stl="? $w"; fi; stk="$C_DIM"
+            elif [[ "$RS_ST" == paused ]]; then stl="Ⅱ $(t 'paused')"; stk="$C_YELLOW"
+            elif [[ "$RS_ST" == handed_over ]]; then stl="⇄ $(t 'handed over')"; stk="$C_YELLOW"
             elif [[ "$RS_ST" != "ok" ]]; then tv w "failed"; stl="✗ $w"; stk="$C_RED"
             elif [[ "$RS_OC" == "partial" ]]; then tv w "partial"; stl="△ $w"; stk="$C_YELLOW"
             elif [[ "$RS_OC" == "blocked" ]]; then tv w "blocked"; stl="■ $w"; stk="$C_YELLOW"
@@ -1291,7 +1317,7 @@ if (( DIAGRAM )); then
     # The moment the advisor is most likely called now, from the phase and the last results.
     act="plan"
     case "$phase" in verify|commit|document|retire|validate|report|done) act="done" ;; esac
-    for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do [[ "${LV_STATUS[i]}" != ok || "${LV_OUTCOME[i]}" == partial || "${LV_OUTCOME[i]}" == blocked ]] && act=error; done
+    for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do [[ "${LV_STATUS[i]}" == error || "${LV_OUTCOME[i]}" == partial || "${LV_OUTCOME[i]}" == blocked ]] && act=error; done
     recent=0; if [[ -n "$a_last" ]]; then ts2ep "$a_last"; (( now_s - EP < 90 )) && recent=1; fi
     trig() {   # trig <code> <y> <label> <target x>
       local mk="◇" k="$K_DIM"
@@ -1401,7 +1427,7 @@ for r in "${roles[@]}"; do
     [[ "$RS_OC" == partial ]] && mark="${C_YELLOW}△${C_RESET}"
     [[ "$RS_OC" == blocked ]] && mark="${C_YELLOW}■${C_RESET}"
     [[ "$RS_OC" == unknown ]] && mark="${C_DIM}?${C_RESET}"
-    outcome_word="${RS_OC:-done}"; [[ "$RS_ST" == ok || "$RS_OC" == interrupted || "$RS_OC" == unknown ]] || outcome_word=failed
+    outcome_word="${RS_OC:-done}"; [[ "$RS_ST" != paused ]] || outcome_word=paused; [[ "$RS_ST" != handed_over ]] || outcome_word="handed over"; [[ "$RS_ST" == ok || "$RS_ST" == paused || "$RS_ST" == handed_over || "$RS_OC" == interrupted || "$RS_OC" == unknown ]] || outcome_word=failed
     if [[ "$RS_OC" == unknown && "${LV_BRIDGE[RS_I]:-}" == codex-native ]]; then
       ai_native_end_label "$RS_ST"; outcome_word="$AI_NATIVE_END"; mark="${C_DIM}·${C_RESET}"
     fi
@@ -1431,8 +1457,8 @@ fi
 
 # ---------------------------------------------------------------- status line
 n_del=0; tok=0
-[[ -s "$J" ]] && read -r n_del tok <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-  /"type":"delegation",/ { n++ } /"type":"(delegation|usage|advisor)"/ && !/delegation_start/ && !/"bridge":"subagent"|"cost_in":"usage"/ { t += num("tokens_in") + num("tokens_out") } END { print n + 0, t + 0 }' "$J")"
+[[ -s "$J" ]] && read -r n_del tok <<<"$(ai_journal_canonical <"$J" | awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
+  /"type":"delegation",/ { n++ } /"type":"(delegation|usage|advisor)"/ && !/delegation_start/ && !/"bridge":"subagent"|"cost_in":"usage"/ { t += num("tokens_in") + num("tokens_out") } END { print n + 0, t + 0 }')"
 ui_rail ""
 ui_rail "${C_BOLD}effort${C_RESET} [${L_EFFORT}]  ${C_BOLD}$(t "roles")${C_RESET} [$n_run/$n_roles $(t "running")]  ${C_BOLD}$(t "advisor")${C_RESET} [${ADV:-off}]  ${C_BOLD}$(t "delegations")${C_RESET} [$n_del]  ${C_BOLD}tokens${C_RESET} [$(ai_tokens_label "$tok")]"
 [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "$(t "live: loomy watch, then t")"

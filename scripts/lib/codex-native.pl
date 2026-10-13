@@ -9,6 +9,8 @@ use POSIX qw(strftime);
 use Time::Local qw(timegm);
 use Time::HiRes ();
 my (%inventory,%cached,%diagnosed,%watch);
+my $live_lib=abs_path(__FILE__); $live_lib =~ s{/[^/]+$}{};
+require "$live_lib/live-state.pl";
 my $canonical=JSON::PP->new->canonical;
 my $metadata_bytes=0;
 use Errno qw(EPERM);
@@ -36,7 +38,7 @@ sub open_read {
 }
 
 # Stat-only watch probe: retained dates cover old resumes; today's ancestors cover midnight.
-sub watch_changed {
+sub input_signature {
     my ($root,$sessions,$now)=@_;
     my $idx="$root/.loomy/logs/codex-native.idx";
     my $s=$cached{$idx} ? $cached{$idx}{state} : {};
@@ -46,6 +48,12 @@ sub watch_changed {
     $paths{$sessions}=1;
     my $path=$sessions; for my $part (split '/', $day) { $path.="/$part"; $paths{$path}=1 }
     my $sig=join(';',map { my @st=Time::HiRes::stat($_); join(':',$_,@st ? @st[0,1,7,9] : '-') } sort keys %paths);
+    return $sig;
+}
+sub watch_changed {
+    my ($root,$sessions,$now)=@_; my $idx="$root/.loomy/logs/codex-native.idx";
+    my $s=$cached{$idx} ? $cached{$idx}{state} : {};
+    my $sig=input_signature($root,$sessions,$now);
     my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
     $watch{$idx}=$sig;
     # Continue bounded catch-up even if the producer stops appending.
@@ -61,7 +69,11 @@ sub lines {
     $cursor->{at_eof}=0;
     my $f=open_read($path) or return ();
     my @s=stat($f); my $key="$s[0]:$s[1]";
-    if (($cursor->{key}//'') ne $key || ($cursor->{offset}//0)>$s[7]) { $cursor->{offset}=0; delete $cursor->{skipping} }
+    if (($cursor->{key}//'') ne $key || ($cursor->{offset}//0)>$s[7]) {
+        my $fence=epoch($cursor->{last_observed_ts}//$cursor->{last_evidence_ts});
+        $cursor->{replay_fence}=$fence if $fence>($cursor->{replay_fence}//0);
+        $cursor->{offset}=0; delete $cursor->{skipping}; delete $cursor->{read_sig};
+    }
     $cursor->{key}=$key; my $off=$cursor->{offset}//0;
     $cursor->{read_start}=$off;
     seek $f,$off,0 or return ();
@@ -177,11 +189,33 @@ sub owner_at {
     return {lead=>$lead,session=>$lead,ts=>$created,unbound=>1,pid=>0};
 }
 
-sub save {
-    my ($lock,$s)=@_;
-    seek $lock,0,0; print $lock encode_json($s) or die 'native checkpoint write failed';
-    $lock->flush or die 'native checkpoint flush failed';
-    truncate $lock,tell($lock) or die 'native checkpoint truncate failed';
+sub save { Loomy::LiveState::checkpoint_save(@_) }
+# Cursors replace lifetime event hashes. Retain current identities and a bounded recent replay window.
+sub prune_checkpoint {
+    my ($s,$now)=@_; my $changed=($s->{version}//0)!=2; $s->{version}=2;
+    my %keep;
+    my @finished=sort {epoch($b->{last_observed_ts})<=>epoch($a->{last_observed_ts})}
+        grep {$_->{finished} && $_->{id}} values %{$s->{files}//{}};
+    for my $i (0..$#finished) {
+        my $f=$finished[$i]; next if $i<1000 && $now-epoch($f->{last_observed_ts})<=604800;
+        $f->{replay_fence}=epoch($f->{last_observed_ts});
+        delete @$f{qw(id turn started model effort wait_calls starts closed_agents context emitted_activity projected_lead event_position)};
+        delete @{$f->{meta}}{qw(task nickname)}; $changed=1;
+    }
+    for my $f (values %{$s->{files}//{}}) {
+        if ($f->{id}) {$keep{sha256_hex("$f->{id}:$_")}=1 for qw(start end)}
+    }
+    my @keys=sort {($s->{seen}{$b}//0)<=>($s->{seen}{$a}//0) || $a cmp $b} keys %{$s->{seen}//{}};
+    for my $i (0..$#keys) {
+        my $key=$keys[$i]; next if $keep{$key};
+        next if $i<8000 && ($s->{seen}{$key}//0)>1 && $now-$s->{seen}{$key}<=604800;
+        delete $s->{seen}{$key}; $changed=1;
+    }
+    for my $key (keys %{$s->{owners}//{}}) {
+        my $o=$s->{owners}{$key}; my $end=epoch($o->{ended}//$o->{dead_at});
+        if ($end && $now-$end>604800) {delete $s->{owners}{$key}; delete $s->{owner_leads}{$key}; $changed=1}
+    }
+    return $changed;
 }
 
 # Older checkpoints lack an activity timestamp; inspect only their already-consumed source tail.
@@ -312,19 +346,22 @@ sub poll {
     return unless safe_path($idx) && safe_path($journal);
     umask 0077;
     sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
-    sysopen my $lock,$idx,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
+    return unless safe_path("$idx.lock");
+    sysopen my $lock,"$idx.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($lock,LOCK_EX|LOCK_NB) or return;
     chmod 0600,$lock or return;
-    my @is=Time::HiRes::stat($lock); my $isig=join(':',@is[0,1,7,9]);
-    my $raw='';
+    my $isig=Loomy::LiveState::file_signature($idx);
     my $s=$cached{$idx} && $cached{$idx}{sig} eq $isig ? $cached{$idx}{state} : undef;
-    unless ($s) { sysread($lock,$raw,4194304); $s=eval { decode_json($raw) } }
-    my $before=$s ? $canonical->encode($s) : ''; $s={} unless ref($s) eq 'HASH' && ($s->{version}//0)==1;
-    $s->{version}=1;
+    my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $day=int($now/86400);
+    if ($s && ($cached{$idx}{pruned_day}//-1)==$day && ($cached{$idx}{poll_sig}//'') eq input_signature($root,$sessions,$now)
+        && !(grep {!($_->{at_eof}//0)} values %{$s->{files}//{}})
+        && ($s->{journal}{at_eof}//0)) {return $s}
+    $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
+    my $dirty=prune_checkpoint($s,$now);
+    my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
+    Loomy::LiveState::journal_rotate($journal);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
-    flock($out,LOCK_EX|LOCK_NB) or return;
     chmod 0600,$out or return;
-    my $now=$ENV{LOOMY_NATIVE_NOW}//time;
     my $jc=$s->{journal}//={};
     # Upgrade old checkpoints through the same bounded replay, without clearing deduplication or usage events.
     if (grep { !exists $_->{context_freshness} } values %{$s->{root_snapshots}//{}}) {
@@ -344,10 +381,25 @@ sub poll {
         $s->{owners}={}; $jc->{active}={};
     }
     $jc->{generation}=$generation;
-    for my $record (lines($journal,$jc,2097152)) {
+    my $input=Loomy::LiveState::recovery_path($journal,$jc);
+    my %replay_files=map {$s->{files}{$_}{meta}{id}=>[$_,$s->{files}{$_}]} keys %{$s->{files}//{}};
+    for my $record (lines($input,$jc,2097152)) {
         my $line=$record->[0];
-        my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH';
-        $s->{seen}{identity($d->{native_key})}=1 if identity($d->{native_key});
+        my $d=eval { decode_json($line) }; next unless Loomy::LiveState::valid_event($d);
+        $s->{seen}{identity($d->{native_key})}=epoch($d->{ts}) || $now if identity($d->{native_key});
+        # Recover consumed source positions before bounded event keys age out.
+        my $recovered=$replay_files{identity($d->{agent_id})}; my $f=$recovered ? $recovered->[1] : undef;
+        if ($f && $f->{meta}{parent} && identity($d->{id}) && scalar_text($d->{source_offset}) =~ /^\d+$/
+            && scalar_text($d->{source_inode}) eq ($f->{key}//'') && $d->{source_offset}>($f->{offset}//0)
+            && safe_path($recovered->[0]) && $d->{source_offset}<=(-s $recovered->[0]//0)) {
+            $f->{offset}=0+$d->{source_offset}; delete $f->{read_sig}; $f->{at_eof}=0;
+            $f->{id}=identity($d->{id}); $f->{turn}=identity($d->{turn_id});
+            $f->{started}=stamp($d->{ts}) if ($d->{type}//'') eq 'delegation_start';
+            $f->{finished}=($d->{type}//'') eq 'delegation' ? 1 : 0;
+            $f->{activity}=scalar_text($d->{activity}//$d->{state}) || 'unknown';
+            $f->{model}=identity($d->{model}); $f->{effort}=identity($d->{effort});
+            $f->{last_observed_ts}=stamp($d->{ts});
+        }
         if (($d->{type}//'') eq 'session_context' && ($d->{tool}//'') eq 'codex' && ($d->{bridge}//'') eq 'codex-native' && ($d->{scope}//'') eq 'lead') {
             my $root_id=identity($d->{parent_session}) || identity($d->{session});
             if ($root_id) {
@@ -396,14 +448,20 @@ sub poll {
             delete $s->{owners}{$key};
         } else { $live_owner{$group}=$key }
     }
-    if (($jc->{offset}//0)<$js[7]) { save($lock,$s); return $s }
-    my $discovery_bytes=discover($s,$sessions,$root,$now)//0;
+    if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s); return $s }
+    $dirty=1 if ($jc->{read_bytes}//0);
+    my $discovery_bytes=discover($s,$sessions,$root,$now)//0; $dirty=1 if $discovery_bytes;
     if (($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0') {
         for my $f (values %{$s->{files}//{}}) { $f->{meta}{task}=''; $f->{meta}{nickname}='' }
     }
+    my $emitting_file;
     my $emit=sub {
         my ($key,$type,$ts,$body)=@_; $key=sha256_hex($key); return if $s->{seen}{$key};
         if (($body->{schema}//0)==2) {
+            if ($emitting_file && $emitting_file->{meta}{parent}) {
+                $body->{source_offset}=$emitting_file->{event_position}//$emitting_file->{offset}//0;
+                $body->{source_inode}=$emitting_file->{key}//'';
+            }
             delete @$body{qw(owner_pid pid_role)} if exists($body->{owner_pid}) && scalar_text($body->{owner_pid}) eq '0';
             $body->{source_ts}=stamp($ts); $body->{observed_at}=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
             $body->{evidence}//='rollout'; $body->{event_key}=$key; $body->{source_revision}//=$generation;
@@ -413,13 +471,13 @@ sub poll {
         my $json=encode_json($body); $json =~ s/^\{//; $json =~ s/\}$//;
         print $out '{"ts":'.encode_json(stamp($ts)).',"type":'.encode_json($type).',"native_key":'.encode_json($key).($json ne '' ? ",$json" : '')."}\n" or die 'native journal write failed';
         $out->flush or die 'native journal flush failed';
-        $s->{seen}{$key}=1;
+        $s->{seen}{$key}=$now; $dirty=1;
         $jc->{active}{$body->{id}}=1 if $type eq 'delegation_start';
         delete $jc->{active}{$body->{id}} if $type eq 'delegation';
     };
     my @owners=sort { $b->{ts} cmp $a->{ts} } values %{$s->{owners}//{}};
     for my $o (@owners) {
-        $o->{dead_at}//=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)) if !$o->{ended} && !alive($o->{pid});
+        if (!$o->{dead_at} && !$o->{ended} && !alive($o->{pid})) {$o->{dead_at}=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)); $dirty=1}
     }
     my $probe_budget=2097152-$discovery_bytes; my $probe_used=0;
     for my $o (@owners) {
@@ -460,7 +518,7 @@ sub poll {
     my $position=0;
     for my $path (@paths) {
         my $slot=$position++;
-        my $f=$s->{files}{$path}; my $m=$f->{meta};
+        my $f=$s->{files}{$path}; my $m=$f->{meta}; $emitting_file=$f;
         if (!$m->{parent}) {
             my ($owner)=grep { ($_->{lead}//'') eq $m->{id} } @owners;
             next unless $owner;
@@ -469,7 +527,7 @@ sub poll {
             $f->{at_eof}=0 if $budget<=0;
             if ($budget>0) {
                 $s->{read_rotation}=($rotation+$slot+1)%@paths;
-                $budget-=root_context($path,$f,$budget);
+                my $used=root_context($path,$f,$budget); $budget-=$used; $dirty=1 if $used;
             }
             $owner=owner_at(\@owners,$m->{id},$f->{last_evidence_ts}//$m->{ts},$m->{ts});
             my $snapshot=$s->{root_snapshots}{$m->{id}};
@@ -540,6 +598,8 @@ sub poll {
                 my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH';
                 my $p=$d->{payload}; next unless ref($p) eq 'HASH';
                 my $type=scalar_text($d->{type}); my $event=scalar_text($p->{type}); my $ts=stamp($d->{timestamp}); next unless epoch($ts);
+                next if $f->{replay_fence} && epoch($ts)<=$f->{replay_fence};
+                $f->{event_position}=$position;
                 close_record($f,$p,$ts) if $type eq 'response_item';
                 my $turn=identity($p->{turn_id});
                 if ($type eq 'event_msg' && $event eq 'task_started' && $turn) {
@@ -581,7 +641,7 @@ sub poll {
                     $f->{activity}=keys %{$f->{wait_calls}//{}} ? 'waiting' : 'running';
                 }
             }
-            $budget-=$f->{read_bytes}//0;
+            $budget-=$f->{read_bytes}//0; $dirty=1 if $f->{read_bytes};
             if ($f->{id} && !$f->{finished} && ($f->{oversized} || !safe_path($path) || !-f $path)) {
                 $f->{activity}='unknown';
                 $emit->("$f->{id}:unavailable:$f->{offset}",'delegation_activity',strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),{%$base,id=>$f->{id},activity=>'unknown'});
@@ -622,10 +682,13 @@ sub poll {
         }
     }
     # The append and checkpoint share one lock; crash recovery replays only unseen native keys.
+    $out->flush or die 'native journal flush failed'; $out->sync or die 'native journal sync failed';
     my @end=stat($out); $jc->{offset}=$end[7]; $jc->{key}="$end[0]:$end[1]";
-    my $after=$canonical->encode($s);
-    save($lock,$s) if $after ne $before;
-    @is=Time::HiRes::stat($lock); $cached{$idx}={sig=>join(':',@is[0,1,7,9]),state=>$s};
+    if ($end[7]>=8388608) {close $out; Loomy::LiveState::journal_rotate($journal)}
+    prune_checkpoint($s,$now) if $dirty;
+    save($idx,$s) if $dirty;
+    $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day};
+    $cached{$idx}{poll_sig}=input_signature($root,$sessions,$now);
     return $s;
 }
 

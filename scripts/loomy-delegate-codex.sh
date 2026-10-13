@@ -52,18 +52,6 @@ case "$ROLE" in
   *) t "Error: unsupported role '%s'." "$ROLE" >&2; echo >&2; exit 2 ;;
 esac
 
-# Codex quota nearly exhausted, Claude available with room left: the role goes to Claude, on the model the routing
-# gives that role on the Claude side (once: a delegation that already switched never switches back).
-if [[ -z "${LOOMY_FAILOVER_FROM:-}" && "$(ai_switch_family codex)" == "claude" ]]; then
-  t "loomy-delegate-codex: Codex quota at %s (threshold %s %%): %s handed to Claude until it resets." "$(ai_quota_state codex)" "$(ai_switch_threshold)" "$ROLE" >&2; echo >&2
-  # Options that mean the same on the Claude side travel along (not --model: a Codex id).
-  FWD=()
-  [[ -n "$O_EFFORT" ]] && FWD+=(--effort "$O_EFFORT")
-  [[ "$O_SANDBOX" == "write" ]] && FWD+=(--write)
-  [[ "$O_SANDBOX" == "read" ]] && FWD+=(--read-only)
-  [[ -n "$O_WHY" ]] && FWD+=(--why "$O_WHY")
-  LOOMY_REQUESTED_MODEL="${O_MODEL:-${DELEGATE_CODEX_MODEL:-}}" LOOMY_FAILOVER_FROM=codex exec bash "$SCRIPT_DIR/loomy-delegate-claude.sh" "$ROLE" ${FWD[@]+"${FWD[@]}"} "$TASK"
-fi
 FAILOVER_JSON=""; [[ -n "${LOOMY_FAILOVER_FROM:-}" ]] && FAILOVER_JSON=",\"failover_from\":\"$LOOMY_FAILOVER_FROM\""
 
 CODEX="$(ai_codex_bin)" || { t "Error: Codex CLI not found (PATH, Codex.app or ChatGPT.app). Run loomy doctor." >&2; echo >&2; exit 127; }
@@ -72,6 +60,7 @@ ROOT="$(ai_project_root)"
 ai_detect_env "$ROOT"
 ai_route "$ROLE" codex "$AI_PROFILE"
 MODEL="${O_MODEL:-${DELEGATE_CODEX_MODEL:-$R_MODEL}}"
+LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-${O_MODEL:-${DELEGATE_CODEX_MODEL:-}}}"
 EFFORT="${O_EFFORT:-${DELEGATE_CODEX_EFFORT:-$R_EFFORT}}"
 
 SANDBOX="read-only"
@@ -101,6 +90,7 @@ DFORMAT="$(ai_delegation_format "$ROOT")"
 
 $(ai_result_contract)"
 
+loomy_guard_real_cli codex "$CODEX" || exit $?
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-codex.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -111,7 +101,13 @@ fi
 
 { t "loomy-delegate-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
+if [[ "$SANDBOX" == workspace-write ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ai_delegate_file_snapshot >"$TMP/before-files.json"
+fi
+
 DELEG_ID="$(ai_delegation_id)"
+# exec preserves the PID; a same-second handover must have a distinct lifecycle ID.
+[[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || DELEG_ID="$DELEG_ID-codex"
 STARTED="$(date +%s)"
 START_MODEL="$MODEL"
 CHILD_PID=""
@@ -152,7 +148,9 @@ trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
 ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
+ai_delegate_provider_guard codex
 run_codex() {
+  loomy_guard_real_cli codex "$CODEX" || return $?
   LOOMY_DELEGATION=1 exec perl -e 'setpgrp(0, 0); getpgrp(0) == $$ or die "setpgrp: $!"; exec @ARGV or die "exec: $!"' \
     "$CODEX" exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
     --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
@@ -163,20 +161,16 @@ CHILD_PID=$!
 wait "$CHILD_PID"; STATUS=$?
 CHILD_PID=""
 set -e
-# Model refused (doesn't exist or no access for this account): recorded for this machine, then fallback to the next in its chain.
-while (( STATUS != 0 )) && grep -qiE "model.*(not found|does not exist|not supported|unavailable|not available)|unknown model|model_not_found" "$TMP/log.txt"; do
-  ai_model_mark "$MODEL" ko
-  NEXT="$(ai_model_next codex "$MODEL")"
-  [[ -n "$NEXT" ]] || break
-  t "loomy-delegate-codex: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
-  MODEL="$NEXT"
-  set +e
-  run_codex "$MODEL" &
-  CHILD_PID=$!
-  wait "$CHILD_PID"; STATUS=$?
-  CHILD_PID=""
-  set -e
-done
+# Classify actual failed results only, never successful agent prose.
+ai_delegate_error codex "$TMP/log.txt" "$STATUS"
+if [[ "$AI_ERROR_FAILED" == 1 ]]; then
+  (( STATUS != 0 )) || STATUS=1
+  ERROR_CLASS="$(ai_model_error_class "$AI_ERROR_TEXT")"
+  case "$ERROR_CLASS" in
+    saturated) ai_provider_refusal codex "$AI_ERROR_TEXT"; ai_delegate_provider_guard codex saturated ;;
+    model) ai_model_mark "$MODEL" ko; ai_delegate_provider_guard codex model ;;
+  esac
+fi
 DURATION=$(( $(date +%s) - STARTED ))
 
 # Usage reported by the "turn.completed" events of codex exec --json.

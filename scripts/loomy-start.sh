@@ -29,6 +29,7 @@ url_encode() {
 # Terminal window. The app can't open its own terminal panel on loomy watch: the window stands next to it.
 open_in_app() {
   local url w
+  loomy_guard_real_cli "$TOOL" "${NEW_CMD[0]}" || return $?
   if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
   local ep ef
   ep="$(url_encode "$PROMPT")"; ef="$(url_encode "$ROOT")"
@@ -68,6 +69,7 @@ loomy_orchestrator_target() {
 loomy_open_orchestrator() {
   local root="$1" command launch
   loomy_orchestrator_target "$root"
+  loomy_guard_real_cli "$LOOMY_OPEN_TOOL" "$( [[ "$LOOMY_OPEN_TOOL" == codex ]] && ai_codex_bin || echo claude)" || return $?
   if [[ "$LOOMY_OPEN_TARGET" == app ]]; then
     # The current lead (an active relay's acting tool, else the brief's): never a stale AI_ROUTE_ENV inherited from a
     # tmux server or an older shell (loomy start --lead replaces it).
@@ -371,6 +373,7 @@ fi
 if [[ "$MODE" == "new" && "$(loomy_config_get start_in 2>/dev/null || true)" == "app" && "${LOOMY_START_IN:-}" != "terminal" ]]; then MODE="app"; fi
 
 
+[[ "$MODE" == print || "$MODE" == cancel ]] || loomy_guard_real_cli "$TOOL" "${NEW_CMD[0]}" || exit $?
 case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
   app)
@@ -428,6 +431,7 @@ while :; do
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$,\"pid_role\":\"owner\""
   fi
+  loomy_guard_real_cli "$TOOL" "${AGENT_CMD[0]}" || exit $?
   rc=0; "${AGENT_CMD[@]}" || rc=$?
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"codex\",\"pid\":$$"

@@ -42,8 +42,8 @@ FILE="$(ai_journal_file "$ROOT")"
 
 # Selected events: the whole history (archives included) from --since; the last N without --since.
 events() {
-  if [[ -n "$SINCE" ]]; then ai_journal_all "$ROOT" | awk -v s="\"ts\":\"$SINCE" 'substr($0, 2, length(s)) >= s'
-  else ai_journal_all "$ROOT" | tail -n "$N"; fi
+  if [[ -n "$SINCE" ]]; then ai_journal_all "$ROOT" | ai_journal_canonical | awk -v s="\"ts\":\"$SINCE" 'substr($0, 2, length(s)) >= s'
+  else ai_journal_all "$ROOT" | ai_journal_canonical | tail -n "$N"; fi
 }
 
 if (( CSV )); then
@@ -59,7 +59,9 @@ fi
 
 if (( RAW )); then
   if (( FOLLOW )); then exec tail -n "$N" -f "$FILE"; fi
-  events; exit 0
+  if [[ -n "$SINCE" ]]; then ai_journal_all "$ROOT" | awk -v s="\"ts\":\"$SINCE" 'substr($0, 2, length(s)) >= s'
+  else ai_journal_all "$ROOT" | tail -n "$N"; fi
+  exit 0
 fi
 
 # Local UTC offset in minutes (the log is in UTC; macOS awk has neither mktime nor strftime).
@@ -87,6 +89,10 @@ pretty() {
     function val() { return ((field("family") == "codex" ? px : pc) + 0) ? sprintf("%7s tk", tk(num("tokens_in") + num("tokens_out"))) : sprintf("%10s", sprintf("$%.4f", num("cost_usd"))) }
     {
       t = D hm(field("ts")) Z; ty = field("type")
+      if (ty == "delegation_start" || ty == "delegation") {
+        identity = field("session") "|" (field("turn_id") != "" ? field("turn_id") : field("id")) "|" ty
+        if ((field("bridge") == "subagent" || field("bridge") == "claude-native") && seen[identity]++) next
+      }
       if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"; oc = field("outcome")

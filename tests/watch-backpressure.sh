@@ -2,18 +2,17 @@
 # Deterministic queue semantics and real PTY under a 1.4-second synthetic renderer.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-watch-backpressure.XXXXXX")"
-WORK="$(cd "$WORK" && pwd -P)"
-cleanup() {
+WORK="$(mktemp -d "/tmp/loomy-watch-backpressure.XXXXXX")"
+# shellcheck source=lib/guard.sh
+source "$REPO/tests/lib/guard.sh"
+test_guard_cleanup() {
   (( BASH_SUBSHELL == 0 )) || return 0
   if [[ -n "${LOOMY_BACKPRESSURE_OUT:-}" ]]; then
     mkdir -p "$LOOMY_BACKPRESSURE_OUT"
     for file in watch.log render.trace; do [[ ! -f "$WORK/$file" ]] || cp "$WORK/$file" "$LOOMY_BACKPRESSURE_OUT/"; done
   fi
   if [[ -f "$WORK/sampler.pid" ]]; then kill "$(<"$WORK/sampler.pid")" 2>/dev/null || true; fi
-  rm -rf "$WORK"
 }
-trap cleanup EXIT
 PASS=0
 check() { local title="$1"; shift; if "$@"; then PASS=$(( PASS + 1 )); printf 'ok %s\n' "$title"; else printf 'FAIL %s\n' "$title" >&2; exit 1; fi; }
 if [[ -z "${LOOMY_BACKPRESSURE_STATUS:-}" ]]; then

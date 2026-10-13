@@ -12,11 +12,13 @@ _fb_ai() {
   case "${LOOMY_TRIAGE_AI:-auto}" in none) return 1 ;; esac
   codex="$(ai_codex_bin 2>/dev/null || true)"
   if [[ -n "$codex" && "${LOOMY_TRIAGE_AI:-auto}" != claude ]]; then
+    loomy_guard_real_cli codex "$codex" || return $?
     LOOMY_DELEGATION=1 "$codex" exec -m "${AI_MODEL_CODEX_FAST:-gpt-6-luna}" -c model_reasoning_effort=medium -s read-only \
       --skip-git-repo-check --ephemeral -o "$2" "$(cat "$1")" </dev/null >/dev/null 2>&1 && [[ -s "$2" ]] && return 0
   fi
   claude="$(command -v claude 2>/dev/null || true)"
   if [[ -n "$claude" ]]; then
+    loomy_guard_real_cli claude "$claude" || return $?
     # No tool at all (the issues are untrusted text): it can only write the proposal.
     LOOMY_DELEGATION=1 "$claude" -p --model "${AI_MODEL_CLAUDE_FAST:-claude-haiku-4-5}" --tools "" --strict-mcp-config "$(cat "$1")" </dev/null >"$2" 2>/dev/null && [[ -s "$2" ]] && return 0
   fi

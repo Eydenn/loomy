@@ -171,4 +171,5 @@ cd "$ROOT" || exit 1
 if [[ "$TOOL" == "codex" ]] || ! grep -qs "loomy-context.sh" "$ROOT/.claude/settings.json"; then
   ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"$TOOL\",\"pid\":$$"
 fi
+loomy_guard_real_cli "$TOOL" "${AGENT_CMD[0]}" || exit $?
 ui_exec "${AGENT_CMD[@]}"

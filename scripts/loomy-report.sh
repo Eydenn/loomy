@@ -45,13 +45,13 @@ metrics() {
   for f in "$r"/.loomy/tasks/*.md; do [[ -f "$f" ]] || continue; tasks=$(( tasks + 1 )); st="$(sed -n 's/^status: //p' "$f" | head -1)"; [[ "$st" == "done" ]] && tdone=$(( tdone + 1 )); done
   for f in "$r"/.loomy/audits/*/; do [[ -d "$f" ]] && audits=$(( audits + 1 )); done
   for f in "$r"/.loomy/reviews/*.md; do [[ -f "$f" ]] && reviews=$(( reviews + 1 )); done
-  ai_journal_all "$r" | awk -v name="$name" -v phase="${phase:-?}" -v tasks="$tasks" -v tdone="$tdone" -v audits="$audits" -v reviews="$reviews" '
+  ai_journal_all "$r" | ai_journal_canonical | awk -v name="$name" -v phase="${phase:-?}" -v tasks="$tasks" -v tdone="$tdone" -v audits="$audits" -v reviews="$reviews" '
     function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
     { ts = field("ts"); if (ts != "") { if (first == "") first = ts; last = ts } }
     index($0, "\"type\":\"phase\"") { if (bs == "") bs = ts; if (index($0, "\"phase\":\"done\"")) be = ts }
     index($0, "\"type\":\"delegation\",") {
-      n++; if (field("status") != "ok") err++
+      n++; st=field("status"); if (st == "paused") paused++; else if (st == "handed_over") handed++; else if (st != "ok") err++
       role[field("role")]++; model[field("model")]++; dur += num("duration_s")
       cost += num("cost_usd"); tok += num("tokens_in") + num("tokens_out") }
     index($0, "\"type\":\"usage\"") { cost += num("cost_usd"); tok += num("tokens_in") + num("tokens_out"); model[field("model")] += 0 }
@@ -59,8 +59,8 @@ metrics() {
     END {
       roles = ""; for (k in role) if (k != "") roles = roles (roles == "" ? "" : ",") k ":" role[k]
       models = ""; for (k in model) if (k != "" && model[k] > 0) models = models (models == "" ? "" : ",") k ":" model[k]
-      printf "name=%s\tphase=%s\tfirst=%s\tlast=%s\tbs=%s\tbe=%s\tn=%d\terr=%d\tdur=%d\tcost=%.2f\ttok=%d\ttasks=%d\ttdone=%d\taudits=%d\treviews=%d\troles=%s\tmodels=%s\tadv=%d\n", \
-        name, phase, first, last, bs, be, n, err, dur, cost, tok, tasks, tdone, audits, reviews, roles, models, adv }'
+      printf "name=%s\tphase=%s\tfirst=%s\tlast=%s\tbs=%s\tbe=%s\tn=%d\terr=%d\tdur=%d\tcost=%.2f\ttok=%d\ttasks=%d\ttdone=%d\taudits=%d\treviews=%d\troles=%s\tmodels=%s\tadv=%d\tpaused=%d\thanded=%d\n", \
+        name, phase, first, last, bs, be, n, err, dur, cost, tok, tasks, tdone, audits, reviews, roles, models, adv, paused, handed }'
 }
 kv() { printf '%s\n' "$1" | tr '\t' '\n' | sed -n "s/^$2=//p" | head -1; }
 dur_label() { local d="${1:-0}"; if (( d >= 3600 )); then printf '%d h %02d min' $(( d / 3600 )) $(( d % 3600 / 60 )); elif (( d >= 60 )); then printf '%d min' $(( d / 60 )); else printf '%d s' "$d"; fi; }
@@ -104,7 +104,7 @@ else
   ui_kv "$(t "Tasks")" "$(t "%s, %s done" "$(kv "$m" tasks)" "$(kv "$m" tdone)")"
   ui_kv "$(t "Reviews")" "$(kv "$m" reviews) · $(t "Audits"): $(kv "$m" audits)"
   ui_section "$(t "DELEGATIONS")"
-  ui_kv "$(t "Total")" "$(kv "$m" n) · $(t "%s failed" "$(kv "$m" err)") · $(t "working time %s" "$(dur_label "$(kv "$m" dur)")")"
+  ui_kv "$(t "Total")" "$(kv "$m" n) · $(t "%s failed" "$(kv "$m" err)") · $(t "%s paused" "$(kv "$m" paused)") · $(t "%s handed over" "$(kv "$m" handed)") · $(t "working time %s" "$(dur_label "$(kv "$m" dur)")")"
   ui_kv "$(t "By role")" "$(kv "$m" roles | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
   (( $(kv "$m" adv) > 0 )) && ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "$(kv "$m" adv)")"
   ui_kv "$(t "By model")" "$(kv "$m" models | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
@@ -148,7 +148,7 @@ if (( MD )); then
       echo "| | |"; echo "|---|---|"
       if [[ "$ph" == "done" ]]; then echo "| Bootstrap | $(t "done")${b:+ ($(t "in %s" "$b"))} |"; else echo "| Bootstrap | $(loomy_phase_label "$ph") |"; fi
       echo "| $(t "Tasks") | $(t "%s, %s done" "$(kv "$m" tasks)" "$(kv "$m" tdone)") |"
-      echo "| $(t "Delegations") | $(kv "$m" n) ($(t "%s failed" "$(kv "$m" err)")) |"
+      echo "| $(t "Delegations") | $(kv "$m" n) ($(t "%s failed" "$(kv "$m" err)") · $(t "%s paused" "$(kv "$m" paused)") · $(t "%s handed over" "$(kv "$m" handed)")) |"
       echo "| $(t "Working time") | $(dur_label "$(kv "$m" dur)") |"
       echo "| Tokens | $(ai_tokens_label "$(kv "$m" tok)") |"
       echo "| $(t "Cost (estimate)") | \$$(kv "$m" cost) |"

@@ -1,0 +1,67 @@
+source [file join [file dirname [info script]] watchdog.exp]
+# Four Claude solo cells; synthetic hooks/transcripts, real watch frames on the Mac PTY.
+set timeout 10
+set repo [file normalize [file join [file dirname [info script]] .. ..]]
+set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-claude-live-pty.XXXXXX 2>@1]]
+set fixture [file join $repo tests fixtures claude-native.pl]
+set projects [file join $work claude projects]
+foreach name {AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT} { unset -nocomplain env($name) }
+file mkdir [file join $work home] [file join $work config]
+set child ""
+set maximum 0
+set budget 600
+if {[info exists env(LOOMY_TEST_SUITE)] && $env(LOOMY_TEST_SUITE) == 1} {set budget 5000}
+log_user 0
+proc visible {pattern} {
+    global spawn_id
+    expect {
+        -re $pattern {}
+        timeout { error "Claude frame missing: $pattern" }
+        eof { error "Watch exited before Claude frame" }
+    }
+}
+set result [catch {
+    foreach surface {cli app} {
+        foreach bg {0 1} {
+            set root [file join $work $surface-$bg]
+            # The watch persists its view in the config dir: one per cell, so 'a' always starts from the tree.
+            file mkdir [file join $work config-$surface-$bg]
+            exec perl $fixture seed $root $projects $surface $bg 2>@1
+            exec perl $fixture hooks $root $projects $surface $bg 2>@1
+            spawn env HOME=$work/home XDG_CONFIG_HOME=$work/config-$surface-$bg CLAUDE_CONFIG_DIR=$work/claude CODEX_HOME=$work/codex LOOMY_NATIVE_NOW=1791853207 LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin NO_COLOR=1 COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
+            set child [exp_pid]
+            visible {Implement fixture[^\r\n]*running}
+            exec perl $fixture return $root $projects $surface $bg 2>@1
+            exec perl $fixture hook-return $root $projects $surface $bg 2>@1
+            if {$bg} { visible {Implement fixture[^\r\n]*running} }
+            exec perl $fixture stop $root $projects $surface $bg 2>@1
+            exec perl $fixture hook-stop $root $projects $surface $bg 2>@1
+            visible {Implement fixture[^\r\n]*done}
+            for {set trial 30} {$trial < 50} {incr trial} {
+                if {$trial == 40} { send "a" }
+                after [expr {int(rand()*240)}]
+                set passed 0
+                for {set attempt 0} {$attempt < 2} {incr attempt} {
+                    set id [expr {$trial+$attempt*100}]
+                    set started [clock clicks -microseconds]
+                    exec perl $fixture live-child $root $projects $surface $bg $id 2>@1
+                    set pattern "latency$id\[^\\r\\n\]*running · \[0-9\]+:\[0-9\]\[0-9\]"
+                    visible $pattern
+                    set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
+                    if {$elapsed > $maximum} { set maximum $elapsed }
+                    exec perl $fixture return $root $projects $surface $bg $id 2>@1
+                    exec perl $fixture stop $root $projects $surface $bg $id 2>@1
+                    if {$elapsed < $budget} {set passed 1; break}
+                }
+                if {!$passed} {error "$surface background=$bg trial $trial exceeded $budget ms after retry"}
+            }
+            send "q"
+            expect { eof {} timeout { error "Watch q unresponsive" } }
+            catch {close}; catch {wait}; set child ""
+        }
+    }
+} reason]
+if {$child ne ""} { catch {exec kill $child 2>@1}; catch {close}; catch {wait} }
+file delete -force $work
+if {$result != 0} { puts stderr $reason; exit 1 }
+puts "S2 PTY: four Claude solo cells, 80 frames, maximum $maximum ms, tree/list/q passed"

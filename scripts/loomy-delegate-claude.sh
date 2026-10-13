@@ -75,18 +75,6 @@ case "$ROLE" in
     exit 2 ;;
 esac
 
-# Claude quota nearly exhausted, Codex available with room left: the role goes to Codex (read-only sandbox for these
-# roles), on the model the routing gives it on the Codex side. Once only: a delegation that already switched stays.
-if [[ -z "${LOOMY_FAILOVER_FROM:-}" && "$(ai_switch_family claude)" == "codex" ]]; then
-  t "loomy-delegate-claude: Claude quota at %s (threshold %s %%): %s handed to Codex until it resets." "$(ai_quota_state claude)" "$(ai_switch_threshold)" "$ROLE" >&2; echo >&2
-  # Options that mean the same on the Codex side travel along (not --model: a Claude id).
-  FWD=()
-  [[ -n "$O_EFFORT" ]] && FWD+=(--effort "$O_EFFORT")
-  [[ "$O_SANDBOX" == "write" ]] && FWD+=(--write)
-  [[ "$O_SANDBOX" == "read" ]] && FWD+=(--read-only)
-  [[ -n "$O_WHY" ]] && FWD+=(--why "$O_WHY")
-  LOOMY_REQUESTED_MODEL="${O_MODEL:-${DELEGATE_CLAUDE_MODEL:-}}" LOOMY_FAILOVER_FROM=claude exec bash "$SCRIPT_DIR/loomy-delegate-codex.sh" "$ROLE" ${FWD[@]+"${FWD[@]}"} "$TASK"
-fi
 WRITES=0; ai_role_writes "$ROLE" && WRITES=1
 case "$O_SANDBOX" in write) WRITES=1 ;; read) WRITES=0 ;; esac
 if (( WRITES )) && ! ai_role_writes "$ROLE"; then
@@ -102,6 +90,7 @@ ai_detect_env "$ROOT"
 ai_route "$ROLE" claude "$AI_PROFILE"
 # Deliberately not CLAUDE_MODEL/CLAUDE_EFFORT: Claude Code exports CLAUDE_EFFORT in its own sessions.
 MODEL="${O_MODEL:-${DELEGATE_CLAUDE_MODEL:-$R_MODEL}}"
+LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-${O_MODEL:-${DELEGATE_CLAUDE_MODEL:-}}}"
 EFFORT="${O_EFFORT:-${DELEGATE_CLAUDE_EFFORT:-$R_EFFORT}}"
 REQUESTED=0
 [[ -n "$O_MODEL$O_EFFORT$O_SANDBOX$O_WHY${DELEGATE_CLAUDE_MODEL:-}${DELEGATE_CLAUDE_EFFORT:-}${LOOMY_REQUESTED_MODEL:-}" ]] && REQUESTED=1
@@ -122,9 +111,11 @@ DFORMAT="$(ai_delegation_format "$ROOT")"
 
 $(ai_result_contract)"
 
+loomy_guard_real_cli claude claude || exit $?
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-claude.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 run_claude() {
+  loomy_guard_real_cli claude claude || return $?
   if (( WRITES )); then
     # Like Codex's workspace-write sandbox: file edits accepted in the project, shell commands only inside Claude
     # Code's sandbox (filesystem limited to the project, no network); anything else is refused, never asked.
@@ -144,7 +135,13 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
 
 { t "loomy-delegate-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
+if [[ "$SANDBOX" == workspace-write ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  ai_delegate_file_snapshot >"$TMP/before-files.json"
+fi
+
 DELEG_ID="$(ai_delegation_id)"
+# exec preserves the PID; a same-second handover must have a distinct lifecycle ID.
+[[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || DELEG_ID="$DELEG_ID-claude"
 STARTED="$(date +%s)"
 START_MODEL="$MODEL"
 CHILD_PID=""
@@ -185,6 +182,7 @@ trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
 ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
+ai_delegate_provider_guard claude
 set +e
 run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
 CHILD_PID=$!
@@ -194,40 +192,17 @@ OUT="$(cat "$TMP/out.json")"
 [[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
 set -e
 
-# Old Claude Code versions refuse recent model ids: try again with the family alias.
-if grep -q 'does not support this model' <<<"$OUT"; then
-  ALIAS="$(ai_claude_alias "$MODEL")"
-  t "loomy-delegate-claude: this Claude Code version doesn't know %s, trying again with '%s' (run 'claude update')." "$MODEL" "$ALIAS" >&2; echo >&2
-  : >"$TMP/out.json"; : >"$TMP/err.log"
-  set +e
-  run_claude "$ALIAS" >"$TMP/out.json" 2>"$TMP/err.log" &
-  CHILD_PID=$!
-  wait "$CHILD_PID"; STATUS=$?
-  CHILD_PID=""
-  OUT="$(cat "$TMP/out.json")"
-  [[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
-  set -e
+# Classify actual failed results only, never successful agent prose.
+ai_delegate_error claude "$TMP/out.json" "$STATUS"
+if [[ "$AI_ERROR_FAILED" == 1 ]]; then
+  (( STATUS != 0 )) || STATUS=1
+  AI_ERROR_TEXT="${AI_ERROR_TEXT}$(cat "$TMP/err.log")"
+  ERROR_CLASS="$(ai_model_error_class "$AI_ERROR_TEXT")"
+  case "$ERROR_CLASS" in
+    saturated) ai_provider_refusal claude "$AI_ERROR_TEXT"; ai_delegate_provider_guard claude saturated ;;
+    model) ai_model_mark "$MODEL" ko; ai_delegate_provider_guard claude model ;;
+  esac
 fi
-
-# Model refused (doesn't exist or no access for this account): recorded for this machine, then fallback to the next
-# model of its chain in the catalog (not everyone has access to the latest models).
-while grep -qiE "may not exist|not have access|model.*not (found|available)|invalid model|not_found_error" <<<"$OUT"; do
-  ai_model_mark "$MODEL" ko
-  NEXT="$(ai_model_next claude "$MODEL")"
-  [[ -n "$NEXT" ]] || break
-  t "loomy-delegate-claude: %s unavailable for this account, falling back to %s (remembered for next time)." "$MODEL" "$NEXT" >&2; echo >&2
-  MODEL="$NEXT"
-  : >"$TMP/out.json"; : >"$TMP/err.log"
-  set +e
-  run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
-  CHILD_PID=$!
-  wait "$CHILD_PID"; STATUS=$?
-  CHILD_PID=""
-  OUT="$(cat "$TMP/out.json")"
-  [[ ! -s "$TMP/err.log" ]] || cat "$TMP/err.log" >&2
-  set -e
-done
-
 DURATION=$(( $(date +%s) - STARTED ))
 # Cost and tokens reported by the JSON output of claude -p.
 T_IN="$(ai_json_num "$OUT" input_tokens)"

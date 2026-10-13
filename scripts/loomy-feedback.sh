@@ -115,7 +115,7 @@ if [[ -n "$SUB" ]]; then
 fi
 IN_PROJECT=0; [[ -f "$ROOT/.loomy/brief.md" ]] && IN_PROJECT=1
 
-ver() { "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true; }
+ver() { case "${1##*/}" in claude|codex) loomy_guard_real_cli "${1##*/}" "$1" || return $? ;; esac; "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true; }
 LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 
 body() {

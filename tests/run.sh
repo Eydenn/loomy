@@ -8,24 +8,34 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
+# shellcheck source=fixtures/watchdog.sh
+source "$REPO/tests/fixtures/watchdog.sh"
 VERBOSE=0; [[ "${1:-}" == "-v" || "${3:-}" == "-v" ]] && VERBOSE=1
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-tests.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d "/tmp/loomy-tests.XXXXXX")"
+# shellcheck source=lib/guard.sh
+source "$REPO/tests/lib/guard.sh"
+trap 'exit 143' TERM HUP
+trap 'exit 130' INT
 
 # Settings inherited from the calling session (a Loomy project, a bridge, a routed role) must not leak in: the tests
 # would act on that project instead of their own folders.
 LIVE_ARTIFACTS="${LOOMY_TEST_LIVE_ARTIFACTS:-}"
 TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the cleanup below
+WATCH_PS="${LOOMY_TEST_WATCH_PS:-1}"
 NATIVE_PTY="${LOOMY_TEST_NATIVE_PTY:-1}"   # explicit sandbox opt-out; Mac default stays enabled
-for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do unset "$_v"; done
+for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
+mkdir -p "$WORK/tmp"
+export TMPDIR="$WORK/tmp"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1
 export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 # Project relays (.loomy/scripts/*.sh): the "installed" Loomy is this repository.
 export LOOMY_HOME="$REPO"
 export LOOMY_TEST_NATIVE_PTY="$NATIVE_PTY"
+export LOOMY_TEST_SUITE=1
+export LOOMY_TEST_WATCH_PS="$WATCH_PS"
 # The agent stubs exit at once: live tracking beside them (the default of loomy start) is tested on its own.
 export LOOMY_START_WATCH=0
 # Official skills served from local test doubles (no network).
@@ -55,11 +65,11 @@ _sec_close() { [[ -n "$SEC_NAME" ]] && SEC_TIMES="$SEC_TIMES$(( SECONDS - SEC_ST
 section() { _sec_close; SEC_NAME="$1"; SEC_START=$SECONDS; printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # run <description> <command…>: the command must succeed.
-run() { local d="$1"; shift; if "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (code $?)"; fi; }
+run() { local d="$1"; shift; if test_step "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (code $?)"; fi; }
 # fails <description> <expected code> <command…>: the command must fail with this code.
 fails() {
   local d="$1" want="$2"; shift 2
-  "$@" >"$OUT" 2>&1; local got=$?
+  test_step "$@" >"$OUT" 2>&1; local got=$?
   if [[ "$got" == "$want" ]]; then ok "$d"; else ko "$d (code $got, expected $want)"; fi
 }
 # has <description> <pattern>: the last output contains the pattern (grep -E).
@@ -78,6 +88,73 @@ wait_for() {
     attempts=$(( attempts + 1 ))
   done
   return 0
+}
+
+suite_summary() {
+  run "hermetic: no real AI CLI, no leaked process/session/temp file" test_guard_gate
+  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+}
+
+hermetic_tests() {
+  section "Hermeticity"
+  local hp="$WORK/hermetic" tool
+  mkdir -p "$hp/real" "$hp/project/.loomy"
+  printf '%s\n' '---' 'name: Hermetic' 'ai_mode: ORCHESTRATED' 'ai_lead: claude' 'budget: equilibre' '---' >"$hp/project/.loomy/brief.md"
+  for tool in claude codex; do
+    printf '#!/bin/bash\nprintf executed > %q\n' "$hp/executed" >"$hp/real/$tool"
+    chmod +x "$hp/real/$tool"
+  done
+  fails "test guard: start refuses a Claude binary outside stubs" 97 env PATH="$hp/real:$PATH" LOOMY_TEST_GUARD_LOG="$hp/expected-violations" LOOMY_NO_SWITCH=1 bash "$REPO/scripts/loomy-start.sh" --root "$hp/project" --new --no-watch
+  has "test guard: diagnostic names real Claude" 'loomy: test guard: refusing to launch real claude'
+  fails "test guard: Codex bridge refuses an explicit binary outside stubs" 97 env LOOMY_CODEX_BIN="$hp/real/codex" LOOMY_TEST_GUARD_LOG="$hp/expected-violations" bash -c 'cd "$1" && bash "$2/scripts/loomy-delegate-codex.sh" reviewer "Hermetic refusal"' _ "$hp/project" "$REPO"
+  has "test guard: diagnostic names real Codex" 'loomy: test guard: refusing to launch real codex'
+  run "test guard: fake real binaries never executed" test ! -e "$hp/executed"
+  run "test guard: refusals logged" test -s "$hp/expected-violations"
+  mkdir -p "$hp/symlink-stubs"
+  ln -s "$hp/real/claude" "$hp/symlink-stubs/claude"
+  fails "test guard: symlink inside stubs cannot escape the boundary" 97 env PATH="$hp/symlink-stubs:$PATH" LOOMY_TEST_STUBS="$hp/symlink-stubs" LOOMY_TEST_GUARD_LOG="$hp/expected-violations" bash -c 'source "$1/scripts/lib/models.sh"; loomy_guard_real_cli claude' _ "$REPO"
+  # A deterministic process inventory exercises TERM/KILL even in a ps-restricted sandbox.
+  mkdir -p "$hp/cleanup"
+  command perl -e '$SIG{TERM}=sub {}; open my $f,">",$ARGV[0] or die; close $f; while (1) {select undef,undef,undef,0.1}' "$hp/leak-ready" &
+  local leak_pid=$!
+  wait_for 5 test -e "$hp/leak-ready"
+  fails "test guard: leaked TERM-resistant process fails and is killed" 1 env STUB_LEAK_PID="$leak_pid" bash -c '
+    WORK="$2"; source "$1/tests/lib/guard.sh"
+    pgrep() { printf "%s\n" "$STUB_LEAK_PID"; }
+    exit 0
+  ' _ "$REPO" "$hp/cleanup"
+  has "test guard: cleanup reports the leaked process" 'ko leaked processes:'
+  local leak_status=0
+  wait "$leak_pid" 2>/dev/null || leak_status=$?
+  [[ "$leak_status" == 137 ]] && ok "test guard: KILL follows TERM after two seconds" || ko "test guard: leaked fixture status $leak_status"
+  run "test guard: cleanup removes its entire temp root" test ! -e "$hp/cleanup"
+  run "desktop stubs: absent app fails lookup" bash -c 'STUB_APPS= open -Ra Claude; test "$?" = 1'
+  run "desktop stubs: only declared app is available" env STUB_APPS=Claude bash -c 'open -Ra Claude && ! open -Ra Codex'
+  run "desktop stubs: open and AppleScript only log" env STUB_LOG="$hp/desktop-log" bash -c 'open claude://fixture && osascript -e "tell application Terminal to activate"'
+  file_has "desktop stubs: open recorded" "$hp/desktop-log" '^open'
+  file_has "desktop stubs: osascript recorded" "$hp/desktop-log" '^osascript'
+  run "orchestrator [o]: stale route uses launcher stubs and private socket root" env STUB_APPS=Claude STUB_LOG="$hp/opener-log" bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/loomy-start.sh" --open-library
+    SCRIPT_DIR="$1/scripts"; uname() { echo Darwin; }; export -f uname
+    AI_ROUTE_ENV=hybrid-codex loomy_open_orchestrator "$2" || exit 1
+    test "$TMUX_TMPDIR" = "$3/tmux" && test -z "${TMUX:-}" || exit 1
+    test ! -e "$2/.loomy/failover" || exit 1
+    grep -Eq "(^open.*claude://|^osascript.*Terminal)" "$STUB_LOG" && ! grep -Eq "^(claude|codex)" "$STUB_LOG"
+  ' _ "$REPO" "$hp/project" "$WORK"
+  run "watch feed: disabled journal creates no logs directory" env LOOMY_JOURNAL=0 bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
+    eval "$(sed -n "/^loomy_watch_feed()/,/^}/p" "$1/scripts/loomy-status.sh")"
+    ROOT="$2/no-journal"; UNTIL=""; mkdir -p "$ROOT/.loomy"
+    (exec 7</dev/null; loomy_watch_feed "") >"$2/feed-output"
+    test ! -e "$ROOT/.loomy/logs"
+  ' _ "$REPO" "$hp"
+  run "watch feed: enabled journal still prepares private logs" env LOOMY_JOURNAL=1 bash -c '
+    source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
+    eval "$(sed -n "/^loomy_watch_feed()/,/^}/p" "$1/scripts/loomy-status.sh")"
+    ROOT="$2/with-journal"; UNTIL=""; mkdir -p "$ROOT/.loomy"
+    (exec 7</dev/null; loomy_watch_feed "") >"$2/feed-output"
+    test -d "$ROOT/.loomy/logs"
+  ' _ "$REPO" "$hp"
 }
 
 delegation_options_tests() {
@@ -251,10 +328,10 @@ STUB
       descendant_file="$WORK/$bridge-$mode-descendant.pid"
       rm -f "$pid_file" "$descendant_file"
       if [[ "$bridge" == codex ]]; then
-        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_CODEX_BIN="$5" "$6" delegate codex architect --effort low "$7"' \
+        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="${5%/*}" LOOMY_CODEX_BIN="$5" "$6" delegate codex architect --effort low "$7"' \
           _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir/codex" "$LOOMY" "$task" >"$OUT" 2>&1 &
       else
-        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_BRIDGE_OK=1 PATH="$5:$PATH" "$6" delegate claude architect --effort low "$7"' \
+        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="$5" LOOMY_BRIDGE_OK=1 PATH="$5:$PATH" "$6" delegate claude architect --effort low "$7"' \
           _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir" "$LOOMY" "$task" >"$OUT" 2>&1 &
       fi
       bridge_pid=$!
@@ -391,6 +468,7 @@ STUB
   chmod +x "$wt/bin/uname" "$wt/bin/open" "$wt/bin/osascript" "$wt/bin/grep"
   if ! command -v expect >/dev/null 2>&1; then ko "watch PTY: expect unavailable"; return; fi
   cat >"$wt/watch.exp" <<'EXPECT'
+source "$env(LIVE_REPO)/tests/fixtures/watchdog.exp"
 set timeout 15
 log_user 0
 # Wide diagrams exceed expect's default 2000-byte match buffer.
@@ -804,10 +882,15 @@ live_view_tests() {
   local lvo="$WORK/live-open"; rm -rf "$lvo"; cp -R "$lv" "$lvo"; rm -f "$lvo/.loomy/failover"
   run "orchestrator [o] ignores a stale AI_ROUTE_ENV" bash -c '
     source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/loomy-start.sh" --open-library
-    SCRIPT_DIR="$1/scripts"; uname() { echo Darwin; }; open() { [[ "$2" == Claude ]]; }; export -f open
-    AI_ROUTE_ENV=hybrid-codex loomy_open_orchestrator "$2" >/dev/null 2>&1 || true
-    test ! -e "$2/.loomy/failover"
-  ' _ "$REPO" "$lvo"
+    SCRIPT_DIR="$1/scripts"; uname() { echo Darwin; }
+    open() { if [[ "${1:-}" == -Ra ]]; then [[ "${2:-}" == Claude ]]; else command open "$@"; fi; }; export -f open uname
+    export STUB_LOG="$2/open-stubs.log"
+    AI_ROUTE_ENV=hybrid-codex loomy_open_orchestrator "$2" >/dev/null 2>&1 || exit 1
+    test ! -e "$2/.loomy/failover" || exit 1
+    test "$TMUX_TMPDIR" = "$3/tmux" && test -z "${TMUX:-}" || exit 1
+    grep -Eq "(^open.*claude://|^osascript.*Terminal)" "$STUB_LOG" || exit 1
+    ! grep -Eq "^(claude|codex)" "$STUB_LOG"
+  ' _ "$REPO" "$lvo" "$WORK"
   # An explicit Codex override and a native Claude task remain readable in both groupings.
   local demo="$WORK/live-frames" costs="$WORK/live-costs"
   mkdir -p "$demo/.loomy/logs" "$costs/.loomy/logs"
@@ -1093,14 +1176,17 @@ release_defects_tests() {
     else
       to=codex; model=opus
       printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' "$(( $(date +%s) + 3600 ))" >"$qhome/sessions/r.jsonl"
-      printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
+      printf 'five_hour_pct=100\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
     fi
     : >"$rd/.loomy/logs/events.jsonl"
     run "$from model-only quota failover" env XDG_CONFIG_HOME="$qcfg" CODEX_HOME="$qhome" bash -c 'cd "$1"; "$2" delegate "$3" reviewer --model "$4" "model-only request"' _ "$rd" "$LOOMY" "$from" "$model"
     has "$from failover banner explains requested model and actual destination" "requested \($model\)"
     run "$from failover preserves requested metadata in both events" perl -MJSON::PP -e '
-      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die; my @e=map { decode_json($_) } <$f>; die unless @e==2;
-      for (@e) { die unless $_->{requested} && $_->{requested_model} eq $model && $_->{family} eq $family && $_->{model} ne $model }
+      my ($p,$model,$family)=@ARGV; open my $f,"<",$p or die; my @e=map { decode_json($_) } <$f>; die unless @e==4;
+      for (@e) { die unless $_->{requested} && $_->{requested_model} eq $model }
+      my @dest=grep {$_->{family} eq $family} @e; die unless @dest==2;
+      for (@dest) { die unless $_->{model} ne $model }
+      my @handover=grep {($_->{status}//"") eq "handed_over"} @e; die unless @handover==1 && $handover[0]{model} eq $model;
     ' "$rd/.loomy/logs/events.jsonl" "$model" "$to"
   done
 }
@@ -1213,53 +1299,264 @@ native_lifecycle_tests() {
 }
 
 # The relay section owns its fixtures and can run without the full terminal walkthrough.
+quota_stats_tests() {
+section "Subscriptions, quotas and stats"
+QD="$WORK/quota"; QC="$WORK/quota-cfg"; QX="$WORK/quota-codex"
+mkdir -p "$QD/.loomy/logs" "$QC/loomy" "$QX/sessions/2026/09/28"
+printf -- '---\nname: "Quota"\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$QD/.loomy/brief.md"; printf 'phase=build\n' >"$QD/.loomy/state"
+DQ="$(date -u +%Y-%m-%d)"; NQ="$(date +%s)"
+cat >"$QD/.loomy/logs/events.jsonl" <<EOF
+{"ts":"${DQ}T08:05:00Z","type":"delegation","id":"q1","bridge":"codex","role":"executor","family":"codex","model":"gpt-6-luna","status":"ok","duration_s":95,"tokens_in":120000,"tokens_cached":80000,"tokens_out":9000,"cost_usd":0.0215,"task":"Add tests"}
+{"ts":"${DQ}T08:20:00Z","type":"delegation","id":"q2","bridge":"claude","role":"architect","family":"claude","model":"claude-opus-5-5","status":"ok","duration_s":140,"tokens_in":45000,"tokens_cached":30000,"tokens_out":6000,"cost_usd":0.31,"task":"Review design"}
+{"ts":"${DQ}T08:40:00Z","type":"delegation","id":"q3","bridge":"codex","role":"reviewer","family":"codex","model":"gpt-6-sol","status":"error","duration_s":30,"tokens_in":10000,"tokens_cached":0,"tokens_out":500,"cost_usd":0.025,"task":"Review diff"}
+{"ts":"${DQ}T09:00:00Z","type":"usage","tool":"claude","family":"claude","scope":"lead","agent":"","model":"claude-opus-5-5","messages":12,"tokens_in":300000,"tokens_cached":900000,"tokens_out":40000,"cost_usd":2.18}
+EOF
+printf '{"type":"event_msg","payload":{"rate_limits":{"limit_id":"codex","primary":{"used_percent":12.0,"window_minutes":10080,"resets_at":%s},"secondary":{"used_percent":99.0,"window_minutes":300,"resets_at":%s},"plan_type":"team","rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) $(( NQ - 60 )) >"$QX/sessions/2026/09/28/r.jsonl"
+qenv() { env XDG_CONFIG_HOME="$QC" CODEX_HOME="$QX" "$@"; }
+got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
+[[ "$got" == "10080 12 $(( NQ + 200000 ))" ]] && ok "codex quota read from its session log (expired window ignored)" || ko "codex quota: $got"
+# Claude: the status line saves the documented rate_limits field.
+run "init for the status line" "$LOOMY" init "$WORK/sl-proj" --yes --no-clipboard
+SLC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["statusLine"]["command"])' "$WORK/sl-proj/.claude/settings.json" 2>/dev/null)"
+[[ "$SLC" == *loomy-statusline.sh* ]] && ok "status line installed in .claude/settings.json" || ko "status line missing"
+mkdir -p "$WORK/sl-proj/sub"
+SLIN="{\"model\":{\"display_name\":\"Opus 5.5\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42.4,\"resets_at\":$(( NQ + 3600 ))},\"seven_day\":{\"used_percentage\":86,\"resets_at\":$(( NQ + 300000 ))}}}"
+(cd "$WORK/sl-proj/sub" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
+has "status line: Loomy line with the quota" "Loomy( [a-z]+)? · Opus 5\.5 · 5h 42% · 7d 86%"
+file_has "status line: quota saved" "$QC/loomy/claude-limits" "^seven_day_pct=86$"
+echo 'echo MY-OWN-LINE' >"$QC/loomy/statusline-user"
+(cd "$WORK/sl-proj" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
+has "status line: the user's own status line is shown" "^MY-OWN-LINE( · Loomy .*)?$"
+rm -f "$QC/loomy/statusline-user"
+SLE="$WORK/sl-existing"; mkdir -p "$SLE/.claude"; printf '{"statusLine":{"type":"command","command":"echo mine"}}\n' >"$SLE/.claude/settings.json"
+run "init keeps an existing status line" "$LOOMY" init "$SLE" --yes --no-clipboard
+file_has "existing status line kept" "$SLE/.claude/settings.json" '"command": "echo mine"'
+# Subscription: quota and tokens instead of dollars.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+run "status with subscriptions" qenv "$LOOMY" status --root "$QD"
+has "status: Claude quota" "Claude Pro · 5 h 42 %.*week 86 %"
+has "status: Codex quota" "ChatGPT Business · week 12 %"
+has "status: delegations in tokens" "Delegations +3 · 190.5k tokens"
+hasnt "status: no dollar amount with subscriptions" '\$[0-9]'
+run "log with subscriptions" qenv "$LOOMY" log --root "$QD"
+has "log: tokens instead of cost" "129.0k tk"
+run "stats" qenv "$LOOMY" stats --root "$QD"
+has "stats: overview" "3 · 66 % succeeded · 1 failed"
+has "stats: by role" "architect +1 +2 min 20 s"
+has "stats: by model with cache share" "claude-opus-5-5 +1\+12r .* 72 %"
+has "stats: API value covered by the plan" "API value ≈\\\$2.54, covered by your plan"
+has "stats: month value next to the plan price" "this month: API value ≈\\\$2.49 for a \\\$20/month plan"
+fails "stats: invalid --since refused" 2 "$LOOMY" stats --root "$QD" --since yesterday
+run "stats --days" qenv "$LOOMY" stats --root "$QD" --days 7
+# API: the real cost stays.
+printf 'plan_claude=api\nplan_codex=api\n' >"$QC/loomy/config"
+run "status with the API" qenv "$LOOMY" status --root "$QD"
+has "status API: delegation cost" 'Delegations +3 · \$0.3565'
+has "status API: monthly cost" "API · cost this month: \\\$2"
+hasnt "status API: no quota" "week [0-9]+ %"
+printf '{"type":"event_msg","payload":{"rate_limits":{"primary":null,"secondary":null,"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >>"$QX/sessions/2026/09/28/r.jsonl"; touch "$QX/sessions/2026/09/28/r.jsonl"
+got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
+[[ "$got" == "reached workspace_member_credits_depleted" ]] && ok "codex quota: limit reached reported" || ko "codex reached: $got"
+# Failover: close to the end of a subscription quota, the role goes to the other tool.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+FL="$WORK/failover.log"; : >"$FL"
+(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "Add a test") >"$OUT" 2>&1
+has "failover: announced" "Provider codex unavailable .*executor handed to claude once"
+has "failover: plain answer, as from Codex" "^answer from the claude double$"
+grep -q $'^claude\t-p' "$FL" && ! grep -q '^codex' "$FL" && ok "failover: Codex role run by Claude" || ko "failover: calls $(cut -c1-60 "$FL" | tr '\n' ' ')"
+grep -q 'acceptEdits' "$FL" && grep -q '"sandbox":{"enabled":true' "$FL" && ok "failover: writing role with accepted edits inside Claude's sandbox" || ko "failover: write mode missing"
+grep -q -- '--model	claude-haiku-5-5' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
+file_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '"role":"executor","family":"claude".*"sandbox":"workspace-write".*"failover_from":"codex"'
+run "status after a failover" qenv "$LOOMY" status --root "$QD"
+has "status: Codex roles go to Claude" "Codex's roles go to Claude until it resets"
+has "status: switched delegation marked" "⇄ Add a test"
+run "stats after a failover" qenv "$LOOMY" stats --root "$QD"
+has "stats: switched delegations counted" "1 delegation\(s\) moved to the other tool"
+: >"$FL"; printf 'quota_switch=off\nplan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "x") >"$OUT" 2>&1
+grep -q '^claude' "$FL" && ok "quota_switch off still protects actual provider refusals" || ko "provider refusal bypassed when preventive relay is off"
+# Claude nearly exhausted: a read-only role goes to Codex, unless Codex has no room left either.
+printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
+printf 'five_hour_pct=97\nfive_hour_reset=%s\n' $(( NQ + 3600 )) >"$QC/loomy/claude-limits"
+: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
+grep -q '^claude' "$FL" && ok "Claude at 97 percent can serve while Codex is exhausted" || ko "failover with both exhausted"
+printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20.0,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) >>"$QX/sessions/2026/09/28/r.jsonl"
+printf 'five_hour_pct=100\nfive_hour_reset=%s\n' $(( NQ + 3600 )) >"$QC/loomy/claude-limits"
+: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
+has "failover to Codex: announced" "Provider claude unavailable .*reviewer handed to codex once"
+grep -q '^codex' "$FL" && ! grep -q '^claude' "$FL" && grep -q 'read-only' "$FL" && ok "failover to Codex: read-only role stays read-only" || ko "failover to codex: $(cut -c1-80 "$FL")"
+run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD" --print
+has "start: lead agent session on the other tool" "Claude Code quota at 100 %: this session runs on Codex"
+has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
+rm -f "$QC/loomy/claude-limits"
+
+}
+
+model_chain_tests() {
+section "Model chains"
+# Catalog: the repository one matches the built-in values (whole fallback chains); a newer downloaded catalog replaces them,
+# without ever running its content.
+cat_vals="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_DATE $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST"' _ "$REPO")"
+file_vals="$(awk -F= '/^date=/{d=$2} /^model\.claude\.top=/{a=$2} /^model\.claude\.mid=/{b=$2} /^model\.claude\.fast=/{c=$2} /^model\.codex\.top=/{e=$2} /^model\.codex\.mid=/{f=$2} /^model\.codex\.fast=/{g=$2} END{print d, a, b, c, e, f, g}' "$REPO/catalog/models.conf" | tr -d ',')"
+[[ "$cat_vals" == "$file_vals" ]] && ok "repository catalog = built-in values" || ko "catalog: $cat_vals ≠ $file_vals"
+mkdir -p "$XDG_CONFIG_HOME/loomy"
+sed 's/^date=.*/date=2099-01-01/; s/^model.codex.fast=.*/model.codex.fast=luna-test/; s/^price.gpt-6-sol=.*/price.gpt-6-sol=9 9 9/' "$REPO/catalog/models.conf" >"$XDG_CONFIG_HOME/loomy/catalog.conf"
+echo 'model.claude.top=$(touch '"$WORK"'/injecte)' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_MODEL_CODEX_FAST $AI_MODEL_CLAUDE_TOP $(ai_price gpt-6-sol)"' _ "$REPO")"
+[[ "$got" == "downloaded luna-test claude-opus-5-5 9 9 9" ]] && ok "downloaded catalog taken into account" || ko "downloaded catalog: $got"
+[[ ! -e "$WORK/injecte" ]] && ok "catalog: content never executed" || ko "catalog: injection executed"
+echo 'model.claude.mid=--dangerously-skip-permissions, claude-sonnet-5' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got" != -* ]] && ok "catalog: a model id never starts with a hyphen" || ko "catalog: option injected ($got)"
+rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
+
+# Fallback chains: first available model, fallback when refused or missing from Codex, pinning, rebalancing.
+CH="$WORK/chaines"; mkdir -p "$CH/cfg/loomy" "$CH/codex"
+printf '%s\n' 'date=2099-01-01' 'model.claude.mid=claude-sonnet-9, claude-sonnet-5' 'model.codex.top=gpt-9-astra, gpt-6-astra' 'route.claude.explorer=MID low' >"$CH/cfg/loomy/catalog.conf"
+echo '{"models":[{"slug":"gpt-6-astra"}]}' >"$CH/codex/models_cache.json"
+chq() { XDG_CONFIG_HOME="$CH/cfg" CODEX_HOME="$CH/codex" bash -c 'source "$1/scripts/lib/models.sh"; ai_route explorer claude equilibre; echo "$AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_TOP $R_MODEL $R_EFFORT"' _ "$REPO"; }
+[[ "$(chq)" == "claude-sonnet-9 gpt-9-astra claude-sonnet-9 low" ]] && ok "chains: validated head retained despite missing cache, role rebalanced" || ko "chains: $(chq)"
+echo "claude-sonnet-9=ko:$(date +%s)" >"$CH/cfg/loomy/models.state"
+[[ "$(chq)" == "claude-sonnet-9 gpt-9-astra claude-sonnet-9 low" ]] && ok "chains: refused head retained for cross-provider handover" || ko "fallback: $(chq)"
+echo "model.claude.mid=claude-sonnet-4" >"$CH/cfg/loomy/config"
+[[ "$(chq)" == "claude-sonnet-4 gpt-9-astra claude-sonnet-4 low" ]] && ok "chains: pinned model takes priority" || ko "pinning: $(chq)"
+}
+
+local_model_chain_tests() {
+section "Local model chains"
+# loomy models
+"$LOOMY" models >"$OUT" 2>&1
+has "models: chains shown" "claude.mid"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+fails "models: unknown local head explicitly refused" 2 "$LOOMY" config set chain.claude.mid "claude-sonnet-9, claude-sonnet-5-5"
+"$LOOMY" config set chain.claude.mid "claude-sonnet-5-5" >/dev/null
+got2="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got2" == "claude-sonnet-5-5" ]] && ok "models: validated local chain applied" || ko "models: local chain ($got2)"
+fails "models: retired low-cost model mode refused" 2 "$LOOMY" models --thrifty on
+has "models: retired mode explains current policy" "retired.*validated"
+"$LOOMY" config set chain.claude.mid auto >/dev/null
+fails "models: invalid chain refused" 2 "$LOOMY" config set chain.claude.mid "a, b, c, d"
+got4="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
+[[ "$got4" == "$got" ]] && ok "models: back to the catalog" || ko "models: not restored ($got4)"
+}
+
+announced_model_tests() {
+section "Announced models"
+UP_CFG="$WORK/upcoming-cfg"; mkdir -p "$UP_CFG/loomy"
+# A newer downloaded catalog announcing a model (the built-in list is empty while nothing is announced).
+printf '%s\n' 'date=2099-01-01' 'model.claude.fast=claude-haiku-5-5' 'upcoming.claude.fast=claude-haiku-9' >"$UP_CFG/loomy/catalog.conf"
+upq() { XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CHAIN_CLAUDE_FAST | $AI_MODEL_CLAUDE_FAST"' _ "$REPO"; }
+[[ "$(upq)" == "claude-haiku-5-5 | claude-haiku-5-5" ]] && ok "announced: not used before it answers" || ko "announced before: $(upq)"
+XDG_CONFIG_HOME="$UP_CFG" "$LOOMY" models >"$OUT" 2>&1
+has "announced: listed by loomy models" "claude-haiku-9.*not available yet"
+hasnt "announced: not suggested as a new model" "✦ claude-haiku-9"
+XDG_CONFIG_HOME="$UP_CFG" STUB_UNKNOWN_MODELS="claude-haiku-9" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9' _ "$REPO" && ko "announced: refused model seen as available" || ok "announced: a refused model stays out"
+XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9 && ai_model_mark claude-haiku-9 ok' _ "$REPO"
+[[ "$(upq)" == "claude-haiku-5-5 | claude-haiku-5-5" ]] && ok "announced: probe success never promotes an unvalidated model" || ko "announced after: $(upq)"
+got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_UPCOMING"' _ "$REPO")"
+want="$(sed -n 's/^upcoming\.\([a-z]*\)\.\([a-z]*\)=\(.*\)$/\1:\2:\3/p' "$REPO/catalog/models.conf" | tr '\n' ' ' | sed 's/ $//')"
+[[ "$want" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: '$got' vs '$want'"
+}
+
+haiku_model_tests() {
+section "Haiku 5.5 routing and long-prompt rate"
+HK="$WORK/haiku-cfg"; mkdir -p "$HK/loomy"
+hkq() { XDG_CONFIG_HOME="$HK" bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve "$2" "$3" "$4"; echo "$R_MODEL $R_EFFORT"' _ "$REPO" "$@"; }
+[[ "$(hkq executor claude equilibre)" == "claude-haiku-5-5 high" ]] && ok "haiku: full-Claude executor on Haiku 5.5 high" || ko "haiku executor: $(hkq executor claude equilibre)"
+[[ "$(hkq explorer claude equilibre)" == "claude-haiku-5-5 medium" ]] && ok "haiku: Claude explorer on Haiku 5.5 medium" || ko "haiku explorer: $(hkq explorer claude equilibre)"
+[[ "$(hkq executor hybrid-claude equilibre)" == "gpt-6-luna max" ]] && ok "haiku: hybrid executor stays on Luna" || ko "haiku hybrid: $(hkq executor hybrid-claude equilibre)"
+[[ "$(hkq executor claude qualite)" == "claude-sonnet-5-5 high" ]] && ok "haiku: Max quality executor on Sonnet" || ko "haiku qualite: $(hkq executor claude qualite)"
+echo "claude-haiku-5-5=ko:$(date +%s)" >"$HK/loomy/models.state"
+[[ "$(hkq executor claude equilibre)" == "claude-haiku-5-5 high" ]] && ok "haiku: refused executor model retained for provider handover" || ko "haiku fallback: $(hkq executor claude equilibre)"
+[[ "$(hkq explorer claude equilibre)" == "claude-haiku-5-5 medium" ]] && ok "haiku: refused explorer model never selects an older sibling" || ko "haiku explorer fallback: $(hkq explorer claude equilibre)"
+# One message under 100K tokens, one over: the second one at the long-prompt rate (0.50 / 2.50).
+HKP="$WORK/haiku-proj"; mkdir -p "$HKP/.loomy/logs"; HKT="$WORK/haiku.jsonl"
+printf '{"type":"assistant","message":{"id":"msg_h1","model":"claude-haiku-5-5","usage":{"input_tokens":50000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000000}}}\n' >"$HKT"
+printf '{"type":"assistant","message":{"id":"msg_h2","model":"claude-haiku-5-5","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >>"$HKT"
+bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$3" lead' _ "$REPO" "$HKP" "$HKT"
+got="$(grep -o '"cost_usd":[0-9.]*' "$HKP/.loomy/logs/events.jsonl" | sed 's/.*://' | sort | tr '\n' ' ')"
+[[ "$got" == "0.500000 0.505000 " ]] && ok "haiku: long prompts priced at the long rate, the rest at the base rate" || ko "haiku long rate: $got"
+file_has "haiku: model logged without the internal marker" "$HKP/.loomy/logs/events.jsonl" '"model":"claude-haiku-5-5"'
+grep -q '@long' "$HKP/.loomy/logs/events.jsonl" && ko "haiku: internal marker leaked into the log" || ok "haiku: no internal marker in the log"
+CL="$WORK/haiku-catalog"; mkdir -p "$CL/loomy"
+printf '%s\n' 'date=2099-01-01' 'price_long.claude-haiku-5-5=200000 1 3 0.10' >"$CL/loomy/catalog.conf"
+[[ "$(XDG_CONFIG_HOME="$CL" bash -c 'source "$1/scripts/lib/models.sh"; ai_price_long claude-haiku-5-5' _ "$REPO")" == "200000 1 3 0.10" ]] && ok "haiku: long-prompt rate read from the catalog" || ko "haiku catalog long rate"
+}
+
+if [[ "${1:-}" == --section ]]; then
+  model_section=1
+  case "${2:-}" in
+    'Hermeticity') hermetic_tests ;;
+    'Subscriptions, quotas and stats') quota_stats_tests ;;
+    'Model chains') model_chain_tests ;;
+    'Local model chains') local_model_chain_tests ;;
+    'Announced models') announced_model_tests ;;
+    'Haiku 5.5 routing and long-prompt rate') haiku_model_tests ;;
+    'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
+    *) model_section=0 ;;
+  esac
+  if (( model_section )); then suite_summary; (( FAIL == 0 )); exit $?; fi
+fi
+
 if [[ "${1:-}" != --section || "${2:-}" != 'Lead relay (quota)' ]]; then
 if [[ "${1:-}" == --section && "${2:-}" == 'Release defects' ]]; then
   release_defects_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 
+if [[ "${1:-}" == --section && "${2:-}" == 'Watch exit' ]]; then
+  run "watch exit paths and watchdog process-group cleanup" bash "$HERE/watch-exit.sh"
+  suite_summary
+  (( FAIL == 0 )); exit $?
+fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Watch terminal' ]]; then
   watch_terminal_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Watch Linux opener' ]]; then
   watch_linux_opener_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Delegation options' ]]; then
   delegation_options_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Interrupted delegations' ]]; then
   interrupted_delegation_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Native lifecycle' ]]; then
   native_lifecycle_tests
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'W1 Codex live' ]]; then
   section "W1 Codex live"
   run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
+  (( FAIL == 0 )); exit $?
+fi
+if [[ "${1:-}" == --section && "${2:-}" == 'W1 Claude live' ]]; then
+  section "W1 Claude live"
+  run "Claude CLI/app foreground/background hooks, transcripts, aliases and latency" bash "$HERE/claude-live.sh"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 if [[ "${1:-}" == --section && "${2:-}" == 'Native Codex' ]]; then
   section "Native Codex"
   run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
+hermetic_tests
 live_view_tests
 if [[ "${1:-}" == --section && "${2:-}" == 'Live view' ]]; then
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 
@@ -1475,6 +1772,7 @@ has "init outside a terminal in the home folder: suggests loomy init <name>" "lo
 if command -v expect >/dev/null 2>&1; then
   PARENT="$WORK/parent"; mkdir -p "$PARENT/autre" "$PARENT/encore"
   cat >"$WORK/init-dossier.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 20
 cd "$PARENT"
 spawn "$LOOMY" init --no-clipboard
@@ -1502,6 +1800,7 @@ fi
 if command -v expect >/dev/null 2>&1; then
   PARD="$WORK/parent-git"; mkdir -p "$PARD" && git -C "$PARD" init -q && git -C "$PARD" commit -q --allow-empty -m parent
   cat >"$WORK/dans-parent.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 20
 cd "$PARD"
 spawn "$LOOMY" init sous-projet --no-clipboard
@@ -1540,7 +1839,7 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
 
   tmux -L loomy-test kill-server 2>/dev/null || true
   # Keep the pane alive after watch exits so its restored-screen marker can be captured.
-  tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
+  tmux -L loomy-test new-session -d -s w -x 100 -y 30 -c "$PARD/sous-projet" "perl '$TEST_WATCHDOG' 120 bash '$LOOMY' watch 1; echo SORTIE_OK; sleep 30"
   # Several redraws are needed before checking that watch left no scrollback history.
   sleep 4
   [[ "$(tmux -L loomy-test display -p -t w '#{history_size}')" == "0" ]] && ok "watch: nothing piles up in the history" || ko "watch: history $(tmux -L loomy-test display -p -t w '#{history_size}')"
@@ -1586,7 +1885,7 @@ if [[ -n "$TMUX_BIN" && -d "${PARD:-}/sous-projet" ]]; then
   # Keep the fake agent alive long enough to observe its tracking pane before it exits.
   printf '#!/bin/bash\n[[ "$1" == "--version" ]] && { echo "2.1.300 (Claude Code)"; exit 0; }\nsleep 4\n' >"$WORK/lent/claude"; chmod +x "$WORK/lent/claude"
   # Keep the parent pane open after start exits so both pane-count states can be checked.
-  tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH bash '$LOOMY' start --new --watch; sleep 30"
+  tstart -s s -x 120 -y 50 -c "$PARD/sous-projet" "LOOMY_TEST_STUBS='$WORK/lent' PATH='$WORK/lent':'$(dirname "$TMUX_BIN")':\$PATH perl '$TEST_WATCHDOG' 120 bash '$LOOMY' start --new --watch; sleep 30"
   if wait_for 20 tmux_pane_count_is s 2; then ok "start --watch: tracking pane open"; else ko "start --watch: $(tmux -L loomy-test list-panes -t s | wc -l) pane(s)"; fi
   if wait_for 20 tmux_pane_count_is s 1; then ok "start --watch: tracking closed with the session"; else ko "start --watch: tracking still open"; fi
   tmux -L loomy-test kill-server 2>/dev/null || true
@@ -1653,32 +1952,7 @@ if [[ -d "$PROJ/.loomy/scripts" ]]; then
   fails "relays: clear message without Loomy" 127 env -u LOOMY_HOME LOOMY_RELAY_PATHS= PATH=/usr/bin:/bin bash "$PROJ/.loomy/scripts/loomy-route.sh" lead
 fi
 
-# Catalog: the repository one matches the built-in values (whole fallback chains); a newer downloaded catalog replaces them,
-# without ever running its content.
-cat_vals="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_DATE $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST $AI_CHAIN_CODEX_TOP $AI_CHAIN_CODEX_MID $AI_CHAIN_CODEX_FAST"' _ "$REPO")"
-file_vals="$(awk -F= '/^date=/{d=$2} /^model\.claude\.top=/{a=$2} /^model\.claude\.mid=/{b=$2} /^model\.claude\.fast=/{c=$2} /^model\.codex\.top=/{e=$2} /^model\.codex\.mid=/{f=$2} /^model\.codex\.fast=/{g=$2} END{print d, a, b, c, e, f, g}' "$REPO/catalog/models.conf" | tr -d ',')"
-[[ "$cat_vals" == "$file_vals" ]] && ok "repository catalog = built-in values" || ko "catalog: $cat_vals ≠ $file_vals"
-mkdir -p "$XDG_CONFIG_HOME/loomy"
-sed 's/^date=.*/date=2099-01-01/; s/^model.codex.fast=.*/model.codex.fast=luna-test/; s/^price.gpt-6-sol=.*/price.gpt-6-sol=9 9 9/' "$REPO/catalog/models.conf" >"$XDG_CONFIG_HOME/loomy/catalog.conf"
-echo 'model.claude.top=$(touch '"$WORK"'/injecte)' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
-got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CATALOG_SOURCE $AI_MODEL_CODEX_FAST $AI_MODEL_CLAUDE_TOP $(ai_price gpt-6-sol)"' _ "$REPO")"
-[[ "$got" == "downloaded luna-test claude-opus-5-5 9 9 9" ]] && ok "downloaded catalog taken into account" || ko "downloaded catalog: $got"
-[[ ! -e "$WORK/injecte" ]] && ok "catalog: content never executed" || ko "catalog: injection executed"
-echo 'model.claude.mid=--dangerously-skip-permissions, claude-sonnet-5' >>"$XDG_CONFIG_HOME/loomy/catalog.conf"
-got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
-[[ "$got" != -* ]] && ok "catalog: a model id never starts with a hyphen" || ko "catalog: option injected ($got)"
-rm -f "$XDG_CONFIG_HOME/loomy/catalog.conf"
-
-# Fallback chains: first available model, fallback when refused or missing from Codex, pinning, rebalancing.
-CH="$WORK/chaines"; mkdir -p "$CH/cfg/loomy" "$CH/codex"
-printf '%s\n' 'date=2099-01-01' 'model.claude.mid=claude-sonnet-9, claude-sonnet-5' 'model.codex.top=gpt-9-astra, gpt-6-astra' 'route.claude.explorer=MID low' >"$CH/cfg/loomy/catalog.conf"
-echo '{"models":[{"slug":"gpt-6-astra"}]}' >"$CH/codex/models_cache.json"
-chq() { XDG_CONFIG_HOME="$CH/cfg" CODEX_HOME="$CH/codex" bash -c 'source "$1/scripts/lib/models.sh"; ai_route explorer claude equilibre; echo "$AI_MODEL_CLAUDE_MID $AI_MODEL_CODEX_TOP $R_MODEL $R_EFFORT"' _ "$REPO"; }
-[[ "$(chq)" == "claude-sonnet-9 gpt-6-astra claude-sonnet-9 low" ]] && ok "chains: newest first, Codex limited to its models, role rebalanced" || ko "chains: $(chq)"
-echo "claude-sonnet-9=ko" >"$CH/cfg/loomy/models.state"
-[[ "$(chq)" == "claude-sonnet-5 gpt-6-astra claude-sonnet-5 low" ]] && ok "chains: fallback when the model is refused" || ko "fallback: $(chq)"
-echo "model.claude.mid=claude-sonnet-4" >"$CH/cfg/loomy/config"
-[[ "$(chq)" == "claude-sonnet-4 gpt-6-astra claude-sonnet-4 low" ]] && ok "chains: pinned model takes priority" || ko "pinning: $(chq)"
+model_chain_tests
 
 # Real Claude Code cost: Stop and SubagentStop hooks, read from the transcript (no duplicates, no rereading).
 US="$WORK/usage"; mkdir -p "$US/.loomy"; : >"$US/.loomy/brief.md"
@@ -2189,6 +2463,7 @@ if command -v expect >/dev/null 2>&1; then
   # Confirms each question with its default value (Enter), in a pseudo-terminal.
   wizard_expect() {
     cat >"$WORK/wizard.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 15
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
@@ -2224,6 +2499,7 @@ EXP
   [[ "$(git -C "$W5" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/deja-pris-loomy.git" ]] && ok "taken name: another name suggested and created" || ko "taken name: remote $(git -C "$W5" config --get remote.origin.url 2>&1)"
   [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-pris.git" rev-list --count main)" == "1" ]] && ok "existing repository left untouched" || ko "existing repository changed"
   cat >"$WORK/lier.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 15
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
@@ -2247,6 +2523,7 @@ EXP
   [[ "$(git --git-dir="$GH_STUB_REMOTES/testeur/deja-relie.git" rev-list --count main)" == "1" ]] && ok "linked repository left untouched" || ko "linked repository changed"
   # Tab: the suggestion becomes editable text (here the repository name, completed rather than retyped).
   cat >"$WORK/tab.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 15
 set tabbed 0
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
@@ -2265,6 +2542,7 @@ EXP
   [[ "$(git -C "$W7" config --get remote.origin.url 2>/dev/null)" == "https://github.com/testeur/tabulation-edit.git" ]] && ok "Tab: suggested name completed, not retyped" || ko "Tab: remote $(git -C "$W7" config --get remote.origin.url 2>&1)"
   # ← goes back to the previous question, which keeps the answer already given.
   cat >"$WORK/retour.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 15
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 expect "question 1/" ; expect "⏎ confirm" ; send "Projet Retour\r"
@@ -2275,6 +2553,7 @@ EXP
   run "← goes back to the previous question with its answer" env WIZ_DIR="$W3" expect "$WORK/retour.exp"
   # Two repositories: public project + AI files in a private repository, names confirmed together.
   cat >"$WORK/deux-depots.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 20
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 80} {incr i} {
@@ -2490,98 +2769,14 @@ file_has "assessment without Git: cargo test" "$EX3/.loomy/assessment.md" '`carg
 file_has "assessment without Git: no history" "$EX3/.loomy/assessment.md" "No Git history"
 [[ ! -f "$PROJ/.loomy/assessment.md" ]] && ok "new project: no assessment" || ko "new project assessed"
 
-section "Subscriptions, quotas and stats"
-QD="$WORK/quota"; QC="$WORK/quota-cfg"; QX="$WORK/quota-codex"
-mkdir -p "$QD/.loomy/logs" "$QC/loomy" "$QX/sessions/2026/09/28"
-printf -- '---\nname: "Quota"\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$QD/.loomy/brief.md"; printf 'phase=build\n' >"$QD/.loomy/state"
-DQ="$(date -u +%Y-%m-%d)"; NQ="$(date +%s)"
-cat >"$QD/.loomy/logs/events.jsonl" <<EOF
-{"ts":"${DQ}T08:05:00Z","type":"delegation","id":"q1","bridge":"codex","role":"executor","family":"codex","model":"gpt-6-luna","status":"ok","duration_s":95,"tokens_in":120000,"tokens_cached":80000,"tokens_out":9000,"cost_usd":0.0215,"task":"Add tests"}
-{"ts":"${DQ}T08:20:00Z","type":"delegation","id":"q2","bridge":"claude","role":"architect","family":"claude","model":"claude-opus-5-5","status":"ok","duration_s":140,"tokens_in":45000,"tokens_cached":30000,"tokens_out":6000,"cost_usd":0.31,"task":"Review design"}
-{"ts":"${DQ}T08:40:00Z","type":"delegation","id":"q3","bridge":"codex","role":"reviewer","family":"codex","model":"gpt-6-sol","status":"error","duration_s":30,"tokens_in":10000,"tokens_cached":0,"tokens_out":500,"cost_usd":0.025,"task":"Review diff"}
-{"ts":"${DQ}T09:00:00Z","type":"usage","tool":"claude","family":"claude","scope":"lead","agent":"","model":"claude-opus-5-5","messages":12,"tokens_in":300000,"tokens_cached":900000,"tokens_out":40000,"cost_usd":2.18}
-EOF
-printf '{"type":"event_msg","payload":{"rate_limits":{"limit_id":"codex","primary":{"used_percent":12.0,"window_minutes":10080,"resets_at":%s},"secondary":{"used_percent":99.0,"window_minutes":300,"resets_at":%s},"plan_type":"team","rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) $(( NQ - 60 )) >"$QX/sessions/2026/09/28/r.jsonl"
-qenv() { env XDG_CONFIG_HOME="$QC" CODEX_HOME="$QX" "$@"; }
-got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
-[[ "$got" == "10080 12 $(( NQ + 200000 ))" ]] && ok "codex quota read from its session log (expired window ignored)" || ko "codex quota: $got"
-# Claude: the status line saves the documented rate_limits field.
-run "init for the status line" "$LOOMY" init "$WORK/sl-proj" --yes --no-clipboard
-SLC="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["statusLine"]["command"])' "$WORK/sl-proj/.claude/settings.json" 2>/dev/null)"
-[[ "$SLC" == *loomy-statusline.sh* ]] && ok "status line installed in .claude/settings.json" || ko "status line missing"
-mkdir -p "$WORK/sl-proj/sub"
-SLIN="{\"model\":{\"display_name\":\"Opus 5.5\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":42.4,\"resets_at\":$(( NQ + 3600 ))},\"seven_day\":{\"used_percentage\":86,\"resets_at\":$(( NQ + 300000 ))}}}"
-(cd "$WORK/sl-proj/sub" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
-has "status line: Loomy line with the quota" "Loomy( [a-z]+)? · Opus 5\.5 · 5h 42% · 7d 86%"
-file_has "status line: quota saved" "$QC/loomy/claude-limits" "^seven_day_pct=86$"
-echo 'echo MY-OWN-LINE' >"$QC/loomy/statusline-user"
-(cd "$WORK/sl-proj" && printf '%s' "$SLIN" | qenv sh -c "$SLC") >"$OUT" 2>&1
-has "status line: the user's own status line is shown" "^MY-OWN-LINE( · Loomy .*)?$"
-rm -f "$QC/loomy/statusline-user"
-SLE="$WORK/sl-existing"; mkdir -p "$SLE/.claude"; printf '{"statusLine":{"type":"command","command":"echo mine"}}\n' >"$SLE/.claude/settings.json"
-run "init keeps an existing status line" "$LOOMY" init "$SLE" --yes --no-clipboard
-file_has "existing status line kept" "$SLE/.claude/settings.json" '"command": "echo mine"'
-# Subscription: quota and tokens instead of dollars.
-printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
-run "status with subscriptions" qenv "$LOOMY" status --root "$QD"
-has "status: Claude quota" "Claude Pro · 5 h 42 %.*week 86 %"
-has "status: Codex quota" "ChatGPT Business · week 12 %"
-has "status: delegations in tokens" "Delegations +3 · 190.5k tokens"
-hasnt "status: no dollar amount with subscriptions" '\$[0-9]'
-run "log with subscriptions" qenv "$LOOMY" log --root "$QD"
-has "log: tokens instead of cost" "129.0k tk"
-run "stats" qenv "$LOOMY" stats --root "$QD"
-has "stats: overview" "3 · 66 % succeeded · 1 failed"
-has "stats: by role" "architect +1 +2 min 20 s"
-has "stats: by model with cache share" "claude-opus-5-5 +1\+12r .* 72 %"
-has "stats: API value covered by the plan" "API value ≈\\\$2.54, covered by your plan"
-has "stats: month value next to the plan price" "this month: API value ≈\\\$2.49 for a \\\$20/month plan"
-fails "stats: invalid --since refused" 2 "$LOOMY" stats --root "$QD" --since yesterday
-run "stats --days" qenv "$LOOMY" stats --root "$QD" --days 7
-# API: the real cost stays.
-printf 'plan_claude=api\nplan_codex=api\n' >"$QC/loomy/config"
-run "status with the API" qenv "$LOOMY" status --root "$QD"
-has "status API: delegation cost" 'Delegations +3 · \$0.3565'
-has "status API: monthly cost" "API · cost this month: \\\$2"
-hasnt "status API: no quota" "week [0-9]+ %"
-printf '{"type":"event_msg","payload":{"rate_limits":{"primary":null,"secondary":null,"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >>"$QX/sessions/2026/09/28/r.jsonl"; touch "$QX/sessions/2026/09/28/r.jsonl"
-got="$(qenv bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/usage.sh"; ai_quota codex' _ "$REPO")"
-[[ "$got" == "reached workspace_member_credits_depleted" ]] && ok "codex quota: limit reached reported" || ko "codex reached: $got"
-# Failover: close to the end of a subscription quota, the role goes to the other tool.
-printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
-FL="$WORK/failover.log"; : >"$FL"
-(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "Add a test") >"$OUT" 2>&1
-has "failover: announced" "Codex quota at limit reached .*executor handed to Claude"
-has "failover: plain answer, as from Codex" "^answer from the claude double$"
-grep -q $'^claude\t-p' "$FL" && ! grep -q '^codex' "$FL" && ok "failover: Codex role run by Claude" || ko "failover: calls $(cut -c1-60 "$FL" | tr '\n' ' ')"
-grep -q 'acceptEdits' "$FL" && grep -q '"sandbox":{"enabled":true' "$FL" && ok "failover: writing role with accepted edits inside Claude's sandbox" || ko "failover: write mode missing"
-grep -q -- '--model	claude-haiku-5-5' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
-file_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '"role":"executor","family":"claude".*"sandbox":"workspace-write".*"failover_from":"codex"'
-run "status after a failover" qenv "$LOOMY" status --root "$QD"
-has "status: Codex roles go to Claude" "Codex's roles go to Claude until it resets"
-has "status: switched delegation marked" "⇄ Add a test"
-run "stats after a failover" qenv "$LOOMY" stats --root "$QD"
-has "stats: switched delegations counted" "1 delegation\(s\) moved to the other tool"
-: >"$FL"; printf 'quota_switch=off\nplan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
-(cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate codex executor "x") >"$OUT" 2>&1
-grep -q '^codex' "$FL" && ok "quota_switch off: no failover" || ko "quota_switch off ignored"
-# Claude nearly exhausted: a read-only role goes to Codex, unless Codex has no room left either.
-printf 'plan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
-printf 'five_hour_pct=97\nfive_hour_reset=%s\n' $(( NQ + 3600 )) >"$QC/loomy/claude-limits"
-: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
-grep -q '^claude' "$FL" && ok "both quotas exhausted: no ping-pong, Claude keeps the role" || ko "failover with both exhausted"
-printf '{"type":"event_msg","payload":{"rate_limits":{"primary":{"used_percent":20.0,"window_minutes":10080,"resets_at":%s},"rate_limit_reached_type":null}}}\n' $(( NQ + 200000 )) >>"$QX/sessions/2026/09/28/r.jsonl"
-: >"$FL"; (cd "$QD" && qenv STUB_LOG="$FL" "$LOOMY" delegate claude reviewer "Review") >"$OUT" 2>&1
-has "failover to Codex: announced" "Claude quota at 97 % .*reviewer handed to Codex"
-grep -q '^codex' "$FL" && ! grep -q '^claude' "$FL" && grep -q 'read-only' "$FL" && ok "failover to Codex: read-only role stays read-only" || ko "failover to codex: $(cut -c1-80 "$FL")"
-run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD" --print
-has "start: lead agent session on the other tool" "Claude Code quota at 97 %: this session runs on Codex"
-has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
-rm -f "$QC/loomy/claude-limits"
+quota_stats_tests
 
 fi
 
 lead_relay_tests() {
+local LOOMY_TEST_STUBS="$WORK" LOOMY_CODEX_BIN="$WORK/relay-stubs/codex"
+export LOOMY_TEST_STUBS LOOMY_CODEX_BIN
+cp -R "$HERE/stubs" "$WORK/relay-stubs"
 QC="$WORK/quota-cfg"; QX="$WORK/quota-codex"
 mkdir -p "$QC/loomy" "$QX/sessions/2026/09/28"
 qenv() { env XDG_CONFIG_HOME="$QC" CODEX_HOME="$QX" "$@"; }
@@ -2609,7 +2804,7 @@ relay_state_active() {
 }
 lead_relay_decide() {
   local dry="${1:-}" no_switch="${2:-}" requested="${3:-}"
-  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_NO_SWITCH="$no_switch" bash -c '
+  qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" LOOMY_NO_SWITCH="$no_switch" bash -c '
     source "$1/scripts/lib/models.sh"
     source "$1/scripts/lib/failover.sh"
     lf_decide "$2" claude "${3:-}" "${4:-}"
@@ -2655,7 +2850,7 @@ got="$(lead_relay_decide --dry)"
 [[ ! -s "$LR/.loomy/logs/events.jsonl" ]] && ok "lead relay: dry handover writes no event" || ko "lead relay: dry handover wrote an event"
 
 rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
-qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" bash -c '
   source "$1/scripts/lib/models.sh"
   source "$1/scripts/lib/failover.sh"
   lf_decide "$2" claude --dry >/dev/null
@@ -2673,7 +2868,7 @@ got="$(lead_relay_decide)"
 rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"
 mkdir "$LR/.loomy/failover.lock"
 touch -t 200001010000 "$LR/.loomy/failover.lock"
-qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" bash -c '
   source "$1/scripts/lib/models.sh"
   source "$1/scripts/lib/failover.sh"
   lf_decide "$2" claude --dry >/dev/null
@@ -2733,7 +2928,7 @@ got="$(lead_relay_decide)"
 
 relay_state_active "$(( $(date +%s) + 3600 ))"
 lead_relay_env() {
-  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" AI_ROUTE_ENV="${1:-}" bash -c '
+  qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" AI_ROUTE_ENV="${1:-}" bash -c '
     source "$1/scripts/lib/models.sh"
     ai_detect_env "$2"
     printf "%s|%s|%s\n" "$AI_LEAD" "$AI_LEAD_MASTER" "$AI_ENV"
@@ -2755,7 +2950,7 @@ esac
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
 if [[ "${STUB_SATURATE:-1}" == "1" ]]; then
   mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/loomy"
-  printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits"
+  printf 'five_hour_pct=100\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"${XDG_CONFIG_HOME:-$HOME/.config}/loomy/claude-limits"
 fi
 exit 0
 STUB
@@ -2777,8 +2972,8 @@ printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nle
 relay_codex_quota 20
 printf 'five_hour_pct=97\nfive_hour_reset=%s\n' "$LR_RESET" >"$QC/loomy/claude-limits"
 rm -f "$LR/.loomy/failover"; : >"$LR/.loomy/logs/events.jsonl"; : >"$LR_APP_OPEN_LOG"
-if qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" \
-  LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --app >"$OUT" 2>&1; then
+if qenv env PATH="$LR_BIN:$LR_APP_BIN:$WORK/relay-stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" \
+  LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" "$LOOMY" start --root "$LR" --app >"$OUT" 2>&1; then
   grep -q '^codex://' "$LR_APP_OPEN_LOG" 2>/dev/null && ok "start --app: opens the acting Codex app" || ko "start --app: app link $(cat "$LR_APP_OPEN_LOG" 2>/dev/null)"
   file_has "start --app: applies the lead relay state" "$LR/.loomy/failover" '^acting=codex$'
   file_has "start --app: journals the lead relay" "$LR/.loomy/logs/events.jsonl" '"type":"lead_failover"'
@@ -2789,7 +2984,7 @@ printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nle
 relay_codex_quota 20
 rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
 : >"$LR/.loomy/logs/events.jsonl"; : >"$LR_LOG"
-if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+if qenv env PATH="$LR_BIN:$WORK/relay-stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" \
   LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
   LR_ORDER="$(awk -F '\t' '$1 == "claude" && $2 !~ /^--version/ || $1 == "codex" && $2 !~ /^--version/ { printf "%s%s", sep, $1; sep = " " } END { print "" }' "$LR_LOG")"
   [[ "$LR_ORDER" == "claude codex" ]] && ok "start chain: Claude session hands off to Codex" || ko "start chain: session order was $LR_ORDER"
@@ -2800,7 +2995,7 @@ if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" LOOMY_CO
 else ko "start chain: command failed"; fi
 
 rm -f "$QC/loomy/claude-limits"; : >"$LR_LOG"
-if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+if qenv env PATH="$LR_BIN:$WORK/relay-stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" \
   LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
   grep -q 'You are the lead agent again' "$LR_LOG" \
     && ok "start chain: returning Claude receives the lead-again prompt" || ko "start chain: lead-again prompt missing"
@@ -2808,7 +3003,7 @@ if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SAT
 else ko "start chain: return command failed"; fi
 
 rm -f "$LR/.loomy/failover" "$QC/loomy/claude-limits"; : >"$LR_LOG"
-if qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" \
+if qenv env PATH="$LR_BIN:$WORK/relay-stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" \
   LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
   LR_COUNT="$(awk -F '\t' '$1 == "claude" && $2 !~ /^--version/ || $1 == "codex" && $2 !~ /^--version/ { n++ } END { print n + 0 }' "$LR_LOG")"
   [[ "$LR_COUNT" == "1" ]] && ok "start chain: no saturation starts one Claude session" || ko "start chain: no-saturation session count was $LR_COUNT"
@@ -2830,8 +3025,8 @@ STUB
 chmod +x "$LR_BOUND_BIN/codex"
 relay_codex_quota 20
 rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"; : >"$LR_BOUND_LOG"
-if qenv env PATH="$LR_BOUND_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_BOUND_LOG" \
-  LOOMY_CODEX_BIN="$LR_BOUND_BIN/codex" LOOMY_TEST_CODEX_STUB="$HERE/stubs/codex" \
+if qenv env PATH="$LR_BOUND_BIN:$WORK/relay-stubs:/usr/bin:/bin" STUB_LOG="$LR_BOUND_LOG" \
+  LOOMY_CODEX_BIN="$LR_BOUND_BIN/codex" LOOMY_TEST_CODEX_STUB="$WORK/relay-stubs/codex" \
   LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 "$LOOMY" start --root "$LR" --new >"$OUT" 2>&1; then
   LR_ORDER="$(awk -F '\t' '$1 == "claude" || ($1 == "codex" && $2 !~ /^--version/) { printf "%s%s", sep, $1; sep = " " } END { print "" }' "$LR_BOUND_LOG")"
   LR_COUNT="$(awk -F '\t' '$1 == "claude" || ($1 == "codex" && $2 !~ /^--version/) { n++ } END { print n + 0 }' "$LR_BOUND_LOG")"
@@ -2867,11 +3062,11 @@ relay_active_claude() {
 }
 relay_prompt_hook() {
   local no_switch="${1:-}"
-  echo '{}' | qenv env LOOMY_LANG=en LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_NO_SWITCH="$no_switch" \
+  echo '{}' | qenv env LOOMY_LANG=en LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" LOOMY_NO_SWITCH="$no_switch" \
     bash "$REPO/scripts/loomy-context.sh" --hook prompt --root "$LR"
 }
 relay_record_return() {
-  qenv env LOOMY_CODEX_BIN="$HERE/stubs/codex" bash -c '
+  qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" bash -c '
     source "$1/scripts/lib/models.sh"
     source "$1/scripts/lib/failover.sh"
     lf_start "$2" codex claude "5 h 96 %" "$3"
@@ -2959,10 +3154,10 @@ file_has "start: dedicated tmux agent command sets LOOMY_START_INNER=1" "$REPO/s
 file_has "start: dedicated tmux session runs the inner agent command" "$REPO/scripts/loomy-start.sh" \
   'tmux new-session.*[$]agent; tmux kill-session'
 run "start: inner print suppresses banner logo" qenv env LOOMY_START_INNER=1 COLUMNS=80 LINES=24 \
-  LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --print
+  LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" "$LOOMY" start --root "$LR" --print
 hasnt "start: inner print has no banner logo line" '▀▄'
 run "start: normal print renders banner logo" qenv env COLUMNS=80 LINES=24 \
-  LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --print
+  LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" "$LOOMY" start --root "$LR" --print
 has "start: normal print includes banner logo line" '▀▄'
 # END lead relay part B standalone coverage.
 
@@ -2974,8 +3169,8 @@ rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
 : >"$LR/.loomy/logs/events.jsonl"; : >"$LR_LOG"
 cp "$LR/.loomy/brief.md" "$WORK/manual-brief.before"
 manual_start() {
-  qenv env PATH="$LR_BIN:$HERE/stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 \
-    LOOMY_CODEX_BIN="$HERE/stubs/codex" LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 \
+  qenv env PATH="$LR_BIN:$WORK/relay-stubs:/usr/bin:/bin" STUB_LOG="$LR_LOG" STUB_SATURATE=0 \
+    LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" LOOMY_CHAIN_DELAY=0 LOOMY_START_WATCH=0 \
     "$LOOMY" start --root "$LR" "$@"
 }
 printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
@@ -3081,10 +3276,10 @@ run "manual lead: disabled auto relay still preserves explicit choice" manual_st
 file_has "manual lead: manual relay survives lead_failover off" "$LR/.loomy/failover" '^manual=1$'
 printf 'lead_failover=auto\nplan_codex=business\n' >>"$QC/loomy/config"
 rm -f "$LR/.loomy/failover"; : >"$LR_APP_OPEN_LOG"
-run "manual lead: app starts chosen Codex" qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --lead codex --app
+run "manual lead: app starts chosen Codex" qenv env PATH="$LR_BIN:$LR_APP_BIN:$WORK/relay-stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" "$LOOMY" start --root "$LR" --lead codex --app
 file_has "manual lead: app link contains manual prompt" "$LR_APP_OPEN_LOG" '^codex://.*manual'
 file_has "manual lead: app records manual relay" "$LR/.loomy/failover" '^manual=1$'
-run "manual lead: app returns to master" qenv env PATH="$LR_BIN:$LR_APP_BIN:$HERE/stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$HERE/stubs/codex" "$LOOMY" start --root "$LR" --lead auto --app
+run "manual lead: app returns to master" qenv env PATH="$LR_BIN:$LR_APP_BIN:$WORK/relay-stubs:/usr/bin:/bin" LR_APP_OPEN_LOG="$LR_APP_OPEN_LOG" LOOMY_START_WATCH=0 LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" "$LOOMY" start --root "$LR" --lead auto --app
 [[ ! -e "$LR/.loomy/failover" ]] && ok "manual lead: app return clears state" || ko "manual lead: app return kept state"
 relay_set_brief codex ORCHESTRATED
 : >"$LR_LOG"
@@ -3103,7 +3298,7 @@ rm -f "$QC/loomy/claude-limits" "$LR/.loomy/failover"
 }
 lead_relay_tests
 if [[ "${1:-}" == --section && "${2:-}" == 'Lead relay (quota)' ]]; then
-  printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+  suite_summary
   (( FAIL == 0 )); exit $?
 fi
 
@@ -3112,9 +3307,9 @@ CA="$WORK/apps/ChatGPT.app/Contents/Resources/codex-cli"; mkdir -p "$CA/bin" "$W
 printf '{ "layoutVersion": 1, "entrypoint": "bin/codex" }\n' >"$CA/codex-package.json"
 printf '#!/bin/sh\necho "codex-cli 0.158.0"\n' >"$CA/bin/codex"; chmod +x "$CA/bin/codex"
 printf '#!/bin/sh\nexec "%s/gone/codex" "$@"\n' "$WORK" >"$WORK/stalebin/codex"; chmod +x "$WORK/stalebin/codex"
-got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_bin' _ "$REPO")"
+got="$(env -u LOOMY_CODEX_BIN LOOMY_TEST_STUBS="$CA" LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_bin' _ "$REPO")"
 [[ "$got" == "$CA/bin/codex" ]] && ok "codex: stale wrapper skipped, current app layout found" || ko "codex discovery: $got"
-got="$(env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_version' _ "$REPO")"
+got="$(env -u LOOMY_CODEX_BIN LOOMY_TEST_STUBS="$CA" LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_version' _ "$REPO")"
 [[ "$got" == "0.158.0" ]] && ok "codex: version read from the bundled CLI" || ko "codex version: $got"
 mkdir -p "$HOME/.local/bin" && cp "$WORK/stalebin/codex" "$HOME/.local/bin/codex"
 env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/loomy-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
@@ -3123,12 +3318,18 @@ has "doctor: broken codex command flagged" "points to a Codex CLI that no longer
 has "doctor: readable fix" "fix: loomy doctor --fix"
 
 native_lifecycle_tests
+section "Provider availability"
+run "provider availability regressions" bash "$HERE/provider-availability.sh"
+
+section "W1 Claude live"
+run "Claude CLI/app foreground/background hooks, transcripts, aliases and latency" bash "$HERE/claude-live.sh"
 section "W1 Codex live"
 run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
 
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"
+run "watch exit paths and watchdog process-group cleanup" bash "$HERE/watch-exit.sh"
 run "watch timer backpressure, key ordering and prompt quit under slow rendering" bash "$HERE/watch-backpressure.sh"
 run "native end semantics, useful journal activity and count-only emphasis" bash "$HERE/native-display.sh"
 SD="$WORK/structured"; mkdir -p "$SD"
@@ -3290,20 +3491,8 @@ file_has "report: Markdown tables" "$(ls "$DW"/docs/reports/report-*.md | head -
 ls "$DW"/reports/report-*.md >/dev/null 2>&1 && ok "report: Markdown file in a chosen folder" || ko "report: chosen folder ignored"
 "$LOOMY" report --all >"$OUT" 2>&1
 has "report --all: projects listed" "dayto"
-# loomy models
-"$LOOMY" models >"$OUT" 2>&1
-has "models: chains shown" "claude.mid"
-got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
-"$LOOMY" config set chain.claude.mid "claude-sonnet-9, claude-sonnet-5-5" >/dev/null
-got2="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
-[[ "$got2" == "claude-sonnet-9" ]] && ok "models: local chain applied" || ko "models: local chain ($got2)"
-"$LOOMY" models --thrifty on >/dev/null
-got3="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
-[[ "$got3" == "claude-sonnet-5-5" ]] && ok "models: low-cost mode prefers the fallback" || ko "models: low-cost mode ($got3)"
-"$LOOMY" models --thrifty off >/dev/null; "$LOOMY" config set chain.claude.mid auto >/dev/null
-fails "models: invalid chain refused" 2 "$LOOMY" config set chain.claude.mid "a, b, c, d"
-got4="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_MODEL_CLAUDE_MID"' _ "$REPO")"
-[[ "$got4" == "$got" ]] && ok "models: back to the catalog" || ko "models: not restored ($got4)"
+local_model_chain_tests
+
 # Project templates
 printf -- '---\nname: "API test"\ngoal: "an api"\nrepo: new\ntemplate: api\n---\n' >"$WORK/tpl-answers.md"
 "$LOOMY" init "$WORK/tpl-api" --answers "$WORK/tpl-answers.md" --yes --no-clipboard >/dev/null 2>&1
@@ -3384,7 +3573,7 @@ NPM
 chmod +x "$RP/tools/npm"
 printf '#!/bin/bash\necho installer >>%q\nmkdir -p "$HOME/.local/bin"; echo 2.1.500 > %q\n' "$RP/calls" "$RP/native.ver" >"$RP/installer.sh"
 repair_try() {   # repair_try: runs the Claude repair in the fake world; prints the final state
-  HOME="$RP/home" PATH="$RP/prefix/bin:$RP/extra:$RP/tools:/usr/bin:/bin" LOOMY_REPAIR_YES=1 XDG_CONFIG_HOME="$RP/cfg" \
+  LOOMY_TEST_STUBS="$RP" HOME="$RP/home" PATH="$RP/prefix/bin:$RP/extra:$RP/tools:/usr/bin:/bin" LOOMY_REPAIR_YES=1 XDG_CONFIG_HOME="$RP/cfg" \
     LOOMY_CLAUDE_INSTALLER="bash $RP/installer.sh && cp $RP/native-claude \"\$HOME/.local/bin/claude\"" \
     bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; ai_repair_tool claude >/dev/null 2>&1; ai_tool_state claude' _ "$REPO"
 }
@@ -3392,7 +3581,7 @@ reset_world() { rm -f "$RP"/*.ok "$RP/calls" "$RP/home/.local/bin/claude"; rm -r
   fake_claude "$RP/prefix/lib/node_modules/@anthropic-ai/claude-code/cli.js" "$RP/npm.ver"; ln -sf ../lib/node_modules/@anthropic-ai/claude-code/cli.js "$RP/prefix/bin/claude"
   fake_claude "$RP/native-claude" "$RP/native.ver"; }
 reset_world
-got="$(HOME="$RP/home" PATH="$RP/prefix/bin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; ai_tool_state claude; ai_tool_method claude "$(command -v claude)"' _ "$REPO" | tr '\n' ' ')"
+got="$(LOOMY_TEST_STUBS="$RP" HOME="$RP/home" PATH="$RP/prefix/bin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; ai_tool_state claude; ai_tool_method claude "$(command -v claude)"' _ "$REPO" | tr '\n' ' ')"
 [[ "$got" == "old 2.1.100 "*" npm " ]] && ok "repair: old npm copy detected" || ko "repair: detection ($got)"
 touch "$RP/npm.ok"
 got="$(repair_try)"
@@ -3414,44 +3603,9 @@ rm -f "$DW/.loomy/scripts/loomy-task.sh"
 got="$(LOOMY_NO_AUTOUPDATE=1 bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/upkeep.sh"; loomy_upkeep; echo "rc=$?"' _ "$REPO")"
 [[ "$got" == "rc=0" ]] && ok "upkeep: off with LOOMY_NO_AUTOUPDATE" || ko "upkeep off: $got"
 
-section "Announced models"
-UP_CFG="$WORK/upcoming-cfg"; mkdir -p "$UP_CFG/loomy"
-# A newer downloaded catalog announcing a model (the built-in list is empty while nothing is announced).
-printf '%s\n' 'date=2099-01-01' 'model.claude.fast=claude-haiku-5-5, claude-haiku-4-5' 'upcoming.claude.fast=claude-haiku-9' >"$UP_CFG/loomy/catalog.conf"
-upq() { XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_CHAIN_CLAUDE_FAST | $AI_MODEL_CLAUDE_FAST"' _ "$REPO"; }
-[[ "$(upq)" == "claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-5-5" ]] && ok "announced: not used before it answers" || ko "announced before: $(upq)"
-XDG_CONFIG_HOME="$UP_CFG" "$LOOMY" models >"$OUT" 2>&1
-has "announced: listed by loomy models" "claude-haiku-9.*not available yet"
-hasnt "announced: not suggested as a new model" "✦ claude-haiku-9"
-XDG_CONFIG_HOME="$UP_CFG" STUB_UNKNOWN_MODELS="claude-haiku-9" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9' _ "$REPO" && ko "announced: refused model seen as available" || ok "announced: a refused model stays out"
-XDG_CONFIG_HOME="$UP_CFG" bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-haiku-9 && ai_model_mark claude-haiku-9 ok' _ "$REPO"
-[[ "$(upq)" == "claude-haiku-9 claude-haiku-5-5 claude-haiku-4-5 | claude-haiku-9" ]] && ok "announced: once it answers, it heads its chain, the others as fallbacks" || ko "announced after: $(upq)"
-got="$(bash -c 'source "$1/scripts/lib/models.sh"; echo "$AI_UPCOMING"' _ "$REPO")"
-want="$(sed -n 's/^upcoming\.\([a-z]*\)\.\([a-z]*\)=\(.*\)$/\1:\2:\3/p' "$REPO/catalog/models.conf" | tr '\n' ' ' | sed 's/ $//')"
-[[ "$want" == "$got" ]] && ok "announced: repository catalog = built-in list" || ko "announced catalog: '$got' vs '$want'"
+announced_model_tests
 
-section "Haiku 5.5 routing and long-prompt rate"
-HK="$WORK/haiku-cfg"; mkdir -p "$HK/loomy"
-hkq() { XDG_CONFIG_HOME="$HK" bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve "$2" "$3" "$4"; echo "$R_MODEL $R_EFFORT"' _ "$REPO" "$@"; }
-[[ "$(hkq executor claude equilibre)" == "claude-haiku-5-5 high" ]] && ok "haiku: full-Claude executor on Haiku 5.5 high" || ko "haiku executor: $(hkq executor claude equilibre)"
-[[ "$(hkq explorer claude equilibre)" == "claude-haiku-5-5 medium" ]] && ok "haiku: Claude explorer on Haiku 5.5 medium" || ko "haiku explorer: $(hkq explorer claude equilibre)"
-[[ "$(hkq executor hybrid-claude equilibre)" == "gpt-6-luna max" ]] && ok "haiku: hybrid executor stays on Luna" || ko "haiku hybrid: $(hkq executor hybrid-claude equilibre)"
-[[ "$(hkq executor claude qualite)" == "claude-sonnet-5-5 high" ]] && ok "haiku: Max quality executor on Sonnet" || ko "haiku qualite: $(hkq executor claude qualite)"
-echo "claude-haiku-5-5=ko" >"$HK/loomy/models.state"
-[[ "$(hkq executor claude equilibre)" == "claude-sonnet-5-5 medium" ]] && ok "haiku: without Haiku 5.5 the executor goes back to Sonnet, not Haiku 4.5" || ko "haiku fallback: $(hkq executor claude equilibre)"
-[[ "$(hkq explorer claude equilibre)" == "claude-haiku-4-5 medium" ]] && ok "haiku: without Haiku 5.5 the explorer falls back to Haiku 4.5" || ko "haiku explorer fallback: $(hkq explorer claude equilibre)"
-# One message under 100K tokens, one over: the second one at the long-prompt rate (0.50 / 2.50).
-HKP="$WORK/haiku-proj"; mkdir -p "$HKP/.loomy/logs"; HKT="$WORK/haiku.jsonl"
-printf '{"type":"assistant","message":{"id":"msg_h1","model":"claude-haiku-5-5","usage":{"input_tokens":50000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000000}}}\n' >"$HKT"
-printf '{"type":"assistant","message":{"id":"msg_h2","model":"claude-haiku-5-5","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >>"$HKT"
-bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$3" lead' _ "$REPO" "$HKP" "$HKT"
-got="$(grep -o '"cost_usd":[0-9.]*' "$HKP/.loomy/logs/events.jsonl" | sed 's/.*://' | sort | tr '\n' ' ')"
-[[ "$got" == "0.500000 0.505000 " ]] && ok "haiku: long prompts priced at the long rate, the rest at the base rate" || ko "haiku long rate: $got"
-file_has "haiku: model logged without the internal marker" "$HKP/.loomy/logs/events.jsonl" '"model":"claude-haiku-5-5"'
-grep -q '@long' "$HKP/.loomy/logs/events.jsonl" && ko "haiku: internal marker leaked into the log" || ok "haiku: no internal marker in the log"
-CL="$WORK/haiku-catalog"; mkdir -p "$CL/loomy"
-printf '%s\n' 'date=2099-01-01' 'price_long.claude-haiku-5-5=200000 1 3 0.10' >"$CL/loomy/catalog.conf"
-[[ "$(XDG_CONFIG_HOME="$CL" bash -c 'source "$1/scripts/lib/models.sh"; ai_price_long claude-haiku-5-5' _ "$REPO")" == "200000 1 3 0.10" ]] && ok "haiku: long-prompt rate read from the catalog" || ko "haiku catalog long rate"
+haiku_model_tests
 
 section "Advisor and agent tree"
 AC="$WORK/adv-cfg"; mkdir -p "$AC/loomy"
@@ -3911,6 +4065,7 @@ grep -qE 'issue (comment|edit|close)' "$FBL" && ko "feedback triage: posted with
 # In a terminal, each reply waits for a choice: here "Skip", then "Stop" (the issue rows don't take the keyboard).
 if command -v expect >/dev/null 2>&1; then
   cat >"$WORK/triage.exp" <<EXP
+source "$REPO/tests/fixtures/watchdog.exp"
 set timeout 20
 spawn env GH_STUB_ISSUES=$FBD/triage.txt LOOMY_TRIAGE_AI=none STUB_LOG=$FBL bash $REPO/scripts/loomy-feedback.sh triage
 expect "What to do with #21" ; expect "⏎ confirm" ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\033\[B" ; after 150 ; send "\r"
@@ -3970,5 +4125,6 @@ _sec_close
 if [[ "$TEST_TIMES" == 1 ]]; then
   printf '\n\033[1mSlowest sections (s)\033[0m\n'; printf '%s' "$SEC_TIMES" | sort -rn | head -15 | sed 's/^/  /'
 fi
+run "hermetic: no real AI CLI, no leaked process/session/temp file" test_guard_gate
 printf '\n\033[1m%d passed, %d failed\033[0m\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

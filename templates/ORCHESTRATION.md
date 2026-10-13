@@ -30,7 +30,9 @@ Roles that write modify the working tree; the script lists the changed files. Ov
 
 Pick the role from the intent of the work (design → architect, implementation → developer or executor, review → reviewer, and so on), not from the model the user names. When the user names a model or an effort ("a design by Sol high"), keep the role and pass them as options: `--model <id> --effort <level> --why "user request"`; add `--write` when that role must produce files (a design document, for example). The option wins over the routing and the journal records it as requested and off routing.
 
-Near the end of a subscription quota (95 % by default), a bridge may hand the role to the other tool, with the model the routing gives that role there; it says so on stderr and logs it. Nothing changes for you: same call, same kind of answer; review the result as usual.
+A real provider refusal (quota, credits or rate limit), or a quota reading at 100 % / reached, hands the role to the other available provider once. Models share their provider’s quota; never retry a sibling model or use an unvalidated fallback.
+
+Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
 
 A Codex lead agent also uses `loomy-delegate-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
 

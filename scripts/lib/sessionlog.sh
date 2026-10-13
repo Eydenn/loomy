@@ -25,7 +25,7 @@ ai_session_log_rows() {
 }
 
 _ai_session_events() {
-  tail -n 400 "$1" | awk '
+  tail -n 4000 "$1" | ai_journal_canonical | tail -n 400 | awk '
     function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
     function dur(d) { d = d + 0; return (d >= 60 ? int(d / 60) " min " (d % 60) " s" : d " s") }

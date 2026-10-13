@@ -54,3 +54,5 @@ Use these calls for an independent review, an architecture critique, hard debugg
 Don't use these calls for trivial tasks, routine confirmations or repeated back-and-forth. Prefer a single focused call.
 
 Bridge options, before the task text: pick the role from the intent of the work; when the user names a model or effort, pass `--model <id> --effort <level> --why "user request"`, and `--write` when the role must produce files.
+
+- Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.

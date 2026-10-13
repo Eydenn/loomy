@@ -47,7 +47,7 @@ ai_tool_paths() {
     seen="$seen|$r|"; printf '%s\n' "$p"
   done
 }
-ai_tool_version_of() { "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
+ai_tool_version_of() { loomy_guard_real_cli "${1##*/}" "$1" || return $?; "$1" --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true; }
 ai_tool_min() { if [[ "$1" == "claude" ]]; then echo "$AI_MIN_CLAUDE_VERSION"; else echo "$AI_MIN_CODEX_VERSION"; fi; }
 
 # ai_tool_state <claude|codex>: "ok <version> <path>", "old <version> <path>", "broken - <path>" or "missing".
@@ -112,6 +112,7 @@ ai_repair_tool() {
     [[ "$UI_INDEX" == "0" ]] || return 1
   fi
   if [[ "$st" != "missing" ]]; then
+    loomy_guard_real_cli "$tool" "$first" || return $?
     m="$(ai_tool_method "$tool" "$first")"
     # 1. Update in place, with the install's own method.
     case "$m" in

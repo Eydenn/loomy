@@ -2,18 +2,25 @@
 # Targeted native Codex lifecycle, rendering, bounded-read and privacy regressions.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/loomy-native-tests.XXXXXX")"
-WORK="$(cd "$WORK" && pwd -P)"
+# shellcheck source=fixtures/watchdog.sh
+source "$REPO/tests/fixtures/watchdog.sh"
+WORK="$(mktemp -d "/tmp/loomy-native-tests.XXXXXX")"
+# shellcheck source=lib/guard.sh
+source "$REPO/tests/lib/guard.sh"
 OWNER=""
-trap '[[ -z "$OWNER" ]] || { kill "$OWNER" 2>/dev/null || true; wait "$OWNER" 2>/dev/null || true; }; rm -rf "$WORK"' EXIT
+test_guard_cleanup() { [[ -z "$OWNER" ]] || { kill "$OWNER" 2>/dev/null || true; wait "$OWNER" 2>/dev/null || true; }; }
+trap 'exit 143' TERM HUP
+trap 'exit 130' INT
+mkdir -p "$WORK/tmp"
+export TMPDIR="$WORK/tmp"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
 export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
-unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_UI_LANG LOOMY_FIXTURE_NOW
+unset LOOMY_DELEGATION LOOMY_PROJECT_ROOT CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_UI_LANG LOOMY_FIXTURE_NOW
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"
 PASS=0
-check() { local title="$1"; shift; if "$@"; then PASS=$(( PASS + 1 )); printf 'ok %s\n' "$title"; else printf 'FAIL %s\n' "$title" >&2; exit 1; fi; }
+check() { local title="$1"; shift; if test_step "$@"; then PASS=$(( PASS + 1 )); printf 'ok %s\n' "$title"; else printf 'FAIL %s\n' "$title" >&2; exit 1; fi; }
 fixture() { perl "$REPO/tests/fixtures/codex-native.pl" "$1" "$ROOT" "$CODEX_HOME/sessions" "${OWNER:-$$}"; }
 poll() { perl "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"; }
 json_check() {
@@ -205,7 +212,7 @@ check 'recovery after lock contention' poll
 check 'recovery after contention sees three agents' count_start
 
 # Measure the actual in-process sampler path, not shell startup time.
-check '100 unchanged polls stay below five seconds and append nothing' perl -MTime::HiRes=time -e 'my ($module,$root,$sessions,$journal)=@ARGV; require $module; my $size=-s $journal; my $begin=time; for(1..100){Loomy::CodexNative::poll($root,$sessions)} my $elapsed=time-$begin; printf "100 polls: %.3f s\n",$elapsed; die if $elapsed>5 || (-s $journal)!=$size;' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions" "$J"
+check '100 unchanged polls stay below five CPU seconds and append nothing' perl -MTime::HiRes=clock_gettime,CLOCK_PROCESS_CPUTIME_ID -e 'my ($module,$root,$sessions,$journal)=@ARGV; require $module; my $size=-s $journal; my $begin=clock_gettime(CLOCK_PROCESS_CPUTIME_ID); for(1..100){Loomy::CodexNative::poll($root,$sessions)} my $elapsed=clock_gettime(CLOCK_PROCESS_CPUTIME_ID)-$begin; printf "100 polls: %.3f s\n",$elapsed; die if $elapsed>5 || (-s $journal)!=$size;' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions" "$J"
 
 # Root metadata is observed, refreshed and owner-scoped; it never becomes fake usage/activity.
 ROOT="$WORK/root-context"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-context-codex"

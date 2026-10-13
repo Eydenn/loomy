@@ -41,6 +41,7 @@ command -v claude >/dev/null 2>&1 || { echo "claude CLI not found" >&2; exit 1; 
 # Empty configuration folder: no plugins, hooks or memory sent to the local model (they slow it down a lot).
 CFG="$(mktemp -d "${TMPDIR:-/tmp}/loomy-local.XXXXXX")" || exit 1
 trap 'rm -rf "$CFG"' EXIT
+loomy_guard_real_cli claude || exit $?
 start="$(date +%s)"
 out="$(ANTHROPIC_BASE_URL="$URL" ANTHROPIC_AUTH_TOKEN="$TOKEN" ANTHROPIC_API_KEY="" CLAUDE_CONFIG_DIR="$CFG" \
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 CLAUDE_CODE_MAX_CONTEXT_TOKENS=60000 \

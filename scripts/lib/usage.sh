@@ -45,20 +45,26 @@ ai_quota() {
       if [[ "$(head -1 "$cache" 2>/dev/null)" == "$mt $f" ]]; then line="$(sed -n '2p' "$cache")"
       else
         # Only the end of the log: readings are frequent, logs can be large.
-        line="$(tail -c 400000 "$f" 2>/dev/null | grep -o '"rate_limits":{[^{}]*\({[^{}]*}[^{}]*\)*}' | tail -1)"
-        mkdir -p "${cache%/*}" 2>/dev/null && printf '%s\n%s\n' "$mt $f" "$line" >"$cache" 2>/dev/null
+        line="$(tail -c 400000 "$f" 2>/dev/null | grep -o '"rate_limits":{[^{}]*\({[^{}]*}[^{}]*\)*}' | tail -1 || true)"
+        if [[ "${AI_QUOTA_READ_ONLY:-0}" != 1 ]]; then
+          mkdir -p "${cache%/*}" 2>/dev/null && printf '%s\n%s\n' "$mt $f" "$line" >"$cache" 2>/dev/null || true
+        fi
       fi
       [[ -n "$line" ]] || return 0
-      printf '%s\n' "$line" | awk -v now="$now" '
+      printf '%s\n' "$line" | awk -v now="$now" -v fresh="${mt%% *}" '
         function win(name,   s, w, p, r) {
           if (!match($0, "\"" name "\":\\{[^}]*\\}")) return
           s = substr($0, RSTART, RLENGTH)
           w = s; sub(/.*"window_minutes":/, "", w); sub(/[,}].*/, "", w)
           p = s; sub(/.*"used_percent":/, "", p); sub(/[,}].*/, "", p)
           r = s; sub(/.*"resets_at":/, "", r); sub(/[,}].*/, "", r)
-          if (r + 0 > now) printf "%d %d %d\n", w, p + 0.5, r }
+          rst[name] = r + 0; if (r + 0 > 0) known_reset = 1
+          if (r + 0 > now) active = 1
+          if (r + 0 > now) printf "%d %d %d\n", w, p + 0, r }
         { win("primary"); win("secondary")
-          if (match($0, /"rate_limit_reached_type":"[a-z_]+"/)) print "reached", substr($0, RSTART + 27, RLENGTH - 28) }'
+          if (match($0, /"rate_limit_reached_type":"[a-z_]+"/)) {
+            reason=substr($0, RSTART + 27, RLENGTH - 28)
+            if (rst[reason] > now || (reason != "primary" && reason != "secondary" && active) || (!known_reset && now-fresh < 300)) print "reached", reason } }'
       ;;
   esac
 }
@@ -122,24 +128,31 @@ ai_switch_threshold() {
   echo "$v"
 }
 
-# ai_quota_saturated <claude|codex>: true when that tool's subscription quota is nearly exhausted or reached.
-# A tool used through the API is never saturated.
+# Proactive lead relay keeps its configured threshold; it is not evidence for pausing a bridge.
 ai_quota_saturated() {
+  ai_provider_refused "$1" && return 0
   local th q; th="$(ai_switch_threshold)"
   [[ -n "$th" ]] || return 1
   loomy_on_plan "$1" || return 1
-  q="$(ai_quota "$1")"
-  [[ -n "$q" ]] || return 1
-  printf '%s\n' "$q" | awk -v th="$th" '$1 == "reached" || $2 + 0 >= th { hit = 1 } END { exit !hit }'
+  q="$(ai_quota "$1")"; [[ -n "$q" ]] || return 1
+  printf '%s\n' "$q" | awk -v th="$th" '$1 == "reached" || $2 + 0 >= th {hit=1} END {exit !hit}'
+}
+
+# Delegations may still serve at 95-99 percent: pause only on a refusal or exhausted quota.
+ai_provider_saturated() {
+  ai_provider_refused "$1" && return 0
+  loomy_on_plan "$1" || return 1
+  ai_quota "$1" | awk '$1 == "reached" || $2 + 0 >= 100 {hit=1} END {exit !hit}'
 }
 
 # ai_switch_family <claude|codex>: the tool to use instead when this one is saturated (installed, not saturated
 # itself); empty otherwise.
 ai_switch_family() {
-  local other="codex"; [[ "$1" == "codex" ]] && other="claude"
-  ai_quota_saturated "$1" || return 0
+  local other="codex" check=ai_quota_saturated; [[ "${2:-}" != strict ]] || check=ai_provider_saturated
+  [[ "$1" == "codex" ]] && other="claude"
+  "$check" "$1" || return 0
   if [[ "$other" == "claude" ]]; then ai_has_claude || return 0; else ai_has_codex || return 0; fi
-  ai_quota_saturated "$other" && return 0
+  "$check" "$other" && return 0
   echo "$other"
 }
 
@@ -147,4 +160,143 @@ ai_switch_family() {
 ai_quota_state() {
   local q; q="$(ai_quota "$1")"
   if grep -q '^reached' <<<"$q"; then t "limit reached"; else printf '%s %%' "$(ai_quota_max "$1")"; fi
+}
+
+# Provider refusals outlive a bridge process; an absent reset means a five-minute estimated recheck.
+ai_provider_state_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/$1-availability"; }
+ai_provider_reset() {
+  local now reset f
+  now="$(date +%s)"; f="$(ai_provider_state_file "$1")"
+  reset="$(ai_quota "$1" | awk '$1 != "reached" && $2 >= 100 && $3 > r {r=$3} END {if (r) print r}')"
+  if [[ -f "$f" ]]; then
+    local saved; saved="$(sed -n 's/^resume_at=\([0-9]*\)$/\1/p' "$f")"
+    if [[ "$saved" =~ ^[0-9]+$ ]] && (( saved > now && saved > ${reset:-0} )); then reset="$saved"; fi
+  fi
+  echo "${reset:-$(( now + 300 ))}"
+}
+ai_provider_refusal() {
+  local f reset parsed now tmp
+  f="$(ai_provider_state_file "$1")"; now="$(date +%s)"; reset="$(ai_provider_reset "$1")"
+  # Prefer a known reset over an estimate, but never shorten an existing refusal.
+  parsed="$(printf '%s' "$2" | perl -MTime::Local -e '
+    my $now=shift; local $/; my $s=<STDIN>; my $epoch;
+    if ($s =~ /(?:resets_at|reset_at|resume_at)["\s:=]+([0-9]{10})/i || $s =~ /\|([0-9]{10})(?:\D|$)/) { $epoch=$1 }
+    elsif ($s =~ /(?:retry_after|retry-after|resets_in_seconds)["\s:=]+([0-9]+)/i) { $epoch=$now+$1 }
+    elsif ($s =~ /resets?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i) {
+      my ($h,$m,$ap)=($1,$2//0,lc $3); my @t=localtime($now);
+      if ($h>=1 && $h<=12 && $m<60) { $h=$h%12+($ap eq "pm" ? 12 : 0); $epoch=eval {timelocal(0,$m,$h,$t[3],$t[4],$t[5])}; $epoch+=86400 if defined($epoch) && $epoch<=$now }
+    } elsif ($s =~ /resets?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/i) {
+      my ($mon,$day)=(lc $1,$2); my %mon=map { (qw(jan feb mar apr may jun jul aug sep oct nov dec))[$_]=>$_ } 0..11;
+      my @t=localtime($now); $epoch=eval {timelocal(0,0,0,$day,$mon{$mon},$t[5])};
+      $epoch=eval {timelocal(0,0,0,$day,$mon{$mon},$t[5]+1)} if defined($epoch) && $epoch<=$now;
+    }
+    print $epoch if defined($epoch) && $epoch>$now;
+  ' "$now")"
+  if [[ "$parsed" =~ ^[0-9]+$ ]]; then
+    reset="$parsed"
+    local known saved
+    known="$(ai_quota "$1" | awk '$1 != "reached" && $2 >= 100 && $3 > r {r=$3} END {if (r) print r}')"
+    saved="$(sed -n 's/^resume_at=\([0-9]*\)$/\1/p' "$f" 2>/dev/null || true)"
+    [[ ! "$known" =~ ^[0-9]+$ ]] || { (( known <= reset )) || reset="$known"; }
+    [[ ! "$saved" =~ ^[0-9]+$ ]] || { (( saved <= reset )) || reset="$saved"; }
+  fi
+  mkdir -p "${f%/*}" 2>/dev/null || return 0
+  tmp="$(mktemp "$f.XXXXXX")" || return 0
+  printf 'reason=provider refusal (quota, credits or rate limit)\nresume_at=%s\n' "$reset" >"$tmp"
+  mv "$tmp" "$f"
+}
+ai_provider_refused() {
+  local f reset; f="$(ai_provider_state_file "$1")"
+  [[ -f "$f" ]] || return 1
+  reset="$(sed -n 's/^resume_at=\([0-9]*\)$/\1/p' "$f")"
+  [[ "$reset" =~ ^[0-9]+$ ]] && (( reset > $(date +%s) ))
+}
+ai_provider_reason() {
+  if ai_provider_refused "$1"; then t "provider refusal (quota, credits or rate limit)"
+  else ai_quota_state "$1"; fi
+}
+
+# Fingerprint only dirty paths, including untracked files, without reading ignored private files.
+ai_delegate_file_snapshot() {
+  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all | perl -MJSON::PP -MDigest::SHA=sha256_hex -e '
+    my $root=shift; local $/; my @entries=split /\0/,<STDIN>; my %files;
+    while (@entries) {
+      my $entry=shift @entries; my $status=substr($entry,0,2); my $path=substr($entry,3);
+      shift @entries if $status =~ /[RC]/;
+      my $hash="missing";
+      if (-l "$root/$path") { $hash=sha256_hex(readlink "$root/$path") }
+      elsif (-f "$root/$path" && open my $f,"<","$root/$path") { binmode $f; $hash=sha256_hex(<$f>//"") }
+      $files{$path}="$status:$hash";
+    }
+    print encode_json(\%files);
+  ' "$ROOT"
+}
+ai_delegate_changed_files() {
+  CHANGED=0; CHANGED_FILES_JSON='[]'
+  [[ "$SANDBOX" == "workspace-write" ]] || return 0
+  [[ -f "$TMP/before-files.json" ]] || return 0
+  ai_delegate_file_snapshot >"$TMP/after-files.json"
+  CHANGED_FILES_JSON="$(perl -MJSON::PP -e '
+    sub read_json { open my $f,"<",shift or die $!; local $/; return decode_json(<$f>) }
+    my ($before,$after)=map {read_json($_)} @ARGV; my %paths=(%$before,%$after);
+    my @changed=sort grep {($before->{$_}//"") ne ($after->{$_}//"")} keys %paths;
+    print encode_json(\@changed);
+  ' "$TMP/before-files.json" "$TMP/after-files.json")"
+  CHANGED="$(printf '%s' "$CHANGED_FILES_JSON" | perl -MJSON::PP -0777 -ne 'print scalar @{decode_json($_)}')"
+}
+
+# Called after delegation_start: one cross-provider handover, or a final paused event.
+# Uses the bridge's task/options and journal fields so signal cleanup cannot report an interruption afterwards.
+ai_delegate_provider_guard() {
+  local family="$1" reason="${2:-}" other="codex" can_switch=1 resume other_reset id duration model
+  [[ "$family" != "codex" ]] || other=claude
+  if [[ -z "$reason" ]]; then
+    if ai_provider_saturated "$family"; then reason=saturated
+    elif ! ai_model_usable "$MODEL" "$family"; then reason=model
+    else return 0; fi
+  fi
+  [[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || can_switch=0
+  if [[ "$other" == "claude" ]]; then ai_has_claude || can_switch=0; else ai_has_codex || can_switch=0; fi
+  ai_provider_saturated "$other" && can_switch=0
+  model="$(ai_route "$ROLE" "$other" "$AI_PROFILE"; printf '%s' "$R_MODEL")"
+  ai_model_usable "$model" "$other" || can_switch=0
+  duration=$(( $(date +%s) - STARTED ))
+  ai_delegate_changed_files
+  if (( can_switch )); then
+    t "Provider %s unavailable (%s): %s handed to %s once." "$family" "$reason" "$ROLE" "$other" >&2; echo >&2
+    ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"handed_over\",\"outcome\":\"handed_over\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    FINAL_WRITTEN=1
+    local fwd=()
+    [[ -z "$O_EFFORT" ]] || fwd+=(--effort "$O_EFFORT")
+    [[ "$SANDBOX" != "workspace-write" ]] || fwd+=(--write)
+    [[ "$SANDBOX" != "read-only" ]] || fwd+=(--read-only)
+    [[ -z "$O_WHY" ]] || fwd+=(--why "$O_WHY")
+    # Replace the bridge after closing its event so the destination owns signal cleanup.
+    rm -rf "$TMP"
+    trap - EXIT INT TERM HUP
+    LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-$O_MODEL}" LOOMY_FAILOVER_FROM="$family" \
+      exec bash "$SCRIPT_DIR/loomy-delegate-$other.sh" "$ROLE" ${fwd[@]+"${fwd[@]}"} "$TASK"
+  fi
+  resume="$(ai_provider_reset "$family")"
+  [[ "$reason" != "model" ]] || resume=$(( $(date +%s) + 3600 ))
+  if ai_provider_saturated "$other"; then
+    other_reset="$(ai_provider_reset "$other")"
+    (( other_reset >= resume )) || resume="$other_reset"
+  fi
+  id="$DELEG_ID"
+  ai_journal_write "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"paused\",\"outcome\":\"waiting_for_reset\",\"resume_at\":$resume,\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+  FINAL_WRITTEN=1
+  # A resumed handover starts a fresh attempt on its original bridge (including writer permissions).
+  local relaunch resume_family="${LOOMY_FAILOVER_FROM:-$family}" resume_model="${LOOMY_REQUESTED_MODEL:-$O_MODEL}"
+  printf -v relaunch '%q ' bash "$ROOT/.loomy/scripts/loomy-delegate-$resume_family.sh" "$ROLE"
+  [[ -z "$resume_model" ]] || { printf -v id '%q ' --model "$resume_model"; relaunch="$relaunch$id"; }
+  printf -v id '%q ' --effort "$EFFORT"; relaunch="$relaunch$id"
+  [[ "$SANDBOX" != workspace-write ]] || relaunch="$relaunch--write "
+  [[ "$SANDBOX" != read-only ]] || relaunch="$relaunch--read-only "
+  [[ -z "$O_WHY" ]] || { printf -v id '%q ' --why "$O_WHY"; relaunch="$relaunch$id"; }
+  printf -v id '%q' "$TASK"; relaunch="$relaunch$id"
+  loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" paused "$TASK" "waiting_for_reset resume_at=$resume
+Resume: $relaunch"
+  t "PAUSED: provider %s unavailable (%s); no provider has room. Expected reset/recheck: %s (epoch %s)." "$family" "$reason" "$(_ai_reset_label "$resume")" "$resume" >&2; echo >&2
+  exit 75
 }

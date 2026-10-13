@@ -54,3 +54,5 @@ Utilise ces appels pour une relecture indépendante, une critique d'architecture
 N'utilise pas ces appels pour des tâches triviales, des confirmations de routine ou des allers-retours répétés. Préfère un seul appel ciblé.
 
 Options des ponts, avant le texte de la tâche : choisis le rôle d'après l'intention du travail ; quand l'utilisateur nomme un modèle ou un effort, passe `--model <id> --effort <niveau> --why "user request"`, et `--write` quand le rôle doit produire des fichiers.
+
+- Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.

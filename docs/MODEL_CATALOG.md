@@ -151,7 +151,7 @@ Currently announced: none. Claude Haiku 5.5, announced on 2026-09-22, came out o
 6. **Publish**: commit and push to `main`. Everyone gets it with `loomy update --catalog`; the home screen tells them.
 7. **Carry the validated chain into `scripts/lib/models.sh`** (built-in values) in the next Loomy version; old prices can remain for journal cost reading. A test checks that the repository catalog and the built-in values stay consistent.
 
-To try a model on one machine without changing anything: `AI_MODEL_CODEX_FAST=gpt-6-sol loomy route`.
+For an explicit expert override using a validated current model on one machine: `AI_MODEL_CODEX_FAST=gpt-6.1-sol loomy route`.
 
 ## Sources
 - [GPT-6 Sol and Luna launch (VentureBeat)](https://venturebeat.com/technology/openai-releases-gpt-6-sol-and-luna-models-slashing-api-costs-50-or-more)

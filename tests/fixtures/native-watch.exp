@@ -3,6 +3,7 @@ source [file join [file dirname [info script]] watchdog.exp]
 set timeout 20
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
 set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-native-pty.XXXXXX]]
+set caught [catch {
 set root [file join $work project]
 set home [file join $work home]
 set sessions [file join $work codex sessions]
@@ -11,7 +12,7 @@ set fixture [file join $repo tests fixtures codex-native.pl]
 exec perl $fixture seed $root $sessions [pid]
 log_user 0
 log_file -noappend [file join $work native-watch.log]
-spawn env HOME=$home XDG_CONFIG_HOME=$work/config CODEX_HOME=$work/codex LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin NO_COLOR=1 LOOMY_TREE=list COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
+spawn env HOME=$home XDG_CONFIG_HOME=$work/config CODEX_HOME=$work/codex LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin NO_COLOR=1 LOOMY_TREE=list COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
 set code 0
 foreach identity {consolidation enrichment review} {
     expect {
@@ -38,6 +39,13 @@ expect {
     timeout { set code 1; catch { exec kill [exp_pid] }; catch { close } }
 }
 catch { wait }
+} message options]
+if {$caught} {
+    catch { exec kill [exp_pid] }
+    catch { close }
+    catch { wait }
+}
 file delete -force $work
+if {$caught} { puts stderr $message; exit 1 }
 if {$code != 0} { puts stderr "Native watch PTY lifecycle refresh failed"; exit 1 }
 puts "Native watch PTY: three identities and live completion refresh passed"

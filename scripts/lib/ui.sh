@@ -556,32 +556,7 @@ _ui_cursor_level() {
 # _ui_cursor_col: screen column (1-based) of the logo cursor, prefix of two spaces included.
 _ui_cursor_col() { local l="${UI_LOGO[0]%%\{C\}*}"; l="${l//\{A\}/}"; l="${l//\{F\}/}"; UI_CCOL=$(( ${#l} + 3 )); }
 
-# ui_cursor_anim_start / ui_cursor_anim_stop: the cursor animation of the Loomy screen (logo shown at the top).
-ui_cursor_anim_start() {
-  [[ "$UI_SCREEN" == "1" && ${#UI_CURSOR_RAMP[@]} -gt 0 && -z "$UI_ANIM_PID" && -z "${LOOMY_NO_ANIM:-}" ]] || return 0
-  # The lock is a folder named after this process (nothing else is created); stale ones from a killed terminal go.
-  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'loomy-anim-*.lock' -user "$(id -u)" -mmin +10 -exec rmdir {} \; 2>/dev/null || true
-  UI_ANIM_LOCK="${TMPDIR:-/tmp}/loomy-anim-$$.lock"
-  _ui_cursor_col
-  (
-    trap - EXIT INT TERM
-    last=-1
-    while :; do
-      sleep 0.06
-      _ui_term_size; (( UI_ROWS >= 20 && UI_COLS >= 40 )) || continue
-      _ui_now_ms; _ui_cursor_level "$UI_NOW"
-      (( UI_CL == last )) && continue
-      # One writer at a time: the screen frame takes the same lock while it prints.
-      mkdir "$UI_ANIM_LOCK" 2>/dev/null || continue
-      c="${UI_CURSOR_RAMP[$UI_CL]}"
-      printf '\0337\033[1;%dH%s▄▄\033[2;%dH%s██\033[3;%dH%s▀▀%s\0338' "$UI_CCOL" "$c" "$UI_CCOL" "$c" "$UI_CCOL" "$c" "$C_RESET" >&2
-      rmdir "$UI_ANIM_LOCK" 2>/dev/null
-      last=$UI_CL
-    done
-  ) &
-  UI_ANIM_PID=$!
-  return 0
-}
+# ui_cursor_anim_stop: release the screen animation resources, if any.
 ui_cursor_anim_stop() {
   if [[ -n "$UI_ANIM_PID" ]]; then kill "$UI_ANIM_PID" 2>/dev/null || true; wait "$UI_ANIM_PID" 2>/dev/null || true; UI_ANIM_PID=""; fi
   if [[ -n "$UI_ANIM_LOCK" ]]; then rmdir "$UI_ANIM_LOCK" 2>/dev/null; UI_ANIM_LOCK=""; fi

@@ -82,13 +82,13 @@ pretty() {
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
     function hm(ts,   h, m, t) { h = substr(ts, 12, 2) + 0; m = substr(ts, 15, 2) + 0; t = (h * 60 + m + off + 1440) % 1440; return sprintf("%02d:%02d", int(t / 60), t % 60) }
-    function dur(s) { return s < 60 ? s " s" : int(s / 60) " min " sprintf("%02d", s % 60) " s" }
+    function dur(s) { s = int(s + 0.5); return s < 60 ? s " s" : int(s / 60) " min " sprintf("%02d", s % 60) " s" }
     function cut(s, w) { return length(s) > w ? substr(s, 1, w - 1) "…" : s }
     function tool(t) { return t == "codex" ? "Codex" : "Claude Code" }
     function tk(n) { return n >= 1e6 ? sprintf("%.1fM", n / 1e6) : (n >= 1e3 ? sprintf("%.1fk", n / 1e3) : sprintf("%d", n)) }
     function val() { return ((field("family") == "codex" ? px : pc) + 0) ? sprintf("%7s tk", tk(num("tokens_in") + num("tokens_out"))) : sprintf("%10s", sprintf("$%.4f", num("cost_usd"))) }
     {
-      t = D hm(field("ts")) Z; ty = field("type")
+      t = D hm(field("ts")) Z; ty = field("type"); if (ty == "agent_alias") next
       if (ty == "delegation_start" || ty == "delegation") {
         identity = field("session") "|" (field("turn_id") != "" ? field("turn_id") : field("id")) "|" ty
         if ((field("bridge") == "subagent" || field("bridge") == "claude-native") && seen[identity]++) next

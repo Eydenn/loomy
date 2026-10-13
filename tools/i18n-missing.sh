@@ -10,12 +10,12 @@ for raw in open("scripts/lib/i18n/fr.tsv", encoding="utf-8"):
     raw = raw.rstrip("\n")
     if raw and not raw.startswith("#") and "\t" in raw: known.add(raw.split("\t", 1)[0])
 files = glob.glob("scripts/*.sh") + glob.glob("scripts/lib/*.sh") + ["bin/loomy"]
-pat = re.compile(r'\b(?:t|tv [A-Za-z_][A-Za-z0-9_]*) "((?:[^"\\$]|\\.)*)"')
+pat = re.compile(r"\b(?:t|tv [A-Za-z_][A-Za-z0-9_]*)\s+(?:\"((?:[^\"\\$]|\\.)*)\"|'([^']*)')")
 missing = []
 for f in sorted(files):
     text = "\n".join(l for l in open(f, encoding="utf-8").read().split("\n") if not l.lstrip().startswith("#"))
     for m in pat.finditer(text):
-        s = m.group(1).replace("\\\"", "\"").replace("\\$", "$").replace("\\`", "`").replace("\\\\", "\\")
+        s = m.group(2) if m.group(2) is not None else m.group(1).replace("\\\"", "\"").replace("\\$", "$").replace("\\`", "`").replace("\\\\", "\\")
         if s and s not in known and s not in missing: missing.append(s)
 # Questionnaire choices: choose_coded VAR "question" "default" "hint" "code|label|description"…
 qs = re.compile(r'"((?:[^"\\]|\\.)*)"')

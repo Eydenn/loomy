@@ -2292,3 +2292,12 @@ lead %s · only	lead %s · uniquement
 Claude session busy in a terminal: use /desktop inside it, or end it.	Session Claude occupée dans un terminal : utilise /desktop dedans ou termine-la.
 Starts or resumes the lead agent session, at the right point of the project (session closed? it's here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use; --only routes every role to that tool for the terminal session	Démarre ou reprend la session lead au bon point du projet ; --watch ouvre le suivi à côté ; --lead codex|claude|auto choisit temporairement le lead ; --only route tous les rôles vers cet outil pour la session terminal
 loomy start --only       routes every role to --lead codex|claude for this terminal session	loomy start --only       route tous les rôles vers --lead codex|claude pour cette session terminal
+# W47 audit and parallel requests
+waiting	en attente
+Completed requests	Demandes terminées
+%s requests · %s total · %s average	%s demandes · %s au total · %s en moyenne
+Parallelism	Parallélisme
+%sx (worker time / active wall time)	%sx (temps des agents / durée active)
+Usage: loomy worktrees <task> [base-branch] [--count N]	Usage : loomy worktrees <tâche> [branche-de-base] [--count N]
+Creates two family worktrees by default, or N independent subtask worktrees sharing the project's .loomy.	Crée deux worktrees par famille par défaut, ou N worktrees de sous-tâches indépendantes partageant le .loomy du projet.
+Error: .loomy is tracked at the base revision; exclude it before sharing worktrees.	Erreur : .loomy est suivi à la révision de base ; exclus-le avant de partager les worktrees.

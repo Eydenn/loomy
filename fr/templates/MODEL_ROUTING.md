@@ -38,9 +38,9 @@ Il est généré par le moteur de routage de Loomy : régénère-le plutôt que 
 L'environnement se déduit du brief (`ai_mode`, `ai_lead`) et des CLI réellement installées :
 
 - **Full Claude Code** : tous les rôles tournent sur des modèles Claude, comme sous-agents dans `.claude/agents/`.
-- **Full Codex** : tous les rôles tournent sur des modèles GPT-6, via `loomy-delegate-codex.sh <rôle>`, qui lance `codex exec` sur le modèle routé.
+- **Full Codex** : tous les rôles tournent sur des modèles GPT-6, en sous-agents natifs sur le modèle et l’effort routés.
 - **Hybride, lead Claude** : l'orchestrateur tourne sur Opus 5.5. L'exécution part vers GPT-6-Luna via `loomy-delegate-codex.sh executor`, et la revue croisée via `loomy-delegate-codex.sh reviewer`.
-- **Hybride, lead Codex** : l'orchestrateur tourne sur GPT-6-Astra. L'architecture, la sécurité et le débogage difficile partent vers Opus 5.5 via `loomy-delegate-claude.sh` (lecture seule), et la revue vers Sonnet 5.
+- **Hybride, lead Codex** : l'orchestrateur tourne sur GPT-6.1 Sol. L'architecture, la sécurité et le débogage difficile partent vers Opus 5.5 via `loomy-delegate-claude.sh` (lecture seule), et la revue vers Sonnet 5.5.
 
 Si le mode demande les deux outils mais qu'un seul est installé, le routage bascule automatiquement sur la matrice complète de cet outil.
 

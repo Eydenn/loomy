@@ -56,3 +56,8 @@ N'utilise pas ces appels pour des tâches triviales, des confirmations de routin
 Options des ponts, avant le texte de la tâche : choisis le rôle d'après l'intention du travail ; quand l'utilisateur nomme un modèle ou un effort, passe `--model <id> --effort <niveau> --why "user request"`, et `--write` quand le rôle doit produire des fichiers.
 
 - Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
+
+## Demandes en parallèle
+
+- Découpe chaque demande en sous-tâches indépendantes aux fichiers disjoints. Lance-les ensemble, en sous-agents natifs ou en ponts en arrière-plan, jusqu’à `max_parallel` (configuration ; 4 par défaut), puis attends tous les résultats et vérifie-les avant intégration. Si des fichiers se chevauchent, utilise un worktree par sous-tâche (`loomy worktrees <tâche> --count N`). Après intégration, lance revue, sécurité et documentation en parallèle sur des périmètres disjoints ; attends tous les résultats avant de terminer. Conserve les efforts routés (max là où il est configuré).
+- Un lead de la famille X lance les rôles de cette famille en sous-agents natifs (Codex : spawn natif ; Claude : `.claude/agents/<rôle>.md`, outil Agent). Utilise `.loomy/scripts/loomy-delegate-<outil>.sh` uniquement entre familles. Applique ce plan à chaque message utilisateur.

@@ -20,7 +20,7 @@ _fb_ai() {
   if [[ -n "$claude" ]]; then
     loomy_guard_real_cli claude "$claude" || return $?
     # No tool at all (the issues are untrusted text): it can only write the proposal.
-    LOOMY_DELEGATION=1 "$claude" -p --model "${AI_MODEL_CLAUDE_FAST:-claude-haiku-4-5}" --tools "" --strict-mcp-config "$(cat "$1")" </dev/null >"$2" 2>/dev/null && [[ -s "$2" ]] && return 0
+    LOOMY_DELEGATION=1 "$claude" -p --model "${AI_MODEL_CLAUDE_FAST:-claude-haiku-5-5}" --tools "" --strict-mcp-config "$(cat "$1")" </dev/null >"$2" 2>/dev/null && [[ -s "$2" ]] && return 0
   fi
   return 1
 }

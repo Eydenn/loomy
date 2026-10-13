@@ -5,6 +5,8 @@
 
 Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, retour ou correction de l'utilisateur) passe par toi et est routée : tu planifies, délègues, vérifies et décides.
 
+- Découpe chaque demande en sous-tâches indépendantes aux fichiers disjoints. Lance-les ensemble, en sous-agents natifs ou en ponts en arrière-plan, jusqu’à `max_parallel` (configuration ; 4 par défaut), puis attends tous les résultats et vérifie-les avant intégration. Si des fichiers se chevauchent, utilise un worktree par sous-tâche (`loomy worktrees <tâche> --count N`). Après intégration, lance revue, sécurité et documentation en parallèle sur des périmètres disjoints ; attends tous les résultats avant de terminer. Conserve les efforts routés (max là où il est configuré).
+- Un lead de la famille X lance les rôles de cette famille en sous-agents natifs (Codex : spawn natif ; Claude : `.claude/agents/<rôle>.md`, outil Agent). Utilise `.loomy/scripts/loomy-delegate-<outil>.sh` uniquement entre familles. Applique ce plan à chaque message utilisateur.
 - Confie chaque travail à son rôle selon `.loomy/scripts/loomy-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/loomy-delegate-<outil>.sh <rôle> "…"`.
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
@@ -55,7 +57,7 @@ Ne lis que les sources utiles à la tâche en cours.
 - Pour une tâche longue, tiens à jour une courte liste d'avancement (fait, en cours, reste à faire) et termine par ce qui est vérifié, déduit ou non testé.
 
 ## Délégation adaptative
-Par défaut, l'agent Codex principal fait le travail.
+L’agent Codex principal planifie, délègue, intègre et vérifie.
 Ne délègue que si le travail est parallélisable, demande une expertise spécialisée, gagne à être isolé du contexte principal, ou nécessite une relecture indépendante.
 Évite le travail en double et plusieurs agents sur la même zone sans répartition claire.
 

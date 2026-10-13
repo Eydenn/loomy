@@ -79,6 +79,72 @@ DATA="$(ai_journal_all "$ROOT" | ai_journal_canonical | awk -v since="$SINCE" -v
 IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB PAUSED HANDED <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
 IFS='|' read -r _ NATIVE <<<"$(printf '%s\n' "$DATA" | grep '^NATIVE|')"
 
+# Only timestamps and lifecycle metadata leave this reader; never request text.
+METRICS="$(ai_journal_all "$ROOT" | ai_journal_canonical | perl -MJSON::PP -MTime::Local=timegm -MCwd=realpath -MFile::Find -e '
+  use strict; use warnings;
+  my ($root,$sessions,$since)=@ARGV; my (@requests,@workers,%hook,%closed,%seen);
+  sub epoch {
+    my ($s)=@_; return unless defined($s) && $s =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
+    return eval { timegm($6,$5,$4,$3,$2-1,$1) + ($7//0) };
+  }
+  sub included { defined($_[0]) && (!$since || substr($_[0],0,10) ge $since) }
+  sub record { my $d=eval {decode_json($_[0])}; ref($d) eq "HASH" ? $d : undef }
+  while (<STDIN>) {
+    my $d=record($_) or next; my $ts=epoch($d->{ts}); next unless defined $ts;
+    my $sid=$d->{session}//""; my $ty=$d->{type}//"";
+    if ($ty eq "request" && included($d->{ts})) { push @{$hook{$sid}},$ts }
+    if ($ty eq "session_activity" && ($d->{state}//"") eq "idle" || $ty eq "session" && ($d->{event}//"") eq "end") { push @{$closed{$sid}},$ts }
+    if ($ty eq "delegation" && included($d->{ts}) && ($d->{duration_s}//0)>0) {
+      my $key=join "|",$sid,$d->{turn_id}//$d->{id}//"",$d->{bridge}//"";
+      push @workers,[$ts-$d->{duration_s},$ts] unless $seen{$key}++;
+    }
+  }
+  for my $sid (keys %hook) {
+    my @starts=sort {$a<=>$b} @{$hook{$sid}}; my @ends=sort {$a<=>$b} @{$closed{$sid}//[]};
+    for my $i (0..$#starts) {
+      my ($end)=grep {$_ >= $starts[$i] && ($i==$#starts || $_ <= $starts[$i+1])} @ends;
+      push @requests,[$starts[$i],$end] if defined $end;
+    }
+  }
+  # Codex has no prompt hook. Read lead rollouts and one user record per turn.
+  my $project=realpath($root); my $shared=realpath("$root/.loomy"); my @files;
+  if (-d $sessions) { find({no_chdir=>1,wanted=>sub {push @files,$File::Find::name if /\.jsonl$/ && -f $_ && !-l $_}},$sessions) }
+  for my $file (@files) {
+    open my $fh,"<",$file or next; my $meta=record(scalar <$fh>) or next;
+    next unless ($meta->{type}//"") eq "session_meta";
+    my $p=$meta->{payload}//{}; my $src=$p->{source}//""; next if ref($src) || $src eq "exec";
+    my $cwd=realpath($p->{cwd}//""); next unless defined($cwd) && ($cwd eq $project || index($cwd,"$project/")==0 || defined($shared) && (realpath("$cwd/.loomy")//"") eq $shared);
+    my ($user,$turn); my %turns;
+    while (<$fh>) {
+      my $d=record($_) or next; my $v=$d->{payload}//{}; next unless ref($v) eq "HASH";
+      my $ts=epoch($d->{timestamp}); next unless defined $ts;
+      my $type=$v->{type}//"";
+      if (($d->{type}//"") eq "event_msg" && $type eq "task_started") { $turn=$v->{turn_id}//$ts; $user=undef }
+      if (($d->{type}//"") eq "event_msg" && $type eq "user_message" || ($d->{type}//"") eq "response_item" && ($v->{role}//"") eq "user") {
+        $user=$ts unless defined $user;
+      }
+      if (($d->{type}//"") eq "event_msg" && ($type eq "task_complete" || $type eq "task_completed" || $type eq "turn_aborted")) {
+        if (defined($user) && included($d->{timestamp}) && (!$since || $user>=epoch("${since}T00:00:00Z")) && !$turns{$turn//$user}++) {
+          push @requests,[$user,$ts] if $ts >= $user;
+        }
+        $user=$turn=undef;
+      }
+    }
+    close $fh;
+  }
+  my $duration=0; $duration += $_->[1]-$_->[0] for @requests;
+  my ($sum,$wall,$lo,$hi)=(0,0);
+  for my $w (sort {$a->[0]<=>$b->[0]} @workers) {
+    $sum += $w->[1]-$w->[0];
+    if (!defined($lo)) { ($lo,$hi)=@$w }
+    elsif ($w->[0] <= $hi) { $hi=$w->[1] if $w->[1]>$hi }
+    else { $wall += $hi-$lo; ($lo,$hi)=@$w }
+  }
+  $wall += $hi-$lo if defined $lo;
+  printf "%d|%.0f|%.0f|%.2f",scalar(@requests),$duration,@requests ? $duration/@requests : 0,$wall>0 ? $sum/$wall : 0;
+' "$ROOT" "${CODEX_HOME:-$HOME/.codex}/sessions" "$SINCE")"
+IFS='|' read -r REQUESTS REQUEST_TIME REQUEST_MEAN PARALLEL <<<"$METRICS"
+
 day_of() { local ep; ep="$(ai_ts_epoch "$1")"; [[ -n "$ep" ]] && { date -r "$ep" +%Y-%m-%d 2>/dev/null || date -d "@$ep" +%Y-%m-%d; }; }
 money() {   # money <amount> <on plan: 0|1|2>: real cost, or "≈ API value" when covered by a subscription
   case "$2" in
@@ -91,6 +157,11 @@ dur_label() { _ui_dur $(( ${1:-0} * 1000 )); printf '%s' "$UI_DUR"; }
 
 ui_banner "$(t "Statistics")" "${NAME:-$(basename "$ROOT")} · ${SINCE:+$(t "since %s" "$SINCE") · }${ROOT/#$HOME/~}"
 (( NATIVE == 0 )) || ui_info "$(t 'native usage unknown') · $(t '%s finished' "$NATIVE")"
+
+if (( REQUESTS > 0 )); then
+  ui_kv "$(t 'Completed requests')" "$(t '%s requests · %s total · %s average' "$REQUESTS" "$(dur_label "$REQUEST_TIME")" "$(dur_label "$REQUEST_MEAN")")"
+fi
+if [[ "$PARALLEL" != 0.00 ]]; then ui_kv "$(t 'Parallelism')" "$(t '%sx (worker time / active wall time)' "$PARALLEL")"; fi
 
 if [[ -z "$FIRST" ]]; then
   if (( NATIVE == 0 )); then

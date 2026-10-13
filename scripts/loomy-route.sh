@@ -58,6 +58,14 @@ case "$AI_PROFILE" in econome|equilibre|qualite) ;; *) t "Unknown profile: %s" "
 
 valid_role() { case " $AI_ROLES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
+# The caller uses the current lead family, including temporary relays resolved by ai_detect_env.
+native_hint() {
+  if [[ "$r" != lead && "$R_FAMILY" == "${AI_ENV#hybrid-}" ]]; then
+    if [[ "$R_FAMILY" == codex ]]; then R_VIA="native Codex subagent ($r)"
+    else R_VIA="subagent .claude/agents/$r.md"; fi
+  fi
+}
+
 case "$CMD" in
   get)
     valid_role "$ARG" || { t "Unknown role: \"%s\"" "$ARG" >&2; echo >&2; exit 2; }
@@ -77,6 +85,7 @@ case "$CMD" in
     echo "|---|---|---|---|---|---|"
     for r in $AI_ROLES; do
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
+      native_hint
       echo "| $(ai_role_label "$r") | $(ai_role_scope "$r") | $R_FAMILY | \`$R_MODEL\` | $R_EFFORT | \`$R_VIA\` |"
     done
     echo ""
@@ -140,6 +149,7 @@ case "$CMD" in
     ui_section "$(t "ROLES")" "$(t "model · effort · how to call it")"
     for r in $AI_ROLES; do
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
+      native_hint
       _ui_pad "$(ai_role_label "$r")" 22; label="$UI_PADDED"
       _ui_pad "$R_MODEL" 18; model="$UI_PADDED"
       _ui_pad "$R_EFFORT" 8; effort="$UI_PADDED"

@@ -2295,5 +2295,13 @@ _t_fr() {
     'Claude session busy in a terminal: use /desktop inside it, or end it.') _T='Session Claude occupée dans un terminal : utilise /desktop dedans ou termine-la.' ;;
     'Starts or resumes the lead agent session, at the right point of the project (session closed? it'\''s here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use; --only routes every role to that tool for the terminal session') _T='Démarre ou reprend la session lead au bon point du projet ; --watch ouvre le suivi à côté ; --lead codex|claude|auto choisit temporairement le lead ; --only route tous les rôles vers cet outil pour la session terminal' ;;
     'loomy start --only       routes every role to --lead codex|claude for this terminal session') _T='loomy start --only       route tous les rôles vers --lead codex|claude pour cette session terminal' ;;
+    'waiting') _T='en attente' ;;
+    'Completed requests') _T='Demandes terminées' ;;
+    '%s requests · %s total · %s average') _T='%s demandes · %s au total · %s en moyenne' ;;
+    'Parallelism') _T='Parallélisme' ;;
+    '%sx (worker time / active wall time)') _T='%sx (temps des agents / durée active)' ;;
+    'Usage: loomy worktrees <task> [base-branch] [--count N]') _T='Usage : loomy worktrees <tâche> [branche-de-base] [--count N]' ;;
+    'Creates two family worktrees by default, or N independent subtask worktrees sharing the project'\''s .loomy.') _T='Crée deux worktrees par famille par défaut, ou N worktrees de sous-tâches indépendantes partageant le .loomy du projet.' ;;
+    'Error: .loomy is tracked at the base revision; exclude it before sharing worktrees.') _T='Erreur : .loomy est suivi à la révision de base ; exclus-le avant de partager les worktrees.' ;;
   esac
 }

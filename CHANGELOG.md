@@ -916,3 +916,12 @@ First pre-release, 100% terminal.
   structural snapshots without usage, bound incremental/display reads and recap detail.
 - Fix Round 4 G2/G3/G4/G6: Claude child-owned leases, large-result replay prefilter,
   semantic activity deduplication and five-second failed-poll backoff; add growth regressions.
+### Unreleased — W47 audit and parallel requests
+
+- Audit cross review selects the other available model family; pretty logs hide agent alias metadata and round durations. Feedback triage defaults to Haiku 5.5.
+- Managed orchestration and EN/FR templates describe parallel disjoint subtasks, native roles of the lead family, and parallel review/security/docs without changing efforts. Routing displays the native Codex invocation hint.
+- Worktrees share the main project's `.loomy`; `--count N` creates numbered independent subtasks while preserving the default Codex/Claude pair.
+- Stats report completed request elapsed time (including Codex rollout user turns) and worker-time / active-wall-time parallelism; native costs stay unknown.
+- Row allocation preserves state/outcome and elapsed before optional task/model/bar detail. Native watch fixture cleans up on Tcl exceptions; UTC fixture clock and `partial` assertion were already protected.
+- Dictionary checks build in private test space; missing-translation checks include single quotes (`waiting`). Retired pin examples use a validated current model; project-repair documentation lists the actual opening commands. Cloudflare audit installation is documented as a separate exception to the managed skill catalog. Removed two unused functions after caller search.
+- Integration follow-up: configure/validate `max_parallel` and update the per-message hook in their owning ticket. The static check exposes the existing optional empty `SCOPE_ARGS` expansion in the separate audit installer (outside W47's write scope).

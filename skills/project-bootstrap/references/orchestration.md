@@ -56,3 +56,8 @@ Don't use these calls for trivial tasks, routine confirmations or repeated back-
 Bridge options, before the task text: pick the role from the intent of the work; when the user names a model or effort, pass `--model <id> --effort <level> --why "user request"`, and `--write` when the role must produce files.
 
 - Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
+
+## Parallel requests
+
+- Split every request into independent subtasks with disjoint file scopes. Launch them together as native subagents or background bridge processes, up to `max_parallel` (configuration; default 4), then wait for all and verify every result before integration. For overlapping files use one worktree per subtask (`loomy worktrees <task> --count N`). After integration, run review, security and documentation in parallel with disjoint scopes; wait for all before finishing. Keep the routed efforts unchanged (max where configured).
+- A lead of family X runs family-X roles as native subagents (Codex: native spawn; Claude: `.claude/agents/<role>.md`, Agent tool). Use `.loomy/scripts/loomy-delegate-<tool>.sh` only across families. Apply this plan at every user message.

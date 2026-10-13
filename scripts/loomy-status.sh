@@ -732,7 +732,8 @@ if [[ -s "$JOURNAL" ]]; then
       [[ "$native_seen" != *"|$native_id|"* ]] || continue
       native_seen="$native_seen$native_id|"
       loomy_tree_native_title "native:$ni"; loomy_tree_native_state "$ni"
-      ui_rail "$NS_COLOR$LV_NATIVE_TITLE · ${LV_MODELSHORT[ni]} ${LV_WORD[ni]} · $NS_TEXT${NS_DETAIL:+ · $NS_DETAIL}$C_RESET"
+      native_row="$(loomy_native_line '' "$LV_NATIVE_TITLE" " · ${LV_MODELSHORT[ni]} ${LV_WORD[ni]}" "$NS_TEXT${NS_DETAIL:+ · $NS_DETAIL}" "$LV_TIME")"
+      while IFS= read -r native_line; do ui_rail "$NS_COLOR$native_line$C_RESET"; done <<<"$native_row"
     done
   fi
   # Claude Code direct work (lead agent, native subagents): cost measured by the Stop and SubagentStop hooks.

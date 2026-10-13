@@ -209,6 +209,8 @@ _lp_block() {
 Tu es l'**orchestrateur**. Chaque demande sur ce projet (fonctionnalité, bug, retour ou correction de l'utilisateur) passe par toi et est routée : tu planifies, délègues, vérifies et décides.
 
 - Confie chaque travail à son rôle selon `.loomy/scripts/loomy-route.sh` (matrice dans `.loomy/docs/AI_MODEL_ROUTING.md`) : il indique pour chaque rôle s'il passe par un sous-agent de `.claude/agents/` ou par un pont `.loomy/scripts/loomy-delegate-<outil>.sh <rôle> "…"`.
+- Découpe chaque demande en sous-tâches indépendantes aux fichiers disjoints. Lance-les ensemble, en sous-agents natifs ou en ponts en arrière-plan, jusqu’à `max_parallel` (configuration ; 4 par défaut), puis attends tous les résultats et vérifie-les avant intégration. Si des fichiers se chevauchent, utilise un worktree par sous-tâche (`loomy worktrees <tâche> --count N`). Après intégration, lance revue, sécurité et documentation en parallèle sur des périmètres disjoints ; attends tous les résultats avant de terminer. Conserve les efforts routés (max là où il est configuré).
+- Un lead de la famille X lance les rôles de cette famille en sous-agents natifs (Codex : spawn natif ; Claude : `.claude/agents/<rôle>.md`, outil Agent). Utilise `.loomy/scripts/loomy-delegate-<outil>.sh` uniquement entre familles. Applique ce plan à chaque message utilisateur.
 - Le coût d'abord : donne chaque tâche au rôle le moins cher capable de la faire de façon fiable (exécutant, explorateur, développeur avant architecte ou débogueur) ; garde ton propre modèle pour planifier, décider, intégrer et relire.
 - Ne fais toi-même que la coordination, les décisions et les retouches triviales ; ne corrige jamais directement un retour de l'utilisateur quand un rôle doit le prendre.
 - Travail conséquent : `loomy task "…"` ; vérification indépendante d'un changement : `loomy review`.
@@ -225,6 +227,8 @@ FR
 You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
 
 - Hand each piece of work to its role following `.loomy/scripts/loomy-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/loomy-delegate-<tool>.sh <role> "…"`.
+- Split every request into independent subtasks with disjoint file scopes. Launch them together as native subagents or background bridge processes, up to `max_parallel` (configuration; default 4), then wait for all and verify every result before integration. For overlapping files use one worktree per subtask (`loomy worktrees <task> --count N`). After integration, run review, security and documentation in parallel with disjoint scopes; wait for all before finishing. Keep the routed efforts unchanged (max where configured).
+- A lead of family X runs family-X roles as native subagents (Codex: native spawn; Claude: `.claude/agents/<role>.md`, Agent tool). Use `.loomy/scripts/loomy-delegate-<tool>.sh` only across families. Apply this plan at every user message.
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.
 - Bigger work: `loomy task "…"`; independent check of a change: `loomy review`.
@@ -311,12 +315,4 @@ loomy_project_repair() {
   _lp_ensure_block "$r/AGENTS.md" "$r"
   _lp_ensure_block "$r/CLAUDE.md" "$r"
   return 0
-}
-
-# loomy_bootstrap_unfinished <root>: true while START.md is still there or the recorded phase is not done.
-loomy_bootstrap_unfinished() {
-  local p
-  p="$(sed -n 's/^phase=//p' "$1/.loomy/state" 2>/dev/null | head -1)"
-  [[ -f "$1/START.md" ]] && return 0
-  [[ -n "$p" && "$p" != "done" ]]
 }

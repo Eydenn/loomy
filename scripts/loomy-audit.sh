@@ -194,9 +194,13 @@ BR="$SCRIPT_DIR"
 VALIDATOR="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_EFFORT=high bash \"$BR/loomy-delegate-claude.sh\" reviewer"
 EXPLORER="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_MODEL=$AI_MODEL_CLAUDE_MID DELEGATE_CLAUDE_EFFORT=medium bash \"$BR/loomy-delegate-claude.sh\" explorer"
 [[ "$TOOL" == "codex" ]] && EXPLORER="DELEGATE_CODEX_MODEL=$AI_MODEL_CODEX_MID DELEGATE_CODEX_EFFORT=medium bash \"$BR/loomy-delegate-codex.sh\" explorer"
-CROSS=""; ai_has_codex && CROSS="bash \"$BR/loomy-delegate-codex.sh\" reviewer"
-[[ "$TOOL" == "codex" ]] && CROSS="bash \"$BR/loomy-delegate-codex.sh\" reviewer"
-ai_has_claude || VALIDATOR="$CROSS"
+CROSS=""; CROSS_MODEL=""
+if [[ "$TOOL" == codex ]] && ai_has_claude; then
+  CROSS="LOOMY_BRIDGE_OK=1 bash \"$BR/loomy-delegate-claude.sh\" reviewer"; CROSS_MODEL="$AI_MODEL_CLAUDE_MID"
+elif [[ "$TOOL" == claude ]] && ai_has_codex; then
+  CROSS="bash \"$BR/loomy-delegate-codex.sh\" reviewer"; CROSS_MODEL="$AI_MODEL_CODEX_MID"
+fi
+ai_has_claude || VALIDATOR="bash \"$BR/loomy-delegate-codex.sh\" reviewer"
 #   writer     a fast model (GPT-6-Luna) drafts the report and fix plan from validated findings only: it never
 #              produces a fact, and the auditor reviews every draft before it counts
 #              Without Codex, a local model (LM Studio) takes this role when one answers: text only, the auditor
@@ -240,7 +244,8 @@ case "$FIXES" in report) fix_l="$(t "Report only")" ;; branch) fix_l="$(t "Repor
 ui_kv "$(t "Deliverables")" "$fix_l · ${DIR} ${C_DIM}($(t "kept out of Git"))${C_RESET}"
 ui_kv "$(t "Auditor")" "$tool_label · $MODEL ($EFFORT)${ADVISOR:+ · $(t "advisor %s" "$ADVISOR")}"
 team="$(t "explorer %s (medium)" "$AI_MODEL_CLAUDE_MID")"; [[ "$TOOL" == "codex" ]] && team="$(t "explorer %s (medium)" "$AI_MODEL_CODEX_MID")"; ai_has_claude && team="$team · $(t "validator %s (high)" "$AI_MODEL_CLAUDE_MID")"
-ai_has_codex && team="$team · $(t "cross review %s" "$AI_MODEL_CODEX_MID") · $(t "writer %s" "$AI_MODEL_CODEX_FAST")"
+[[ -z "$CROSS" ]] || team="$team · $(t "cross review %s" "$CROSS_MODEL")"
+ai_has_codex && team="$team · $(t "writer %s" "$AI_MODEL_CODEX_FAST")"
 [[ -n "$WRITER_LOCAL" ]] && team="$team · $(t "local writer %s" "$LOCAL_MODEL")"
 ui_kv "$(t "Team")" "$team"
 ui_kv "Skill" "$SKILL_NOTE"

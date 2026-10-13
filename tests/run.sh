@@ -1483,10 +1483,115 @@ printf '%s\n' 'date=2099-01-01' 'price_long.claude-haiku-5-5=200000 1 3 0.10' >"
 [[ "$(XDG_CONFIG_HOME="$CL" bash -c 'source "$1/scripts/lib/models.sh"; ai_price_long claude-haiku-5-5' _ "$REPO")" == "200000 1 3 0.10" ]] && ok "haiku: long-prompt rate read from the catalog" || ko "haiku catalog long rate"
 }
 
+w47_tests() {
+  section "W47 audit, dictionary, stats and worktrees"
+  local ar="$WORK/w47-audit" wt="$WORK/w47-worktrees" st="$WORK/w47-stats" sessions="$WORK/w47-codex/sessions"
+  mkdir -p "$ar" "$wt/.loomy/logs" "$st/.loomy/logs" "$sessions/2026/10/13"
+  git -C "$ar" init -q
+  for tool in claude codex; do
+    rm -f "$ar/.loomy/audit.state"
+    run "audit $tool prepares without launching an agent" bash "$REPO/scripts/loomy-audit.sh" --root "$ar" --tool "$tool" --yes --print --no-install
+    other=claude; [[ "$tool" != claude ]] || other=codex
+    file_has "audit $tool cross reviewer uses $other" "$ar/.loomy/audit-prompt.txt" "cross reviewer, the other model family.*loomy-delegate-$other.sh"
+  done
+  mkdir -p "$WORK/dictionary/tools" "$WORK/dictionary/scripts/lib/i18n"
+  cp "$REPO/tools/i18n-build.sh" "$WORK/dictionary/tools/"
+  cp "$REPO/scripts/lib/i18n/fr.tsv" "$WORK/dictionary/scripts/lib/i18n/"
+  run "dictionary generates only in WORK" bash "$WORK/dictionary/tools/i18n-build.sh"
+  run "dictionary agrees with tracked fr.sh" cmp "$WORK/dictionary/scripts/lib/i18n/fr.sh" "$REPO/scripts/lib/i18n/fr.sh"
+  run "all double- and single-quoted strings translated" bash "$REPO/tools/i18n-missing.sh"
+  git -C "$wt" init -q
+  printf '\n/.loomy\n' >>"$wt/.git/info/exclude"
+  echo fixture >"$wt/file"; git -C "$wt" add file; git -C "$wt" commit -qm fixture
+  run "three independent worktrees" bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" scopes --count 3' _ "$wt" "$REPO"
+  for i in 1 2 3; do
+    [[ -L "$WORK/w47-worktrees-scopes-$i/.loomy" && "$(readlink "$WORK/w47-worktrees-scopes-$i/.loomy")" == "$wt/.loomy" ]] && ok "worktree $i shares main journal" || ko "worktree $i journal"
+    [[ -z "$(git -C "$WORK/w47-worktrees-scopes-$i" status --porcelain)" ]] && ok "worktree $i stays clean" || ko "worktree $i exposes AI files"
+  done
+  run "legacy family pair preserved" bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" pair' _ "$wt" "$REPO"
+  fails "invalid worktree count refused" 2 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" bad --count 0' _ "$wt" "$REPO"
+  fails "existing paths and branches refused before mutation" 1 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" scopes --count 3' _ "$wt" "$REPO"
+  [[ "$(git -C "$wt" worktree list --porcelain | grep -c '^worktree ')" == 6 ]] && ok "preflight adds no partial worktree" || ko "partial worktree created"
+  run "worktree created from a worktree shares the main journal" bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" nested --count 1' _ "$WORK/w47-worktrees-scopes-1" "$REPO"
+  [[ "$(readlink "$WORK/w47-worktrees-nested-1/.loomy")" == "$wt/.loomy" ]] && ok "nested task keeps the main journal" || ko "nested task journal"
+  fails "excessive worktree count refused" 2 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" bad --count 129' _ "$wt" "$REPO"
+  # Refuse a conflicting tracked AI path without replacing user data.
+  echo context >"$wt/.loomy/context"; git -C "$wt" add -f .loomy/context; git -C "$wt" commit -qm tracked-fixture
+  fails "tracked .loomy at base refused" 1 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" tracked --count 1' _ "$wt" "$REPO"
+  printf -- '---\nname: "metrics"\nai_lead: codex\n---\n' >"$st/.loomy/brief.md"
+  cat >"$st/.loomy/logs/events.jsonl" <<'EOF'
+{"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"a","session":"s","duration_s":10,"family":"codex","status":"ok","role":"developer","model":"gpt-6.1-sol"}
+{"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"b","session":"s","duration_s":10,"family":"codex","status":"ok","role":"executor","model":"gpt-6-luna"}
+{"type":"agent_alias","ts":"2026-10-13T10:00:11Z","agent_id":"synthetic"}
+EOF
+  cat >"$sessions/2026/10/13/rollout.jsonl" <<EOF
+{"type":"session_meta","payload":{"id":"lead","cwd":"$st","source":"cli"}}
+{"timestamp":"2026-10-13T10:00:00Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}
+{"timestamp":"2026-10-13T10:00:00Z","type":"event_msg","payload":{"type":"user_message","message":"PRIVATE_REQUEST"}}
+{"timestamp":"2026-10-13T10:00:00Z","type":"response_item","payload":{"role":"user"}}
+{"timestamp":"2026-10-13T10:00:10Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}
+EOF
+  run "stats user turns and concurrent workers" env CODEX_HOME="$WORK/w47-codex" bash "$REPO/scripts/loomy-stats.sh" --root "$st"
+  has "one request despite duplicate protocol records" '1 requests · 10 s total · 10 s average'
+  has "two workers take ten seconds wall time" '2.00x \(worker time / active wall time\)'
+  hasnt "request body remains private" PRIVATE_REQUEST
+  cp "$st/.loomy/logs/events.jsonl" "$WORK/concurrent.jsonl"
+  sed 's/10:00:10Z","id":"b"/10:00:20Z","id":"b"/' "$WORK/concurrent.jsonl" >"$st/.loomy/logs/events.jsonl"
+  run "stats sequential fixture" env CODEX_HOME="$WORK/w47-codex" bash "$REPO/scripts/loomy-stats.sh" --root "$st"
+  has "same worker effort takes twice the active wall time sequentially" '1.00x \(worker time / active wall time\)'
+  cp "$WORK/concurrent.jsonl" "$st/.loomy/logs/events.jsonl"
+  run "stats filtered history" env CODEX_HOME="$WORK/w47-codex" bash "$REPO/scripts/loomy-stats.sh" --root "$st" --since 2026-10-14
+  hasnt "older requests excluded" 'Completed requests'
+  # Claude requests are closed only with observed lead stop/end evidence.
+  cat >>"$st/.loomy/logs/events.jsonl" <<'EOF'
+{"type":"request","ts":"2026-10-13T11:00:00Z","session":"claude-lead","id":"r1"}
+{"type":"usage","ts":"2026-10-13T11:00:20Z","scope":"lead","family":"claude","model":"claude-opus-5-5","messages":1}
+{"type":"session_activity","ts":"2026-10-13T11:00:20.000Z","session":"claude-lead","tool":"claude","state":"idle"}
+{"type":"request","ts":"2026-10-13T12:00:00Z","session":"claude-lead","id":"open"}
+EOF
+  run "stats completed Claude request and open request" env CODEX_HOME="$WORK/empty-codex" bash "$REPO/scripts/loomy-stats.sh" --root "$st"
+  has "open requests not treated as complete" '1 requests · 20 s total · 20 s average'
+  run "zero-token usage avoids Bash 3.2 division by zero" env CODEX_HOME="$WORK/empty-codex" bash "$REPO/scripts/loomy-stats.sh" --root "$st"
+  # G5 output check stays with the stats fixture (the raw log remains complete).
+  printf '%s\n' '{"type":"delegation","ts":"2026-10-13T13:00:00Z","id":"float","duration_s":9.8,"family":"codex","status":"ok","role":"executor","model":"gpt-6-luna"}' >>"$st/.loomy/logs/events.jsonl"
+  run "pretty log rounds duration and hides alias metadata" bash "$REPO/scripts/loomy-log.sh" --root "$st" -n 30
+  has "float duration rounds to seconds" 'in 10 s'
+  hasnt "alias is hidden in pretty output" agent_alias
+  run "raw log keeps alias evidence" bash "$REPO/scripts/loomy-log.sh" --root "$st" --raw
+  has "raw alias retained" agent_alias
+  w47_static_tests
+}
+
+w47_static_tests() {
+  # Scan runtime shell sources; never accept Bash 4-only syntax in comments as a failure.
+  if find "$REPO/scripts" "$REPO/bin" -type f \( -name '*.sh' -o -name loomy \) -exec grep -nE '^[^#]*(\$\{[^}]*,,[^}]*\}|(^|[;[:space:]])(mapfile|readarray)([[:space:]]|$)|declare[[:space:]]+-A|\|&)' {} + >"$OUT"; then
+    ko "Bash 3.2 incompatible syntax: $(head -1 "$OUT")"
+  else ok "no Bash 4-only lowercase, readarray/mapfile, associative arrays or pipe-stderr"; fi
+  # Optional argument arrays are allowed to stay empty; remove the Bash 3.2 guard before scanning.
+  find "$REPO/scripts" "$REPO/bin" -type f \( -name '*.sh' -o -name loomy \) -exec perl -e '
+    for my $file (@ARGV) {
+      open my $f,"<",$file or die $!; local $/; my $text=<$f>; close $f;
+      my %empty=map {$_=>1} $text =~ /\b(\w+)=\(\s*\)/g;
+      my $n=0; for my $line (split /\n/,$text) {
+        ++$n; next if $line =~ /^\s*#/;
+        $line =~ s/\$\{(\w+)\[\@\]\+"\$\{\1\[\@\]\}"\}//g;
+        for my $name ($line =~ /"\$\{(\w+)\[\@\]\}"/g) {
+          print "$file:$n:$line\n" if $empty{$name} && $name =~ /(?:_ARGS|_args)$/;
+        }
+      }
+    }
+  ' {} + >"$WORK/array-expansions"
+  if grep -nE '"\$\{[A-Za-z_][A-Za-z0-9_]*(_ARGS|_args)\[@\]\}"' "$WORK/array-expansions" >"$OUT"; then
+    ko "Bash 3.2 set -u: optional empty argument-array expansion ($(head -1 "$OUT"))"
+  else ok "optional argument arrays tolerate empty expansion under set -u"; fi
+}
+
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
     'Hermeticity') hermetic_tests ;;
+    'W47') w47_tests ;;
+    'Bash 3.2 pitfalls') w47_static_tests ;;
     'Subscriptions, quotas and stats') quota_stats_tests ;;
     'Model chains') model_chain_tests ;;
     'Local model chains') local_model_chain_tests ;;
@@ -1564,6 +1669,7 @@ release_defects_tests
 
 # ------------------------------------------------------------------ syntaxe
 section "Syntax and static analysis"
+w47_static_tests
 SCRIPTS="$(cd "$REPO" && ls bin/loomy install.sh scripts/*.sh scripts/lib/*.sh tests/run.sh tests/stubs/*)"
 bad=""
 for f in $SCRIPTS; do
@@ -2679,6 +2785,8 @@ run "worktrees --help created nothing" "$LOOMY" worktrees --help
 fails "task name starting with a hyphen refused" 2 "$LOOMY" worktrees -x
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "still only two worktrees"; else ko "worktrees created by mistake"; fi
 
+w47_tests
+
 # ------------------------------------------------------------------ existing project
 section "Adopting an existing project (0.5)"
 EX="$WORK/existing-app"; mkdir -p "$EX/src/auth" "$EX/tests" "$EX/.github/workflows"
@@ -3718,7 +3826,7 @@ file_has "French START.md installed" "$PFR/START.md" "BOOTSTRAP TEMPORAIRE"
 file_has "French templates installed" "$PFR/.loomy/templates/AGENTS.md" "Autonomie et points d'arrêt"
 file_has "French brief" "$PFR/.loomy/brief.md" "Consignes pour l'agent"
 file_has "English START.md by default" "$PROJ/START.md" "TEMPORARY BOOTSTRAP"
-run "compiled dictionary up to date" bash -c 'cd "$1" && tmp="$(mktemp)" && cp scripts/lib/i18n/fr.sh "$tmp" && bash tools/i18n-build.sh >/dev/null && cmp -s "$tmp" scripts/lib/i18n/fr.sh; r=$?; cp "$tmp" scripts/lib/i18n/fr.sh; rm -f "$tmp"; exit $r' _ "$REPO"
+run "compiled dictionary up to date" bash -c 'mkdir -p "$2/dictionary/tools" "$2/dictionary/scripts/lib/i18n" && cp "$1/tools/i18n-build.sh" "$2/dictionary/tools/" && cp "$1/scripts/lib/i18n/fr.tsv" "$2/dictionary/scripts/lib/i18n/" && bash "$2/dictionary/tools/i18n-build.sh" >/dev/null && cmp -s "$1/scripts/lib/i18n/fr.sh" "$2/dictionary/scripts/lib/i18n/fr.sh"' _ "$REPO" "$WORK"
 run "every interface sentence is translated" bash -c '[[ -z "$(bash "$1/tools/i18n-missing.sh")" ]]' _ "$REPO"
 
 # ------------------------------------------------------------------ setup safeguards

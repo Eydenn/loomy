@@ -80,7 +80,11 @@ loomy_native_line() {
   fi
   suffix=" $state · $elapsed"
   room=$(( LV_WIDTH - ${#prefix} - ${#suffix} - ${#model} ))
-  (( room >= 0 )) || { model=""; room=$(( LV_WIDTH - ${#prefix} - ${#suffix} )); }
+  if (( room < 0 )); then
+    room=$(( LV_WIDTH - ${#prefix} - ${#suffix} )); (( room >= 0 )) || room=0
+    ai_task_title "$model" "$room"; model="$AI_TASK_TITLE"
+    room=$(( LV_WIDTH - ${#prefix} - ${#suffix} - ${#model} ))
+  fi
   if (( room < 0 )); then prefix=""; room=$(( LV_WIDTH - ${#suffix} )); fi
   (( room >= 0 )) || room=0
   ai_task_title "$task" "$room"; task="$AI_TASK_TITLE"
@@ -613,7 +617,7 @@ loomy_live_cache_row() {
   LV_FLAGS[i]="$flags"
 }
 loomy_live_row() {
-  local i="$1" finished="$2" mark elapsed text outcome="" suffix="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" wrap_flags=0 wrap_outcome=0 task="" room
+  local i="$1" finished="$2" mark elapsed text outcome="" suffix="" color="$C_CYAN" model="" bars="" label flags="${LV_FLAGS[$1]}" task="" room
   _ui_pad "${LV_LABEL[i]}" "$LV_ROLE_WIDTH"; label="$UI_PADDED"
   if (( finished )); then
     elapsed="${LV_DURATION[i]:-0}"; mark=✓; outcome="${LV_OUTCOME[i]:-done}"; color="$C_GREEN"
@@ -639,48 +643,32 @@ loomy_live_row() {
     fi
   fi
   if [[ "$elapsed" == "—" ]]; then LV_TIME="—"; else loomy_live_time "$elapsed"; fi
-  (( LV_WIDTH < 65 )) || model=" ${LV_MODELSHORT[i]}"
-  (( LV_WIDTH < 52 )) || bars=" ${LV_BAR[i]}"
-  printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-  LV_ROW_LINES=1
-  if (( LV_WIDTH >= 80 )) && [[ -n "${LV_TASK[i]}" ]]; then
-    task="${LV_TASK[i]}"
-    room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
-    if (( LV_WIDTH >= 99 && room < 30 )); then
-      # At 100 columns, keep at least 30 columns for the task before dropping optional detail.
-      if [[ -n "$model" ]]; then model=" ${LV_MODELSHORT[i]:0:8}"; fi
-      printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-      room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
-      if (( room < 30 )) && [[ -n "$bars" ]]; then
-        bars=""
-        printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
-      fi
-      if (( room < 30 )) && [[ -n "$model" ]]; then
-        model=""
-        printf -v text '  %s %s %-6s%s%s %s %5s' "$mark" "$label" "${LV_TOOL[i]}" "$model" "$bars" "${LV_WORD[i]}" "$LV_TIME"
-        room=$(( LV_WIDTH - ${#text} - 2 - ${#flags} - ${#suffix} - 1 )); [[ -n "$flags" ]] || room=$(( room + 1 ))
-      fi
-    fi
-    ai_task_title "$task" "$room"; task="$AI_TASK_TITLE"
-    [[ -z "$task" ]] || text="$text  $task"
-    if [[ -n "$suffix" ]]; then
-      if (( ${#text} + ${#suffix} <= LV_WIDTH )); then text="$text$suffix"; else wrap_outcome=1; fi
-    fi
-    if [[ -n "$flags" ]]; then
-      if (( ${#text} + 1 + ${#flags} <= LV_WIDTH )); then text="$text $flags"; else wrap_flags=1; fi
-    fi
-  else
-    if [[ -n "$suffix" ]]; then
-      if (( ${#text} + ${#suffix} <= LV_WIDTH )); then text="$text$suffix"; else wrap_outcome=1; fi
-    fi
-    if [[ -n "$flags" ]]; then
-      if (( ${#text} + 1 + ${#flags} <= LV_WIDTH )); then text="$text $flags"; else wrap_flags=1; fi
-    fi
+  model=" ${LV_MODELSHORT[i]}"; bars=" ${LV_BAR[i]}"
+  # Task shrinks first, then model, then effort bar; evidence and elapsed are reserved.
+  [[ -n "$suffix" ]] || { if (( finished )); then suffix=" · $(t "$outcome")"; else suffix=" · $(t 'running')"; fi; }
+  suffix=" ${LV_WORD[i]}$suffix · $LV_TIME"
+  printf -v text '  %s %s %-6s' "$mark" "$label" "${LV_TOOL[i]}"
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  if (( room < 0 )); then
+    room=$(( ${#model} + room )); (( room >= 0 )) || room=0
+    ai_task_title "$model" "$room"; model="$AI_TASK_TITLE"
   fi
-  loomy_live_line "$color$text$C_RESET"
-  if (( wrap_outcome )); then loomy_live_line "   $suffix"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
-  if (( wrap_flags )); then loomy_live_line "   $flags"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  if (( room < 0 )); then bars=""; fi
+  room=$(( LV_WIDTH - ${#text} - ${#model} - ${#bars} - ${#suffix} ))
+  if (( room < 0 )); then
+    # Extremely narrow rows keep identity on a separate line.
+    loomy_live_line "$color$text$model$bars$C_RESET"
+    text=""; model=""; bars=""; room=$(( LV_WIDTH - ${#suffix} ))
+    LV_ROW_LINES=2
+  else LV_ROW_LINES=1; fi
+  task=""
+  if (( room > 2 )); then ai_task_title "${LV_TASK[i]}" "$(( room - 2 ))"; task="${AI_TASK_TITLE:+  $AI_TASK_TITLE}"; fi
+  if (( ${#suffix} > LV_WIDTH )); then
+    loomy_native_line '' '' '' "${suffix% · *}" "$LV_TIME"
+    LV_ROW_LINES=$(( LV_ROW_LINES + 1 ))
+  else loomy_live_line "$color$text$model$bars$task$suffix$C_RESET"; fi
+  if [[ -n "$flags" ]]; then loomy_live_line "   $flags"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
 }
 
 # Resolve the lead/header only when watched state changes, not once per timer tick.

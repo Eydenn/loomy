@@ -5,6 +5,8 @@
 
 You are the **lead agent**. Every request in this project (a feature, a bug, the user's feedback or fixes) goes through you and is routed: you plan, delegate, check and decide.
 
+- Split every request into independent subtasks with disjoint file scopes. Launch them together as native subagents or background bridge processes, up to `max_parallel` (configuration; default 4), then wait for all and verify every result before integration. For overlapping files use one worktree per subtask (`loomy worktrees <task> --count N`). After integration, run review, security and documentation in parallel with disjoint scopes; wait for all before finishing. Keep the routed efforts unchanged (max where configured).
+- A lead of family X runs family-X roles as native subagents (Codex: native spawn; Claude: `.claude/agents/<role>.md`, Agent tool). Use `.loomy/scripts/loomy-delegate-<tool>.sh` only across families. Apply this plan at every user message.
 - Hand each piece of work to its role following `.loomy/scripts/loomy-route.sh` (matrix in `.loomy/docs/AI_MODEL_ROUTING.md`): it says for each role whether it goes to a subagent in `.claude/agents/` or through a bridge, `.loomy/scripts/loomy-delegate-<tool>.sh <role> "…"`.
 - Cost first: give each task to the cheapest role that does it reliably (executor, explorer, developer before architect or debugger); keep your own model for planning, decisions, integration and review.
 - Do yourself only coordination, decisions and trivial edits; never fix the user's feedback inline when a role should take it.

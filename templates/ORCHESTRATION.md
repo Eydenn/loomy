@@ -3,7 +3,7 @@
 ## Goal
 Orchestration contract between models for this repository.
 
-The main session is the **lead agent**. It owns the task end to end. It delegates a role to the other model family when `.loomy/docs/AI_MODEL_ROUTING.md` sends it there; otherwise it hands it to its own subagents or does the work itself.
+The main session is the **lead agent**. It owns the task end to end. It delegates a role to the other model family when `.loomy/docs/AI_MODEL_ROUTING.md` sends it there; otherwise it hands it to its own native subagents.
 
 ## Default policy
 Only delegate when clearly useful: a cheaper model able to do the work reliably, a specialist who will decide better, an independent review, or context isolation.
@@ -14,7 +14,7 @@ Don't delegate trivial changes, simple searches the lead agent already has the c
 Both bridges read each role's model and effort from the routing engine (`loomy-route.sh`).
 
 ### Codex → Claude: `loomy-delegate-claude.sh` (read-only)
-For a Codex lead only. A Claude lead runs its Claude roles as native subagents (`.claude/agents/<role>.md`, Agent tool, in the foreground): the bridge's headless `claude -p` refuses any shell command that isn't pre-approved, so a role that must run measurements or scripts can't work through it.
+For a Codex lead only. A Claude lead runs its Claude roles as native subagents (`.claude/agents/<role>.md`, Agent tool, in the background for independent tasks): the bridge's headless `claude -p` refuses any shell command that isn't pre-approved, so a role that must run measurements or scripts can't work through it.
 
 ```bash
 .loomy/scripts/loomy-delegate-claude.sh <architect|debugger|security|reviewer|explorer> "<task>"
@@ -34,7 +34,7 @@ A real provider refusal (quota, credits or rate limit), or a quota reading at 10
 
 Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
 
-A Codex lead agent also uses `loomy-delegate-codex.sh` to run a role on its own routed model, for example GPT-6-Luna at max for the executor.
+A Codex lead runs its Codex roles as native subagents on their routed models and efforts; the Codex bridge is for a Claude lead.
 
 ## Structured delegations
 When the brief says `delegation_format: structured` (questionnaire choice, or `loomy config set delegation_format structured`), tasks and results are exchanged as fixed fields, without prose: fewer tokens, nothing lost in wording, and results the bridges check.
@@ -75,7 +75,7 @@ Act on STATUS: `partial` or `blocked` means the task is not done; read RISKS and
 A delegate's result is only an opinion until the lead agent has checked it.
 
 ## Activity log
-Both bridges log each call in `.loomy/logs/events.jsonl` (model, effort, duration, tokens, real or estimated cost). This log feeds `loomy status` and `loomy watch`. The user opens or resumes the lead agent session with `loomy start`. Always run the bridges in the foreground and wait for their result: in the background, a delegation is interrupted if the session closes. Announce each delegation to the user before starting it (role, model, task, rough duration) and its result afterwards (status, duration): while it runs, they only see a waiting indicator. The log stays local (ignored by Git). `LOOMY_JOURNAL=0` turns it off, `LOOMY_JOURNAL_TASKS=0` doesn't record the task text.
+Both bridges log each call in `.loomy/logs/events.jsonl` (model, effort, duration, tokens, real or estimated cost). This log feeds `loomy status` and `loomy watch`. The user opens or resumes the lead agent session with `loomy start`. Launch independent bridge tasks in the background, save their PIDs and wait for every result before integration or session close; dependent tasks stay sequential. Announce each delegation to the user before starting it (role, model, task, rough duration) and its result afterwards (status, duration): while it runs, they only see a waiting indicator. The log stays local (ignored by Git). `LOOMY_JOURNAL=0` turns it off, `LOOMY_JOURNAL_TASKS=0` doesn't record the task text.
 
 ## Review protocol
 1. Point the reviewer to the actual diff, commit or files.
@@ -92,3 +92,8 @@ Avoid generic "looks good" reviews and duplicate reimplementations.
 
 ## Parallel mode
 For real parallel implementation, give each tool its own worktree and Git branch (`loomy-worktrees.sh`), with disjoint scopes. After integration, run the quality criteria again on the integrated branch.
+
+## Parallel requests
+
+- Split every request into independent subtasks with disjoint file scopes. Launch them together as native subagents or background bridge processes, up to `max_parallel` (configuration; default 4), then wait for all and verify every result before integration. For overlapping files use one worktree per subtask (`loomy worktrees <task> --count N`). After integration, run review, security and documentation in parallel with disjoint scopes; wait for all before finishing. Keep the routed efforts unchanged (max where configured).
+- A lead of family X runs family-X roles as native subagents (Codex: native spawn; Claude: `.claude/agents/<role>.md`, Agent tool). Use `.loomy/scripts/loomy-delegate-<tool>.sh` only across families. Apply this plan at every user message.

@@ -39,7 +39,7 @@ sub notification {
         content=>"<task-notification><task-id>child</task-id><tool-use-id>$cid</tool-use-id><status>completed</status></task-notification>"});
 }
 sub poll {return Loomy::ClaudeNative::poll($root,$projects)//die 'poll failed'}
-sub cpu {my @t=times; return clock_gettime(CLOCK_PROCESS_CPUTIME_ID)+$t[2]+$t[3]}
+sub cpu {clock_gettime(CLOCK_PROCESS_CPUTIME_ID)}
 sub projection {
     my ($native,$now,$v)=@_; $v//=Loomy::LiveState->new; $v->read_journal($journal); $v->claude_evidence($native);
     return $v->projections($now);
@@ -102,9 +102,18 @@ if ($finding eq 'N1') {
     die 'fixture too small' unless -s $path>40000000;
     my ($polls,$total,$max)=(0,0,0); my $s; my $live=Loomy::LiveState->new;
     while (++$polls<=700) {
-        my $begin=cpu();
+        my $begin=cpu(); my $child_cpu=0;
         if ($oneshot) {
-            system($^X,$ENV{LOOMY_CLAUDE_BENCH_MODULE}//"$repo/scripts/lib/claude-native.pl",$root,$projects)==0 or die 'one-shot failed';
+            # times() rounds reaped children to scheduler ticks: use the fresh child's
+            # process clock, including interpreter/module startup and the full poll.
+            open my $shot,'-|',$^X,'-e',
+                'use Time::HiRes qw(clock_gettime CLOCK_PROCESS_CPUTIME_ID);
+                 END {printf "%.9f\n",clock_gettime(CLOCK_PROCESS_CPUTIME_ID)}
+                 require shift @ARGV; Loomy::ClaudeNative::poll(@ARGV)',
+                $ENV{LOOMY_CLAUDE_BENCH_MODULE}//"$repo/scripts/lib/claude-native.pl",$root,$projects or die 'one-shot launch failed';
+            $child_cpu=<$shot>;
+            close $shot or die 'one-shot failed';
+            die 'invalid one-shot CPU measurement' unless defined $child_cpu && $child_cpu =~ /^\d+[.]\d+\s*$/;
             open my $idx,'<',"$root/.loomy/logs/claude-native.idx" or die; $s=decode_json(do {local $/; <$idx>});
         } else {
             die 'watch stopped before catch-up reached EOF' unless Loomy::ClaudeNative::watch_changed($root,$projects);
@@ -117,7 +126,7 @@ if ($finding eq 'N1') {
                 && Loomy::ClaudeNative::epoch($s->{sessions}{lead}{seen})-Loomy::ClaudeNative::epoch($_->{seen}//$_->{started})>900}
                 values %{$s->{sessions}{lead}{calls}};
         }
-        my $elapsed=cpu()-$begin;
+        my $elapsed=cpu()-$begin+$child_cpu;
         $total+=$elapsed; $max=$elapsed if $elapsed>$max;
         last if $s->{files}{$path}{at_eof};
     }

@@ -56,8 +56,14 @@ The design deliberately avoids preloading every specialised role or a large secu
 ## Live performance and resilient watch
 
 The sampler and timer coalescer live for the watch lifetime. Watch-owned snapshots
-skip source collection; the native tree/list renders cached row projections, and
-status/log bodies are reused for unchanged timer frames. Legacy hook-only rendering
+skip source collection. Native tree/list ownership and fitted-row inputs are indexed
+on deltas; warm timers update elapsed text without decoding unchanged wire rows or
+spawning row helpers. Duration-width transitions still refit the original row inputs.
+Captured lines are joined once per frame, avoiding repeated multibyte concatenation.
+The viewport reuses them rather than splitting the entire frame again;
+state counts are reused until the projection sequence changes. Config/brief/models
+are loaded at startup or when their signatures change, not on native timer frames.
+Status/log bodies are reused for unchanged timer frames. Legacy hook-only rendering
 still parses history on changed frames and needs further integration before claiming
 that every view is history-free. Codex discovery caches every date directory, queues
 new/replaced metadata only, and prioritizes changed directories over initial backlog.
@@ -68,9 +74,30 @@ including negative results; warm calls stat only the selected file, then read a 
 `tests/s5-w6.sh` asserts a warm reducer and Bash frame under 150 ms with 50,000
 historical events and 100 active agents, using 10,000 source files and four leads.
 Cold reconstruction is measured separately. The 2026-10-13 sandbox run measured
-about 9.7 s cold inventory/reconstruction, 2.2 ms maximum warm reduction and 47 ms
-new old-date source discovery. **Warm Bash rendering failed at 569 ms**; these figures
-are fixture results, not completed S5 acceptance. `watch-idle.exp` asserts total watch
+9.1 s cold inventory/reconstruction, 1.5 ms maximum warm reduction and 41 ms
+new old-date source discovery. Bash builtin stage timers measured the same fixture
+before/after the native cache (milliseconds, warm frames):
+
+| Stage | Tree before / after | List before / after |
+| --- | ---: | ---: |
+| State counts | 15 / 1 | 13 / <1 |
+| Header | 1 / <1 | 1 / <1 |
+| Row rendering | 549 / 36 | 743 / 53 |
+| Viewport | 129 / 6 | 248 / 9 |
+| Chrome | 1 / 1 | 2 / 2 |
+| Paint | 14 / 14 | 15 / 14 |
+
+The frame fixture now budgets states, rendering, viewport and painting together
+under 150 ms (five trials each: maximum 63 ms tree, 85 ms list, including timing
+helper overhead). Cached and rebuilt frames are compared byte-for-byte across EN/FR,
+tree/list, terminal sizes, duration boundaries and identity updates; warm timers
+assert zero wire decodes and survive a PATH without external executables.
+Changed native layouts still rebuild (measured 304/350 ms for tree/list). These
+are fixture results; S5 remains partial because hook-only diagram, changed status
+and journal views still invoke the legacy full scripts (`loomy-status.sh` watch
+branches), including history parsing and sourcing. Preserving their output requires
+extracting those renderers and their historical summaries into a persistent read
+side, beyond this isolated cache change. `watch-idle.exp` asserts total watch
 CPU below 3% over 60 seconds (Bash and all child processes) on an idle empty project.
 The populated-envelope CPU and real Mac checks remain release gates.
 

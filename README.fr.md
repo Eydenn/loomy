@@ -210,7 +210,7 @@ Le plus simple : **`loomy`** dans le dossier du projet, puis « Ouvrir ou repren
 |---|---|
 | 🖥️&nbsp;**Terminal,&nbsp;avec&nbsp;Loomy** | `loomy start` : un menu propose de **reprendre** la dernière session de ce dossier (avec son historique) ou d'en ouvrir une **nouvelle** avec le prompt adapté à la phase du projet. `--resume` et `--new` y vont directement. |
 | ⌨️&nbsp;**Terminal,&nbsp;à&nbsp;la&nbsp;main** | Claude Code : `claude --continue` pour reprendre ; Codex : `codex resume --last`. Pour une nouvelle session, `loomy start --print` affiche la commande exacte (modèle et effort) et copie le prompt. |
-| 🪟&nbsp;**Apps&nbsp;de&nbsp;bureau** | `loomy start --app` (ou **Ouvrir dans l'app** dans le menu ; `loomy config set start_in app` pour en faire le choix par défaut) : l'app Claude ouvre une session Claude Code **sur le dossier du projet** avec le prompt pré-rempli ; l'app Codex ouvre une conversation avec le prompt pré-rempli (choisis-y le dossier du projet). Le suivi en direct s'ouvre dans une fenêtre Terminal à côté (les apps ne laissent pas un autre programme ouvrir leur propre panneau de terminal). Choisis le modèle et l'effort indiqués. Pour reprendre, rouvre la conversation du projet dans l'app. |
+| 🪟&nbsp;**Apps&nbsp;de&nbsp;bureau** | `loomy start --app` et `o` dans le suivi rouvrent la dernière session du projet : fil Codex existant, ou `claude --desktop --resume` avec Claude Code ≥ 2.1.285. Une session Claude occupée dans un terminal est refusée : utilise `/desktop` dedans ou termine-la. Sans session compatible, une nouvelle conversation est ouverte avec le prompt pré-rempli, jamais envoyé. Le suivi peut ouvrir une fenêtre Terminal à côté. |
 
 > [!NOTE]
 > Les sessions restent sur la machine où elles ont été ouvertes. Sur une autre machine, `loomy start` ouvre une nouvelle session : l'orchestrateur relit `START.md`, le brief et la phase enregistrée, et reprend là où le projet en est.
@@ -397,6 +397,8 @@ Le seuil de relais préventif du lead reste distinct : `loomy config set quota_s
 - un agent principal sur un forfait API ne relaie jamais, et un outil API ne peut pas recevoir le lead ; `loomy config set lead_failover off` ou `LOOMY_NO_SWITCH=1` désactive les relais ; `quota_room` (80 par défaut) fixe la part sous laquelle un outil a de la marge.
 
 `loomy start --lead codex|claude` choisit un agent principal temporaire manuel (affiché `(manual)`, conservé même si l’agent principal du brief a de la marge, avec le relais automatique de quota qui protège toujours l’agent en place), à la place de `AI_ROUTE_ENV` pour cet usage ; `loomy start --lead auto` ou `--lead <master>` rend la main à l’agent principal du brief.
+
+`loomy start --lead codex --only` (ou `--lead claude --only`) route tous les rôles vers cet outil pour la session terminal. Aucun brief ni dossier de projet n’est copié ou modifié. Le suivi et `loomy route` affichent « lead codex · uniquement ». La fin de session ou `--lead auto` efface ce choix ; un PID propriétaire disparu est ignoré et nettoyé. `--print` reste sans écriture. `--only` exige un lead explicite et une session terminal (`--new` ou `--resume`) ; les apps n’exposent pas de processus propre à la session pour borner ce choix.
 
 Le relais est gardé dans `.loomy/failover`, affiché par `loomy status` et `loomy watch` (⇄), et journalisé (`lead_failover`, `lead_return`).
 

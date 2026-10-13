@@ -191,7 +191,7 @@ loomy_watch_feed() {
     my $tty; open $tty,"<","/dev/tty" if $terminal;
     my $input=$tty; open $input,"<&",7 or die $! unless $input;
     my $select=IO::Select->new; $select->add($input) if $input;
-    my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts);
+    my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts session-only);
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
     my ($state,$claude_state);
@@ -518,8 +518,10 @@ if (( WATCH )); then
       o|O)
         # The launcher has no ownership of the watch's screen, input or sampler.
         watch_note=""
-        if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null >/dev/null 2>&1 8<&-; then
-          watch_note="$(t "Could not open the orchestrator; watch is still running.")"; note_until=$(( now + 5 ))
+        if ! watch_note="$(env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT LOOMY_NO_CLEAR=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" --orchestrator </dev/null 2>&1 8<&-)"; then
+          watch_note="$(printf '%s\n' "$watch_note" | tail -1)"
+          [[ -n "$watch_note" ]] || watch_note="$(t "Could not open the orchestrator; watch is still running.")"
+          note_until=$(( now + 5 ))
         else
           watch_note="$(t "Orchestrator opened.")"; note_until=$(( now + 5 ))
         fi

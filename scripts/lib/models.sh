@@ -486,6 +486,7 @@ ai_route() {
 # ai_resolve <role> <env> <profile>: routes a role in an environment. Also sets R_VIA.
 ai_resolve() {
   local role="$1" env="$2" profile="$3" family lead
+  [[ -z "${AI_SESSION_ONLY:-}" ]] || env="$AI_SESSION_ONLY"
   family="$(ai_family_for_role "$role" "$env")"
   ai_route "$role" "$family" "$profile"
   lead="${env#hybrid-}"
@@ -498,6 +499,27 @@ ai_resolve() {
   else
     R_VIA="loomy-delegate-codex.sh $role"
   fi
+}
+
+# Session routing is owned by the start process, never by the durable brief.
+ai_session_only_read() {
+  local root="$1" mode="${2:-}" line tool="" pid="" file="$1/.loomy/session-only"
+  AI_SESSION_ONLY=""
+  [[ -f "$file" && ! -L "$file" ]] || return 0
+  while IFS= read -r line; do
+    case "$line" in tool=*) tool="${line#*=}" ;; owner_pid=*) pid="${line#*=}" ;; esac
+  done <"$file"
+  case "$tool" in codex|claude) ;; *) return 0 ;; esac
+  if [[ "$pid" =~ ^[0-9]+$ ]] && (( pid > 1 )) && kill -0 "$pid" 2>/dev/null; then
+    AI_SESSION_ONLY="$tool"
+  elif [[ "$mode" != readonly ]]; then
+    rm -f "$root/.loomy/session-only" 2>/dev/null || true
+  fi
+}
+
+ai_session_only_label() {
+  [[ -z "${AI_SESSION_ONLY:-}" ]] || t "lead %s · only" "$AI_SESSION_ONLY"
+  return 0
 }
 
 # Launch command of the main session (lead agent).
@@ -604,7 +626,7 @@ ai_env_for() {
 # during a relay).
 ai_detect_env() {
   # Resolve session availability after argument parsing; help does not call a provider.
-  if [[ "${BASH_SOURCE[1]:-}" == */loomy-start.sh && "${PRINT_ONLY:-0}" == 0 && -z "${AI_SESSION_REPROBED:-}" ]]; then
+  if [[ "${2:-}" != readonly && "${BASH_SOURCE[1]:-}" == */loomy-start.sh && "${PRINT_ONLY:-0}" == 0 && -z "${AI_SESSION_REPROBED:-}" ]]; then
     AI_SESSION_REPROBED=1
     ai_models_reprobe >/dev/null 2>&1 &
   fi
@@ -620,6 +642,8 @@ ai_detect_env() {
   AI_PROFILE="${AI_PROFILE:-equilibre}"
   ai_env_for "$AI_MODE" "$AI_LEAD"
   if [[ -n "${AI_ROUTE_ENV:-}" ]]; then AI_ENV="$AI_ROUTE_ENV"; AI_ENV_NOTE=""; fi
+  ai_session_only_read "$root" "${2:-}"
+  if [[ -n "$AI_SESSION_ONLY" ]]; then AI_ENV="$AI_SESSION_ONLY"; AI_LEAD="$AI_SESSION_ONLY"; AI_ENV_NOTE=""; fi
   # Efforts set for this project (.loomy/efforts, one "role=effort" line): see loomy effort.
   AI_OVERRIDES="$(grep -E '^[a-z]+=(low|medium|high|xhigh|max)$' "$root/.loomy/efforts" 2>/dev/null | tr '\n' ' ' || true)"
 }

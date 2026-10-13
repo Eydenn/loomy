@@ -9,6 +9,11 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - Claude live tracking combines project hooks with local incremental transcript fallback, keeps concurrent lead sessions separate, and reconciles foreground/background Agent identities and out-of-order stops without duplicate live rows or costs. Missing explicit terminal evidence stays unconfirmed; hookless native costs stay unknown.
 - Native Codex test fixtures keep the seed's clock and rollout path across UTC midnight. The targeted `Native Codex` section isolates inherited UI language and allows an explicit sandbox-only PTY skip; Mac runs still include the terminal check by default.
 
+### W2/W3 — desktop resume and session-only routing
+- Watch `o` and `loomy start --app` reopen the latest local Codex project thread or Claude session (Claude CLI ≥ 2.1.285), with the existing prefilled new-session fallback and an explicit refusal for busy Claude sessions.
+- Terminal `loomy start --lead codex|claude --only` routes all roles to one validated tool chain without editing the brief or copying the project; watch/route display the choice, and exit, `--lead auto` or a dead owner clears it.
+- Start launch paths use the shared CLI launch API when present; desktop `--only` remains refused pending a session lifetime owner.
+
 ## 0.16.2 — 2026-10-13
 
 ### Fixed

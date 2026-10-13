@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eu
+case "${1:-}" in
+  --version)
+    printf 'claude\t--version\n' >>"$STUB_LOG"
+    printf '%s (Claude Code)\n' "${STUB_APP_VERSION:-2.1.300}"
+    exit 0 ;;
+  --desktop)
+    printf 'claude'; printf '\t%s' "$@"; printf '\n'
+    exit "${STUB_DESKTOP_FAIL:-0}" ;;
+esac
+exec "$LOOMY_TEST_ORIGINAL_STUBS/claude" "$@"

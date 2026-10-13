@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+printf 'n%s\n' "${STUB_BUSY_ROOT:-/unrelated}"

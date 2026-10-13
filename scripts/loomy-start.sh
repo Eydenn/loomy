@@ -9,7 +9,36 @@
 #   loomy-start.sh --app        opens the session in the desktop app (Claude: on this folder, prompt filled in; Codex:
 #                            prompt filled in) and live tracking in a terminal window (loomy config set start_in app)
 #   loomy-start.sh --lead <codex|claude|auto> temporarily selects the lead tool, replacing AI_ROUTE_ENV (auto returns to the brief's lead)
+#   loomy-start.sh --only       routes every role to --lead codex|claude for this terminal session
 #   loomy-start.sh --root <dir> works on another project folder
+
+# S3 owns the launch policy; this temporary fallback only enforces the existing test guard.
+loomy_start_launch_init() {
+  local lib
+  lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/launch.sh"
+  if [[ -f "$lib" ]]; then
+    # shellcheck source=/dev/null
+    source "$lib"
+  elif ! declare -F loomy_cli_run >/dev/null 2>&1; then
+    loomy_cli_check() { loomy_guard_real_cli "$1" "$( [[ "$1" == codex ]] && ai_codex_bin || echo claude)"; }
+    loomy_cli_run() {
+      local tool="$1" role="$2" model="$3"; shift 4
+      loomy_cli_check "$tool" "$role" "$model" || return $?
+      loomy_guard_real_cli "$tool" "$1" || return $?
+      "$@"
+    }
+    loomy_cli_spawn() {
+      local tool="$1" role="$2" model="$3"; shift 4
+      loomy_cli_check "$tool" "$role" "$model" || return $?
+      loomy_guard_real_cli "$tool" "$1" || return $?
+      nohup "$@" </dev/null &
+      LOOMY_START_SPAWN_PID=$!
+      sleep 0.2
+      kill -0 "$LOOMY_START_SPAWN_PID" 2>/dev/null || wait "$LOOMY_START_SPAWN_PID"
+    }
+  fi
+}
+loomy_start_launch_init
 
 # Private watch launcher; deletes itself when started.
 watch_script() {
@@ -28,23 +57,42 @@ url_encode() {
 # open_in_app: the desktop app on this project (deep links the apps declare themselves), then live tracking in a
 # Terminal window. The app can't open its own terminal panel on loomy watch: the window stands next to it.
 open_in_app() {
-  local url w
-  loomy_guard_real_cli "$TOOL" "${NEW_CMD[0]}" || return $?
+  local url w session="" resume_rc=0 version log
+  loomy_cli_check "$TOOL" lead "$MODEL" || return $?
   if [[ "$(uname -s)" != Darwin ]]; then ui_warn "$(t "Desktop apps: macOS only")" "$(t "opening in the terminal")"; return 1; fi
+  if [[ "$TOOL" == codex && "${CODEX_THREAD_RESOLVED:-0}" == 1 ]]; then session="$CODEX_THREAD"
+  else session="$(perl "$SCRIPT_DIR/lib/resume.pl" "$TOOL" "$ROOT" "$HOME")" || resume_rc=$?; fi
+  if (( resume_rc == 3 )); then
+    t "Claude session busy in a terminal: use /desktop inside it, or end it." >&2; echo >&2
+    return 3
+  fi
   local ep ef
   ep="$(url_encode "$PROMPT")"; ef="$(url_encode "$ROOT")"
   [[ -n "$ep" && -n "$ef" ]] || { ui_warn "$(t "The app link could not be built")" "$(t "opening in the terminal")"; return 1; }
-  if [[ "$TOOL" == codex ]]; then url="codex://threads/new?prompt=$ep"
-  else url="claude://code/new?folder=$ef&q=$ep"; fi
-  if ! open "$url" >/dev/null 2>&1; then ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1; fi
+  if [[ "$TOOL" == codex ]]; then
+    if [[ -n "$session" ]]; then url="codex://threads/$session"; else url="codex://threads/new?prompt=$ep"; fi
+  else
+    url="claude://code/new?folder=$ef&q=$ep"
+    version="$(loomy_cli_run claude lead "$MODEL" -- claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+    if [[ -n "$session" && -n "$version" ]] && ai_version_ge "$version" 2.1.285; then
+      mkdir -p "$ROOT/.loomy/logs"
+      log="$(umask 077; mktemp "$ROOT/.loomy/logs/desktop-resume.XXXXXXXX")" || return 1
+      if (cd "$ROOT" && loomy_cli_spawn claude lead "$MODEL" -- claude --desktop --resume "$session" </dev/null >"$log" 2>&1); then
+        url=""
+      fi
+    fi
+  fi
+  if [[ -n "$url" ]] && ! loomy_cli_run "$TOOL" lead "$MODEL" -- open "$url" >/dev/null 2>&1; then
+    ui_warn "$(t "The app did not open")" "$(t "opening in the terminal")"; return 1
+  fi
   ui_ok "$(t "%s opened in the app" "$tool_label")" "$(t "pick model %s, effort %s; the Loomy hooks give it the context" "$MODEL" "$EFFORT")"
-  [[ "$TOOL" == codex ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
+  [[ "$TOOL" == codex && -z "$session" ]] && ui_info "$(t "Codex app: choose this project's folder for the conversation (%s)" "${ROOT/#$HOME/~}")"
   local wt="$WATCH"
   [[ -z "$wt" && "${LOOMY_START_WATCH:-}" == "0" ]] && wt=0
   [[ -z "$wt" ]] && { [[ "$(loomy_config_get start_watch 2>/dev/null || true)" == "no" ]] && wt=0 || wt=1; }
   if (( wt )) && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script)"
-    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
+    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then ui_ok "$(t "Live tracking")" "$(t "in a Terminal window")"
     else ui_info "$(t "live tracking: loomy watch")"; fi
   fi
   return 0
@@ -53,7 +101,8 @@ open_in_app() {
 # Resolution is separate from opening so watch can test it without launching any app.
 loomy_orchestrator_target() {
   local app
-  ai_detect_env "$1"; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
+  local AI_ROUTE_ENV=""
+  ai_detect_env "$1" readonly; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
   LOOMY_OPEN_TOOL="$R_FAMILY"; LOOMY_OPEN_TARGET=terminal; LOOMY_OPEN_APP=""
   [[ "$(uname -s)" == Darwin ]] || return 0
   if [[ "$LOOMY_OPEN_TOOL" == claude ]]; then
@@ -69,11 +118,15 @@ loomy_orchestrator_target() {
 loomy_open_orchestrator() {
   local root="$1" command launch
   loomy_orchestrator_target "$root"
-  loomy_guard_real_cli "$LOOMY_OPEN_TOOL" "$( [[ "$LOOMY_OPEN_TOOL" == codex ]] && ai_codex_bin || echo claude)" || return $?
+  ai_resolve lead "$AI_ENV" "$AI_PROFILE"
+  loomy_cli_check "$LOOMY_OPEN_TOOL" lead "$R_MODEL" || return $?
   if [[ "$LOOMY_OPEN_TARGET" == app ]]; then
     # The current lead (an active relay's acting tool, else the brief's): never a stale AI_ROUTE_ENV inherited from a
     # tmux server or an older shell (loomy start --lead replaces it).
-    if env -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only </dev/null; then return 0; fi
+    local rc=0
+    env -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --app-only </dev/null || rc=$?
+    (( rc != 3 )) || return 3
+    (( rc != 0 )) || return 0
   fi
   printf -v command '%q ' env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT -u AI_ROUTE_ENV -u LOOMY_WATCH_TOOL LOOMY_START_IN=terminal bash "$SCRIPT_DIR/loomy-start.sh" --root "$root" --resume --watch
   if [[ -n "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
@@ -81,7 +134,7 @@ loomy_open_orchestrator() {
   elif [[ "$(uname -s)" == Darwin ]] && command -v osascript >/dev/null 2>&1; then
     launch="$(mktemp "${TMPDIR:-/tmp}/loomy-open-XXXXXXXX")" || return 1
     printf '#!/bin/bash\nrm -f -- "$0"\nexec %s\n' "$command" >"$launch"
-    if ! osascript -e "tell application \"Terminal\" to do script \"/bin/bash $launch\"" >/dev/null 2>&1; then rm -f "$launch"; return 1; fi
+    if ! loomy_cli_run "$LOOMY_OPEN_TOOL" lead "$R_MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $launch\"" >/dev/null 2>&1; then rm -f "$launch"; return 1; fi
   else
     return 1
   fi
@@ -106,12 +159,13 @@ source "$SCRIPT_DIR/lib/phases.sh"
 # shellcheck source=lib/failover.sh
 source "$SCRIPT_DIR/lib/failover.sh"
 
-ROOT=""; MODE="menu"; WATCH=""; APP_ONLY=0; LEAD=""; PRINT_ONLY=0
+ROOT=""; MODE="menu"; WATCH=""; APP_ONLY=0; LEAD=""; PRINT_ONLY=0; ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --lead)
       case "${2:-}" in codex|claude|auto) LEAD="$2" ;; *) t "--lead: codex, claude or auto" >&2; echo >&2; exit 2 ;; esac
       shift ;;
+    --only) ONLY=1 ;;
     --root) ROOT="${2:-}"; shift ;;
     --resume|-r) MODE="resume" ;;
     --new|-n) MODE="new" ;;
@@ -121,15 +175,19 @@ while [[ $# -gt 0 ]]; do
     --orchestrator) MODE="orchestrator" ;;
     --watch|-w) WATCH=1 ;;
     --no-watch) WATCH=0 ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//; s/loomy-start.sh/loomy start/' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
 done
+if (( ONLY )) && [[ "$LEAD" != codex && "$LEAD" != claude ]]; then
+  t "--only requires --lead codex or --lead claude" >&2; echo >&2; exit 2
+fi
 (( ! PRINT_ONLY )) || MODE="print"
 # Real path (links resolved): the one Claude and Codex record for their sessions.
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 BRIEF="$ROOT/.loomy/brief.md"
+if [[ "$LEAD" == auto && "$MODE" != print ]]; then rm -f "$ROOT/.loomy/session-only"; fi
 if [[ "$MODE" == orchestrator ]]; then loomy_open_orchestrator "$ROOT"; exit $?; fi
 # A repository with only an audit (loomy audit), no Loomy project: start resumes the audit.
 if [[ ! -f "$BRIEF" && -f "$ROOT/.loomy/audit.md" ]]; then exec bash "$SCRIPT_DIR/loomy-audit.sh" --root "$ROOT" --resume; fi
@@ -149,8 +207,12 @@ tool_name() { if [[ "$1" == "codex" ]]; then echo "Codex"; else echo "Claude Cod
 # and commands. Nothing is recorded here (lf_decide --dry): lf_apply does it when the session really starts.
 # The brief is unchanged; a manual relay lasts until an explicit return or the acting tool saturates.
 resolve_session() {
-  local master since=""
+  local master since="" requested="$LEAD"
+  if [[ "$MODE" == app ]]; then unset AI_ROUTE_ENV; fi
   ai_detect_env "$ROOT"
+  if [[ -n "$LEAD" ]]; then AI_SESSION_ONLY=""; fi
+  if (( ONLY )); then AI_SESSION_ONLY="$LEAD"; fi
+  if [[ "$MODE" == app && -z "$requested" ]] && lf_active "$ROOT"; then requested="$(lf_get "$ROOT" acting)"; fi
   if [[ -n "$LEAD" ]]; then
     master="$(_ai_brief_get "$BRIEF" ai_lead)"
     if [[ -z "$master" ]]; then ai_resolve lead "$AI_ENV" "$AI_PROFILE"; master="$R_FAMILY"; fi
@@ -160,7 +222,9 @@ resolve_session() {
     local selected="$LEAD"; [[ "$selected" != auto ]] || selected="$master"
     if ! _lf_installed "$selected"; then t "%s not found" "$(tool_name "$selected")" >&2; echo >&2; exit 2; fi
   fi
-  lf_decide "$ROOT" "$master" --dry "$LEAD" >/dev/null
+  if [[ -n "$AI_SESSION_ONLY" ]]; then
+    LF_MASTER="$master"; LF_LEAD="$AI_SESSION_ONLY"; LF_KIND=none; LF_MANUAL=0; LF_REASON=""; LF_RESUME_AT=""; LF_NOTE=""
+  else lf_decide "$ROOT" "$master" --dry "$requested" >/dev/null; fi
   AI_LEAD="$LF_LEAD"
   if [[ -n "$LEAD" || "$LF_MANUAL" == 1 || -z "${AI_ROUTE_ENV:-}" ]]; then ai_env_for "$AI_MODE" "$LF_LEAD"; fi
   ai_resolve lead "$AI_ENV" "$AI_PROFILE"
@@ -208,8 +272,8 @@ resolve_session() {
     CLI_OK=0; ai_has_claude && CLI_OK=1
     INSTALL="curl -fsSL https://claude.ai/install.sh | bash"
   else
-    # Watch's app action starts a new thread; scanning terminal history only delays its return.
-    if (( ! APP_ONLY )) && [[ -d "$HOME/.codex/sessions" ]] && grep -rlqF "\"cwd\":\"$ROOT\"" "$HOME/.codex/sessions" 2>/dev/null; then HAS_SESSION=1; fi
+    CODEX_THREAD="$(perl "$SCRIPT_DIR/lib/resume.pl" codex "$ROOT" "$HOME")"; CODEX_THREAD_RESOLVED=1
+    [[ -z "$CODEX_THREAD" ]] || HAS_SESSION=1
     CODEX="$(ai_codex_bin 2>/dev/null || echo codex)"
     NEW_CMD=("$CODEX" -m "$MODEL" -c "model_reasoning_effort=$EFFORT" "$PROMPT")
     RESUME_CMD=("$CODEX" resume --last -m "$MODEL" -c "model_reasoning_effort=$EFFORT")
@@ -219,6 +283,10 @@ resolve_session() {
   tool_label="$(tool_name "$TOOL")"
 }
 resolve_session
+# A desktop deep link has no project-owned process whose exit can bound an override.
+if (( ONLY )) && [[ "$MODE" == app ]]; then
+  t "--only requires a terminal session; use --new or --resume" >&2; echo >&2; exit 2
+fi
 short_cmd() { if [[ "$TOOL" == "claude" ]]; then echo "claude${1:+ $1} --model $MODEL --effort $EFFORT${ADVISOR:+ --advisor $ADVISOR}"; else echo "codex${1:+ $1} -m $MODEL -c model_reasoning_effort=$EFFORT"; fi; }
 
 # ---------------------------------------------------------------- affichage
@@ -282,7 +350,7 @@ start_with_watch() {
   fi
   if [[ "${TERM_PROGRAM:-}" == "iTerm.app" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script $$)"
-    if osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
+    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"iTerm2\" to tell current session of current window to split $( (( side )) && echo vertically || echo horizontally ) with default profile command \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in the next iTerm2 pane, closed with the session")"
       return 0
     fi
@@ -305,7 +373,7 @@ start_with_watch() {
       name="$name-$n"
     fi
     # The dedicated session runs the whole chain (relay included): this script again, without tracking of its own.
-    lead_args=(); [[ -z "$LEAD" ]] || lead_args=(--lead "$LEAD")
+    lead_args=(); [[ -z "$LEAD" ]] || lead_args=(--lead "$LEAD"); (( ! ONLY )) || lead_args+=(--only)
     agent="$(printf '%q ' env LOOMY_START_INNER=1 bash "$SCRIPT_DIR/loomy-start.sh" --root "$ROOT" "--$MODE" --no-watch ${lead_args[@]+"${lead_args[@]}"})"
     # tmux that can't start (container, no terminal): the session opens alone rather than failing.
     if ! env -u LOOMY_SCREEN_OWNER -u LOOMY_PAGE_OUT tmux new-session -d -s "$name" -c "$ROOT" -x "$UI_COLS" -y "$UI_ROWS" "cd $(printf '%q' "$ROOT") && $agent; tmux kill-session -t $name" 2>/dev/null \
@@ -325,7 +393,7 @@ start_with_watch() {
   fi
   if [[ "${TERM_PROGRAM:-}" == "Apple_Terminal" ]] && command -v osascript >/dev/null 2>&1; then
     w="$(watch_script $$)"
-    if osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
+    if loomy_cli_run "$TOOL" lead "$MODEL" -- osascript -e "tell application \"Terminal\" to do script \"/bin/bash $w\"" >/dev/null 2>&1; then
       WATCH_NOTE="$(t "live tracking in a new Terminal window, closed with the session")"
       return 0
     fi
@@ -357,7 +425,7 @@ if [[ "$MODE" == "menu" ]]; then
       descs+=("$(t "Resumes this folder's latest conversation, with its history: %s" "$(short_cmd "$( [[ "$TOOL" == claude ]] && echo --continue || echo "resume --last")")")")
     fi
     opts+=("$(t "New session")"); codes+=(new); descs+=("$(t "Opens %s with the %s prompt. The agent rereads START.md, the brief and the project state." "$tool_label" "$KIND")")
-    if [[ "$(uname -s)" == Darwin ]] && open -Ra "$( [[ "$TOOL" == codex ]] && echo ChatGPT || echo Claude)" >/dev/null 2>&1; then
+    if (( ! ONLY )) && [[ "$(uname -s)" == Darwin ]] && open -Ra "$( [[ "$TOOL" == codex ]] && echo ChatGPT || echo Claude)" >/dev/null 2>&1; then
       opts+=("$(t "Open in the app")"); codes+=(app)
       descs+=("$(t "Opens a %s session in the desktop app with the prompt filled in, and live tracking in a terminal window next to it." "$tool_label")")
     fi
@@ -370,14 +438,16 @@ if [[ "$MODE" == "menu" ]]; then
 fi
 
 # Default place to open the session: loomy config set start_in app (a choice from the menu stays a choice).
-if [[ "$MODE" == "new" && "$(loomy_config_get start_in 2>/dev/null || true)" == "app" && "${LOOMY_START_IN:-}" != "terminal" ]]; then MODE="app"; fi
+if (( ! ONLY )) && [[ "$MODE" == "new" && "$(loomy_config_get start_in 2>/dev/null || true)" == "app" && "${LOOMY_START_IN:-}" != "terminal" ]]; then MODE="app"; fi
 
 
-[[ "$MODE" == print || "$MODE" == cancel ]] || loomy_guard_real_cli "$TOOL" "${NEW_CMD[0]}" || exit $?
+[[ "$MODE" == print || "$MODE" == cancel ]] || loomy_cli_check "$TOOL" lead "$MODEL" || exit $?
 case "$MODE" in
   cancel) UI_NO_DUMP=1; _ui_restore; exit 0 ;;
   app)
-    if open_in_app; then
+    app_rc=0; open_in_app || app_rc=$?
+    (( app_rc != 3 )) || exit 3
+    if (( app_rc == 0 )); then
       # Repeated choices still need applying, without a duplicate event.
       case "$LF_KIND" in
         handover|return)
@@ -417,12 +487,27 @@ WATCH_NOTE="$(t "live tracking in another terminal: loomy watch (or loomy start 
 if (( WATCH )) && ui_is_interactive; then start_with_watch; fi
 ui_end "$(t "opening %s…" "$tool_label") · $WATCH_NOTE"
 cd "$ROOT"
-lf_apply "$ROOT" "$LEAD"
+if (( ONLY )); then
+  # Install only when the foreground session really starts; --print remains read-only.
+  [[ ! -L "$ROOT/.loomy/session-only" ]] || exit 1
+  (umask 077; printf 'tool=%s\nowner_pid=%s\n' "$TOOL" "$$" >"$ROOT/.loomy/session-only")
+elif [[ -n "$LEAD" ]]; then
+  rm -f "$ROOT/.loomy/session-only"
+fi
+if (( ! ONLY )); then lf_apply "$ROOT" "$LEAD"; fi
 LEAD=""
 
 # Session chain (6 sessions at most): the agent runs as a child; when it ends and the lead relay is due (its tool's
 # quota ran out, or the master has room again), the other tool takes over after a short delay.
 UI_NO_DUMP=1; _ui_restore; trap - EXIT INT TERM
+start_session_cleanup() {
+  local owner=""
+  [[ ! -f "$ROOT/.loomy/session-only" ]] || owner="$(sed -n 's/^owner_pid=//p' "$ROOT/.loomy/session-only")"
+  [[ "$owner" != "$$" ]] || rm -f "$ROOT/.loomy/session-only"
+  return 0
+}
+trap start_session_cleanup EXIT
+trap 'exit 143' TERM HUP
 CHAIN_STOP=0; trap 'CHAIN_STOP=1' INT
 CHAIN_MAX=6; CHAIN_N=0
 while :; do
@@ -431,12 +516,12 @@ while :; do
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":$$,\"pid_role\":\"owner\""
   fi
-  loomy_guard_real_cli "$TOOL" "${AGENT_CMD[0]}" || exit $?
-  rc=0; "${AGENT_CMD[@]}" || rc=$?
+  rc=0; loomy_cli_run "$TOOL" lead "$MODEL" -- "${AGENT_CMD[@]}" || rc=$?
   if [[ "$TOOL" == "codex" ]]; then
     ai_journal_write "$ROOT" "\"type\":\"session\",\"event\":\"end\",\"tool\":\"codex\",\"pid\":$$"
   fi
   (( CHAIN_STOP )) && break
+  (( ONLY )) && break
   (( CHAIN_N >= CHAIN_MAX )) && break
   resolve_session
   [[ "$LF_KIND" == "handover" || "$LF_KIND" == "return" ]] || break

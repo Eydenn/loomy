@@ -721,7 +721,8 @@ loomy_live_header() {
   local state phase tool word="${LV_SESSION_EFFORT:-$LV_LEAD_EFFORT}"
   if (( LV_ACTIVE )); then tv state active; else tv state idle; fi
   phase="$LV_PHASE_LABEL"; [[ "$LV_PHASE" != "done" ]] || { tv phase "Lead agent"; phase="$phase $state"; }
-  LV_HEADER="$LV_NAME · $phase${LV_QUOTA:+ · $LV_QUOTA} · ${LV_CLOCK:-} ↻"
+  local only_label; only_label="$(ai_session_only_label)"
+  LV_HEADER="$LV_NAME · $phase${only_label:+ · $only_label}${LV_QUOTA:+ · $LV_QUOTA} · ${LV_CLOCK:-} ↻"
   tv tool Orchestrator
   local leadtool="$LV_LEAD_TOOL" model="$LV_LEAD_MODEL"
   if (( LV_SESSION_SEQ > 0 )); then

@@ -73,11 +73,17 @@ loomy start --app
 loomy start --lead codex
 loomy start --lead claude
 loomy start --lead auto
+loomy start --lead codex --only
+loomy start --lead claude --only
 ```
 
 Starts or resumes the lead agent session (`--resume`, `--new`, `--print`, `--watch`)
 
 `--lead codex|claude` temporarily selects the lead tool without changing the brief, replacing `AI_ROUTE_ENV=hybrid-codex loomy start` for this use. A switch starts a new session with the handoff and shared state prompt, even with `--resume`; repeating the acting tool keeps the session choice and adds no relay event. `--lead auto` or the brief's lead clears the relay and starts that lead with the return prompt. Manual relays stay until an explicit return, except when the acting tool reaches its quota threshold and the master has room. A missing tool is refused (exit 2); a saturated quota or pay-per-use plan produces a warning and remains allowed. Works with `--app` and tracking; `--print` previews without writing state.
+
+`--only` routes every role to the explicit lead during the terminal session, without changing the brief or copying the project. Watch and `loomy route` display the choice; session exit or `--lead auto` clears it, and a dead owner PID is cleaned. Without `--lead codex|claude`, exit status is 2. `--print` creates no marker. `--only` keeps the launch in the terminal even with `start_in=app`; `--only --app` is refused because the app exposes no session-owned process.
+
+`--app` and `o` in watch reopen the latest Codex thread of the project (including subfolders), or the latest Claude session with `claude --desktop --resume` (CLI ≥ 2.1.285). A Claude session busy in a terminal is refused with a `/desktop` hint; no other window opens. Without a compatible session, with an older Claude CLI, or if launch fails, the usual link opens a new conversation with the prompt prefilled, never sent. An active relay’s acting lead is respected.
 
 🪟 The lead agent session on the left and live tracking on the right, by default (stacked in a narrow terminal), through tmux or iTerm2; tracking closes with the session. `--no-watch`, or `loomy config set start_watch no`, opens the session alone. In every session, Claude Code's status line shows the phase and the delegations running (⟳ n), also after your own status line; a session opened without tracking is told to mention `loomy watch`
 

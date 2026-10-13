@@ -210,7 +210,7 @@ The simplest: **`loomy`** in the project folder, then "Open or resume the lead a
 |---|---|
 | 🖥️&nbsp;**Terminal,&nbsp;with&nbsp;Loomy** | `loomy start`: a menu to **resume** this folder's last session (with its history) or open a **new** one with the prompt that fits the project phase. `--resume` and `--new` go straight there. |
 | ⌨️&nbsp;**Terminal,&nbsp;by&nbsp;hand** | Claude Code: `claude --continue` to resume; Codex: `codex resume --last`. For a new session, `loomy start --print` shows the exact command (model and effort) and copies the prompt. |
-| 🪟&nbsp;**Desktop&nbsp;apps** | `loomy start --app` (or **Open in the app** in the menu; `loomy config set start_in app` to make it the default): the Claude app opens a Claude Code session **on the project folder** with the prompt filled in; the Codex app opens a conversation with the prompt filled in (choose the project folder in it). Live tracking opens in a Terminal window next to it (the apps don't let another program open their own terminal panel). Pick the model and effort shown. To resume, reopen the project conversation in the app. |
+| 🪟&nbsp;**Desktop&nbsp;apps** | `loomy start --app` and `o` in watch reopen the latest project session: an existing Codex thread, or `claude --desktop --resume` with Claude Code ≥ 2.1.285. A Claude session busy in a terminal is refused: use `/desktop` there or end it. Without a compatible session, a new conversation opens with the prompt prefilled, never sent. Tracking can open a Terminal window alongside. |
 
 > [!NOTE]
 > Sessions stay on the machine where they were opened. On another machine, `loomy start` opens a new session: the lead agent rereads `START.md`, the brief and the recorded phase, and picks up where the project is.
@@ -397,6 +397,8 @@ The lead’s preventive relay threshold remains separate: `loomy config set quot
 - an API master never relays, and an API tool cannot receive the lead; `loomy config set lead_failover off` or `LOOMY_NO_SWITCH=1` disables relays; `quota_room` (80 by default) sets the share below which a tool has room.
 
 `loomy start --lead codex|claude` selects a temporary manual lead (shown as `(manual)`, kept even when the master has room, with automatic quota relay still protecting the acting lead), replacing `AI_ROUTE_ENV` for this use; `loomy start --lead auto` or `--lead <master>` returns to the brief's lead.
+
+`loomy start --lead codex --only` (or `--lead claude --only`) routes every role to that tool for the terminal session. No brief or project folder is copied or changed. Watch and `loomy route` show “lead codex · only”. Session exit or `--lead auto` clears the choice; a dead owner PID is ignored and cleaned. `--print` remains read-only. `--only` requires an explicit lead and a terminal session (`--new` or `--resume`); desktop apps expose no session-owned process to bound the choice.
 
 The relay is kept in `.loomy/failover`, shown by `loomy status` and `loomy watch` (⇄), and journaled (`lead_failover`, `lead_return`).
 

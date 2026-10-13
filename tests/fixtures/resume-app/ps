@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+[[ -z "${STUB_BUSY_PID:-}" ]] || printf '%s claude\n' "$STUB_BUSY_PID"
+exit 0

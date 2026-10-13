@@ -3326,6 +3326,9 @@ run "Claude CLI/app foreground/background hooks, transcripts, aliases and latenc
 section "W1 Codex live"
 run "ownerless desktop/CLI sessions, hierarchy, bounded deltas and states" bash "$HERE/codex-live.sh"
 
+section "W2/W3 resume and session-only"
+run "desktop session resume and session-scoped tool routing" bash "$HERE/resume-app.sh"
+
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"

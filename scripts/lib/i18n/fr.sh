@@ -2289,5 +2289,11 @@ _t_fr() {
     'Availability') _T='Disponibilité' ;;
     '                                candidates must be validated in the published catalog before routing') _T='                                les candidats doivent être validés dans le catalogue publié avant routage' ;;
     '  loomy models --thrifty on|off deprecated: refused; only validated current models are routed') _T='  loomy models --thrifty on|off retiré : refusé ; seuls les modèles actuels validés sont routés' ;;
+    '--only requires --lead codex or --lead claude') _T='--only exige --lead codex ou --lead claude' ;;
+    '--only requires a terminal session; use --new or --resume') _T='--only exige une session terminal ; utilise --new ou --resume' ;;
+    'lead %s · only') _T='lead %s · uniquement' ;;
+    'Claude session busy in a terminal: use /desktop inside it, or end it.') _T='Session Claude occupée dans un terminal : utilise /desktop dedans ou termine-la.' ;;
+    'Starts or resumes the lead agent session, at the right point of the project (session closed? it'\''s here); --watch opens live tracking alongside; --lead codex|claude|auto temporarily selects the lead, replacing AI_ROUTE_ENV for this use; --only routes every role to that tool for the terminal session') _T='Démarre ou reprend la session lead au bon point du projet ; --watch ouvre le suivi à côté ; --lead codex|claude|auto choisit temporairement le lead ; --only route tous les rôles vers cet outil pour la session terminal' ;;
+    'loomy start --only       routes every role to --lead codex|claude for this terminal session') _T='loomy start --only       route tous les rôles vers --lead codex|claude pour cette session terminal' ;;
   esac
 }

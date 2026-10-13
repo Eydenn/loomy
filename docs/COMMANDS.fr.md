@@ -73,11 +73,17 @@ loomy start --app
 loomy start --lead codex
 loomy start --lead claude
 loomy start --lead auto
+loomy start --lead codex --only
+loomy start --lead claude --only
 ```
 
 Démarre ou reprend la session de l'orchestrateur (`--resume`, `--new`, `--print`, `--watch`)
 
 `--lead codex|claude` choisit temporairement l'outil lead sans modifier le brief et remplace `AI_ROUTE_ENV=hybrid-codex loomy start` pour cet usage. Un changement ouvre une nouvelle session avec le prompt de passation et d'état partagé, même avec `--resume` ; redemander l'outil actif conserve le choix de session et n'ajoute aucun événement de relais. `--lead auto` ou l'outil lead du brief efface le relais et le démarre avec le prompt de retour. Le relais manuel persiste jusqu'au retour explicite, sauf si l'outil actif atteint le seuil de quota et que le lead du brief a de la marge. Un outil absent est refusé (code 2) ; un quota saturé ou une offre à l'usage provoque un avertissement et reste autorisé. Compatible avec `--app` et le suivi ; `--print` affiche un aperçu sans écrire d'état.
+
+`--only` route tous les rôles vers le lead explicite pendant la session terminal, sans modifier le brief ni copier le projet. Le choix apparaît dans le suivi et `loomy route`, disparaît à la fin de session ou avec `--lead auto`, et un PID propriétaire mort est nettoyé. Sans `--lead codex|claude`, le code de sortie est 2. `--print` ne crée pas de marqueur. `--only` conserve le lancement terminal même si `start_in=app` ; `--only --app` est refusé, car l’app ne fournit pas de processus propre à la session.
+
+`--app` et `o` dans le suivi rouvrent le dernier fil Codex du projet (sous-dossiers inclus) ou la dernière session Claude avec `claude --desktop --resume` (CLI ≥ 2.1.285). Une session Claude occupée dans un terminal est refusée avec une indication `/desktop` ; aucune autre fenêtre n’est ouverte. En l’absence de session compatible, avec un ancien CLI Claude ou si le lancement échoue, le lien habituel ouvre une nouvelle conversation avec le prompt pré-rempli, jamais envoyé. Le lead actif d’un relais est respecté.
 
 🪟 La session de l'orchestrateur à gauche et le suivi en direct à droite, par défaut (l'un au-dessus de l'autre si le terminal est étroit), via tmux ou iTerm2 ; le suivi se ferme avec la session. `--no-watch`, ou `loomy config set start_watch no`, ouvre la session seule. Dans chaque session, la ligne d'état de Claude Code affiche la phase et les délégations en cours (⟳ n), y compris après ta propre ligne d'état ; une session ouverte sans suivi le signale et propose `loomy watch`
 

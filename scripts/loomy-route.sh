@@ -136,6 +136,7 @@ case "$CMD" in
   show)
     ui_banner "$(t "Model routing")" "$(ai_env_label "$AI_ENV") · $(t "%s profile" "$(ai_profile_label "$AI_PROFILE")") · $(t "catalog from %s" "$AI_CATALOG_DATE")"
     [[ -n "$AI_ENV_NOTE" ]] && ui_warn "$(t "Fallback")" "$AI_ENV_NOTE"
+    [[ -z "${AI_SESSION_ONLY:-}" ]] || ui_info "$(ai_session_only_label)"
     ui_section "$(t "ROLES")" "$(t "model · effort · how to call it")"
     for r in $AI_ROLES; do
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"

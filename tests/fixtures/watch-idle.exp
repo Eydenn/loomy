@@ -1,5 +1,8 @@
 source [file join [file dirname [info script]] watchdog.exp]
-set timeout 90
+source [file join [file dirname [info script]] time-scale.exp]
+set timeout [expr {int(ceil([test_time_budget 90]))}]
+set teardown_limit [expr {int(ceil([test_time_budget 15]))}]
+set cpu_budget [test_time_budget 3]
 set repo [lindex $argv 0]
 set work [lindex $argv 1]
 set timing [file join $work watch-time]
@@ -14,22 +17,23 @@ set result [catch {
     set child [exp_pid]
     after 60000
     send "q"
-    expect {eof {} timeout {error "idle watch q timed out"}}
+    expect {eof {} timeout {error "idle watch q timed out (elapsed >=$timeout s, budget <$timeout s)"}}
     set status [wait]
     if {[lindex $status 3] != 0} {error "idle watch crashed: $status"}
     # Inspect only our known PTY group: pgrep/sysmond can be unavailable in a sandbox.
     set teardown_present [expr {![catch {watchdog_exec /bin/kill -0 -- -$child 2>@1}]}]
     set teardown_polls 0
     while {![catch {watchdog_exec /bin/kill -0 -- -$child 2>@1}]} {
-        if {$teardown_polls >= 15} {error "idle watch PTY group leaked after 3s"}
+        if {$teardown_polls >= $teardown_limit} {error "idle watch PTY group leaked after [expr {$teardown_polls*200}] ms (budget <[expr {$teardown_limit*200}] ms)"}
         after 200; incr teardown_polls
     }
     set f [open $timing r]; set output [read $f]; close $f
     if {![regexp {(\d+\.\d+) (\d+\.\d+) (\d+\.\d+)\s*$} $output all wall user sys]} {error "idle CPU timing missing"}
     set cpu [expr {100.0*($user+$sys)/$wall}]
-    if {$wall < 60 || $cpu >= 3} {error "idle watch CPU $cpu% over $wall s (budget <3%)"}
+    if {$wall < 60} {error "idle watch duration $wall s (minimum 60 s)"}
+    if {$cpu >= $cpu_budget} {error "idle watch CPU $cpu% over $wall s (budget <$cpu_budget%)"}
 } reason]
 if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}
 if {$result} {puts stderr $reason; exit 1}
-puts "S5 idle watch CPU: $cpu% over $wall s, including all child processes"
-puts "S5 PTY group teardown: present at EOF=$teardown_present, settled after $teardown_polls polls (200ms, maximum 3s)"
+puts "S5 idle watch CPU: $cpu% over $wall s (budget <$cpu_budget%), including all child processes"
+puts "S5 PTY group teardown: present at EOF=$teardown_present, settled after $teardown_polls polls (200ms, maximum [expr {$teardown_limit*200}] ms)"

@@ -1,6 +1,7 @@
 source [file join [file dirname [info script]] watchdog.exp]
+source [file join [file dirname [info script]] time-scale.exp]
 # Synthetic desktop schema, twenty randomized-phase screen latency trials in both default views.
-set timeout 10
+set timeout [expr {int(ceil([test_time_budget 10]))}]
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
 # Explicit stderr routing avoids Tcl's sandbox-incompatible temporary error file.
 set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-codex-live-pty.XXXXXX 2>@1]]
@@ -12,6 +13,7 @@ set child ""
 set maximum 0
 set budget 600
 if {[info exists env(LOOMY_TEST_SUITE)] && $env(LOOMY_TEST_SUITE) == 1} {set budget 5000}
+set budget [test_time_budget $budget]
 log_user 0
 set result [catch {
     exec perl $fixture seed $root $sessions [pid] 2>@1
@@ -21,7 +23,7 @@ set result [catch {
     set child [exp_pid]
     expect {
         -re {codex app 00000001[^\r\n]*running} {}
-        timeout { error "Desktop lead missing on PTY" }
+        timeout { error "Desktop lead missing on PTY after >=$timeout s (budget <$timeout s)" }
         eof { error "Watch exited before desktop lead" }
     }
     for {set trial 30} {$trial < 50} {incr trial} {
@@ -38,19 +40,19 @@ set result [catch {
             set pattern "latency$id\[^\\r\\n\]*running · \[0-9\]+:\[0-9\]\[0-9\]"
             expect {
                 -re $pattern {}
-                timeout { error "New desktop child latency$id missing" }
+                timeout { error "New desktop child latency$id missing after >=$timeout s (budget <$timeout s)" }
                 eof { error "Watch exited during latency trials" }
             }
             set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
             if {$elapsed > $maximum} { set maximum $elapsed }
             if {$elapsed < $budget} {set passed 1; break}
         }
-        if {!$passed} {error "Desktop trial $trial exceeded $budget ms after retry"}
+        if {!$passed} {error "Desktop trial $trial took $elapsed ms (budget <$budget ms) after retry"}
     }
     send "q"
     expect {
         eof {}
-        timeout { error "Watch q unresponsive" }
+        timeout { error "Watch q unresponsive after >=$timeout s (budget <$timeout s)" }
     }
 } reason]
 if {$child ne ""} { catch {exec kill $child 2>@1}; catch {close}; catch {wait} }

@@ -1,5 +1,6 @@
 source [file join [file dirname [info script]] watchdog.exp]
-set timeout 15
+source [file join [file dirname [info script]] time-scale.exp]
+set timeout [expr {int(ceil([test_time_budget 15]))}]
 set repo [lindex $argv 0]
 set work [lindex $argv 1]
 set runtime [file join $work runtime]
@@ -24,10 +25,10 @@ set result [catch {
     expect {
         -re {Watch internal error; tracking continues} {}
         eof {error "watch died on injected reducer failure"}
-        timeout {error "error footer missing"}
+        timeout {error "error footer missing (elapsed >=$timeout s, budget <$timeout s)"}
     }
     send "q"
-    expect {eof {} timeout {error "q failed after reducer exception"}}
+    expect {eof {} timeout {error "q failed after reducer exception (elapsed >=$timeout s, budget <$timeout s)"}}
     set status [wait]
     if {[lindex $status 3] != 0} {error "watch error exit: $status"}
     set f [open [file join $root .loomy logs watch-errors.log] r]

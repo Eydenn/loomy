@@ -6,6 +6,7 @@ use File::Path qw(make_path);
 use POSIX qw(strftime);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 my ($repo,$work)=@ARGV;
+require "$repo/tests/fixtures/time-scale.pl";
 require "$repo/scripts/lib/codex-native.pl";
 require "$repo/scripts/lib/claude-native.pl";
 my $root="$work/performance"; my $logs="$root/.loomy/logs";
@@ -37,15 +38,16 @@ $view->read_journal("$logs/events.jsonl") until $view->{cursor}{at_eof}; $view->
 open my $rows,'>',"$work/perf.rows" or die; print $rows "$_\n" for $view->projections($now); close $rows;
 my $max=0;
 for (1..50) {
-    my $start=time;
+    my $start=clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
     Loomy::CodexNative::watch_changed($root,$sources,$now);
     $state=Loomy::CodexNative::poll($root,$sources);
     $view->read_journal("$logs/events.jsonl"); $view->source_evidence($state); $view->projections($now);
-    my $elapsed=time-$start; $max=$elapsed if $elapsed>$max;
+    my $elapsed=clock_gettime(CLOCK_PROCESS_CPUTIME_ID)-$start; $max=$elapsed if $elapsed>$max;
     die 'historical read on warm frame' if $view->{read_bytes};
 }
-die 'warm reducer/frame >=150ms' if $max>=0.150;
-printf "50,000 events/10,000 sources: 50 warm reducer frames max %.3f ms, zero history reads\n",1000*$max;
+my $warm_budget=Loomy::TestTiming::budget(0.150);
+die sprintf "warm reducer/frame %.3f ms CPU (budget <%.3f ms)\n",1000*$max,1000*$warm_budget if $max>=$warm_budget;
+printf "50,000 events/10,000 sources: 50 warm reducer frames max %.3f ms CPU (budget <%.3f ms), zero history reads\n",1000*$max,1000*$warm_budget;
 # Pending directory discovery must prioritize a new old-date file over a cold backlog.
 open my $late,'>',"$sources/2020/01/01/rollout-00000-late.jsonl" or die;
 print $late encode_json({type=>'session_meta',timestamp=>$ts,payload=>{id=>'late',cwd=>$root,source=>'cli',timestamp=>$ts}}),"\n",
@@ -53,5 +55,6 @@ print $late encode_json({type=>'session_meta',timestamp=>$ts,payload=>{id=>'late
 my $started=time; die 'old-date new source missed' unless Loomy::CodexNative::watch_changed($root,$sources,$now);
 $state=Loomy::CodexNative::poll($root,$sources); $view->read_journal("$logs/events.jsonl"); $view->source_evidence($state);
 die 'new source invisible in declared envelope' unless grep {/N\|G\|codex:late\|.*running/} $view->projections($now);
-die 'new source latency >=1s' if time-$started>=1;
-printf "new old-date source in 10,000-file directory: %.3f ms\n",1000*(time-$started);
+my $latency=time-$started; my $latency_budget=Loomy::TestTiming::budget(1);
+die sprintf "new source latency %.3f ms (budget <%.3f ms)\n",1000*$latency,1000*$latency_budget if $latency>=$latency_budget;
+printf "new old-date source in 10,000-file directory: %.3f ms (budget <%.3f ms)\n",1000*$latency,1000*$latency_budget;

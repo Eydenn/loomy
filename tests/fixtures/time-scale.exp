@@ -1,0 +1,15 @@
+# Same positive decimal contract as time-scale.pl; never scale fixture workloads or soak durations.
+set test_time_scale 1
+if {[info exists env(LOOMY_TEST_TIME_SCALE)]} {set test_time_scale $env(LOOMY_TEST_TIME_SCALE)}
+if {![regexp {^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$} $test_time_scale]} {
+    error "invalid LOOMY_TEST_TIME_SCALE: expected a positive decimal"
+}
+# Tcl otherwise treats leading zeroes as octal, unlike the Perl helper.
+scan $test_time_scale %f test_time_scale
+if {$test_time_scale <= 0 || $test_time_scale == Inf} {
+    error "invalid LOOMY_TEST_TIME_SCALE: expected a positive decimal"
+}
+proc test_time_budget {base} {
+    global test_time_scale
+    return [expr {$base*double($test_time_scale)}]
+}

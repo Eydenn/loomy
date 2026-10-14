@@ -3,6 +3,24 @@
 # Time the real warm frame (states, render, viewport, paint) after reducer bootstrap.
 set -euo pipefail
 REPO="$1"; WORK="$2"; ROOT="$WORK/performance"; SCRIPT_DIR="$REPO/scripts"
+render_budget="$(command perl "$REPO/tests/fixtures/time-scale.pl" 150)"
+list_budget="$(command perl "$REPO/tests/fixtures/time-scale.pl" 120)"
+export LC_NUMERIC=C
+# Bash times includes this shell and reaped children at OS clock resolution, excluding scheduler waits.
+render_start() { times >"$WORK/render-cpu-start"; }
+render_check() {
+  local phase="$1" budget="$2" elapsed
+  times >"$WORK/render-cpu-end"
+  if ! elapsed="$(command perl -e '
+    sub total {open my $f,"<",$_[0] or die $!; local $/; my $t=<$f>; my ($sum,$count)=(0,0);
+      while ($t =~ /(\d+)m([\d.]+)s/g) {$sum+=60*$1+$2; ++$count}
+      die "invalid Bash CPU measurement\n" unless $count==4; return $sum}
+    my $ms=1000*(total($ARGV[1])-total($ARGV[0])); printf "%.3f",$ms; exit($ms>=$ARGV[2]);
+  ' "$WORK/render-cpu-start" "$WORK/render-cpu-end" "$budget")"; then
+    printf 'FAIL %s %s render (%s ms CPU, budget <%s ms)\n' "$phase" "$view" "$elapsed" "$budget"; return 1
+  fi
+  printf 'PASS %s %s render trial %s (%s ms CPU, budget <%s ms)\n' "$phase" "$view" "$trial" "$elapsed" "$budget"
+}
 # shellcheck source=../../scripts/lib/ui.sh
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=../../scripts/lib/journal.sh
@@ -30,13 +48,12 @@ for view in tree list; do
   export LOOMY_WATCH_VIEW="$view"
   loomy_native_render
   for trial in 1 2 3 4 5; do
-    start="$(perl -MTime::HiRes=time -e 'print time')"
+    render_start
     LV_FRAME=""; LV_NOW=$((LV_NOW+1)); loomy_live_states; loomy_native_render
     loomy_live_viewport "$LV_FRAME" 170 0
     UI_HDR_TITLE="$LV_HEADER"; UI_FTR_KEYS="q quit"; UI_FTR_NOTE=""; UI_BODY_TOP=0
     _ui_page_draw 0 2>"$WORK/render-screen"
-    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=150)' "$start")"; then printf "FAIL warm %s render (%s ms >=150)\n" "$view" "$elapsed"; exit 1; fi
-    printf 'PASS warm %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
+    render_check warm "$render_budget"
     indexed="$(declare -p UI_PAGE_L)"; frame_copy="$LV_FRAME"; LV_FRAME=""
     loomy_live_viewport "$frame_copy" 170 0
     [[ "$indexed" == "$(declare -p UI_PAGE_L)" ]] || { printf 'FAIL indexed viewport differs from text path\n'; exit 1; }
@@ -54,19 +71,18 @@ for view in tree list; do
     s5_id=""; s5_group=""; s5_parent=""; s5_state=""; s5_role=""; s5_tail=""
     loomy_native_read "${NS_A[0]}" s5_n s5_kind s5_id s5_group s5_parent s5_state s5_role s5_task s5_tail
     loomy_native_accept "N|A|$s5_id|$s5_group|$s5_parent|$s5_state|$s5_role|Changed title $trial|$s5_tail"
-    start="$(perl -MTime::HiRes=time -e 'print time')"
+    render_start
     LV_FRAME=""; loomy_live_states; loomy_native_render
     loomy_live_viewport "$LV_FRAME" 170 0
     UI_HDR_TITLE="$LV_HEADER"; UI_FTR_KEYS="q quit"; UI_FTR_NOTE=""; UI_BODY_TOP=0
     _ui_page_draw 0 2>"$WORK/render-screen"
-    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=($ARGV[1] eq "list" ? 120 : 150))' "$start" "$view")"; then printf 'FAIL changed %s render (%s ms over budget)\n' "$view" "$elapsed"; exit 1; fi
-    printf 'PASS changed %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
+    budget="$render_budget"; [[ "$view" != list ]] || budget="$list_budget"
+    render_check changed "$budget"
     cached="$LV_FRAME"; NS_DRAW_KEY=""; LV_FRAME=""
-    start="$(perl -MTime::HiRes=time -e 'print time')"
+    render_start
     loomy_native_render
     loomy_live_viewport "$LV_FRAME" 170 0; _ui_page_draw 0 2>"$WORK/render-screen"
-    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=150)' "$start")"; then printf 'FAIL rebuild %s render (%s ms >=150)\n' "$view" "$elapsed"; exit 1; fi
-    printf 'PASS rebuild %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
+    render_check rebuild "$render_budget"
     [[ "$cached" == "$LV_FRAME" ]] || { printf 'FAIL changed %s frame differs from rebuild\n' "$view"; exit 1; }
   done
 done

@@ -5,6 +5,7 @@ use JSON::PP qw(encode_json);
 use POSIX qw(strftime);
 use Time::HiRes qw(time);
 my ($repo,$work)=@ARGV;
+require "$repo/tests/fixtures/time-scale.pl";
 require "$repo/scripts/lib/codex-native.pl";
 require "$repo/scripts/lib/watch-errors.pl";
 my $root="$work/project"; my $logs="$root/.loomy/logs"; my $sources="$work/old/sessions";
@@ -22,7 +23,8 @@ my $start=time; die 'old-date append missed' unless Loomy::CodexNative::watch_ch
 my $state=Loomy::CodexNative::poll($root,$sources);
 my $view=Loomy::LiveState->new; $view->read_journal("$logs/events.jsonl"); $view->source_evidence($state);
 die 'resumed old-date session absent' unless grep {/N\|G\|codex:old\|.*\|running\|/} $view->projections($now);
-die 'old-date resume >=1s' if time-$start>=1;
+my $latency=time-$start; my $budget=Loomy::TestTiming::budget(1);
+die sprintf "old-date resume %.3f ms (budget <%.3f ms)\n",1000*$latency,1000*$budget if $latency>=$budget;
 my $new="$sources/2020/01/02/rollout-new.jsonl";
 rows($new,{type=>'session_meta',timestamp=>ts($now),payload=>{id=>'new',cwd=>$root,source=>'exec',timestamp=>ts($now)}},
     {type=>'event_msg',timestamp=>ts($now),payload=>{type=>'task_started',turn_id=>'created'}});

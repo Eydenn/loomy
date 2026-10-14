@@ -1,6 +1,7 @@
 source [file join [file dirname [info script]] watchdog.exp]
+source [file join [file dirname [info script]] time-scale.exp]
 # Four Claude solo cells; synthetic hooks/transcripts, real watch frames on the Mac PTY.
-set timeout 10
+set timeout [expr {int(ceil([test_time_budget 10]))}]
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
 set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-claude-live-pty.XXXXXX 2>@1]]
 set fixture [file join $repo tests fixtures claude-native.pl]
@@ -11,12 +12,13 @@ set child ""
 set maximum 0
 set budget 600
 if {[info exists env(LOOMY_TEST_SUITE)] && $env(LOOMY_TEST_SUITE) == 1} {set budget 5000}
+set budget [test_time_budget $budget]
 log_user 0
 proc visible {pattern} {
-    global spawn_id
+    global spawn_id timeout
     expect {
         -re $pattern {}
-        timeout { error "Claude frame missing: $pattern" }
+        timeout { error "Claude frame missing after >=$timeout s (budget <$timeout s): $pattern" }
         eof { error "Watch exited before Claude frame" }
     }
 }
@@ -53,10 +55,10 @@ set result [catch {
                     exec perl $fixture stop $root $projects $surface $bg $id 2>@1
                     if {$elapsed < $budget} {set passed 1; break}
                 }
-                if {!$passed} {error "$surface background=$bg trial $trial exceeded $budget ms after retry"}
+                if {!$passed} {error "$surface background=$bg trial $trial took $elapsed ms (budget <$budget ms) after retry"}
             }
             send "q"
-            expect { eof {} timeout { error "Watch q unresponsive" } }
+            expect { eof {} timeout { error "Watch q unresponsive after >=$timeout s (budget <$timeout s)" } }
             catch {close}; catch {wait}; set child ""
         }
     }

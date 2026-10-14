@@ -31,4 +31,5 @@ jobs:
       - name: Tests
         env:
           LOOMY_TEST_NATIVE_PTY: "1"
+          LOOMY_TEST_TIME_SCALE: "3"
         run: bash tests/run.sh

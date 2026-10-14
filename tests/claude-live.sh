@@ -2,6 +2,7 @@
 # S2 CLI/app foreground/background cells and content-free hookless transcript fallback.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+latency_budget="$(command perl "$REPO/tests/fixtures/time-scale.pl" 1000)"
 # shellcheck source=fixtures/watchdog.sh
 source "$REPO/tests/fixtures/watchdog.sh"
 WORK="$(mktemp -d "/tmp/loomy-claude-live.XXXXXX")"
@@ -74,8 +75,8 @@ check 'hookless app task-notification completes the row' assert_cell 'done'
 ROOT="$WORK/notify-latency"; fixture seed; poll; fixture return; poll
 latency_start="$(perl -MTime::HiRes=time -e 'print time')"; fixture stop; poll
 latency_ms="$(perl -MTime::HiRes=time -e 'printf "%d", (time-$ARGV[0])*1000' "$latency_start")"
-check "task-notification shows the agent done within one second of being written (${latency_ms} ms)" assert_cell done
-check 'notification latency bound' test "$latency_ms" -lt 1000
+check "task-notification shows the agent done (${latency_ms} ms, budget <${latency_budget} ms)" assert_cell 'done'
+check "notification latency ${latency_ms} ms (budget <${latency_budget} ms)" perl -e 'exit($ARGV[0]>=$ARGV[1])' "$latency_ms" "$latency_budget"
 check 'hookless terminal preserves source milliseconds and duration, costs stay unknown' perl -MJSON::PP -e '
  my @e=map {decode_json($_)} <>; my @end=grep {$_->{type} eq "delegation" && ($_->{id}//"") eq "cl:app-lead:call1"} @e;
  die unless @end==1 && $end[0]{ts} eq "2026-10-13T01:00:04.250Z" && $end[0]{duration_s}==3;

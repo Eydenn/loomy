@@ -2,6 +2,8 @@
 # Scoped quota/discovery/diagnostics checks; never starts a provider.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOOMY_TEST_TIME_SCALE="$(command perl "$REPO/tests/fixtures/time-scale.pl")"
+export LOOMY_TEST_TIME_SCALE
 WORK="$(mktemp -d /tmp/loomy-s5-w6.XXXXXX)"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"

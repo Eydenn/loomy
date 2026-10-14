@@ -1,5 +1,8 @@
 source [file join [file dirname [info script]] watchdog.exp]
-set timeout 10
+source [file join [file dirname [info script]] time-scale.exp]
+set timeout [expr {int(ceil([test_time_budget 10]))}]
+set visible_budget [test_time_budget 1000]
+set settled_budget [test_time_budget 1500]
 set repo [lindex $argv 0]
 set work [lindex $argv 1]
 set root [file join $work project]
@@ -9,7 +12,7 @@ set child ""
 set maximum 0
 log_user 0
 proc visible {labels state started} {
-    global maximum socket
+    global maximum socket visible_budget
     set pending $labels
     while {[llength $pending]} {
         # Drain the attached PTY while inspecting complete physical rows in its private pane.
@@ -20,13 +23,14 @@ proc visible {labels state started} {
                 if {[string first $label $line] >= 0 && [regexp $state $line]} {
                     set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
                     if {$elapsed > $maximum} {set maximum $elapsed}
-                    if {$elapsed >= 1000} {error "$label visible after $elapsed ms (budget <1000)"}
+                    if {$elapsed >= $visible_budget} {error "$label visible after $elapsed ms (budget <$visible_budget ms)"}
                     set index [lsearch -exact $pending $label]
                     set pending [lreplace $pending $index $index]
                 }
             }
         }
-        if {([clock clicks -microseconds]-$started) >= 1000000 && [llength $pending]} {error "missing <1s replay states: $pending"}
+        set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
+        if {$elapsed >= $visible_budget && [llength $pending]} {error "missing replay states after $elapsed ms (budget <$visible_budget ms): $pending"}
         if {[llength $pending]} {after 40}
     }
 }
@@ -35,7 +39,7 @@ proc visible {labels state started} {
 # whole history and is rebuilt by Bash on every frame (3.2 on the Mac), so this step has a 1.5 s budget; the running
 # states and the tree phase keep the 1 s budget.
 proc settled {labels started} {
-    global maximum socket
+    global maximum socket settled_budget
     while 1 {
         expect -timeout 0 { -re {.+} {} eof {error "watch crashed during replay"} timeout {} }
         set pane [exec tmux -S $socket capture-pane -p -t replay 2>@1]
@@ -46,10 +50,11 @@ proc settled {labels started} {
         if {!$running && [regexp -line {^0 running} $pane]} {
             set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
             if {$elapsed > $maximum} {set maximum $elapsed}
-            if {$elapsed >= 1500} {error "list did not settle: $elapsed ms (budget <1500)"}
+            if {$elapsed >= $settled_budget} {error "list did not settle: $elapsed ms (budget <$settled_budget ms)"}
             return
         }
-        if {([clock clicks -microseconds]-$started) >= 1500000} {error "list still shows running agents after 1.5s"}
+        set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
+        if {$elapsed >= $settled_budget} {error "list still shows running agents after $elapsed ms (budget <$settled_budget ms)"}
         after 40
     }
 }
@@ -59,7 +64,7 @@ set result [catch {
     set child [exp_pid]
     # Without a controlling terminal (CI) the PTY is 80x24 and tmux would shrink the window to it: size it explicitly.
     stty rows 70 columns 170 < $spawn_out(slave,name)
-    expect -re {codex cli (x:)?cx-cli} {} eof {error "watch died on startup"} timeout {error "watch startup missing"}
+    expect -re {codex cli (x:)?cx-cli} {} eof {error "watch died on startup"} timeout {error "watch startup missing after >=$timeout s (budget <$timeout s)"}
     set soak_start [clock clicks -milliseconds]
     for {set trial 1} {$trial <= 40} {incr trial} {
         if {$trial == 21} {send "a"}
@@ -84,7 +89,7 @@ set result [catch {
     set elapsed [expr {[clock clicks -milliseconds]-$soak_start}]
     if {$elapsed < 120000} {after [expr {120000-$elapsed}]}
     send "q"
-    expect {eof {} timeout {error "replay q did not exit cleanly"}}
+    expect {eof {} timeout {error "replay q did not exit after >=$timeout s (budget <$timeout s)"}}
     set status [wait]
     if {[lindex $status 3] != 0} {error "replay exited unsuccessfully: $status"}
     set sessions [catch {exec tmux -S $socket list-sessions 2>@1}]

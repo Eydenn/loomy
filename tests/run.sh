@@ -24,6 +24,7 @@ LIVE_ARTIFACTS="${LOOMY_TEST_LIVE_ARTIFACTS:-}"
 TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the cleanup below
 WATCH_PS="${LOOMY_TEST_WATCH_PS:-1}"
 NATIVE_PTY="${LOOMY_TEST_NATIVE_PTY:-1}"   # explicit sandbox opt-out; Mac default stays enabled
+TEST_TIME_SCALE="$(command perl "$HERE/fixtures/time-scale.pl")" || exit $?
 for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_TOOLS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
 mkdir -p "$WORK/tmp"
@@ -34,6 +35,7 @@ export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 # Project relays (.loomy/scripts/*.sh): the "installed" Loomy is this repository.
 export LOOMY_HOME="$REPO"
 export LOOMY_TEST_NATIVE_PTY="$NATIVE_PTY"
+export LOOMY_TEST_TIME_SCALE="$TEST_TIME_SCALE"
 export LOOMY_TEST_SUITE=1
 export LOOMY_TEST_WATCH_PS="$WATCH_PS"
 # The agent stubs exit at once: live tracking beside them (the default of loomy start) is tested on its own.
@@ -56,8 +58,10 @@ PASS=0; FAIL=0; OUT="$WORK/out.txt"
 
 ok() { PASS=$(( PASS + 1 )); printf '  \033[32m✓\033[0m %s\n' "$1"; }
 ko() {
+  local tail_lines="${2:-0}"
   FAIL=$(( FAIL + 1 )); printf '  \033[31m✗ %s\033[0m\n' "$1"
-  if (( VERBOSE )) && [[ -f "$OUT" ]]; then sed 's/^/      │ /' "$OUT" | tail -25; fi
+  if (( tail_lines > 0 )) && [[ -f "$OUT" ]]; then tail -n "$tail_lines" "$OUT" | sed 's/^/      │ /'
+  elif (( VERBOSE )) && [[ -f "$OUT" ]]; then tail -25 "$OUT" | sed 's/^/      │ /'; fi
 }
 # LOOMY_TEST_TIMES=1: time spent per section, slowest first, at the end (to keep the suite fast).
 SEC_NAME=""; SEC_START=$SECONDS; SEC_TIMES=""
@@ -65,7 +69,7 @@ _sec_close() { [[ -n "$SEC_NAME" ]] && SEC_TIMES="$SEC_TIMES$(( SECONDS - SEC_ST
 section() { _sec_close; SEC_NAME="$1"; SEC_START=$SECONDS; printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # run <description> <command…>: the command must succeed.
-run() { local d="$1"; shift; if test_step "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (code $?)"; fi; }
+run() { local d="$1"; shift; if test_step "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (code $?)" 40; fi; }
 # fails <description> <expected code> <command…>: the command must fail with this code.
 fails() {
   local d="$1" want="$2"; shift 2
@@ -322,7 +326,8 @@ STUB
 
 interrupted_delegation_tests() {
   section "Interrupted delegations"
-  local op="$WORK/interrupted-delegations" cli_dir="$WORK/interrupted-cli" bridge mode task pid_file descendant_file bridge_pid attempts status started elapsed pid
+  local op="$WORK/interrupted-delegations" cli_dir="$WORK/interrupted-cli" bridge mode task pid_file descendant_file bridge_pid attempts status started elapsed pid term_budget
+  term_budget="$(command perl "$HERE/fixtures/time-scale.pl" 6)"
   mkdir -p "$op" "$cli_dir"
   git -C "$op" init -q
   run "interrupted: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
@@ -382,7 +387,9 @@ STUB
       elapsed=$(( $(date +%s) - started ))
       [[ "$status" == 143 ]] && ok "$bridge: $mode TERM exits with 143" || ko "$bridge: $mode TERM exit was $status"
       if [[ "$mode" == ignore-term ]]; then
-        (( elapsed <= 6 )) && ok "$bridge: ignored TERM is bounded to ${elapsed}s" || ko "$bridge: ignored TERM took ${elapsed}s"
+        if command perl -e 'exit($ARGV[0]>$ARGV[1])' "$elapsed" "$term_budget"; then
+          ok "$bridge: ignored TERM is bounded to ${elapsed}s (budget <=${term_budget}s)"
+        else ko "$bridge: ignored TERM took ${elapsed}s (budget <=${term_budget}s)"; fi
       fi
 
       for pid_file in "$pid_file" "$descendant_file"; do

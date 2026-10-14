@@ -6,6 +6,7 @@ use File::Path qw(make_path);
 use POSIX qw(strftime);
 use Time::HiRes qw(clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 my ($repo,$work,$finding)=@ARGV;
+require "$repo/tests/fixtures/time-scale.pl";
 require($ENV{LOOMY_CLAUDE_BENCH_MODULE}//"$repo/scripts/lib/claude-native.pl");
 require($ENV{LOOMY_CLAUDE_BENCH_STATE_MODULE}//"$repo/scripts/lib/live-state.pl");
 my $root="$work/$finding"; my $projects="$work/projects";
@@ -151,7 +152,8 @@ if ($finding eq 'N1') {
     printf "N3 stages (CPU ms mean/max): %s\n",join(', ',map {sprintf '%s %.3f/%.3f',$_,1000*$stage_total{$_}/$polls,1000*$stage_max{$_}} qw(startup load save collect projection)) if $oneshot;
     printf "N3 one-shot child CPU (startup + full poll): %.3f ms mean, %.3f ms max\n",1000*$stage_total{child}/$polls,1000*$stage_max{child} if $oneshot;
     die 'catch-up too many polls' if !$benchmark && $polls>40;
-    die 'catch-up CPU exceeds 80 ms/poll' if !$benchmark && $max>0.08;
+    my $budget=Loomy::TestTiming::budget(0.08);
+    die sprintf "catch-up CPU %.3f ms/poll (budget <=%.3f ms)\n",1000*$max,1000*$budget if !$benchmark && $max>$budget;
     die 'late notifications did not settle every call' unless keys(%{$s->{sessions}{lead}{calls}})==19
         && !grep {$_->{state} ne 'done'} values %{$s->{sessions}{lead}{calls}};
     die 'replay duplicated terminal evidence' unless scalar(grep {/^N\|A\|/} projection($s,$clock+4000))==19;

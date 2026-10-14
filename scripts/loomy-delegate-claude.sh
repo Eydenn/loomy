@@ -160,8 +160,10 @@ delegate_stop_child() {
   local attempts=0
   [[ -n "$CHILD_PID" ]] || return 0
   kill -TERM -- "-$CHILD_PID" 2>/dev/null || true
-  while kill -0 -- "-$CHILD_PID" 2>/dev/null && (( attempts < 5 )); do
-    sleep 1
+  # The worker group gives its own CLI group 5 s (TERM, then KILL); wait longer than that so this KILL never
+  # pre-empts the worker's and leaves the CLI processes behind.
+  while kill -0 -- "-$CHILD_PID" 2>/dev/null && (( attempts < 40 )); do
+    sleep 0.2
     attempts=$(( attempts + 1 ))
   done
   if kill -0 -- "-$CHILD_PID" 2>/dev/null; then kill -KILL -- "-$CHILD_PID" 2>/dev/null || true; fi

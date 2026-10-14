@@ -124,6 +124,8 @@ check 'next poll after same-inode restoration appends nothing' cmp "$J" "$WORK/t
 ROOT="$WORK/mixed-rotation"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/mixed-rotation-codex"
 fixture seed; poll; fixture finish; poll; fixture later; poll
 cp "$J" "$WORK/mixed-rotation-source"; fixture rotate; poll
+# The poll first replays the archived suffix it had not read yet (its own latest appends), then moves to the new journal.
+poll
 check 'rotation restores only active later turn and keeps waiting state' json_check 'my @s=grep {$_->{type} eq "delegation_start"} @native; my @a=grep {$_->{type} eq "delegation_activity"} @native; die unless @s==1 && @a==1 && $s[0]{turn_id} eq "00000000-0000-4000-8000-000000000022" && $a[0]{activity} eq "waiting"; die if grep {$_->{type} eq "delegation" || $_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @native;'
 check 'archived historical completion keys remain deduplicated' perl -MJSON::PP -e 'my ($history,$index)=@ARGV; open my $f,"<",$history or die; my @e=map {decode_json($_)} <$f>; open my $h,"<",$index or die; my $s=decode_json(do{local $/;<$h>}); for(grep {$_->{type} eq "delegation" && ($_->{bridge}//"") eq "codex-native"} @e){die unless $s->{seen}{$_->{native_key}}}' "$WORK/mixed-rotation-source" "$ROOT/.loomy/logs/codex-native.idx"
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-stats.sh" --root "$ROOT" >"$WORK/rotation-stats" 2>&1
@@ -270,7 +272,8 @@ check 'corrupted checkpoint cannot suppress subsequent clear or identical restor
 fixture root-truncate-empty; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
 check 'lost checkpoint with already-truncated root clears the last journal snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==10 && $c[-1]{model} eq "";'
 fixture root-restore-identical; poll; fixture root-legacy-journal
-rm "$ROOT/.loomy/logs/codex-native.idx"; poll
+# The journal was rewritten in place: lose the backup too, or recovery from it depends on how many bytes the rewrite removed.
+rm -f "$ROOT/.loomy/logs/codex-native.idx" "$ROOT/.loomy/logs/codex-native.idx.bak"; poll
 check 'legacy revisionless root journal receives a conservative recovered snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==12 && exists($c[-1]{context_revision}) && $c[-1]{context_revision}>=11 && $c[-1]{model} eq "gpt-6.1-sol";'
 cp "$J" "$WORK/root-legacy-recovered"; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
 check 'legacy snapshot makes the next lost-checkpoint recovery append-free' cmp "$J" "$WORK/root-legacy-recovered"

@@ -35,9 +35,14 @@ cd "$ROOT"
 git rev-parse --verify "$BASE^{commit}" >/dev/null
 MAIN="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"
 SHARED=""; [[ ! -d "$MAIN/.loomy" ]] || SHARED="$(cd "$MAIN/.loomy" && pwd -P)"
-# A tracked .loomy at the base would conflict with the shared directory; never replace it.
+# Versioned AI files: every worktree checks out its own tracked .loomy, so only the local journal folder is linked.
+# A tracked path where the link goes would conflict with it; never replace it.
+SHARE_LOGS=0
 if [[ -n "$SHARED" && -n "$(git ls-tree "$BASE" -- .loomy)" ]]; then
-  t "Error: .loomy is tracked at the base revision; exclude it before sharing worktrees." >&2; echo >&2; exit 1
+  if [[ -n "$(git ls-tree "$BASE" -- .loomy/logs)" ]]; then
+    t "Error: .loomy/logs is tracked at the base revision; untrack it before sharing worktrees." >&2; echo >&2; exit 1
+  fi
+  SHARE_LOGS=1
 fi
 PARENT="$(dirname "$MAIN")"; NAME="$(basename "$MAIN")"
 BRANCHES=(); DIRS=(); LABELS=()
@@ -57,12 +62,19 @@ ui_banner "$(t "Parallel worktrees")" "$(t "task %s · from %s" "$TASK" "$BASE")
 for (( i=0; i<COUNT; i++ )); do
   git worktree add -q -b "${BRANCHES[i]}" "${DIRS[i]}" "$BASE"
   if [[ -n "$SHARED" ]]; then
-    ln -s "$SHARED" "${DIRS[i]}/.loomy"
+    link=/.loomy
+    if (( SHARE_LOGS )); then
+      link=/.loomy/logs
+      mkdir -p "$SHARED/logs"; mkdir -p "${DIRS[i]}/.loomy"
+      ln -s "$SHARED/logs" "${DIRS[i]}/.loomy/logs"
+    else
+      ln -s "$SHARED" "${DIRS[i]}/.loomy"
+    fi
     # Per-worktree excludes share the common Git directory.
     exclude="$(git -C "${DIRS[i]}" rev-parse --git-path info/exclude)"
     [[ "$exclude" == /* ]] || exclude="${DIRS[i]}/$exclude"
     mkdir -p "$(dirname "$exclude")"
-    grep -qxF '/.loomy' "$exclude" 2>/dev/null || printf '\n/.loomy\n' >>"$exclude"
+    grep -qxF "$link" "$exclude" 2>/dev/null || printf '\n%s\n' "$link" >>"$exclude"
   fi
   ui_section "${LABELS[i]}"
   ui_kv "$(t "Branch")" "${C_BOLD}${BRANCHES[i]}${C_RESET}"

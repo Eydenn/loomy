@@ -168,7 +168,7 @@ delegation_options_tests() {
     local desc="$1" req="$2" off="$3" why="$4" effort="$5" sandbox="$6" files="$7" task="$8"
     if perl -MJSON::PP -e '
       my ($path,$want_req,$want_off,$want_why,$want_effort,$want_sandbox,$want_files,$want_task)=@ARGV;
-      open my $f,"<",$path or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2;
+      open my $f,"<",$path or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2;
       die unless $e[0]{type} eq "delegation_start" && $e[1]{type} eq "delegation";
       for my $e (@e) {
         die "requested mismatch" unless (($e->{requested} ? "true" : "false") eq $want_req);
@@ -216,7 +216,7 @@ delegation_options_tests() {
 
   : >"$J"
   run "delegation: task and why privacy" bash -c 'cd "$1" && LOOMY_JOURNAL_TASKS=0 "$2" delegate codex architect --why SECRET-WHY SECRET-TASK' _ "$op" "$LOOMY"
-  if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
+  if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
 
   local cap_tmp="$WORK/capture-watch-tmp" cap_bin="$WORK/capture-watch-bin"
   mkdir -p "$cap_tmp" "$cap_bin"
@@ -1530,8 +1530,8 @@ w47_tests() {
   [[ "$(readlink "$WORK/w47-worktrees-nested-1/.loomy")" == "$wt/.loomy" ]] && ok "nested task keeps the main journal" || ko "nested task journal"
   fails "excessive worktree count refused" 2 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" bad --count 129' _ "$wt" "$REPO"
   # Refuse a conflicting tracked AI path without replacing user data.
-  echo context >"$wt/.loomy/context"; git -C "$wt" add -f .loomy/context; git -C "$wt" commit -qm tracked-fixture
-  fails "tracked .loomy at base refused" 1 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" tracked --count 1' _ "$wt" "$REPO"
+  mkdir -p "$wt/.loomy/logs"; echo context >"$wt/.loomy/logs/context"; git -C "$wt" add -f .loomy/logs/context; git -C "$wt" commit -qm tracked-fixture
+  fails "tracked .loomy/logs at base refused" 1 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" tracked --count 1' _ "$wt" "$REPO"
   printf -- '---\nname: "metrics"\nai_lead: codex\n---\n' >"$st/.loomy/brief.md"
   cat >"$st/.loomy/logs/events.jsonl" <<'EOF'
 {"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"a","session":"s","duration_s":10,"family":"codex","status":"ok","role":"developer","model":"gpt-6.1-sol"}
@@ -2565,7 +2565,11 @@ has "context: project and phase" "Resume context for project"
 has "context: resume instruction" "Resume START.md from this phase"
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
 has "status: no session → open the session" "open the lead agent session"
-echo '{"session_id":"s-test","source":"startup"}' | bash "$PC2/.loomy/scripts/loomy-context.sh" --hook start >"$OUT" 2>&1
+# The hook records the agent process it finds among its ancestors; the suite's own shell plays that agent, so the result
+# does not depend on how the suite was launched (a short-lived launcher named claude would make the session look closed).
+mkdir -p "$WORK/agent-ps"
+printf '#!/bin/sh\n[ "$1 $2 $3" = "-o comm= -p" ] && [ "$4" = "$LOOMY_TEST_AGENT_PID" ] && { echo claude; exit 0; }\nexec /bin/ps "$@"\n' >"$WORK/agent-ps/ps"; chmod +x "$WORK/agent-ps/ps"
+echo '{"session_id":"s-test","source":"startup"}' | env PATH="$WORK/agent-ps:$PATH" LOOMY_TEST_AGENT_PID=$$ bash "$PC2/.loomy/scripts/loomy-context.sh" --hook start >"$OUT" 2>&1
 has "start hook: context returned to Claude" "Resume context"
 file_has "start hook: session recorded" "$PC2/.loomy/logs/events.jsonl" '"type":"session","event":"start"'
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
@@ -2749,7 +2753,8 @@ then ok "log: each start has its end (same id)"; else ko "log: mismatched ids"; 
 file_has "log: cost reported by claude" "$J" '"bridge":"claude".*"cost_usd":0.0123'
 file_has "log: estimated cost for codex" "$J" '"bridge":"codex".*"cost_source":"estimate"'
 file_has "log: failure recorded" "$J" '"status":"error"'
-if while IFS= read -r l; do printf '%s' "$l" | grep -qE '^\{"ts":"[0-9T:-]+Z",.*\}$' || exit 1; done <"$J"; then ok "log: one JSON line per event"; else ko "log: malformed line"; fi
+bad_line="$(grep -v -E '^\{"ts":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z",.*\}$' "$J" | head -n 1 || true)"
+if [[ -z "$bad_line" ]]; then ok "log: one JSON line per event"; else ko "log: malformed line: ${bad_line:0:200}"; fi
 run "LOOMY_JOURNAL_TASKS=0 hides the task" env LOOMY_JOURNAL_TASKS=0 "$LOOMY" delegate claude explorer "SECRET-TACHE"
 if grep -q "SECRET-TACHE" "$J"; then ko "task text logged despite LOOMY_JOURNAL_TASKS=0"; else ok "task text absent from the log"; fi
 run "delegate codex with a French locale" env LANG=fr_FR.UTF-8 LC_ALL=fr_FR.UTF-8 "$LOOMY" delegate codex explorer "locale"
@@ -2811,6 +2816,9 @@ section "Parallel worktrees"
 git -C "$PROJ" add -A && git -C "$PROJ" commit -qm "travail" || true
 run "worktrees" "$LOOMY" worktrees demo
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "two worktrees created"; else ko "worktrees: $(git -C "$PROJ" worktree list | wc -l) entries"; fi
+# Versioned AI files (the default): each worktree has its own tracked .loomy and shares only the journal folder.
+if [[ -L "$WORK/projet-codex-demo/.loomy/logs" && "$(readlink "$WORK/projet-codex-demo/.loomy/logs")" == "$(cd "$PROJ/.loomy" && pwd -P)/logs" \
+  && -z "$(git -C "$WORK/projet-codex-demo" status --porcelain)" ]]; then ok "worktrees: versioned .loomy kept, journal shared, worktree clean"; else ko "worktrees: journal link or clean tree ($(git -C "$WORK/projet-codex-demo" status --porcelain 2>&1 | head -3))"; fi
 run "worktrees --help created nothing" "$LOOMY" worktrees --help
 fails "task name starting with a hyphen refused" 2 "$LOOMY" worktrees -x
 if [[ "$(git -C "$PROJ" worktree list | wc -l | tr -d ' ')" == "3" ]]; then ok "still only two worktrees"; else ko "worktrees created by mistake"; fi
@@ -3220,7 +3228,7 @@ rm -f "$LR/.loomy/failover" "$LR/.loomy/relay.notice"
 relay_prompt_hook >"$OUT" 2>&1
 has "prompt hook: emits UserPromptSubmit additionalContext JSON" '^\{"hookSpecificOutput":\{"hookEventName":"UserPromptSubmit","additionalContext":'
 has "prompt hook: 92% notice includes HANDOFF instructions" '\[Loomy\] Claude Code quota at 92 %.*HANDOFF\.md'
-has "prompt hook: near-quota notice keeps the ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+has "prompt hook: near-quota notice keeps the ORCHESTRATED reminder" 'ORCHESTRATED mode: split each request'
 relay_prompt_hook >"$OUT" 2>&1
 hasnt "prompt hook: immediate repeat is throttled" '\[Loomy\] Claude Code quota at'
 printf 'prepare %s\n' "$(( $(date +%s) - 700 ))" >"$LR/.loomy/relay.notice"
@@ -3249,10 +3257,10 @@ hasnt "prompt hook: future Codex reset suppresses return notice at 96%" '\[Loomy
 
 relay_active_claude "$(( $(date +%s) + 3600 ))"
 relay_prompt_hook >"$OUT" 2>&1
-has "prompt hook: acting Claude lead retains ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+has "prompt hook: acting Claude lead retains ORCHESTRATED reminder" 'ORCHESTRATED mode: split each request'
 rm -f "$LR/.loomy/failover" "$QC/loomy/claude-limits"
 relay_prompt_hook >"$OUT" 2>&1
-hasnt "prompt hook: Codex lead without relay has no ORCHESTRATED reminder" 'ORCHESTRATED mode: you are the orchestrator'
+hasnt "prompt hook: Codex lead without relay has no ORCHESTRATED reminder" 'ORCHESTRATED mode: split each request'
 
 printf 'plan_claude=pro\nplan_codex=business\nquota_switch=95\nquota_room=80\nlead_failover=auto\n' >"$QC/loomy/config"
 relay_active_claude "$(( $(date +%s) + 3600 ))"
@@ -3341,12 +3349,13 @@ got="$(lead_relay_decide)"
 : >"$LR_LOG"
 run "manual lead: repeating Codex starts it" manual_start --lead codex --new
 [[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl")" == 1 ]] && ok "manual lead: repeated choice writes no relay event" || ko "manual lead: duplicate relay event"
-mkdir -p "$HOME/.codex/sessions"
-printf '{"cwd":"%s"}\n' "$(cd "$LR" && pwd -P)" >"$HOME/.codex/sessions/manual.jsonl"
+# Codex sessions are discovered from their rollout metadata (session_meta with an id and the folder).
+mkdir -p "$HOME/.codex/sessions/2026/10/14"
+printf '{"type":"session_meta","payload":{"id":"11111111-2222-3333-4444-555555555555","cwd":"%s","source":"cli"}}\n' "$(cd "$LR" && pwd -P)" >"$HOME/.codex/sessions/2026/10/14/rollout-2026-10-14T09-00-00-11111111-2222-3333-4444-555555555555.jsonl"
 : >"$LR_LOG"
 run "manual lead: same acting tool honors resume" manual_start --lead codex --resume
 file_has "manual lead: repeated acting tool resumes" "$LR_LOG" '^codex.*resume[[:space:]]--last'
-rm -f "$HOME/.codex/sessions/manual.jsonl"
+rm -f "$HOME/.codex/sessions/2026/10/14/rollout-2026-10-14T09-00-00-11111111-2222-3333-4444-555555555555.jsonl"
 run "manual lead: routing follows acting tool" qenv bash -c 'source "$1/scripts/lib/models.sh"; ai_detect_env "$2"; echo "$AI_LEAD|$AI_LEAD_MASTER|$AI_ENV"' _ "$REPO" "$LR"
 has "manual lead: hybrid Codex routing with Claude master" '^codex\|claude\|hybrid-codex$'
 run "manual lead: status displays manual relay" qenv env LOOMY_LANG=en bash "$REPO/scripts/loomy-status.sh" --root "$LR" --compact
@@ -3450,7 +3459,7 @@ got="$(env -u LOOMY_CODEX_BIN LOOMY_TEST_STUBS="$CA" LOOMY_CODEX_APPS="$WORK/app
 got="$(env -u LOOMY_CODEX_BIN LOOMY_TEST_STUBS="$CA" LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$WORK/stalebin:/usr/bin:/bin" bash -c 'source "$1/scripts/lib/models.sh"; ai_codex_version' _ "$REPO")"
 [[ "$got" == "0.158.0" ]] && ok "codex: version read from the bundled CLI" || ko "codex version: $got"
 mkdir -p "$HOME/.local/bin" && cp "$WORK/stalebin/codex" "$HOME/.local/bin/codex"
-env -u LOOMY_CODEX_BIN LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/loomy-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
+env -u LOOMY_CODEX_BIN LOOMY_TEST_STUBS="$LOOMY_TEST_STUBS:$CA" LOOMY_CODEX_APPS="$WORK/apps/ChatGPT.app" PATH="$HOME/.local/bin:$HERE/stubs:/usr/bin:/bin" bash "$REPO/scripts/loomy-doctor.sh" --root "$PROJ" >"$OUT" 2>&1 || true
 rm -f "$HOME/.local/bin/codex"
 has "doctor: broken codex command flagged" "points to a Codex CLI that no longer exists"
 has "doctor: readable fix" "fix: loomy doctor --fix"
@@ -3953,11 +3962,11 @@ has "prompt hook: unfinished setup said in SOLO mode too" "setup of this project
 sed -i.bak 's/^ai_mode: SOLO/ai_mode: ORCHESTRATED/' "$SA/.loomy/brief.md"
 mv "$SA/START.md" "$SA/START.keep"; rm -f "$SGX/START.md"
 echo '{"prompt":"hello"}' | CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
-has "prompt hook: reminder as additionalContext" '"hookEventName":"UserPromptSubmit","additionalContext":"\[Loomy\] ORCHESTRATED mode: you are the orchestrator'
+has "prompt hook: reminder as additionalContext" '"hookEventName":"UserPromptSubmit","additionalContext":"\[Loomy\] ORCHESTRATED mode: split each request'
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert 'loomy-route.sh' in d['hookSpecificOutput']['additionalContext']" "$OUT" 2>/dev/null \
   && ok "prompt hook: valid JSON" || ko "prompt hook: invalid JSON: $(cat "$OUT")"
 echo '{}' | LOOMY_PROJECT_ROOT="$SA" LOOMY_UI_LANG=fr $PH >"$OUT" 2>&1
-has "prompt hook: French" "Mode ORCHESTRATED : tu es l'orchestrateur"
+has "prompt hook: French" "Mode ORCHESTRATED : découpe chaque demande"
 echo '{}' | LOOMY_DELEGATION=1 CLAUDE_PROJECT_DIR="$SA" $PH >"$OUT" 2>&1
 [[ ! -s "$OUT" ]] && ok "prompt hook: silent in a bridge session" || ko "prompt hook: not silent in a bridge session"
 echo '{}' | CLAUDE_PROJECT_DIR="$NP" $PH >"$OUT" 2>&1
@@ -4141,7 +4150,7 @@ LOOMY_SHELL_RC="$RCF" "$LOOMY" shell-hook remove >/dev/null 2>&1
 ! grep -q 'function claude' "$RCF" && grep -q 'export A=1' "$RCF" && ok "shell hook: removed, the file kept" || ko "shell hook: remove ($(cat "$RCF"))"
 if [[ "$(uname -s)" == Darwin ]]; then
   mkdir -p "$WORK/openbin"; printf '#!/bin/sh\n[ "$1" = "-Ra" ] && exit 0\necho "$@" >>"%s"\n' "$WORK/open.log" >"$WORK/openbin/open"; chmod +x "$WORK/openbin/open"
-  (cd "$SL2" && PATH="$WORK/openbin:$PATH" bash "$SL2/.loomy/scripts/loomy-start.sh" --app) >"$OUT" 2>&1
+  (cd "$SL2" && LOOMY_TEST_STUBS="$LOOMY_TEST_STUBS:$WORK/openbin" PATH="$WORK/openbin:$PATH" bash "$SL2/.loomy/scripts/loomy-start.sh" --app) >"$OUT" 2>&1
   grep -q '^claude://code/new?folder=.*lancement&q=' "$WORK/open.log" 2>/dev/null && ok "start --app: Claude app opened on the project folder with the prompt" || ko "start --app: $(cat "$WORK/open.log" 2>&1)"
   has "start --app: model and effort to pick" "pick model claude-"
 fi

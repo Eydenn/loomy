@@ -444,7 +444,9 @@ sub poll_locked {
         my ($key,$type,$ts,$body)=@_; return unless epoch($ts);
         my $encoded=$key =~ /^start:/ ? "1" : $key =~ /^end:/ ? "$ts:$body->{status}" : $json->encode({%$body}); return if ($s->{sent}{$key}//'') eq $encoded;
         $s->{sent}{$key}=$encoded; $dirty=1;
-        print $out encode_json({%$body,checkpoint_key=>$key,checkpoint_value=>$encoded,type=>$type,ts=>$ts,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native'}),"\n" or die 'Claude journal write failed';
+        my %row=(%$body,checkpoint_key=>$key,checkpoint_value=>$encoded,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native'); delete @row{qw(ts type)};
+        # Same line shape as every other writer ("ts" then "type" first): the shell readers match "type":"x", literally.
+        print $out '{"ts":'.encode_json($ts).',"type":'.encode_json($type).','.substr($json->encode(\%row),1),"\n" or die 'Claude journal write failed';
     };
     for my $sid (sort keys %{$s->{sessions}//{}}) {
         my $lead=$s->{sessions}{$sid}; next unless epoch($lead->{seen});

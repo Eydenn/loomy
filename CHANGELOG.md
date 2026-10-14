@@ -9,6 +9,8 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - Treat provider saturation as provider-wide: hand over once to the other provider, preserving requested metadata, or pause with exit 75 and `resume_at` when neither can serve. Never silently retry a weaker sibling model. Rejected-model (`ko`) evidence expires after one hour; doctor reports each provider's availability verdict.
 
 ### Release review
+- `loomy worktrees` works in versioned Loomy projects: each worktree keeps its own `.loomy` checkout and shares only `.loomy/logs` with the main project, so delegations launched there stay visible in the main `loomy watch`. It refuses only when `.loomy/logs` itself is tracked.
+- Journal lines always start with `ts` and `type`; `--model opus|sonnet|haiku` aliases accepted again; LM Studio runs log their local cost fields; an interrupted bridge waits for its worker to stop the CLI before forcing it (no CLI left alive).
 - Preserve identical native activity across same-second owner close/reopen boundaries. Give every launch caller a shared pause/invalid-model diagnostic; a missing model in Codex's local cache warns without blocking a validated launch.
 - Scope `--only` markers to the owner PID and process birth time, export them to its descendants and preserve other live sessions. Desktop Claude resume ignores print delegates and recognizes interactive npm/node processes.
 - Record the real owned child PID on Bash 3.2, pass explicit provider names to version/probe helpers and skip upcoming probes during provider pauses. Upcoming probes remain bounded, tool-free/read-only and cannot promote routing candidates.

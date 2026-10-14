@@ -56,6 +56,8 @@ _loomy_cli_check() {
     _ai_ascii_upper "$tool"; eval "chain=\"\$AI_VALIDATED_${_AI_ASCII_UPPER}_${tier}\""
     case " $chain " in *" $model "*) [[ -z "$model" ]] || valid=1 ;; esac
   done
+  # The documented Claude aliases (--model opus|sonnet|haiku) are resolved by Claude Code itself.
+  if [[ "$tool" == claude ]]; then case "$model" in opus|sonnet|haiku) valid=1 ;; esac; fi
   (( valid )) || return 2
   if [[ "${LOOMY_CLI_MANAGED:-0}" == 1 && "${LOOMY_CLI_BRIDGE_CHECKED:-0}" != 1 ]]; then
     ai_delegate_provider_guard "$tool"
@@ -126,7 +128,7 @@ _loomy_cli_stream() {
       (my $lockfile=$file)=~s{/[^/]+$}{/events.lock};
       sysopen my $lock,$lockfile,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return; flock $lock,2 or return;
       sysopen my $f,$file,O_WRONLY|O_APPEND|O_NOFOLLOW or return;
-      print $f encode_json({ts=>strftime("%Y-%m-%dT%H:%M:%SZ",gmtime),type=>"bridge_link",schema=>2,tool=>"codex",session=>$id,session_key=>"codex:$id",parent_delegation=>$parent,attempt_id=>$attempt,parent_session=>$ancestor//"",evidence=>"exec-json"})."\n";
+      my $row=JSON::PP->new->canonical->encode({schema=>2,tool=>"codex",session=>$id,session_key=>"codex:$id",parent_delegation=>$parent,attempt_id=>$attempt,parent_session=>$ancestor//"",evidence=>"exec-json"}); print $f "{\"ts\":".encode_json(strftime("%Y-%m-%dT%H:%M:%SZ",gmtime)).",\"type\":\"bridge_link\",".substr($row,1)."\n";
     }
     while (<$provider>) { print; my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH";
       if (($e->{type}//"") eq "thread.started") { $sid=$e->{thread_id}; emit_link($sid,"") }
@@ -178,7 +180,9 @@ loomy_cli_run() (
     if (( journal_ends )); then
       local result=ok; (( status == 0 )) || result=error
       (( status < 128 )) || result=interrupted
-      loomy_cli_end "$root" "\"type\":\"delegation\",$body,\"status\":\"$result\",\"duration_s\":$(( $(date +%s)-started ))"
+      # A local model costs nothing and never touches files: keep the usual cost fields so status and stats count it.
+      local extra=""; [[ "$tool" != local ]] || extra=',"profile":"-","sandbox":"text-only","tokens_in":0,"tokens_out":0,"cost_usd":0,"cost_source":"local","files_changed":0'
+      loomy_cli_end "$root" "\"type\":\"delegation\",$body,\"status\":\"$result\",\"duration_s\":$(( $(date +%s)-started ))$extra"
     fi
     exit "$status"
   }

@@ -551,7 +551,7 @@ sub projections {
         if (($a->{schema}//0)==2 && $a->{session}=~/^claude:/ && !$t->{ended} && !$session->{closed} && !$dead) {
             my $own=$a->{seen}//0; $own=$a->{source_mtime} if ($a->{source_mtime}//0)>$own;
             $interrupted=0; $expired=!$own || $now-$own>900;
-            $agent_state='unknown' if $expired;
+            $agent_state='lost' if $expired;
         }
         # Pre-schema bridge turns (and any turn of an unassigned bucket) have no lease of their own: they run
         # only while their launcher still lives and the owning session shows live evidence; never forever.
@@ -573,7 +573,7 @@ sub projections {
                 : $self->{agents}{$parent} ? $parent : $owner->{bridge};
         }
         my $row=wire('N','A',$key,$group,$parent,$agent_state,$a->{role},$a->{task},$a->{model},$a->{effort},
-            int($t->{started}//0),($t->{ended} ? int($t->{ended}) : ''),$t->{duration},$t->{outcome},$a->{latest},int($a->{seen}),$interrupted ? 'interrupted' : $expired ? 'unknown' : $t->{state},$turns);
+            int($t->{started}//0),($t->{ended} ? int($t->{ended}) : ''),$t->{duration},$t->{outcome},$a->{latest},int($a->{seen}),$interrupted ? 'interrupted' : $expired ? 'lost' : $t->{state},$turns);
         push @out,$row if ($self->{sent}{"A:$key"}//'') ne $row; $self->{sent}{"A:$key"}=$row;
     }
     for my $key (sort keys %{$self->{turns}}) {

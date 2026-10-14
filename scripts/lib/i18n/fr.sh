@@ -2319,5 +2319,7 @@ _t_fr() {
     'recap') _T='récapitulatif' ;;
     'earlier bridge runs') _T='anciens lancements par pont' ;;
     '1 turn') _T='1 tour' ;;
+    '%s earlier') _T='%s plus anciens' ;;
+    '%s lost') _T='%s perdus' ;;
   esac
 }

@@ -34,8 +34,8 @@ check 'a legacy turn with a live launcher and recent start keeps running' perl -
 ' "$REPO" "$$"
 
 # One session, one live group: the live heading appears once; any repeat above the recap is marked as such.
-check 'live Claude lead heading appears once in a full frame and carries no lease jargon' perl -0777 -e '
-  my $s=<>; my @h=grep {/^┏━ claude app applead1/} split /\n/,$s; die "headings: @h" unless @h==1 && $h[0]=~/ · live /;
+check 'live Claude lead heading appears once above the recap and carries no lease jargon' perl -0777 -e '
+  my $s=<>; my @h=grep {/^┏━ claude app applead1/} split /\n/,$s; die "headings: @h" unless @h==2 && $h[0]=~/ · live / && $h[0]!~/recap/ && $h[1]=~/ recap/;
   die "jargon" if $s=~/source lease|launcher|catching up/;
 ' "$WORK/full"
 check 'compact frame repeats the live heading only as a recap heading' perl -0777 -e '
@@ -45,7 +45,7 @@ check 'compact frame repeats the live heading only as a recap heading' perl -077
 # Stale sessions: nothing running, nothing empty.
 check 'stale sessions with no agent are not shown, even in the recap' perl -0777 -e '
   my $s=<>; die "empty stale group shown:\n$s" if $s=~/4194001|emptyle/;
-  my @g=grep {/^┏━/} split /\n/,$s; die "group count: @g" unless @g==3;
+  my @g=grep {/^┏━/} split /\n/,$s; die "group count: @g" unless @g==4;
   die "empty group body" if $s=~/^┏━[^\n]*\n┗━/m;
 ' "$WORK/full"
 check 'stale groups never appear in the live block of a compact frame' perl -0777 -e '
@@ -72,6 +72,32 @@ check 'turn rows never pair a done glyph with a contradicting or meaningless out
   die "unknown effort mark" if $s=~/ \? (?:running|unknown|✓)/;
 ' "$WORK/full"
 check 'the running child is counted and shown running' perl -0777 -e '
-  my $s=<>; die unless $s=~/^1 running ·/m && $s=~/Delta review[^\n]* running · /;
+  my $s=<>; die unless $s=~/^2 running ·/m && $s=~/Delta review[^\n]* running · /;
 ' "$WORK/full"
+check 'a child silent past its lease is lost: folded in the live block, listed in the recap with its last evidence' perl -0777 -e '
+  my $s=<>; my ($live,$recap)=$s=~/^(.*?)(?=^┏━ claude app applead1[^\n]* recap)(.*)$/ms; die "no recap:\n$s" unless defined $recap;
+  die "lost row in the live block:\n$live" if $live=~/! lost|call5/;
+  die "no fold line:\n$live" unless $live=~/^  \+2 earlier · 1 lost$/m;
+  die "lost row missing from the recap" unless $recap=~/^  ┣━ agent d1:call5 [^\n]*! lost · 2 h 00$/m && $recap=~/┗━ turn d1:call5 ! lost · 2 h 00$/m;
+  die "lost child shown unknown or running" if $s=~/call5[^\n]*(?:unknown|running)/;
+' "$WORK/full"
+check 'live block order: running newest first, then recently ended newest first; nothing older' perl -0777 -e '
+  my $s=<>; my ($live)=$s=~/^(.*?)(?=^┏━ claude app applead1[^\n]* recap)/ms;
+  my @r=$live=~/^  ┣━ (\S+)/mg; my $got=join ",",@r;
+  die "order: $got" unless $got eq "Delta,Epsilon,Gamma,Beta,Alpha";
+  die "old finished row above the recap" if $live=~/Old finished/;
+' "$WORK/full"
+check 'the recap lists finished agents newest first (folded rows included), then the active ones' perl -0777 -e '
+  my $s=<>; my ($recap)=$s=~/^(┏━ claude app applead1[^\n]* recap.*?)(?=^┏━ codex|\z)/ms; die "no recap" unless $recap;
+  my @r=$recap=~/^  ┣━ (\S+)/mg; my $got=join ",",@r;
+  die "recap order: $got" unless $got eq "Gamma,Beta,Alpha,agent,Old,Delta,Epsilon";
+' "$WORK/full"
+check 'a child silent but inside its lease keeps running' perl -0777 -e '
+  my $s=<>; die unless $s=~/Epsilon quiet review[^\n]* running · 5:00/;
+' "$WORK/full"
+check 'a lost child is not part of the live block of a compact frame' perl -0777 -e '
+  my $s=<>; my ($live)=$s=~/^(.*?)(?=^┏━ claude app applead1[^\n]* recap)/ms; $live//=$s;
+  die "lost row above the recap:\n$live" if $live=~/lost/;
+  die "lost row missing from the recap" unless $s=~/recap.*! lost/s;
+' "$WORK/small"
 printf '%s watch real-data checks passed\n' "$PASS"

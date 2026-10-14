@@ -75,14 +75,14 @@ loomy_native_index() {
   local state role task model effort start end duration outcome turn seen turnstate turns
   NS_AI_KEY=(); NS_AI_GROUP=(); NS_AI_PARENT=()
   NS_AI_STATE=(); NS_AI_ROLE=(); NS_AI_TASK=(); NS_AI_MODEL=(); NS_AI_EFFORT=()
-  NS_AI_START=(); NS_AI_END=(); NS_AI_DURATION=(); NS_AI_OUTCOME=(); NS_AI_TURN=(); NS_AI_TURNSTATE=(); NS_AI_TURNS=()
+  NS_AI_START=(); NS_AI_END=(); NS_AI_DURATION=(); NS_AI_OUTCOME=(); NS_AI_TURN=(); NS_AI_TURNSTATE=(); NS_AI_TURNS=(); NS_AI_SEEN=()
   NS_CHILDREN=(); NS_AGENT_TURNS=(); NS_GROUP_AGENTS=(); NS_GROUP_ROOTS=()
   for (( i=0; i<${#NS_A[@]}; i++ )); do
     loomy_native_read "${NS_A[i]}" _ _ key sid parent state role task model effort start end duration outcome turn seen turnstate turns
     NS_AI_KEY[i]="$key"; NS_AI_GROUP[i]="$sid"; NS_AI_PARENT[i]="$parent"
     NS_AI_STATE[i]="$state"; NS_AI_ROLE[i]="$role"; NS_AI_TASK[i]="$task"; NS_AI_MODEL[i]="$model"; NS_AI_EFFORT[i]="$effort"
     NS_AI_START[i]="$start"; NS_AI_END[i]="$end"; NS_AI_DURATION[i]="$duration"; NS_AI_OUTCOME[i]="$outcome"
-    NS_AI_TURN[i]="$turn"; NS_AI_TURNSTATE[i]="$turnstate"; NS_AI_TURNS[i]="$turns"
+    NS_AI_TURN[i]="$turn"; NS_AI_TURNSTATE[i]="$turnstate"; NS_AI_TURNS[i]="$turns"; NS_AI_SEEN[i]="$seen"
     NS_CHILDREN[i]=""; NS_AGENT_TURNS[i]=""
     slot="NS_OWNER_${key//[^a-zA-Z0-9]/_}"
     local "$slot="
@@ -141,9 +141,83 @@ loomy_native_outcome() {
       esac ;;
     failed) tv word failed; NS_OUT="✗ $word" ;;
     interrupted) tv word interrupted; NS_OUT="⊘ $word" ;;
+    lost) tv word lost; NS_OUT="! $word" ;;
     *) tv word "${state:-unknown}"; NS_OUT="$word" ;;
   esac
   case "$state" in done|idle) ;; *) case "$outcome" in partial|blocked) tv word "$outcome"; NS_OUT="$NS_OUT · $word" ;; esac ;; esac
+}
+
+# Live-block policy: running agents first (newest first), then agents that ended within the last 30 minutes (newest
+# first). Everything older, and every lost agent, folds into one summary line of the live group and is listed only in
+# the recap, newest first. An agent stays visible while any descendant is shown.
+NS_RECENT_S=1800
+loomy_native_stamp() {
+  local ai="$1" st="${NS_AI_STATE[$1]}" ts=0
+  if [[ "$st" == running || "$st" == waiting ]]; then ts="${NS_AI_START[ai]:-0}"
+  else
+    ts="${NS_AI_END[ai]:-}"
+    [[ "$ts" =~ ^[1-9][0-9]*$ ]] || ts="${NS_AI_SEEN[ai]:-}"
+    [[ "$ts" =~ ^[1-9][0-9]*$ ]] || ts="${NS_AI_START[ai]:-0}"
+  fi
+  [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
+  NS_STAMP=$ts
+}
+loomy_native_keep() {
+  local ai="$1" depth="${2:-0}" st="${NS_AI_STATE[$1]}" keep=0 child
+  if [[ "$st" == running || "$st" == waiting ]]; then keep=1
+  elif [[ "$st" != lost ]]; then
+    loomy_native_stamp "$ai"
+    (( NS_STAMP > 0 && LV_NOW - NS_STAMP <= NS_RECENT_S )) && keep=1
+  fi
+  if (( ! keep && depth < 32 )); then
+    for child in ${NS_CHILDREN[ai]}; do
+      loomy_native_keep "$child" $(( depth + 1 )) && { keep=1; break; }
+    done
+  fi
+  (( keep ))
+}
+# Folded agents of the live groups: NS_FOLD_SET ("|index|..."), per-group counts NS_FOLD_N / NS_FOLD_LOST.
+loomy_native_fold() {
+  local gi ai presence st
+  NS_FOLD_SET="|"; NS_FOLD_N=(); NS_FOLD_LOST=(); NS_FOLD_NEXT=0; NS_FOLD_SEQ=$LV_SEQ; NS_FOLD_GEN=$(( ${NS_FOLD_GEN:-0} + 1 ))
+  for (( gi=0; gi<${#NS_G[@]}; gi++ )); do
+    loomy_native_read "${NS_G[gi]}" _ _ _ _ _ _ presence _
+    [[ "$presence" == live ]] || continue
+    NS_FOLD_N[gi]=0; NS_FOLD_LOST[gi]=0
+    for ai in ${NS_GROUP_AGENTS[gi]}; do
+      st="${NS_AI_STATE[ai]}"
+      if [[ "$st" != running && "$st" != waiting && "$st" != lost ]]; then
+        loomy_native_stamp "$ai"
+        if (( NS_STAMP > 0 && LV_NOW - NS_STAMP <= NS_RECENT_S )) && { (( NS_FOLD_NEXT == 0 )) || (( NS_STAMP + NS_RECENT_S + 1 < NS_FOLD_NEXT )); }; then NS_FOLD_NEXT=$(( NS_STAMP + NS_RECENT_S + 1 )); fi
+      fi
+      loomy_native_keep "$ai" && continue
+      NS_FOLD_SET="$NS_FOLD_SET$ai|"; NS_FOLD_N[gi]=$(( NS_FOLD_N[gi] + 1 ))
+      st="${NS_AI_STATE[ai]}"; [[ "$st" != lost ]] || NS_FOLD_LOST[gi]=$(( NS_FOLD_LOST[gi] + 1 ))
+    done
+  done
+}
+# loomy_native_sorted <indexes...> -> NS_SORTED: running first, then newest first (the recap lists finished agents
+# newest first, then the active ones). Insertion sort in the shell for small sets, one sort(1) beyond.
+loomy_native_sorted() {
+  local ai class n=0 i j key idx srt_k=() srt_i=() lines=""
+  NS_SORTED=""
+  (( $# > 1 )) || { NS_SORTED="$*"; return 0; }
+  for ai in "$@"; do
+    loomy_native_stamp "$ai"; class=1
+    if [[ "${NS_AI_STATE[ai]}" == running || "${NS_AI_STATE[ai]}" == waiting ]]; then
+      if (( ${NS_RECAP:-0} )); then class=2; else class=0; fi
+    fi
+    key=$(( class * 10000000000 + 9999999999 - NS_STAMP ))
+    if (( $# > 48 )); then lines="$lines$key $ai"$'\n'; continue; fi
+    j=$n
+    while (( j > 0 )) && (( srt_k[j-1] > key )); do srt_k[j]=${srt_k[j-1]}; srt_i[j]=${srt_i[j-1]}; j=$(( j - 1 )); done
+    srt_k[j]=$key; srt_i[j]=$ai; n=$(( n + 1 ))
+  done
+  if (( $# > 48 )); then
+    while read -r _ idx; do NS_SORTED="$NS_SORTED$idx "; done < <(printf '%s' "$lines" | LC_ALL=C sort -k1,1n -k2,2nr)
+  else
+    for (( i=0; i<n; i++ )); do NS_SORTED="$NS_SORTED${srt_i[i]} "; done
+  fi
 }
 
 # Cache fitted-row inputs, not timer text: duration-width transitions still refit exactly.
@@ -202,12 +276,13 @@ loomy_native_agent() {
   (( depth < 32 )) || return 0
   [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
   NS_VISITED_IDX[ai]=1
+  if (( ! ${NS_RECAP:-0} && ${NS_MODE:-0} == 0 )) && [[ "$NS_FOLD_SET" == *"|$ai|"* ]]; then return 0; fi
   row="${NS_A[ai]}"
   if [[ "$row" == "N|A|$wanted|"* ]]; then
     key="${NS_AI_KEY[ai]}"; state="${NS_AI_STATE[ai]}"; role="${NS_AI_ROLE[ai]}"; task="${NS_AI_TASK[ai]}"
     model="${NS_AI_MODEL[ai]}"; effort="${NS_AI_EFFORT[ai]}"; start="${NS_AI_START[ai]}"; end="${NS_AI_END[ai]}"
     duration="${NS_AI_DURATION[ai]}"; outcome="${NS_AI_OUTCOME[ai]}"; turn="${NS_AI_TURN[ai]}"
-    turnstate="${NS_AI_TURNSTATE[ai]}"; turns="${NS_AI_TURNS[ai]}"
+    turnstate="${NS_AI_TURNSTATE[ai]}"; turns="${NS_AI_TURNS[ai]}"; seen="${NS_AI_SEEN[ai]:-}"
     for (( i=0; i<depth; i++ )); do indent="$indent  "; done
     active=0; [[ "$state" != running && "$state" != waiting ]] || active=1
     label="${task:-${role:-agent} ${key: -8}}"
@@ -221,6 +296,10 @@ loomy_native_agent() {
       if [[ "$turns" == 1 ]]; then tv word '1 turn'; else tv word '%s turns' "$turns"; fi
       state="$NS_OUT · $word"
     elif [[ "$state" == idle ]]; then state="✓ $idle_word"
+    elif [[ "$state" == lost ]]; then
+      # No evidence for longer than the lease: never running; the clock shows the time since the last evidence.
+      loomy_native_outcome lost ""; state="$NS_OUT"
+      if [[ "$seen" =~ ^[1-9][0-9]*$ ]]; then NS_TIMER_AT=$seen; age=$(( LV_NOW - seen )); (( age >= 0 )) || age=0; loomy_live_time "$age"; d="$LV_TIME"; fi
     else tv state "$state"; fi
     if [[ "$state" == "✓ $idle_word" && "$end" =~ ^[0-9]+$ ]]; then
       NS_TIMER_KIND=idle; NS_TIMER_AT=$end; NS_TIMER_STATE="$state"
@@ -254,7 +333,8 @@ loomy_native_agent() {
       loomy_native_line "${indent}┃  ┗━ " "turn ${tkey: -8}" "" "$tstate" "$d"
     done
   fi
-  for child_index in ${NS_CHILDREN[ai]}; do
+  loomy_native_sorted ${NS_CHILDREN[ai]}
+  for child_index in $NS_SORTED; do
     loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"
   done
 }
@@ -291,7 +371,7 @@ loomy_native_route() {
 # Modes: full hierarchy, finished summary, one row per active agent, bare active list. The recap pass (NS_RECAP=1)
 # repeats a group's heading, marked "recap", above its finished rows; a stale group appears only there.
 loomy_native_group() {
-  local row="$1" kind key tool surface cwd presence state model effort seen freshness label aid word ai gi="$2" id age
+  local row="$1" kind key tool surface cwd presence state model effort seen freshness label aid word fold_lost ai gi="$2" id age
   local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE=""
   loomy_native_read "$row" kind kind key tool surface cwd presence state model effort seen _ freshness
   id="${key: -8}"; [[ "$key" != unassigned:* ]] || id=""
@@ -323,14 +403,21 @@ loomy_native_group() {
   NS_TIMER_KIND=""
   (( NS_MODE >= 3 || NS_RECAP )) || [[ "$presence" != live ]] || loomy_native_route "$key" "$gi"
   NS_VISITED_IDX=()
-  for ai in ${NS_GROUP_ROOTS[gi]}; do
+  loomy_native_sorted ${NS_GROUP_ROOTS[gi]}
+  for ai in $NS_SORTED; do
     loomy_native_agent "${NS_AI_KEY[ai]}" 1 "$key" "$ai"
   done
   # Late or unresolved parent links remain visible, then move under their proven parent.
-  for ai in ${NS_GROUP_AGENTS[gi]}; do
+  loomy_native_sorted ${NS_GROUP_AGENTS[gi]}
+  for ai in $NS_SORTED; do
     aid="${NS_AI_KEY[ai]}"
     [[ "${NS_VISITED_IDX[ai]:-0}" == 1 ]] || loomy_native_agent "$aid" 1 "$key" "$ai"
   done
+  if (( ! NS_RECAP && NS_MODE == 0 && ${NS_FOLD_N[gi]:-0} > 0 )); then
+    tv word '%s earlier' "${NS_FOLD_N[gi]}"
+    if (( ${NS_FOLD_LOST[gi]:-0} > 0 )); then tv fold_lost '%s lost' "${NS_FOLD_LOST[gi]}"; word="$word · $fold_lost"; fi
+    loomy_live_line "  +$word"
+  fi
   (( NS_FINISHED == 0 || NS_MODE == 0 )) || { tv word '%s finished' "$NS_FINISHED"; loomy_live_line "  +$word"; }
   (( NS_MODE >= 3 )) || loomy_live_line '┗━'
 }
@@ -344,7 +431,10 @@ loomy_native_render() {
   _ui_term_size; LV_WIDTH=$(( UI_COLS - 1 )); LV_HEIGHT=${LOOMY_WATCH_BODY_HEIGHT:-$UI_ROWS}
   (( LV_META_READY )) || loomy_live_metadata
   local NS_RECORD=0 NS_RECORD_NATIVE=0
-  local draw_key="$LV_SEQ|$LV_WIDTH|$LV_HEIGHT|${LOOMY_WATCH_VIEW:-tree}|${LOOMY_WATCH_TOOL:-}|${LOOMY_WATCH_PIN:-0}|${LOOMY_UI_LANG:-en}"
+  # The live block folds by age: recompute the fold on every projection change and when a recent agent ages out.
+  loomy_native_index
+  if [[ "${NS_FOLD_SEQ:--1}" != "$LV_SEQ" ]] || { (( ${NS_FOLD_NEXT:-0} > 0 )) && (( LV_NOW >= NS_FOLD_NEXT )); }; then loomy_native_fold; fi
+  local draw_key="${NS_FOLD_GEN:-0}|$LV_SEQ|$LV_WIDTH|$LV_HEIGHT|${LOOMY_WATCH_VIEW:-tree}|${LOOMY_WATCH_TOOL:-}|${LOOMY_WATCH_PIN:-0}|${LOOMY_UI_LANG:-en}"
   if [[ -n "${LOOMY_NO_HEADER:-}" && "${NS_DRAW_KEY:-}" == "$draw_key" ]]; then
     loomy_native_draw
     (( ! NS_CAPTURE_LINES )) || printf -v LV_FRAME '%s\n' ${LV_FRAME_LINES[@]+"${LV_FRAME_LINES[@]}"}
@@ -355,9 +445,8 @@ loomy_native_render() {
     NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=()
   fi
   loomy_live_header
-  loomy_native_index
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || { loomy_live_line "$LV_HEADER"; overhead=$(( overhead + 2 )); }
-  local layout_key="$LV_SEQ|$LV_WIDTH|$LV_HEIGHT|${LOOMY_WATCH_VIEW:-tree}|${LOOMY_WATCH_TOOL:-}"
+  local layout_key="${NS_FOLD_GEN:-0}|$LV_SEQ|$LV_WIDTH|$LV_HEIGHT|${LOOMY_WATCH_VIEW:-tree}|${LOOMY_WATCH_TOOL:-}"
   # Timers change row text, never the hierarchy/height budget; retain that work between deltas.
   if [[ "${NS_LAYOUT_KEY:-}" == "$layout_key" ]]; then
     order=(${NS_LAYOUT_ORDER[@]+"${NS_LAYOUT_ORDER[@]}"}); modes=(${NS_LAYOUT_MODES[@]+"${NS_LAYOUT_MODES[@]}"})
@@ -386,7 +475,9 @@ loomy_native_render() {
       for agent_index in ${NS_GROUP_AGENTS[group_index]}; do
         aid="${NS_AI_KEY[agent_index]}"; state="${NS_AI_STATE[agent_index]}"
         start="${NS_AI_START[agent_index]}"; turn="${NS_AI_TURN[agent_index]}"
-        routes[i]=1; full[i]=$(( full[i] + 1 )); [[ -z "$turn" ]] || full[i]=$(( full[i] + 1 ))
+        routes[i]=1
+        if [[ "$NS_FOLD_SET" == *"|$agent_index|"* ]]; then ended_counts[i]=$(( ended_counts[i] + 1 )); continue; fi
+        full[i]=$(( full[i] + 1 )); [[ -z "$turn" ]] || full[i]=$(( full[i] + 1 ))
         if [[ "$state" == running || "$state" == waiting ]]; then
           active_counts[i]=$(( active_counts[i] + 1 )); count=$(( count + 1 )); [[ -z "$turn" ]] || detail[i]=$(( detail[i] + 1 ))
           candidates+=("$aid"); starts+=("${start:-0}")
@@ -399,6 +490,7 @@ loomy_native_render() {
           [[ "$state" != running && "$state" != waiting ]] || detail[i]=$(( detail[i] + 1 ))
         done
       done
+      if (( ${NS_FOLD_N[group_index]:-0} > 0 )); then full[i]=$(( full[i] + 1 )); compact=1; fi
       # A stale session with nothing running lives only in the recap: no room in the live block.
       loomy_native_read "${order[i]}" _ _ _ _ _ _ presence _
       if [[ "$presence" != live ]] && (( active_counts[i] == 0 )); then modes[i]=9; compact=1; continue; fi
@@ -478,9 +570,9 @@ loomy_native_render() {
   [[ "${LOOMY_WATCH_PIN:-0}" != 1 ]] || loomy_live_line $'\036loomy-recap'
   if (( compact )); then
     for (( i=0; i<${#order[@]}; i++ )); do
-      (( modes[i] > 0 )) || continue
-      NS_MODE=0; NS_FINISHED=0; NS_SELECTED='*'; NS_RECAP=1
       for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
+      (( modes[i] > 0 || ${NS_FOLD_N[j]:-0} > 0 )) || continue
+      NS_MODE=0; NS_FINISHED=0; NS_SELECTED='*'; NS_RECAP=1
       loomy_native_group "${order[i]}" "$j"
     done
     NS_RECAP=0
@@ -1073,14 +1165,15 @@ loomy_tree_role() {
 
 # Persistent agent state is separate from turn outcomes; no success/review is inferred.
 loomy_tree_native_state() {
-  local i="$1" j count=0 age end="${LV_TURN_END[$1]:-${LV_EVENT_TS[$1]:-0}}"
+  local turns_word i="$1" j count=0 age end="${LV_TURN_END[$1]:-${LV_EVENT_TS[$1]:-0}}"
   for (( j=0; j<${#LV_ID[@]}; j++ )); do
     [[ "${LV_BRIDGE[j]:-}" == codex-native && "${LV_AGENT_ID[j]:-}" == "${LV_AGENT_ID[i]:-}" ]] || continue
     count=$(( count + 1 ))
   done
   NS_COLOR="$C_GREEN"; NS_DETAIL=""; NS_WAIT=""
   if [[ "${LV_FIN[i]:-0}" == 1 ]] && { [[ "${LV_CLOSED[i]:-0}" == 1 || "$LV_SESSION_OPEN" == 0 || "$LV_ALIVE_PIDS" != *"|${LV_PID[i]:-0}|"* ]]; }; then
-    NS_TEXT="✓ $(t 'done') · $(t '%s turns' "$count")"
+    if (( count == 1 )); then tv turns_word '1 turn'; else tv turns_word '%s turns' "$count"; fi
+    loomy_native_outcome "done" "${LV_OUTCOME[i]:-}"; NS_TEXT="$NS_OUT · $turns_word"
   elif [[ "${LV_OUTCOME[i]:-}" == interrupted || "${LV_STATUS[i]:-}" == interrupted ]]; then
     NS_TEXT="⊘ $(t 'interrupted')"; NS_COLOR="$C_DIM$C_RED"
   elif [[ "${LV_STATUS[i]:-}" == error || "${LV_OUTCOME[i]:-}" == failed ]]; then

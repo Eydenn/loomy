@@ -65,7 +65,7 @@ if ($finding eq 'F1') {
     die 'fresh agent interrupted' unless grep {/\|A\|.*\|running\|/} $v->projections($clock+7);
     $v=state();
     die 'silent child lost own lease' unless grep {/\|A\|.*\|running\|/} $v->projections($clock+200);
-    die 'stale agent running forever' unless grep {/\|A\|.*\|unknown\|/} $v->projections($clock+1000);
+    die 'stale agent running forever' unless grep {/\|A\|.*\|lost\|/} $v->projections($clock+1000);
     $v=state(); $v->consume({type=>'session',tool=>'claude',session=>'lead',event=>'end',ts=>ts(3)});
     die 'closed agent running forever' unless grep {/\|A\|.*\|interrupted\|/} $v->projections($clock+7);
     my $w=state(); $w->{sessions}{'claude:lead'}{pid}=2147483647;

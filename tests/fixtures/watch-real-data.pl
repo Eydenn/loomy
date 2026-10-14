@@ -28,6 +28,12 @@ child(1,'Alpha review','claude-sonnet-5-5',900,600,'ok','unknown');
 child(2,'Beta review','sonnet',800,500,'ok','blocked');
 child(3,'Gamma review','haiku',700,400,'ok','partial');
 child(4,'Delta review','claude-opus-5-5',60,undef);
+child(7,'Old finished review','claude-sonnet-5-5',20000,19000,'ok','unknown');
+# Silent children of the live session: one past the 15 min Claude lease (lost), one still inside it (running, G2).
+for my $n ([5,'',7200],[6,'Epsilon quiet review',300]) {
+    my ($k,$task,$start)=@$n;
+    put($now-$start,'delegation_start',%live,id=>"cl:applead1:call$k",turn_id=>"call$k",agent_id=>"applead1:call$k",parent_agent_id=>'claude:applead1',role=>'agent',task=>$task,model=>'claude-sonnet-5-5',effort=>'',bridge=>'claude-native');
+}
 
 # Stale Codex session (hours old) with one finished native agent and nothing running.
 my %old=(schema=>2,tool=>'codex',family=>'codex',session_key=>'codex:oldlead01',session=>'oldlead01',agent_id=>'oldlead01',source=>'rollout');

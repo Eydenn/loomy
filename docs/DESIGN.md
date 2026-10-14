@@ -137,7 +137,13 @@ launcher PID is gone, when it has none and its session is not live, or when it i
 The routing legend is `LOOMY · <family>: <short model>, ...` (family once, `claude-`/`gpt-` removed, an alias such as
 `sonnet` folded into `sonnet-5-5`) and exists only for live groups. A finished turn reads `✓ done`, `△ partial`, `■ blocked`,
 `✗ failed` or `⊘ interrupted`: the glyph follows the outcome and an unknown outcome adds no word. `tests/watch-real-data.sh`
-covers these cases with structural fixtures.
+A Claude child with no evidence for longer than its 15 minute lease is projected as `lost` (`! lost`, clock = time since its
+last evidence), is never counted as running and collapses into the recap like other finished rows; a silent child inside its
+lease stays running. Agent-call descriptions are private and never used as labels: `agent <id>` is the label without a task.
+The live block of a live group shows running agents first (newest first), then agents that ended within the last 30 minutes
+(newest first); everything older and every lost agent folds into one line `+N earlier · M lost` and is listed only in the
+recap, which is ordered newest first (the fold forces the recap pass). The list view and the compact modes keep their
+`+N finished` summary. `tests/watch-real-data.sh` covers these cases with structural fixtures.
 
 ## Checkpoint and journal policy
 

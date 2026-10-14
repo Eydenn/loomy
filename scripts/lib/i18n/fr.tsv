@@ -2312,3 +2312,8 @@ Discovering source inventory (%s pending).	Inventaire des sources en cours (%s e
 paused until %s (both providers saturated)	en pause jusqu’à %s (les deux fournisseurs sont saturés)
 model not validated: %s	modèle non validé : %s
 damaged tracking checkpoints (files / bytes): %s	checkpoints de suivi endommagés (fichiers / octets) : %s
+live	en direct
+stale	inactive
+recap	récapitulatif
+earlier bridge runs	anciens lancements par pont
+1 turn	1 tour

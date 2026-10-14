@@ -70,6 +70,12 @@ fixture return; poll
 check 'hookless app aliases transcript child to the exact call without duplicate rows' assert_cell running
 fixture stop; poll
 check 'hookless app task-notification completes the row' assert_cell 'done'
+# A just-finished subagent must read done within one second of its task-notification line being written.
+ROOT="$WORK/notify-latency"; fixture seed; poll; fixture return; poll
+latency_start="$(perl -MTime::HiRes=time -e 'print time')"; fixture stop; poll
+latency_ms="$(perl -MTime::HiRes=time -e 'printf "%d", (time-$ARGV[0])*1000' "$latency_start")"
+check "task-notification shows the agent done within one second of being written (${latency_ms} ms)" assert_cell done
+check 'notification latency bound' test "$latency_ms" -lt 1000
 check 'hookless terminal preserves source milliseconds and duration, costs stay unknown' perl -MJSON::PP -e '
  my @e=map {decode_json($_)} <>; my @end=grep {$_->{type} eq "delegation" && ($_->{id}//"") eq "cl:app-lead:call1"} @e;
  die unless @end==1 && $end[0]{ts} eq "2026-10-13T01:00:04.250Z" && $end[0]{duration_s}==3;

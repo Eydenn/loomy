@@ -396,6 +396,7 @@ sub consume {
         $turn->{started}=$ts if !$turn->{started} || $ts<$turn->{started};
         delete @$turn{qw(ended duration status)} if $turn->{ended} && $turn->{ended}<$ts;
         $turn->{state}='running' unless $turn->{ended};
+        $turn->{pid}=text($d->{pid}) if text($d->{pid}) =~ /^[1-9][0-9]*$/;
         $a->{closed}=0 if $fresh && text($d->{bridge}) eq 'codex-native' && $ts>($a->{closed_at}//0);
     }
     elsif ($type eq 'delegation_activity') {
@@ -551,6 +552,13 @@ sub projections {
             my $own=$a->{seen}//0; $own=$a->{source_mtime} if ($a->{source_mtime}//0)>$own;
             $interrupted=0; $expired=!$own || $now-$own>900;
             $agent_state='unknown' if $expired;
+        }
+        # Pre-schema bridge turns (and any turn of an unassigned bucket) have no lease of their own: they run
+        # only while their launcher still lives and the owning session shows live evidence; never forever.
+        if (($a->{schema}//0)!=2 && !$t->{ended} && !$a->{closed}) {
+            my $tp=$t->{pid}//0; my $tp_alive=$tp =~ /^\d+$/ && $tp>1 && (kill(0,$tp) || $! == EPERM);
+            my $age=$now-($t->{started}||$a->{seen}||0);
+            $interrupted=1 if ($tp ? !$tp_alive : (!$live && $age>120)) || ($age>86400 && !$live);
         }
         $agent_state='interrupted' if $interrupted;
         # Completed agents close with an observed owner; absent PIDs remain source-owned.

@@ -2314,5 +2314,10 @@ _t_fr() {
     'paused until %s (both providers saturated)') _T='en pause jusqu’à %s (les deux fournisseurs sont saturés)' ;;
     'model not validated: %s') _T='modèle non validé : %s' ;;
     'damaged tracking checkpoints (files / bytes): %s') _T='checkpoints de suivi endommagés (fichiers / octets) : %s' ;;
+    'live') _T='en direct' ;;
+    'stale') _T='inactive' ;;
+    'recap') _T='récapitulatif' ;;
+    'earlier bridge runs') _T='anciens lancements par pont' ;;
+    '1 turn') _T='1 tour' ;;
   esac
 }

@@ -126,6 +126,19 @@ and q remains available; fatal external signals and user exits retain normal cle
 Doctor shows the last three validated diagnostics and warns about source-home
 symlinks, journals above 8 MiB, checkpoints above 2 MiB and oversized source shards.
 
+## Native watch labels and stale sessions
+
+A session group heading reads `<tool> <surface> <id> · <cwd> · live` with the observed session state, or `<tool> <surface> <id>`
+with `stale` and the age since its last evidence; lease and launcher evidence stay in the wire rows, never in the heading.
+A group is stale when it has no live launcher and no source activity for 120 s. A stale group with nothing running is shown
+only in the recap, where the heading is repeated marked `recap` (a live group repeats the same way below the scroll line);
+a stale group with no agent is not shown. The reducer ends a pre-schema bridge turn as `interrupted` when its recorded
+launcher PID is gone, when it has none and its session is not live, or when it is over a day old outside a live session.
+The routing legend is `LOOMY · <family>: <short model>, ...` (family once, `claude-`/`gpt-` removed, an alias such as
+`sonnet` folded into `sonnet-5-5`) and exists only for live groups. A finished turn reads `✓ done`, `△ partial`, `■ blocked`,
+`✗ failed` or `⊘ interrupted`: the glyph follows the outcome and an unknown outcome adds no word. `tests/watch-real-data.sh`
+covers these cases with structural fixtures.
+
 ## Checkpoint and journal policy
 
 S4 native checkpoints use version 2, with a 2 MiB snapshot and content-addressed source

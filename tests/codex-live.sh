@@ -291,8 +291,8 @@ for view in tree list; do
   render_frame "$view" 10 0 >"$WORK/frame-$view-small"
   check "$view saturation keeps newest active children and both leads in ten body rows" perl -0777 -e '
     my $s=<>; die unless $s=~/codex app 00000001/ && $s=~/codex cli 00000008/;
-    for my $n (39..41) {die "missing latency$n:\n$s" unless $s=~/latency$n[^\n]*running/}
-    die unless $s=~/\+11 running/;
+    for my $n (38..41) {die "missing latency$n:\n$s" unless $s=~/latency$n[^\n]*running/}
+    die unless $s=~/\+10 running/;
   ' "$WORK/frame-$view-small"
 done
 render_frame classic auto 0 >"$WORK/frame-classic"

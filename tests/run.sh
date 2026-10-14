@@ -1309,7 +1309,7 @@ native_lifecycle_tests() {
   # A real Claude delegation in the same lead session adds its family, without old sessions leaking.
   printf '{"ts":"2026-10-13T01:00:00Z","type":"delegation","session":"owner","id":"mixed","bridge":"claude","family":"claude","tool":"claude","role":"reviewer","model":"claude-sonnet-5-5","status":"ok","outcome":"done","duration_s":1}\n' >>"$np/.loomy/logs/events.jsonl"
   run "native: mixed routing shows both model families" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
-  has "native: both routing families" 'gpt-6-luna.*claude-sonnet-5-5|claude-sonnet-5-5.*gpt-6-luna'
+  has "native: both routing families" 'codex: 6-luna.*claude: sonnet-5-5|claude: sonnet-5-5.*codex: 6-luna'
 }
 
 # The relay section owns its fixtures and can run without the full terminal walkthrough.
@@ -3490,6 +3490,7 @@ run "agent tree borders, padding, wrapped titles and responsive terminal layouts
 run "watch exit paths and watchdog process-group cleanup" bash "$HERE/watch-exit.sh"
 run "watch timer backpressure, key ordering and prompt quit under slow rendering" bash "$HERE/watch-backpressure.sh"
 run "native end semantics, useful journal activity and count-only emphasis" bash "$HERE/native-display.sh"
+run "watch regressions seen on real long-lived project data" bash "$HERE/watch-real-data.sh"
 SD="$WORK/structured"; mkdir -p "$SD"
 run "init with the default delegation format" "$LOOMY" init "$SD" --yes --no-clipboard
 file_has "brief: structured delegations by default" "$SD/.loomy/brief.md" "^delegation_format: structured$"

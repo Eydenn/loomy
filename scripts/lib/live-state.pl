@@ -31,6 +31,15 @@ sub journal_lock {
 sub file_signature {
     my @s=Time::HiRes::stat($_[0]); return @s ? join(':',@s[0,1,7,9]) : '-';
 }
+{
+    my $json;
+    sub checkpoint_json {
+        # Use XS when available; PP remains the dependency-free fallback.
+        $json//=eval {require JSON::XS; JSON::XS->new->utf8->canonical->boolean_values(JSON::PP::false,JSON::PP::true)}
+            // JSON::PP->new->utf8->canonical;
+        return $json;
+    }
+}
 sub checkpoint_load {
     my ($path)=@_; my $exists=0;
     checkpoint_prune_invalid($path);
@@ -40,7 +49,7 @@ sub checkpoint_load {
         sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW or next;
         my $raw=''; while (1) {my $n=sysread($f,my $b,262144); last unless $n; $raw.=$b; last if length($raw)>33554432}
         next if !length($raw) || length($raw)>33554432;
-        my $s=eval {decode_json($raw)};
+        my $s=eval {checkpoint_json()->decode($raw)};
         next unless ref($s) eq 'HASH' && (!exists $s->{version} || text($s->{version}) =~ /^(1|2)$/);
         # Reject broken containers rather than silently discarding saved deduplication.
         next if grep {exists $s->{$_} && ref($s->{$_}) ne 'HASH'} qw(files seen sent journal sessions owners);
@@ -98,7 +107,7 @@ sub load_shards {
         sysopen my $f,$p,O_RDONLY|O_NOFOLLOW or die; local $/; my $raw=<$f>; $total+=length($raw);
         die 'source inventory exceeds 16 MiB' if $total>16777216;
         require Digest::SHA; die 'source shard checksum mismatch' unless $name eq 'files-'.Digest::SHA::sha256_hex($raw);
-        my $part=decode_json($raw); die 'invalid source shard' unless ref($part) eq 'HASH';
+        my $part=checkpoint_json()->decode($raw); die 'invalid source shard' unless ref($part) eq 'HASH';
         $files{$_}=$part->{$_} for keys %$part;
     }
     $s->{files}=\%files;
@@ -113,7 +122,7 @@ sub atomic_file {
 }
 sub checkpoint_save {
     my ($path,$s)=@_; $s->{version}=2;
-    my $json=JSON::PP->new->canonical; my %snapshot=%$s;
+    my $json=checkpoint_json(); my %snapshot=%$s;
     my $raw=$json->encode(\%snapshot);
     if (length($raw)>2097152 && keys %{$s->{files}//{}}) {
         my (%part,@shards); my $size=2; my $total=0;
@@ -132,18 +141,21 @@ sub checkpoint_save {
         $write->(); delete $snapshot{files}; $snapshot{source_shards}=\@shards; $raw=$json->encode(\%snapshot);
     }
     die "Native checkpoint exceeds 2 MiB; active state preserved in memory\n" if length($raw)>2097152;
+    my $unchanged=0;
     # Preserve the last valid generation; an invalid primary must not replace a usable backup.
     if (-s $path && -s $path<=33554432 && safe_path($path)) {
         sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
-        local $/; my $prior=<$old>; my $valid=eval {decode_json($prior)};
+        local $/; my $prior=<$old>; my $valid=eval {$json->decode($prior)};
         my $ok=ref($valid) eq 'HASH' && eval {load_shards($path,$valid) if exists $valid->{source_shards}; 1};
-        atomic_file("$path.bak",$prior) if $ok;
+        $unchanged=$ok && $prior eq $raw;
+        chmod 0600,$old or die 'checkpoint permissions failed' if $unchanged;
+        atomic_file("$path.bak",$prior) if $ok && !$unchanged;
     }
-    atomic_file($path,$raw);
+    atomic_file($path,$raw) unless $unchanged;
     # Keep only shards referenced by the primary or its backup, after both are durable.
     my %keep=map {text($_)=>1} @{$snapshot{source_shards}//[]};
     if (-f "$path.bak" && safe_path("$path.bak")) {
-        sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $old=eval {decode_json(<$b>)};
+        sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $old=eval {$json->decode(<$b>)};
         $keep{text($_)}=1 for @{ref($old) eq 'HASH' ? ($old->{source_shards}//[]) : []};
     }
     my $dir=$path; $dir =~ s{/[^/]+$}{}; my $base=$path; $base =~ s{.*/}{};

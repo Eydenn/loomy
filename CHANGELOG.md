@@ -5,6 +5,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 ## Unreleased (0.17.1)
 
 - Discover Codex multi-agent v2 sessions through project cwd or runtime workspace roots, retain explicit parent nesting, and show nickname, role and path slug. Read paginated child lifecycle evidence from bounded head/tail slices; explicit completions show done or interrupted with their source end time. Fresh writes keep long-lived, old-date leads live without replaying their entire rollout; v1 completion semantics remain unchanged.
+- Accelerate native checkpoint JSON with optional system JSON::XS, retaining JSON::PP fallback and compatible booleans. Skip identical snapshot/backup writes while retaining shard validation, cleanup, atomic 0600 changed writes, v2 bounds and recovery. Report N3 one-shot CPU stages without changing the 80 ms gate; the complete cold check still exceeds the 50 ms target.
 
 ## 0.17.0 — 2026-10-14
 

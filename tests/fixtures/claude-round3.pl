@@ -101,19 +101,31 @@ if ($finding eq 'N1') {
     launch('late',3902); returned('late',3903); notification('late',3904);
     die 'fixture too small' unless -s $path>40000000;
     my ($polls,$total,$max)=(0,0,0); my $s; my $live=Loomy::LiveState->new;
+    my (%stage_total,%stage_max);
     while (++$polls<=700) {
-        my $begin=cpu(); my $child_cpu=0;
+        my $begin=cpu(); my $child_cpu=0; my %stages;
         if ($oneshot) {
             # times() rounds reaped children to scheduler ticks: use the fresh child's
             # process clock, including interpreter/module startup and the full poll.
             open my $shot,'-|',$^X,'-e',
                 'use Time::HiRes qw(clock_gettime CLOCK_PROCESS_CPUTIME_ID);
-                 END {printf "%.9f\n",clock_gettime(CLOCK_PROCESS_CPUTIME_ID)}
-                 require shift @ARGV; Loomy::ClaudeNative::poll(@ARGV)',
+                 my ($startup,$load,$save)=(0,0,0);
+                 END {printf "%.9f %.9f %.9f %.9f\n",clock_gettime(CLOCK_PROCESS_CPUTIME_ID),$startup,$load,$save}
+                 require shift @ARGV;
+                 $startup=clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
+                 my $loader=\&Loomy::LiveState::checkpoint_load; my $saver=\&Loomy::LiveState::checkpoint_save;
+                 {no warnings "redefine";
+                  *Loomy::LiveState::checkpoint_load=sub {my $t=clock_gettime(CLOCK_PROCESS_CPUTIME_ID); my $s=$loader->(@_); $load+=clock_gettime(CLOCK_PROCESS_CPUTIME_ID)-$t; return $s};
+                  *Loomy::LiveState::checkpoint_save=sub {my $t=clock_gettime(CLOCK_PROCESS_CPUTIME_ID); $saver->(@_); $save+=clock_gettime(CLOCK_PROCESS_CPUTIME_ID)-$t};
+                 }
+                 Loomy::ClaudeNative::poll(@ARGV)',
                 $ENV{LOOMY_CLAUDE_BENCH_MODULE}//"$repo/scripts/lib/claude-native.pl",$root,$projects or die 'one-shot launch failed';
-            $child_cpu=<$shot>;
+            my $timing=<$shot>;
             close $shot or die 'one-shot failed';
-            die 'invalid one-shot CPU measurement' unless defined $child_cpu && $child_cpu =~ /^\d+[.]\d+\s*$/;
+            die 'invalid one-shot CPU measurement' unless defined $timing && $timing =~ /^(?:\d+[.]\d+\s+){3}\d+[.]\d+\s*$/;
+            ($child_cpu,@stages{qw(startup load save)})=split /\s+/,$timing;
+            $stages{child}=$child_cpu;
+            $stages{collect}=$child_cpu-$stages{startup}-$stages{load}-$stages{save};
             open my $idx,'<',"$root/.loomy/logs/claude-native.idx" or die; $s=decode_json(do {local $/; <$idx>});
         } else {
             die 'watch stopped before catch-up reached EOF' unless Loomy::ClaudeNative::watch_changed($root,$projects);
@@ -127,11 +139,17 @@ if ($finding eq 'N1') {
                 values %{$s->{sessions}{lead}{calls}};
         }
         my $elapsed=cpu()-$begin+$child_cpu;
+        if ($oneshot) {
+            $stages{projection}=$elapsed-$child_cpu;
+            for my $stage (keys %stages) {$stage_total{$stage}+=$stages{$stage}; $stage_max{$stage}=$stages{$stage} if $stages{$stage}>($stage_max{$stage}//0)}
+        }
         $total+=$elapsed; $max=$elapsed if $elapsed>$max;
         last if $s->{files}{$path}{at_eof};
     }
     printf "%s %.1f MiB: %d polls, %.3f ms CPU/poll mean, %.3f ms max, %.3f s total CPU\n",
         $finding,(-s $path)/1048576,$polls,1000*$total/$polls,1000*$max,$total;
+    printf "N3 stages (CPU ms mean/max): %s\n",join(', ',map {sprintf '%s %.3f/%.3f',$_,1000*$stage_total{$_}/$polls,1000*$stage_max{$_}} qw(startup load save collect projection)) if $oneshot;
+    printf "N3 one-shot child CPU (startup + full poll): %.3f ms mean, %.3f ms max\n",1000*$stage_total{child}/$polls,1000*$stage_max{child} if $oneshot;
     die 'catch-up too many polls' if !$benchmark && $polls>40;
     die 'catch-up CPU exceeds 80 ms/poll' if !$benchmark && $max>0.08;
     die 'late notifications did not settle every call' unless keys(%{$s->{sessions}{lead}{calls}})==19

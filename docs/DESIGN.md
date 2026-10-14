@@ -241,3 +241,32 @@ Release boundary: launch validation shares pause/invalid-model diagnostics; loca
 - Paginated children read at most 128 KiB of historical head and 128 KiB of current tail per poll, sharing the existing 2 MiB source/discovery budget. Recently written sources precede the rotating historical backlog; newly discovered children prioritize their explicit parent metadata. Byte-position fences prevent older catch-up from replacing newer lifecycle evidence. `item_completed` and `token_usage_record` can identify an active turn when its start lies outside the recent window; inter-agent metadata renews activity. Item completion alone is not turn completion. Explicit task/turn completion or abort records retain their real source end timestamp; trailing usage cannot reopen the same completed turn. Usage totals and message/tool contents remain unrecorded.
 - Lead history keeps its bounded head/tail reader across every date directory. File modification time also renews the 120-second source lease, including oversized newest records; it never invents a terminal state. Source evidence updates the reducer without journal heartbeat appends. Metadata upgrades preserve cursors and stable lifecycle keys. v2 completed rows show done/interrupted; v1 persistent-agent idle semantics remain unchanged. If an unseen active turn is inferred from the tail, its displayed start is the earliest available observation, not an invented historical start.
 - `tests/fixtures/codex-v2-sessions.pl` generates a 36 MiB old-date lead, four direct children and one nested child, with current writes and structural records only. Targeted native/live suites verify first-frame visibility, exact end timestamps, replay ordering, privacy and bounded reads; Mac PTY/process-leak validation remains a separate environment gate.
+## Checkpoint cost
+
+Checkpoint JSON uses a reused optional system `JSON::XS` codec with PP-compatible
+booleans, falling back to `JSON::PP` without installing a dependency. Both encode
+canonical UTF-8 JSON; shard hashes and byte bounds remain stable. A byte-identical
+validated snapshot skips primary/backup replacement, while shard validation/cleanup
+and private modes remain enforced. Changed generations keep synced atomic 0600 writes.
+Migration, bounded reconstruction and quarantine retention follow the existing policy.
+
+The Round 3 fixture reports process CPU by stage, including fresh interpreter/module
+startup, checkpoint load/save, remaining collection and parent fixture projection.
+The complete measurement and 80 ms gate are unchanged. A 35-poll / 47.9 MiB Mac
+comparison measured the following mean/max milliseconds:
+
+| Stage | Before | After |
+| --- | ---: | ---: |
+| Startup | 26.108 / 28.763 | 25.901 / 30.501 |
+| Checkpoint load | 5.811 / 6.369 | 1.597 / 2.088 |
+| Checkpoint save | 13.191 / 14.550 | 1.040 / 2.138 |
+| Remaining collection | 9.595 / 23.651 | 9.677 / 24.509 |
+| Fixture projection | 15.136 / 19.567 | 15.103 / 19.475 |
+| Complete N3 one-shot check | 69.842 / 80.115 | 53.317 / 68.701 |
+
+The child alone measured 54.706 / 60.548 ms before and 38.215 / 53.206 ms after.
+The 50 ms maximum target remains open: startup, collection and projection dominate
+the remaining cost. PP-only installations retain the portable fallback, with a smaller
+benefit limited to avoiding identical writes. `tests/live-growth.sh` exercises both
+codecs, Unicode/boolean compatibility, unchanged snapshots/shards, backup recovery,
+private modes and overflow preservation alongside the existing crash/migration cases.

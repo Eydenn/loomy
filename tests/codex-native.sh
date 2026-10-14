@@ -330,4 +330,118 @@ if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
 elif command -v expect >/dev/null 2>&1; then
   check 'real watch sampler displays identities and refreshes terminal outcomes' expect "$REPO/tests/fixtures/native-watch.exp"
 else printf 'SKIP native watch PTY: expect unavailable\n'; fi
+# v2 uses synthetic paginated histories, including a 36 MiB lead in an older date.
+ROOT="$WORK/v2"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2-codex"
+export LOOMY_FIXTURE_NOW=1791939600 LOOMY_NATIVE_NOW=1791939600
+v2_fixture() { perl "$REPO/tests/fixtures/codex-v2-sessions.pl" "$1" "$ROOT" "$CODEX_HOME/sessions"; }
+v2_fixture seed
+check 'v2 first poll finds all five agents with bounded head/tail reads' perl -e '
+ my ($module,$root,$sessions)=@ARGV; require $module;
+ my $s=Loomy::CodexNative::poll($root,$sessions); my $bytes=0;
+ die unless keys(%{$s->{files}})==6;
+ for my $f(values %{$s->{files}}) {$bytes+=$f->{read_bytes}//0; die if ($f->{read_bytes}//0)>262144}
+ die if $bytes>2097152;
+ my ($lead)=grep {!$_->{meta}{parent}} values %{$s->{files}};
+ die unless $lead->{offset}<=131072 && Loomy::CodexNative::epoch($lead->{last_evidence_ts})==1791939599;
+ printf "v2 lifecycle read: %d bytes for >46 MiB of history\n",$bytes;
+' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+check 'v2 parents, top-level fields, workspace-only and session fallback are structural' json_check '
+ my @s=grep {$_->{type} eq "delegation_start"} @native; die unless @s==5;
+ die unless (grep {$_->{session_key} eq "codex:00000000-0000-4000-8000-000000100001"} @s)==5;
+ my ($nested)=grep {$_->{agent_id}=~/100006$/} @s;
+ die unless $nested->{parent_agent_id}=~/100002$/;
+ for my $suffix (100003,100004,100005) {die unless grep {$_->{agent_id}=~/$suffix$/} @s}
+ die unless grep {$_->{task} eq "Lyra explorer inventory" && $_->{nickname} eq "Lyra"} @s;
+ die if encode_json(\@all)=~/Excluded|fixture_padding|summary_text|raw_content|input_tokens/;
+'
+v2_fixture legacy-index; poll
+check 'v2 metadata upgrade preserves legacy cursors, native turn identities and start deduplication' json_check '
+ die unless (grep {$_->{type} eq "delegation_start"} @native)==5;
+ die unless (grep {$_->{type} eq "agent_link" && ($_->{multi_agent_version}//"") eq "v2"} @native)==5;
+'
+v2_fixture finish; LOOMY_NATIVE_NOW=1791939603 poll
+check 'v2 terminal in newest bytes closes immediately with exact real end timestamps' json_check '
+ my @ends=grep {$_->{type} eq "delegation"} @native; die unless @ends==2;
+ my ($done)=grep {$_->{agent_id}=~/100002$/} @ends; my ($aborted)=grep {$_->{agent_id}=~/100003$/} @ends;
+ die unless $done->{status} eq "ok" && $done->{outcome} eq "done" && $done->{ts} eq "2026-10-14T01:00:01Z" && $done->{duration_s}==51;
+ die unless $aborted->{status} eq "interrupted" && $aborted->{ts} eq "2026-10-14T01:00:02Z";
+'
+v2_fixture post-finish; v2_fixture final-item; LOOMY_NATIVE_NOW=1791939604 poll
+check 'v2 trailing usage/messages cannot revive a terminal and final items do not end a turn' json_check '
+ die unless (grep {$_->{type} eq "delegation"} @native)==2;
+ die if grep {$_->{type} eq "delegation" && $_->{agent_id}=~/100004$/} @native;
+'
+cp "$J" "$WORK/v2-before-catchup"
+for (( catchup=0; catchup<5; catchup++ )); do LOOMY_NATIVE_NOW=1791939604 poll; done
+check 'v2 historical catch-up cannot overwrite or duplicate latest lifecycle evidence' cmp "$J" "$WORK/v2-before-catchup"
+check 'v2 idle restart retains terminal states and exact end times in reducer rows' perl -e '
+ my ($module,$adapter,$root,$sessions)=@ARGV; require $module; require $adapter;
+ my $n=Loomy::CodexNative::poll($root,$sessions); my $s=Loomy::LiveState->new;
+ $s->read_journal("$root/.loomy/logs/events.jsonl"); $s->source_evidence($n); my @r=$s->projections(1791939604);
+ die unless grep {/^N\|A\|codex:.*100002\|[^|]*\|[^|]*\|done\|.*\|1791939601\|51\|done\|/} @r;
+ die unless grep {/^N\|A\|codex:.*100003\|[^|]*\|[^|]*\|interrupted\|.*\|1791939602\|/} @r;
+' "$REPO/scripts/lib/live-state.pl" "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+v2_fixture evidence-turn; LOOMY_NATIVE_NOW=1791939605 poll
+check 'v2 token usage with a new turn identity activates a resumed agent before head catch-up' json_check '
+ die unless grep {$_->{type} eq "delegation_start" && $_->{agent_id}=~/100005$/ && $_->{turn_id}=~/100045$/} @native;
+'
+v2_fixture terminal-turn; LOOMY_NATIVE_NOW=1791939606 poll
+check 'v2 completion-only unseen turn retains its protocol start and true end' json_check '
+ my ($e)=grep {$_->{type} eq "delegation" && ($_->{turn_id}//"")=~/100055$/} @native;
+ die unless $e && $e->{ts} eq "2026-10-14T01:00:06Z" && $e->{outcome} eq "done" && $e->{duration_s}==11;
+'
+check 'v2 oversized historical line cannot mask valid newest tail activity' env LOOMY_NATIVE_NOW=1791939606 perl -e '
+ my ($repo,$root,$sessions)=@ARGV; require "$repo/scripts/lib/codex-native.pl";
+ Loomy::CodexNative::poll($root,$sessions);
+ system($^X,"$repo/tests/fixtures/codex-v2-sessions.pl","oversized-child",$root,$sessions)==0 or die;
+ my $s=Loomy::CodexNative::poll($root,$sessions);
+ my ($f)=grep {$_->{meta}{id}=~/100004$/} values %{$s->{files}};
+ die unless $f->{activity} eq "running" && $f->{last_observed_ts} eq "2026-10-14T01:00:06Z";
+ die if $f->{read_bytes}>262144;
+' "$REPO" "$ROOT" "$CODEX_HOME/sessions"
+v2_fixture mtime-only
+check 'old-date lead stays live from recent writes even with an oversized newest record' env LOOMY_NATIVE_NOW=1791939605 perl -e '
+ my ($module,$adapter,$root,$sessions)=@ARGV; require $module; require $adapter;
+ my $n=Loomy::CodexNative::poll($root,$sessions); my ($f)=grep {!$_->{meta}{parent}} values %{$n->{files}};
+ $f->{last_evidence_ts}="2026-10-12T01:00:00Z";
+ my $s=Loomy::LiveState->new; $s->read_journal("$root/.loomy/logs/events.jsonl");
+ $s->{sessions}{"codex:00000000-0000-4000-8000-000000100001"}{seen}=1791766800;
+ # Isolate the lead: child evidence must not mask the mtime regression.
+ $n->{files}={lead=>$f}; $s->source_evidence($n);
+ die unless grep {/^N\|G\|codex:.*100001\|.*\|live\|/} $s->projections(1791939605);
+ die unless grep {/^N\|G\|codex:.*100001\|.*\|stale\|/} $s->projections(1791939730);
+' "$REPO/scripts/lib/live-state.pl" "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+ROOT="$WORK/v2-private"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2-private-codex"
+v2_fixture seed; LOOMY_JOURNAL_TASKS=0 poll
+check 'v2 private labels never persist nicknames, slugs or unrelated workspace roots' perl -0777 -e '
+ for(@ARGV) {open my $f,"<",$_ or die; my $s=do{local $/;<$f>}; die if $s=~/Lyra|Orion|inventory|verification|\/root\/|nonexistent-v2|fixture_padding/}
+' "$J" "$ROOT/.loomy/logs/codex-native.idx"
+ROOT="$WORK/v2-backlog"; export CODEX_HOME="$WORK/v2-backlog-codex"
+v2_fixture seed; v2_fixture backlog
+check 'v2 active sources and their old-date lead precede a cold historical backlog' perl -e '
+ my ($module,$root,$sessions)=@ARGV; require $module; my $s=Loomy::CodexNative::poll($root,$sessions);
+ my %files=map {$_->{meta}{id}=>$_} values %{$s->{files}};
+ for my $n (2..6) {my $id=sprintf "00000000-0000-4000-8000-%012d",100000+$n; die "active $n starved" unless $files{$id}{id} && $files{$id}{activity} eq "running"}
+ my ($lead)=grep {!$_->{meta}{parent}} values %{$s->{files}};
+ die unless $lead && Loomy::CodexNative::epoch($lead->{last_evidence_ts})==1791939599;
+ my $bytes=0; $bytes+=$_->{read_bytes}//0 for values %{$s->{files}}; die if $bytes>2097152;
+ die unless $s->{discovering}>0;
+' "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+# Real v2 sequence: a turn first seen mid tool call in the tail, a turn that completed inside the history gap,
+# and a lead whose newest turn_context lies far behind its tail.
+ROOT="$WORK/v2mid"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2mid-codex"
+v2_fixture midflight
+for (( catchup=0; catchup<14; catchup++ )); do poll; done
+check 'v2 turn first seen mid tool call recovers its exact start, model and the previous turn exact end' json_check '
+ my @c=grep {$_->{agent_id}=~/100008$/} @native;
+ my ($s2)=grep {$_->{type} eq "delegation_start" && $_->{turn_id}=~/100028$/} @c; die "start" unless $s2 && $s2->{ts} eq "2026-10-14T00:38:30Z" && $s2->{model} eq "gpt-6-luna";
+ my ($e1)=grep {$_->{type} eq "delegation" && $_->{turn_id}=~/100018$/} @c; die "end" unless $e1 && $e1->{status} eq "ok" && $e1->{outcome} eq "done" && $e1->{ts} eq "2026-10-14T00:38:20Z";
+ die "unknown end" if grep {$_->{type} eq "delegation" && $_->{status} eq "unknown"} @c;
+ die "running" if grep {$_->{type} eq "delegation" && $_->{turn_id}=~/100028$/} @c;
+ my @act=grep {$_->{type} eq "delegation_activity" && $_->{turn_id}=~/100028$/} @c; die "activity" unless @act && $act[-1]{activity} eq "running" && $act[-1]{model} eq "gpt-6-luna";
+'
+check 'v2 lead finds its newest turn_context behind a busy tail and reports it current' json_check '
+ my @x=grep {$_->{type} eq "session_context" && $_->{session_key}=~/100001$/} @all; die unless @x;
+ die unless $x[-1]{model} eq "gpt-6-luna" && $x[-1]{effort} eq "max" && $x[-1]{context_freshness} eq "current" && $x[-1]{turn_id}=~/100111$/;
+'
 printf '%s native Codex checks passed\n' "$PASS"

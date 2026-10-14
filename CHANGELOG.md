@@ -2,6 +2,10 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased (0.17.1)
+
+- Discover Codex multi-agent v2 sessions through project cwd or runtime workspace roots, retain explicit parent nesting, and show nickname, role and path slug. Read paginated child lifecycle evidence from bounded head/tail slices; explicit completions show done or interrupted with their source end time. Fresh writes keep long-lived, old-date leads live without replaying their entire rollout; v1 completion semantics remain unchanged.
+
 ## 0.17.0 — 2026-10-14
 
 ### Breaking

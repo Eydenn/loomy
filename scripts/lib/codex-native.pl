@@ -103,7 +103,7 @@ sub lines {
     my $end=rindex($buf,"\n");
     if ($end<0) {
         # Oversized records (usually prompts/tool output) must not pin the reader forever.
-        if ($n==$budget) { $cursor->{offset}=$off+$n; $cursor->{skipping}=1; $cursor->{oversized}=1 }
+        if ($n==$budget) { $cursor->{offset}=$off+$n; $cursor->{skipping}=1; $cursor->{oversized}=1; $cursor->{oversized_at}=$off+$n }
         return ();
     }
     $cursor->{offset}=$off+$end+1;
@@ -115,7 +115,12 @@ sub lines {
 sub metadata {
     $metadata_bytes=0;
     my $f=open_read($_[0]) or return;
-    $metadata_bytes=sysread($f,my $buf,262144)//0; my ($line)=$buf =~ /\A([^\n]*)\n/;
+    my $buf='';
+    while (length($buf)<262144 && index($buf,"\n")<0) {
+        my $n=sysread($f,my $chunk,4096); last unless $n;
+        $buf.=$chunk; $metadata_bytes+=$n;
+    }
+    my ($line)=$buf =~ /\A([^\n]*)\n/;
     unless (defined $line) {
         warn "Codex rollout metadata exceeds 256 KiB; tracking unknown\n" if length($buf)==262144 && !$diagnosed{$_[0]}++;
         return;
@@ -123,15 +128,19 @@ sub metadata {
     my $d=eval { decode_json($line) }; return unless ref($d) eq 'HASH' && ($d->{type}//'') eq 'session_meta';
     my $p=$d->{payload}; return unless ref($p) eq 'HASH' && identity($p->{id});
     my $spawn=ref($p->{source}) eq 'HASH' && ref($p->{source}{subagent}) eq 'HASH' ? $p->{source}{subagent}{thread_spawn} : undef;
-    my $parent=ref($spawn) eq 'HASH' ? identity($spawn->{parent_thread_id}) : '';
+    my $v2=scalar_text($p->{multi_agent_version}) eq 'v2' || scalar_text($p->{history_mode}) eq 'paginated';
+    my $parent=identity($p->{parent_thread_id}) || (ref($spawn) eq 'HASH' ? identity($spawn->{parent_thread_id}) : '');
+    $parent=identity($p->{session_id}) if !$parent && $v2 && scalar_text($p->{thread_source}) eq 'subagent';
+    $parent='' if $parent eq identity($p->{id});
     my $source=scalar_text($p->{source});
     my $origin=scalar_text($p->{originator});
     my $surface=$source eq 'exec' ? 'exec' : $source eq 'cli' ? 'cli'
         : ($source eq 'app' || ($source eq 'vscode' && $origin =~ /desktop/i)) ? 'app' : 'unknown';
-    my $task=ref($spawn) eq 'HASH' ? scalar_text($spawn->{agent_path}) : '';
+    my $task=scalar_text($p->{agent_path}) || (ref($spawn) eq 'HASH' ? scalar_text($spawn->{agent_path}) : '');
     $task =~ s{.*/}{};
     my $names=($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0';
     return {id=>identity($p->{id}),parent=>$parent,surface=>$surface,cwd=>scalar_text($p->{cwd}),task=>($names ? label($task) : ''),
+        metadata_protocol=>2,v2=>($v2 ? 1 : 0),workspace_roots=>(ref($p->{runtime_workspace_roots}) eq 'ARRAY' ? $p->{runtime_workspace_roots} : []),
         ts=>stamp($p->{timestamp}//$d->{timestamp}),role=>label($p->{agent_role}//(ref($spawn) eq 'HASH' ? $spawn->{agent_role} : '')),
         nickname=>($names ? label($p->{agent_nickname}//(ref($spawn) eq 'HASH' ? $spawn->{agent_nickname} : '')) : '')};
 }
@@ -176,7 +185,7 @@ sub discover {
         my @st=stat($path); my $sig="$st[0]:$st[1]";
         next if ($inv->{checked}{$path}//'') eq $sig;
         # Checkpointed eligible metadata is reusable across one-shot calls and sampler restarts.
-        if ($s->{files}{$path} && ($s->{files}{$path}{key}//'') eq $sig) {
+        if ($s->{files}{$path} && ($s->{files}{$path}{key}//'') eq $sig && $s->{files}{$path}{meta}{metadata_protocol}) {
             $inv->{checked}{$path}=$sig; next;
         }
         my $version=join(':',@st[0,1,7,9]);
@@ -187,11 +196,22 @@ sub discover {
         my $m=metadata($path); $bytes+=$metadata_bytes;
         if (!$m) { $inv->{invalid}{$path}=$version; next }
         delete $inv->{invalid}{$path}; $inv->{checked}{$path}=$sig;
-        my $cwd=abs_path($m->{cwd})//'';
-        next unless $cwd eq $root || index($cwd,"$root/")==0;
+        my $cwd='';
+        for my $candidate ($m->{cwd},@{delete $m->{workspace_roots}}) {
+            next unless scalar_text($candidate) =~ m{^/};
+            my $resolved=abs_path($candidate)//'';
+            if ($resolved eq $root || index($resolved,"$root/")==0) { $cwd=$resolved; last }
+        }
+        next unless $cwd;
         $m->{cwd}=$cwd;
         my $old=$s->{files}{$path};
         $s->{files}{$path}={meta=>$m,offset=>0} unless $old && ($old->{key}//'') eq $sig;
+        $s->{files}{$path}{meta}=$m;
+        # A live child's explicit parent should precede the historical inventory backlog.
+        if ($m->{v2} && $m->{parent} && !grep { $_->{meta}{id} eq $m->{parent} } values %{$s->{files}}) {
+            my ($parent)=grep { /\Q$m->{parent}\E\.jsonl$/ } keys %{$inv->{paths}};
+            unshift @{$inv->{queue}},$parent if $parent && ($inv->{checked}{$parent}//'') eq '';
+        }
     }
     $s->{discovering}=scalar @{$inv->{queue}//[]};
     return $bytes;
@@ -281,6 +301,80 @@ sub close_record {
     }
 }
 
+# A turn first seen mid-flight (tail window) lacks its start, model and the end of the turn it replaced.
+# Scan backwards from the window start, down to the head already consumed, for those turn-level facts only.
+sub v2_backfill {
+    my ($path,$turn,$before,$floor,$limit)=@_; my %r=(ends=>{}); my $used=0; my $to=$before; my $size=4096;
+    my $h=open_read($path) or return (\%r,0);
+    $floor=0 if $floor<0;
+    while ($to>$floor && $used<$limit) {
+        $size=$to-$floor if $to-$floor<$size; $size=$limit-$used if $limit-$used<$size;
+        last if $size<=0;
+        my $from=$to-$size; $from=0 if $from<0;
+        seek $h,$from,0 or last;
+        my $n=sysread($h,my $buf,$to-$from); $used+=$n//0;
+        last unless $n && $n==$to-$from;
+        my $skip=0;
+        if ($from>0) {
+            $skip=index($buf,"\n")+1;
+            if ($skip==0 || $skip>=length($buf)) { $size*=2; $size=8388608 if $size>8388608; next }
+        }
+        for my $line (reverse split /\n/,substr($buf,$skip)) {
+            next unless index($line,'"task_started"')>=0 || index($line,'"turn_context"')>=0 || $line =~ /"(?:task_complete|turn_complete|task_failed|turn_aborted|task_aborted)"/;
+            my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH' && ref($d->{payload}) eq 'HASH';
+            my $p=$d->{payload}; my $type=scalar_text($d->{type}); my $event=scalar_text($p->{type}); my $id=identity($p->{turn_id}); my $ts=stamp($d->{timestamp});
+            next unless $id && epoch($ts);
+            if ($type eq 'turn_context' && $id eq $turn && !defined $r{model}) { @r{qw(model effort)}=(identity($p->{model}),identity($p->{effort})) }
+            elsif ($type eq 'event_msg' && $event eq 'task_started' && $id eq $turn) { $r{started}=$ts }
+            elsif ($type eq 'event_msg' && $event =~ /^(?:task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/ && !$r{ends}{$id}) {
+                $r{ends}{$id}={ts=>$ts,event=>$event,started_at=>$p->{started_at},text=>scalar_text($p->{last_agent_message})};
+            }
+        }
+        last if $from<=$floor || (defined $r{started} && keys %{$r{ends}});
+        $size*=2 if $size<262144;
+        $to=$from+$skip;
+    }
+    return (\%r,$used);
+}
+
+# Paginated children need current evidence before bounded historical catch-up finishes.
+# The head retains launch/context facts; positions fence older replay behind the tail.
+sub v2_records {
+    my ($path,$f,$budget)=@_;
+    my $key=$f->{key}//''; my $old_offset=$f->{offset}//0;
+    my $head=$budget<131072 ? $budget : 131072;
+    my @records=lines($path,$f,$head); my $used=$f->{read_bytes}//0;
+    if ($key ne ($f->{key}//'') || ($f->{offset}//0)<$old_offset) {
+        delete @$f{qw(v2_position v2_tail_sig)};
+    }
+    my @st=stat($path); return @records unless @st;
+    my $sig=join(':',@st[0,1,7,9]);
+    my $room=$budget-$used; $room=131072 if $room>131072;
+    if (!$f->{at_eof} && $room>0 && ($f->{v2_tail_sig}//'') ne $sig) {
+        my $h=open_read($path);
+        if ($h) {
+            my $start=$st[7]>$room ? $st[7]-$room : 0;
+            if (seek $h,$start,0) {
+                my $n=sysread($h,my $buf,$room); $used+=$n//0;
+                if ($n) {
+                    my $end=rindex($buf,"\n"); my $first=index($buf,"\n");
+                    my $skip=$start ? ($first<0 ? length($buf) : $first+1) : 0;
+                    my $position=$start+$skip;
+                    $f->{v2_window}=$position;
+                    if ($end>=$skip) {
+                        for my $line (split /\n/,substr($buf,$skip,$end-$skip+1)) {
+                            $position+=length($line)+1; push @records,[$line,$position];
+                        }
+                    }
+                    $f->{v2_tail_sig}=$sig;
+                }
+            }
+        }
+    }
+    $f->{read_bytes}=$used;
+    return @records;
+}
+
 # Root contexts share the child read budget: incremental head plus a cached recent tail.
 # Position ordering prevents old catch-up records from replacing a newer tail observation.
 sub root_context {
@@ -290,7 +384,7 @@ sub root_context {
         ++$f->{context_revision};
         $reset=1;
         $f->{context_invalidated}=1 if $f->{context};
-        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete @$f{qw(tail_end tail_at back_chunk gap_start gap_end)}; delete $f->{complete_sig};
         delete $f->{lead_position}; $f->{lead_waits}={}; $f->{lead_state}='unknown';
     }
     my $accept=sub {
@@ -300,8 +394,16 @@ sub root_context {
         my $p=$d->{payload};
         return unless ref($p) eq 'HASH';
         my $ts=stamp($d->{timestamp});
-        if (epoch($ts) && scalar_text($d->{type}) =~ /^(event_msg|response_item|turn_context)$/) {
+        if (epoch($ts) && scalar_text($d->{type}) =~ /^(event_msg|response_item|turn_context|token_usage_record|inter_agent_communication_metadata)$/) {
             $f->{last_evidence_ts}=$ts if epoch($ts)>epoch($f->{last_evidence_ts});
+        }
+        if ($f->{meta}{v2} && $position>($f->{lead_position}//0)
+            && (scalar_text($d->{type}) eq 'token_usage_record' || (scalar_text($d->{type}) eq 'event_msg' && scalar_text($p->{type}) eq 'item_completed'))) {
+            my $turn=identity($p->{turn_id});
+            if ($turn && ($turn ne ($f->{lead_turn}//'') || ($f->{lead_state}//'unknown') eq 'unknown')) {
+                $f->{lead_turn}=$turn; $f->{lead_state}='running'; $f->{lead_waits}={};
+            }
+            $f->{lead_position}=$position;
         }
         if (scalar_text($d->{type}) eq 'event_msg' && $position>($f->{lead_position}//0)) {
             my $event=scalar_text($p->{type});
@@ -336,7 +438,7 @@ sub root_context {
     if ($key ne ($f->{key}//'')) {
         ++$f->{context_revision} if $key ne '' && !$reset;
         $f->{context_invalidated}=1 if $f->{context};
-        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete $f->{complete_sig};
+        delete $f->{context}; delete $f->{tail_sig}; delete $f->{tail_start}; delete @$f{qw(tail_end tail_at back_chunk gap_start gap_end)}; delete $f->{complete_sig};
         delete $f->{lead_position}; $f->{lead_waits}={}; $f->{lead_state}='unknown';
     }
     $accept->(@$_) for @records;
@@ -344,21 +446,54 @@ sub root_context {
     my $sig=join(':',@st[0,1,7,9]);
     if ($f->{at_eof}) { $f->{tail_sig}=$sig; $f->{complete_sig}=$sig; return $used }
     my $room=$budget-$used; $room=131072 if $room>131072;
+    my $now_t=$ENV{LOOMY_NATIVE_NOW}//time;
     if ($room>0 && ($f->{tail_sig}//'') ne $sig) {
         my $h=open_read($path) or return $used;
-        my $start=$st[7]>$room ? $st[7]-$room : 0;
+        # Growth since the last covered end is read incrementally; anything else restarts the window.
+        my $incremental=defined $f->{tail_end} && defined $f->{tail_start} && $f->{tail_end}<=$st[7] && $st[7]-$f->{tail_end}<=$room;
+        # A restarted window keeps the previous coverage so only the gap between the two has to be scanned.
+        if (!$incremental && defined $f->{tail_end} && defined $f->{tail_start} && $f->{context} && $f->{context}{position}>$f->{tail_start}
+            && $f->{tail_end}<=$st[7]) { @$f{qw(gap_start gap_end)}=($f->{tail_start},$f->{tail_end}) unless defined $f->{gap_end} }
+        my $start=$incremental ? $f->{tail_end} : $st[7]>$room ? $st[7]-$room : 0;
         seek $h,$start,0 or return $used;
-        my $n=sysread($h,my $buf,$room); $used+=$n//0;
+        my $want=$st[7]-$start; $want=$room if $want>$room;
+        my $n=sysread($h,my $buf,$want); $used+=$n//0;
         return $used unless $n;
-        my $end=rindex($buf,"\n"); my $skip=$start ? index($buf,"\n")+1 : 0;
+        my $end=rindex($buf,"\n"); my $skip=($start && !$incremental) ? index($buf,"\n")+1 : 0;
         my $position=$start+$skip;
         if ($end>=$skip) {
             for my $line (split /\n/,substr($buf,$skip,$end-$skip+1)) {
                 $position+=length($line)+1; $accept->($line,$position);
             }
+            $f->{tail_end}=$start+$end+1;
+        } elsif (!$incremental) { delete $f->{tail_end} }
+        $f->{tail_sig}=$sig; $f->{tail_at}=$now_t;
+        $f->{tail_start}=$start+$skip unless $incremental;
+    }
+    if (defined $f->{gap_end} && defined $f->{tail_start}) {
+        if ($f->{context} && $f->{context}{position}>$f->{tail_start}) { delete @$f{qw(gap_start gap_end)} }
+        elsif ($f->{tail_start}<=$f->{gap_end}) { $f->{tail_start}=$f->{gap_start}; delete @$f{qw(gap_start gap_end)} }
+    }
+    # The newest turn_context may lie far behind a busy tail: extend the covered window backwards, a quarter MiB per tick.
+    if (defined $f->{tail_start} && defined $f->{tail_end} && $f->{tail_start}>0
+        && (!$f->{context} || $f->{context}{position}<=$f->{tail_start}) && $st[7]-$f->{tail_start}<16777216) {
+        my $span=$f->{back_chunk}||262144; my $limit=$budget-$used; $span=$limit if $limit<$span;
+        my $h=$span>=65536 ? open_read($path) : undef;
+        if ($h) {
+            my $to=$f->{tail_start}; my $from=$to>$span ? $to-$span : 0;
+            if (seek $h,$from,0) {
+                my $n=sysread($h,my $buf,$to-$from); $used+=$n//0;
+                if ($n && $n==$to-$from) {
+                    my $skip=$from ? index($buf,"\n")+1 : 0;
+                    if ($from && ($skip==0 || $skip>=length($buf))) { $f->{back_chunk}=$span*2 if $span<8388608 }
+                    else {
+                        my $position=$from+$skip;
+                        for my $line (split /\n/,substr($buf,$skip)) { $position+=length($line)+1; $accept->($line,$position) }
+                        $f->{tail_start}=$from+$skip;
+                    }
+                }
+            }
         }
-        $f->{tail_sig}=$sig;
-        $f->{tail_start}=$start;
     }
     return $used;
 }
@@ -516,6 +651,7 @@ sub poll {
             if ($emitting_file && $emitting_file->{meta}{parent}) {
                 $body->{source_offset}=$emitting_file->{event_position}//$emitting_file->{offset}//0;
                 $body->{source_inode}=$emitting_file->{key}//'';
+                $body->{turn_id}//=$emitting_file->{turn} if $emitting_file->{meta}{v2};
             }
             delete @$body{qw(owner_pid pid_role)} if exists($body->{owner_pid}) && scalar_text($body->{owner_pid}) eq '0';
             $body->{source_ts}=stamp($ts); $body->{observed_at}=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
@@ -568,12 +704,22 @@ sub poll {
     }
     my $budget=2097152-$discovery_bytes-$probe_used;
     my @paths=sort keys %{$s->{files}//{}};
+    my %path_slot; @path_slot{@paths}=(0..$#paths);
     my $rotation=@paths ? ($s->{read_rotation}//0)%@paths : 0;
     @paths=(@paths[$rotation..$#paths],@paths[0..$rotation-1]) if $rotation;
-    my $position=0;
+    my %recent;
     for my $path (@paths) {
-        my $slot=$position++;
+        my @st=stat($path);
+        $recent{$path}=1 if @st && $st[9]>=$now-120 && $st[9]<=$now+1;
+    }
+    # Current sources get this frame's evidence first; the remaining backlog still rotates.
+    @paths=((grep {$recent{$_}} @paths),(grep {!$recent{$_}} @paths));
+    for my $path (@paths) {
         my $f=$s->{files}{$path}; my $m=$f->{meta}; $emitting_file=$f;
+        # Legacy activity snapshots omitted turn_id; its scoped native id retains it.
+        if ($m->{v2} && !$f->{turn} && ($f->{id}//'') =~ /^cn:\Q$m->{id}\E:([A-Za-z0-9_.-]+)$/) { $f->{turn}=identity($1) }
+        my @source_stat=stat($path);
+        if (@source_stat && ($f->{source_mtime}//0)!=$source_stat[9]) { $f->{source_mtime}=$source_stat[9]; $dirty=1 }
         if (!$m->{parent}) {
             my ($owner)=grep { ($_->{lead}//'') eq $m->{id} } @owners;
             next unless $owner;
@@ -581,7 +727,7 @@ sub poll {
             $f->{context_revision}=$recovered if $recovered>($f->{context_revision}//0);
             $f->{at_eof}=0 if $budget<=0;
             if ($budget>0) {
-                $s->{read_rotation}=($rotation+$slot+1)%@paths;
+                $s->{read_rotation}=($path_slot{$path}+1)%@paths;
                 my $used=root_context($path,$f,$budget); $budget-=$used; $dirty=1 if $used;
             }
             $owner=owner_at(\@owners,$m->{id},$f->{last_evidence_ts}//$m->{ts},$m->{ts});
@@ -593,7 +739,7 @@ sub poll {
             if (my $c=$f->{context}) {
                 next if !$owner->{unbound} && epoch($c->{ts})<epoch($owner->{ts})-10;
                 my @st=stat($path); my $sig=@st && safe_path($path) && -f $path ? join(':',@st[0,1,7,9]) : '';
-                my $fresh=$sig ne '' && (($f->{complete_sig}//'') eq $sig || (($f->{tail_sig}//'') eq $sig && defined $f->{tail_start} && $c->{position}>$f->{tail_start}));
+                my $fresh=$sig ne '' && (($f->{complete_sig}//'') eq $sig || (($f->{tail_sig}//'') eq $sig || $now-($f->{tail_at}//0)<=5) && defined $f->{tail_start} && $c->{position}>$f->{tail_start});
                 my $freshness=$fresh ? 'current' : 'catching_up';
                 # Re-entering a prior freshness state is a new observation, not a duplicate of an old cycle.
                 ++$f->{context_revision} if $snapshot && ($snapshot->{context_freshness}//'') ne '' && $snapshot->{context_freshness} ne $freshness;
@@ -632,6 +778,10 @@ sub poll {
                 schema=>2,session_key=>"codex:$lead",surface=>($by_id{$lead} ? $by_id{$lead}{surface} : 'unknown'),parent_agent_id=>"codex:$m->{parent}",
                 parent_session=>$m->{parent},session=>$owner->{session},agent_id=>$m->{id},role=>($m->{role}||'agent'),
                 task=>(($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{task}||'Codex agent '.($m->{nickname}||$m->{id}))),nickname=>$m->{nickname},cost_in=>'unknown'};
+            if ($m->{v2}) {
+                $base->{multi_agent_version}='v2';
+                $base->{task}=join(' ',grep {$_ ne ''} ($m->{nickname},$m->{role},$m->{task})) if ($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0';
+            }
             delete @$base{qw(owner_pid pid_role)} if $owner->{unbound};
         };
         $bind->($f->{started}//$m->{ts});
@@ -639,52 +789,92 @@ sub poll {
             $emit->("pending:$lead",'session_observed',$m->{ts},
                 {schema=>2,session_key=>"codex:$lead",session=>$lead,tool=>'codex',surface=>'unknown',state=>'unknown',source_active=>0,evidence=>'parent pending'});
         }
-        if ($f->{id} && ($f->{projected_lead}//'') ne $lead) {
-            $emit->("agent:$m->{id}:link:$lead",'agent_link',$f->{last_observed_ts}//$f->{started},
+        if ($f->{id} && (($f->{projected_lead}//'') ne $lead || ($m->{v2} && ($f->{projected_metadata}//0)!=2))) {
+            $emit->("agent:$m->{id}:link:$lead".($m->{v2} ? ':metadata2' : ''),'agent_link',$f->{last_observed_ts}//$f->{started},
                 {%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort}});
         }
         $f->{projected_lead}=$lead;
+        $f->{projected_metadata}=2;
         if ($budget>0) {
             $f->{last_observed_ts}//=observed_time($path,$f) if $f->{id} && !$f->{finished};
-            $s->{read_rotation}=($rotation+$slot+1)%@paths;
+            $s->{read_rotation}=($path_slot{$path}+1)%@paths;
             my $limit=$budget<262144 ? $budget : 262144;
-            for my $record (lines($path,$f,$limit)) {
+            my @records=$m->{v2} ? v2_records($path,$f,$limit) : lines($path,$f,$limit);
+            for my $record (@records) {
                 my ($line,$position)=@$record;
                 my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH';
                 my $p=$d->{payload}; next unless ref($p) eq 'HASH';
                 my $type=scalar_text($d->{type}); my $event=scalar_text($p->{type}); my $ts=stamp($d->{timestamp}); next unless epoch($ts);
                 next if $f->{replay_fence} && epoch($ts)<=$f->{replay_fence};
+                if ($m->{v2}) {
+                    next if identity($p->{thread_id}) && identity($p->{thread_id}) ne $m->{id};
+                    next unless $type =~ /^(event_msg|turn_context|response_item|token_usage_record|inter_agent_communication_metadata)$/;
+                    next if $position<=($f->{v2_position}//0);
+                    $f->{v2_position}=$position;
+                }
                 $f->{event_position}=$position;
                 close_record($f,$p,$ts) if $type eq 'response_item';
                 my $turn=identity($p->{turn_id});
-                if ($type eq 'event_msg' && $event eq 'task_started' && $turn) {
-                    if ($f->{id} && !$f->{finished} && ($f->{turn}//'') ne $turn) {
-                        my $end=$f->{last_observed_ts}//observed_time($path,$f)//$f->{started};
-                        $end=$f->{started} if epoch($end)<epoch($f->{started});
-                        my $duration=epoch($end)-epoch($f->{started}); $duration=0 if $duration<0;
-                        $emit->("$f->{id}:end",'delegation',$end,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},status=>'unknown',outcome=>'unknown',duration_s=>$duration});
+                my $inferred=$m->{v2} && $turn && ($type eq 'turn_context' || $type eq 'token_usage_record' || ($type eq 'event_msg' && $event eq 'item_completed'))
+                    && (!$f->{id} || $turn ne ($f->{turn}//''));
+                my $terminal=$m->{v2} && $turn && $type eq 'event_msg' && $event =~ /^(task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/
+                    && (!$f->{id} || $turn ne ($f->{turn}//''));
+                # Terminal evidence of a turn: its exact end when observed, never a guess.
+                my $end_turn=sub {
+                    my ($ev,$at,$text)=@_;
+                    my $outcome='unknown';
+                    $outcome='done' if $m->{v2} && $ev =~ /complete$/;
+                    $outcome=lc($1) if $text =~ /^\s*STATUS\s*:\s*(done|partial|blocked)\b/im;
+                    $outcome='interrupted' if $ev =~ /aborted$/;
+                    $outcome='failed' if $ev eq 'task_failed';
+                    my $duration=epoch($at)-epoch($f->{started}); $duration=0 if $duration<0;
+                    $emit->("$f->{id}:end",'delegation',$at,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},
+                        status=>($ev =~ /complete$/ ? 'ok' : $ev eq 'task_failed' ? 'error' : 'interrupted'),outcome=>$outcome,duration_s=>$duration});
+                    $f->{finished}=1; $f->{last_observed_ts}=$at; delete $f->{activity_ts};
+                };
+                if (($type eq 'event_msg' && $event eq 'task_started' && $turn) || $inferred || $terminal) {
+                    # First sight of a turn in the tail window: recover its start, model and the previous turn's end.
+                    my $facts={ends=>{}};
+                    if ($m->{v2} && ($inferred || $terminal) && $position>($f->{v2_window}//9e15) && $budget>65536) {
+                        my ($found,$extra)=v2_backfill($path,$turn,$f->{v2_window},$f->{offset}//0,$budget<4194304 ? $budget : 4194304);
+                        $facts=$found; $budget-=$extra; $dirty=1;
                     }
-                    $bind->($ts);
-                    $f->{turn}=$turn; $f->{started}=$ts; $f->{finished}=0;
+                    if ($f->{id} && !$f->{finished} && ($f->{turn}//'') ne $turn) {
+                        my $seen=$facts->{ends}{$f->{turn}//''};
+                        if ($seen && epoch($seen->{ts})>=epoch($f->{started})) { $end_turn->($seen->{event},$seen->{ts},$seen->{text}) }
+                        else {
+                            my $end=$f->{last_observed_ts}//observed_time($path,$f)//$f->{started};
+                            $end=$f->{started} if epoch($end)<epoch($f->{started});
+                            my $duration=epoch($end)-epoch($f->{started}); $duration=0 if $duration<0;
+                            $emit->("$f->{id}:end",'delegation',$end,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},status=>'unknown',outcome=>'unknown',duration_s=>$duration});
+                        }
+                    }
+                    my $begin=$ts;
+                    if ($terminal && scalar_text($p->{started_at}) =~ /^\d{13}$/ && $p->{started_at}/1000<=epoch($ts)) {
+                        $begin=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($p->{started_at}/1000));
+                    } elsif ($facts->{started} && epoch($facts->{started})<=epoch($ts)) { $begin=$facts->{started} }
+                    $bind->($begin);
+                    $f->{turn}=$turn; $f->{started}=$begin; $f->{finished}=0;
                     $f->{id}="cn:$m->{id}:$turn"; $f->{model}=''; $f->{effort}='';
+                    if ($inferred && $type eq 'turn_context') { $f->{model}=identity($p->{model}); $f->{effort}=identity($p->{effort}) }
+                    elsif ($facts->{model}) { $f->{model}=$facts->{model}; $f->{effort}=$facts->{effort}//'' }
+                    elsif ($m->{v2} && $f->{last_model}) { $f->{model}=$f->{last_model}; $f->{effort}=$f->{last_effort}//'' }
+                    @$f{qw(last_model last_effort)}=($f->{model},$f->{effort}) if $f->{model} ne '';
                     $f->{activity}='running'; $f->{wait_calls}={}; $f->{last_observed_ts}=$ts; delete $f->{activity_ts}; delete $f->{activity_position};
-                    $emit->("$f->{id}:start",'delegation_start',$ts,{%$base,id=>$f->{id},turn_id=>$turn,model=>'',effort=>''});
+                    $emit->("$f->{id}:start",'delegation_start',$begin,{%$base,id=>$f->{id},turn_id=>$turn,model=>$f->{model},effort=>$f->{effort}});
                     $f->{journal_generation}=$generation if $jc->{active}{$f->{id}};
-                } elsif ($type eq 'turn_context' && $turn && $turn eq ($f->{turn}//'')) {
+                    next unless $terminal;
+                }
+                if ($type eq 'turn_context' && $turn && $turn eq ($f->{turn}//'')) {
                     $f->{model}=identity($p->{model}); $f->{effort}=identity($p->{effort});
+                    @$f{qw(last_model last_effort)}=($f->{model},$f->{effort}) if $f->{model} ne '';
                     $f->{activity}=keys %{$f->{wait_calls}//{}} ? 'waiting' : 'running'; $f->{last_observed_ts}=$ts;
                     $emit->("$f->{id}:context:$position",'delegation_activity',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>$f->{activity}});
                 } elsif ($type eq 'event_msg' && $event =~ /^(task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/ && $f->{id} && (!$turn || $turn eq ($f->{turn}//'')) && !$f->{finished}) {
                     next if epoch($ts)<epoch($f->{started});
-                    my $outcome='unknown'; my $text=scalar_text($p->{last_agent_message});
-                    $outcome=lc($1) if $text =~ /^\s*STATUS\s*:\s*(done|partial|blocked)\b/im;
-                    $outcome='interrupted' if $event =~ /aborted$/;
-                    $outcome='failed' if $event eq 'task_failed';
-                    my $duration=epoch($ts)-epoch($f->{started}); $duration=0 if $duration<0;
-                    $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},model=>$f->{model},effort=>$f->{effort},
-                        status=>($event =~ /complete$/ ? 'ok' : $event eq 'task_failed' ? 'error' : 'interrupted'),outcome=>$outcome,duration_s=>$duration});
-                    $f->{finished}=1; $f->{last_observed_ts}=$ts; delete $f->{activity_ts};
-                } elsif ($f->{id} && !$f->{finished} && ($type eq 'event_msg' || $type eq 'response_item')) {
+                    $end_turn->($event,$ts,scalar_text($p->{last_agent_message}));
+                } elsif ($f->{id} && !$f->{finished} && ($type eq 'event_msg' || $type eq 'response_item'
+                    || ($m->{v2} && ($type eq 'token_usage_record' || $type eq 'inter_agent_communication_metadata')))) {
                     $f->{activity_ts}=$ts;
                     $f->{last_observed_ts}=$ts;
                     $f->{activity_position}=$position;
@@ -697,13 +887,24 @@ sub poll {
                 }
             }
             $budget-=$f->{read_bytes}//0; $dirty=1 if $f->{read_bytes};
-            if ($f->{id} && !$f->{finished} && ($f->{oversized} || !safe_path($path) || !-f $path)) {
+            if ($f->{id} && !$f->{finished} && (($f->{oversized} && (!$m->{v2} || ($f->{v2_position}//0)<=($f->{oversized_at}//$f->{offset}//0))) || !safe_path($path) || !-f $path)) {
                 $f->{activity}='unknown';
                 $emit->("$f->{id}:unavailable:$f->{offset}",'delegation_activity',strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now)),{%$base,id=>$f->{id},activity=>'unknown'});
-                delete $f->{oversized};
+                delete $f->{oversized}; delete $f->{emitted_activity};
+            }
+            # A turn adopted without its turn_context learns model and effort once, from before the tail window.
+            if ($m->{v2} && $f->{id} && !$f->{finished} && ($f->{model}//'') eq '' && ($f->{model_probe}//'') ne $f->{id}
+                && ($f->{v2_window}//0)>0 && $budget>65536) {
+                $f->{model_probe}=$f->{id};
+                my ($found,$extra)=v2_backfill($path,$f->{turn},$f->{v2_window},0,$budget<1048576 ? $budget : 1048576);
+                $budget-=$extra; $dirty=1;
+                if ($found->{model}) {
+                    @$f{qw(model effort last_model last_effort)}=($found->{model},$found->{effort}//'',$found->{model},$found->{effort}//'');
+                    $f->{activity_ts}//=$f->{last_observed_ts}; $f->{activity_position}//=$f->{event_position}//$f->{offset};
+                }
             }
             if ($f->{id} && !$f->{finished} && $f->{activity_ts}) {
-                my $signature=join(':',$f->{id},$f->{model}//'',$f->{effort}//'',$f->{activity}//'unknown');
+                my $signature=join(':',$f->{id},$f->{model}//'',$f->{effort}//'',$f->{activity}//'unknown','a2');
                 if (($f->{emitted_activity}//'') ne $signature) {
                     $emit->("$f->{id}:activity:$f->{activity_position}",'delegation_activity',$f->{activity_ts},{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},activity=>$f->{activity}});
                     $f->{emitted_activity}=$signature;
@@ -724,7 +925,7 @@ sub poll {
         if ($dead && $f->{at_eof} && $f->{id}) {
             my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
             $ts=$f->{started} if epoch($ts)<epoch($f->{started});
-            $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>'done'});
+            $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>($closed || epoch($f->{last_observed_ts})>=$now-900 ? 'interrupted' : 'done')});
         }
         # Restore only an observed active turn; rotation is not new work or a new delegation.
         if (!$dead && $f->{id} && !$f->{finished} && !$s->{seen}{sha256_hex("$f->{id}:end")} && ($f->{journal_generation}//0)!=$generation && epoch($f->{started})>=epoch($owner->{ts})-10) {

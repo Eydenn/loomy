@@ -349,8 +349,9 @@ sub consume {
     }
     # Merge only a launcher explicitly paired by the adapter, never a nearest-start guess.
     my $pid=text($d->{owner_pid});
-    if ($pid =~ /^\d+$/ && $pid>1 && $ts>($s->{closed_at}//0)) {
-        $s->{pid}=$pid;
+    if ($pid =~ /^\d+$/ && $pid>1 && $ts>($s->{closed_at}//0) && $ts>=($s->{pid_ts}//0)) {
+        # Replayed older events must not move the session back to a launcher that has since ended.
+        $s->{pid}=$pid; $s->{pid_ts}=$ts;
         delete $self->{sessions}{"$tool:pid$pid"};
     }
     $s->{seen}=$ts if $ts>$s->{seen} && !($type eq 'session_observed' && !($d->{source_active}//0));
@@ -376,6 +377,7 @@ sub consume {
         delete $self->{sent}{"A:$old"}; delete $self->{sent}{"T:$old_id"}; return;
     }
     my $a=$self->{agents}{$ak}//={key=>$ak,session=>$key,parent=>text($d->{parent_agent_id}),state=>'unknown',latest=>'',seen=>0};
+    $a->{codex_v2}=1 if $tool eq 'codex' && text($d->{multi_agent_version}) eq 'v2';
     my $prior_session=$a->{session};
     $a->{schema}=2 if text($d->{schema}) eq "2";
     $a->{session}=$key;
@@ -386,7 +388,11 @@ sub consume {
     $a->{parent}=text($d->{parent_agent_id}) if text($d->{parent_agent_id}) ne '';
     if ($type eq 'agent_link' || $type eq 'agent_closed') {
         $a->{$_}=text($d->{$_}) for grep { defined $d->{$_} && !ref($d->{$_}) } qw(role task nickname model effort);
-        if ($type eq 'agent_closed' && $ts>=$a->{seen}) { $a->{closed}=1; $a->{closed_at}=$ts; $a->{state}='done' }
+        my $latest=$self->{turns}{$a->{latest}}//{};
+        $a->{state}=$latest->{state} if $a->{codex_v2} && $latest->{ended} && !$a->{closed};
+        if ($type eq 'agent_closed' && $ts>=$a->{seen}) {
+            $a->{closed}=1; $a->{closed_at}=$ts; $a->{state}=$a->{codex_v2} && $latest->{ended} && text($d->{status}) eq 'interrupted' ? $latest->{state} : 'done';
+        }
         return;
     }
     my $fresh=!exists $self->{turns}{$id};
@@ -417,7 +423,7 @@ sub consume {
     $a->{latest}=$id if $a->{latest} eq '' || ($fresh && $type eq 'delegation_start' && $ts>=(($self->{turns}{$a->{latest}}//{})->{started}//0));
     if ($a->{latest} eq $id) {
         $a->{$_}=$turn->{$_} for qw(model effort task role);
-        $a->{state}=$a->{closed} ? 'done' : $turn->{ended} ? (text($d->{bridge}) eq 'codex-native' ? 'idle' : $turn->{state}) : $turn->{state};
+        $a->{state}=$a->{closed} && !($a->{codex_v2} && $turn->{ended}) ? 'done' : $turn->{ended} ? (text($d->{bridge}) eq 'codex-native' && !$a->{codex_v2} ? 'idle' : $turn->{state}) : $turn->{state};
     }
     $a->{seen}=$ts if $ts>$a->{seen};
 }
@@ -485,8 +491,12 @@ sub source_evidence {
         my $key=$m->{parent} ? "codex:pending:$m->{parent}" : "codex:$m->{id}";
         my $s=$self->{sessions}{$key} or next;
         my $ts=epoch($f->{last_evidence_ts}//$f->{last_observed_ts});
+        $ts=$f->{source_mtime} if ($f->{source_mtime}//0)>$ts && $f->{source_mtime}<=($ENV{LOOMY_NATIVE_NOW}//time)+1;
         if ($s->{closed} && $ts>($s->{closed_at}//0)) { $s->{closed}=0; $s->{pid}=0 }
         $s->{seen}=$ts if $ts>$s->{seen};
+        my $a=$self->{agents}{"codex:$f->{meta}{id}"};
+        my $own=epoch($f->{last_observed_ts});
+        $a->{seen}=$own if $a && $own>$a->{seen};
     }
 }
 sub claude_evidence {
@@ -562,7 +572,7 @@ sub projections {
         }
         $agent_state='interrupted' if $interrupted;
         # Completed agents close with an observed owner; absent PIDs remain source-owned.
-        $agent_state='done' if $t->{ended} && (($session->{closed}//0) || $dead);
+        $agent_state=$a->{codex_v2} ? $t->{state} : 'done' if $t->{ended} && (($session->{closed}//0) || $dead);
         my $turns=$turn_counts{$key}//0;
         my $owner=$owned{$key}//$owned{$a->{session}};
         my $group=$owner ? $owner->{group} : $a->{session};

@@ -352,7 +352,7 @@ loomy_native_route() {
     for ai in ${NS_GROUP_AGENTS[gi]}; do
       [[ "${NS_AI_KEY[ai]%%:*}" == "$fam" ]] || continue
       model="${NS_AI_MODEL[ai]}"
-      [[ -n "$model" ]] || { unknown=1; continue; }
+      [[ -n "$model" ]] || { case "${NS_AI_STATE[ai]}" in done|failed|interrupted|lost|partial|blocked) ;; *) unknown=1 ;; esac; continue; }
       loomy_live_short_model "$model"
       case "$list" in *"|$LV_SHORT|"*) ;; *) list="$list$LV_SHORT|" ;; esac
     done

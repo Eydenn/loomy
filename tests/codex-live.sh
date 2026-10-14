@@ -353,4 +353,63 @@ if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
 else
  check 'twenty screen trials see new app children within 600 ms' expect "$REPO/tests/fixtures/codex-live-watch.exp"
 fi
+# One CLI frame must include paginated v2 children before historical replay catches up.
+ROOT="$WORK/v2-live"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2-live-codex"
+export LOOMY_FIXTURE_NOW=1791939600 LOOMY_NATIVE_NOW=1791939600
+v2_fixture() { perl "$REPO/tests/fixtures/codex-v2-sessions.pl" "$1" "$ROOT" "$CODEX_HOME/sessions"; }
+v2_fixture seed
+LOOMY_UI_LANG=en COLUMNS=150 LINES=45 "$REPO/bin/loomy" tree --root "$ROOT" --once >"$WORK/v2-frame"
+check 'v2 CLI once frame shows live old-date lead, four root agents and nested fifth' perl -Mutf8 -CSD -0777 -e '
+ my $s=<>; die unless $s=~/codex cli 00100001.*live/ && $s=~/5 running/;
+ for ("Lyra explorer inventory","Orion qa verification","Vega developpement implementation","Iris linguistique vocabulary","Nova explorer nested") {die "missing $_" unless index($s,$_)>=0}
+ die unless $s=~/^  ┣━ Lyra.*running/m && $s=~/^    ┣━ Nova.*running/m;
+ die if $s=~/Excluded|stale · recap/;
+' "$WORK/v2-frame"
+v2_fixture finish
+LOOMY_UI_LANG=en LOOMY_NATIVE_NOW=1791939603 COLUMNS=150 LINES=45 "$REPO/bin/loomy" tree --root "$ROOT" --once >"$WORK/v2-finished-frame"
+check 'v2 CLI once frame immediately renders done and interrupted rather than persistent idle' perl -Mutf8 -CSD -0777 -e '
+ my $s=<>; die unless $s=~/Lyra explorer inventory.*✓ done/ && $s=~/Orion qa verification.*interrupted/;
+ die unless $s=~/3 running/ && $s=~/last turn 0:51/;
+' "$WORK/v2-finished-frame"
+check 'v2 terminal rows carry the exact completion time and preserve nested attachment' env LOOMY_NATIVE_NOW=1791939603 perl -e '
+ my ($module,$adapter,$root,$sessions)=@ARGV; require $module; require $adapter;
+ my $n=Loomy::CodexNative::poll($root,$sessions); my $s=Loomy::LiveState->new;
+ $s->read_journal("$root/.loomy/logs/events.jsonl"); $s->source_evidence($n); my @r=$s->projections(1791939603);
+ die unless grep {/^N\|A\|codex:.*100002\|[^|]*\|[^|]*\|done\|.*\|1791939601\|51\|/} @r;
+ die unless grep {/^N\|A\|codex:.*100006\|codex:.*100001\|codex:.*100002\|running\|/} @r;
+' "$REPO/scripts/lib/live-state.pl" "$REPO/scripts/lib/codex-native.pl" "$ROOT" "$CODEX_HOME/sessions"
+check 'v2 interrupted or failed ends survive explicit agent and owner closure' perl -e '
+ require $ARGV[0];
+ for my $status (qw(interrupted error)) {
+   my $s=Loomy::LiveState->new;
+   my $base={schema=>2,session_key=>"codex:lead",tool=>"codex",bridge=>"codex-native",multi_agent_version=>"v2",agent_id=>"child",id=>"turn"};
+   $s->consume({%$base,type=>"delegation_start",ts=>"2026-10-14T01:00:00Z"});
+   $s->consume({%$base,type=>"delegation",status=>$status,ts=>"2026-10-14T01:00:01Z"});
+   $s->consume({%$base,type=>"agent_closed",ts=>"2026-10-14T01:00:02Z"});
+   $s->consume({type=>"session",tool=>"codex",session=>"lead",event=>"end",ts=>"2026-10-14T01:00:03Z"});
+   my $expected=$status eq "error" ? "failed" : "interrupted";
+   die unless grep {/^N\|A\|codex:child\|codex:lead\|[^|]*\|\Q$expected\E\|.*\|1791939601\|/} $s->projections(1791939603);
+ }
+' "$REPO/scripts/lib/live-state.pl"
+check 'v2 agent closed long after its owner died stays done, a fresh interruption stays visible' perl -e '
+ require $ARGV[0];
+ for my $case ([done=>"done"],[interrupted=>"interrupted"]) {
+   my ($status,$expected)=@$case;
+   my $s=Loomy::LiveState->new;
+   my $base={schema=>2,session_key=>"codex:lead",tool=>"codex",bridge=>"codex-native",multi_agent_version=>"v2",agent_id=>"child",id=>"turn"};
+   $s->consume({%$base,type=>"delegation_start",ts=>"2026-10-14T01:00:00Z"});
+   $s->consume({%$base,type=>"delegation",status=>"interrupted",ts=>"2026-10-14T01:00:01Z"});
+   $s->consume({%$base,type=>"agent_closed",status=>$status,ts=>"2026-10-14T01:00:02Z"});
+   die "$status" unless grep {/^N\|A\|codex:child\|codex:lead\|[^|]*\|\Q$expected\E\|/} $s->projections(1791939603);
+ }
+' "$REPO/scripts/lib/live-state.pl"
+check 'replayed older events cannot move a session back to a launcher that has since ended' perl -e '
+ require $ARGV[0]; my $s=Loomy::LiveState->new;
+ my $base={schema=>2,session_key=>"codex:lead",tool=>"codex",bridge=>"codex-native",multi_agent_version=>"v2",agent_id=>"child",id=>"turn",owner_pid=>$$};
+ $s->consume({%$base,type=>"delegation_start",ts=>"2026-10-14T01:00:10Z"});
+ $s->consume({%$base,owner_pid=>999999,type=>"agent_link",ts=>"2026-10-14T01:00:00Z"});
+ die unless $s->{sessions}{"codex:lead"}{pid}==$$;
+ $s->consume({%$base,type=>"delegation_activity",activity=>"running",ts=>"2026-10-14T01:00:11Z"});
+ die unless grep {/^N\|A\|codex:child\|codex:lead\|[^|]*\|running\|/} $s->projections(1791939620);
+' "$REPO/scripts/lib/live-state.pl"
 printf '%s S1 Codex live checks passed\n' "$PASS"

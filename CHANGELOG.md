@@ -2,7 +2,7 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## Unreleased (0.17.2)
+## 0.17.2 — 2026-10-14
 - Always show the last 40 output lines of a failing test command in CI. Measure S5 reducer/render work in CPU time and scale test-only timing budgets with `LOOMY_TEST_TIME_SCALE` (1 locally, 3 in Linux CI), retaining structural checks, workloads and soak durations; timing failures report the measurement and budget.
 - Fix the Linux CI: the interrupted-delegation tests signalled a watchdog wrapper subshell instead of the bridge (the `bash`/`perl` test functions run the watchdog), so the bridge and its CLI processes were orphaned; they now start the bridge with `command bash`/`command perl` and signal it directly
 - Fix the provider-availability quota-age test on Linux: `stat -f %m` succeeds on GNU stat (filesystem status), so GNU `stat -c %Y` is tried first and BSD `stat -f %m` second

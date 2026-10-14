@@ -7,13 +7,15 @@ use Time::HiRes qw(time);
 use File::Path qw(make_path);
 my ($work,$action,$trial)=@ARGV; $trial//=0;
 my $root="$work/project"; my $now=time;
+# Claude stores a project's transcripts under its cwd with every non-alphanumeric character replaced by a dash.
+(my $slug=$root)=~s/[^A-Za-z0-9]/-/g;
 sub ts {my $t=$now+($_[0]//0); strftime('%Y-%m-%dT%H:%M:%S',gmtime($t)).sprintf('.%03dZ',int(($t-int $t)*1000))}
 sub rows {
     my ($path,@rows)=@_; (my $dir=$path)=~s{/[^/]*$}{}; make_path($dir);
     open my $f,'>>',$path or die $!; print $f encode_json($_),"\n" for @rows; close $f or die $!;
 }
 sub codex_path {"$work/codex/sessions/2020/01/01/rollout-$_[0].jsonl"}
-sub claude_path {"$work/claude/projects/replay/$_[0].jsonl"}
+sub claude_path {"$work/claude/projects/$slug/$_[0].jsonl"}
 sub meta {
     my ($id,$parent,$name,$surface)=@_;
     {type=>'session_meta',timestamp=>ts(),payload=>{id=>$id,cwd=>$root,timestamp=>ts(),
@@ -48,7 +50,7 @@ if ($action eq 'seed') {
             rows(claude_path($cl),
                 {base($cl,'assistant'),message=>{content=>[{type=>'tool_use',name=>'Agent',id=>$call,input=>{subagent_type=>$role,run_in_background=>JSON::PP::true}}]}},
                 {base($cl,'user'),toolUseResult=>{status=>'async_launched',agentId=>$agent,isAsync=>JSON::PP::true},message=>{content=>[{type=>'tool_result',tool_use_id=>$call,content=>[]}]}});
-            rows("$work/claude/projects/replay/$cl/subagents/agent-$agent.jsonl",{base($cl,'assistant'),message=>{content=>[],model=>'claude-sonnet-5-5'}});
+            rows("$work/claude/projects/$slug/$cl/subagents/agent-$agent.jsonl",{base($cl,'assistant'),message=>{content=>[],model=>'claude-sonnet-5-5'}});
             # Bash background notifications must never create an agent row.
             rows(claude_path($cl),{base($cl,'queue-operation'),operation=>'enqueue',content=>'<task-notification><tool-use-id>bash-phantom</tool-use-id><status>completed</status></task-notification>'});
         } else {

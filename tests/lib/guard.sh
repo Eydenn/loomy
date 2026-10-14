@@ -10,7 +10,14 @@ chmod 700 "$TMUX_TMPDIR"
 unset TMUX TMUX_PANE CODEX_HOME CLAUDE_CONFIG_DIR
 LOOMY_TEST_STUBS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../stubs" && pwd -P)"
 export LOOMY_TEST_GUARD=1 LOOMY_TEST_STUBS LOOMY_TEST_GUARD_LOG="$WORK/guard-violations.log"
-export PATH="$LOOMY_TEST_STUBS:/usr/bin:/bin:/usr/sbin:/sbin"
+# tmux may live outside the restricted PATH (Homebrew on the Mac): expose only that binary through a private directory,
+# so tmux/PTY tests run instead of skipping. Its sockets stay under TMUX_TMPDIR.
+LOOMY_TEST_TOOLS="$WORK/tools"; mkdir -p "$LOOMY_TEST_TOOLS"
+_guard_tmux="$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v tmux || true)"
+[[ -z "$_guard_tmux" ]] || ln -sf "$_guard_tmux" "$LOOMY_TEST_TOOLS/tmux"
+unset _guard_tmux
+export LOOMY_TEST_TOOLS
+export PATH="$LOOMY_TEST_STUBS:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # pgrep treats its argument as a regexp; escape paths before matching, exclude this shell.
 test_guard_processes() {

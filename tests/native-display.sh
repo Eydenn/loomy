@@ -6,7 +6,7 @@ WORK="$(mktemp -d "/tmp/loomy-native-display.XXXXXX")"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
-export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="$REPO/tests/stubs:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_HOME="$REPO" NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0
 unset CODEX_THREAD_ID LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT LOOMY_WATCH_TOOL AI_ROUTE_ENV LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_WATCH_ID
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"

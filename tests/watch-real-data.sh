@@ -87,10 +87,11 @@ check 'live block order: running newest first, then recently ended newest first;
   die "order: $got" unless $got eq "Delta,Epsilon,Gamma,Beta,Alpha";
   die "old finished row above the recap" if $live=~/Old finished/;
 ' "$WORK/full"
-check 'the recap lists finished agents newest first (folded rows included), then the active ones' perl -0777 -e '
+check 'the recap lists the folded finished agents newest first (rows of the live block are not repeated), then the active ones' perl -0777 -e '
   my $s=<>; my ($recap)=$s=~/^(┏━ claude app applead1[^\n]* recap.*?)(?=^┏━ codex|\z)/ms; die "no recap" unless $recap;
   my @r=$recap=~/^  ┣━ (\S+)/mg; my $got=join ",",@r;
-  die "recap order: $got" unless $got eq "Gamma,Beta,Alpha,agent,Old,Delta,Epsilon";
+  # Gamma, Beta and Alpha are ended rows already in the live block: they are not repeated in the recap.
+  die "recap order: $got" unless $got eq "agent,Old,Delta,Epsilon";
 ' "$WORK/full"
 check 'a child silent but inside its lease keeps running' perl -0777 -e '
   my $s=<>; die unless $s=~/Epsilon quiet review[^\n]* running · 5:00/;

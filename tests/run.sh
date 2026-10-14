@@ -24,12 +24,12 @@ LIVE_ARTIFACTS="${LOOMY_TEST_LIVE_ARTIFACTS:-}"
 TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the cleanup below
 WATCH_PS="${LOOMY_TEST_WATCH_PS:-1}"
 NATIVE_PTY="${LOOMY_TEST_NATIVE_PTY:-1}"   # explicit sandbox opt-out; Mac default stays enabled
-for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$_v"; done
+for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_TOOLS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
 mkdir -p "$WORK/tmp"
 export TMPDIR="$WORK/tmp"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" NO_COLOR=1
-export PATH="$HERE/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="$HERE/stubs:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_CODEX_BIN="$HERE/stubs/codex"
 # Project relays (.loomy/scripts/*.sh): the "installed" Loomy is this repository.
 export LOOMY_HOME="$REPO"
@@ -260,7 +260,8 @@ STUB
 
   local bridge_pid child_pid attempts codex_pid_file="$WORK/codex-child.pid" claude_pid_file="$WORK/claude-child.pid"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"interrupted-bridge-test","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$J"
-  bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" "$3" delegate codex architect --effort low --why "cancel codex" "Interrupt codex"' _ "$op" "$codex_pid_file" "$LOOMY" >"$OUT" 2>&1 &
+  # `command` skips the watchdog wrappers (perl/bash functions): the signal must reach the bridge itself, not a wrapper subshell.
+  command bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" "$3" delegate codex architect --effort low --why "cancel codex" "Interrupt codex"' _ "$op" "$codex_pid_file" "$LOOMY" >"$OUT" 2>&1 &
   bridge_pid=$!
   attempts=0
   while ! grep -q '"type":"delegation_start".*"task":"Interrupt codex"' "$J"; do
@@ -286,7 +287,7 @@ STUB
   run "codex: interrupted final event renders with duration in tree" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$op" --once
   has "codex: tree shows interrupted state and duration" '⊘ Architect.*0:[0-9][0-9].*· interrupted'
 
-  perl -e '$SIG{INT}="DEFAULT"; exec @ARGV' bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" LOOMY_BRIDGE_OK=1 "$3" delegate claude architect --effort low --why "cancel claude" "Interrupt claude"' _ "$op" "$claude_pid_file" "$LOOMY" >"$OUT" 2>&1 &
+  command perl -e '$SIG{INT}="DEFAULT"; exec @ARGV' bash -c 'cd "$1" && exec env STUB_SLEEP=30 STUB_PID_FILE="$2" LOOMY_BRIDGE_OK=1 "$3" delegate claude architect --effort low --why "cancel claude" "Interrupt claude"' _ "$op" "$claude_pid_file" "$LOOMY" >"$OUT" 2>&1 &
   bridge_pid=$!
   attempts=0
   while ! grep -q '"type":"delegation_start".*"task":"Interrupt claude"' "$J"; do
@@ -357,10 +358,10 @@ STUB
       descendant_file="$WORK/$bridge-$mode-descendant.pid"
       rm -f "$pid_file" "$descendant_file"
       if [[ "$bridge" == codex ]]; then
-        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="${5%/*}" LOOMY_CODEX_BIN="$5" "$6" delegate codex architect --effort low "$7"' \
+        command bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="${5%/*}" LOOMY_CODEX_BIN="$5" "$6" delegate codex architect --effort low "$7"' \
           _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir/codex" "$LOOMY" "$task" >"$OUT" 2>&1 &
       else
-        bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="$5" LOOMY_BRIDGE_OK=1 PATH="$5:$PATH" "$6" delegate claude architect --effort low "$7"' \
+        command bash -c 'cd "$1" && exec env STUB_MODE="$2" STUB_CLI_PID_FILE="$3" STUB_DESCENDANT_PID_FILE="$4" LOOMY_TEST_STUBS="$5" LOOMY_BRIDGE_OK=1 PATH="$5:$PATH" "$6" delegate claude architect --effort low "$7"' \
           _ "$op" "$mode" "$pid_file" "$descendant_file" "$cli_dir" "$LOOMY" "$task" >"$OUT" 2>&1 &
       fi
       bridge_pid=$!
@@ -3523,6 +3524,7 @@ run "desktop session resume and session-scoped tool routing" bash "$HERE/resume-
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"
+run "live block fit: oldest ended rows fold first, running rows stay on screen, no duplicate in the recap" bash "$HERE/fold-fit.sh"
 run "watch exit paths and watchdog process-group cleanup" bash "$HERE/watch-exit.sh"
 run "watch timer backpressure, key ordering and prompt quit under slow rendering" bash "$HERE/watch-backpressure.sh"
 run "native end semantics, useful journal activity and count-only emphasis" bash "$HERE/native-display.sh"

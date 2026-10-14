@@ -12,7 +12,7 @@ trap 'exit 130' INT
 mkdir -p "$WORK/tmp"
 export TMPDIR="$WORK/tmp"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
-export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="$REPO/tests/stubs:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_HOME="$REPO" LOOMY_LANG=en NO_COLOR=1 LOOMY_CATALOG_CHECK=0 LOOMY_NO_AUTOUPDATE=1
 export LOOMY_FIXTURE_NOW=1791853200 LOOMY_NATIVE_NOW=1791853200
 unset LOOMY_DELEGATION LOOMY_PROJECT_ROOT LOOMY_UI_LANG AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT
@@ -278,7 +278,7 @@ for view in tree list; do
   check "$view 170x40 frame keeps twelve running children and both leads above the footer" perl -0777 -e '
     my $s=<>; for my $n (30..41) {die "missing latency$n" unless $s=~/latency$n[^\n]*running/}
     die unless $s=~/cli_worker[^\n]*running/ && $s=~/grandchild[^\n]*running/;
-    die unless $s=~/codex app 00000001/ && $s=~/codex cli 00000008/ && $s=~/\+3 finished/;
+    die unless $s=~/codex app 00000001/ && $s=~/codex cli 00000008/ && $s=~/\+3 (?:finished|earlier)/;
   ' "$WORK/frame-$view"
   render_frame "$view" auto 9999 >"$WORK/frame-$view-scroll"
   check "$view recap scroll preserves every active row and lead" perl -0777 -e '

@@ -38,7 +38,8 @@ loomy_native_accept() {
        NS_T=(${groups[@]+"${groups[@]}"}) ;;
     G) for (( i=0; i<${#NS_G[@]}; i++ )); do [[ "${NS_G[i]}" != "N|G|$key|"* ]] || found=$i; done
        if (( found < 0 )); then NS_G+=("$line"); else NS_G[found]="$line"; fi ;;
-    A) for (( i=0; i<${#NS_A[@]}; i++ )); do [[ "${NS_A[i]}" != "N|A|$key|"* ]] || found=$i; done
+    A) # Updated rows are the recent ones: search from the end and stop at the first match.
+       for (( i=${#NS_A[@]}-1; i>=0; i-- )); do [[ "${NS_A[i]}" != "N|A|$key|"* ]] || { found=$i; break; }; done
        if (( found < 0 )); then NS_A+=("$line"); else
          loomy_native_read "${NS_A[found]}" _ _ _ _ _ _ _ old_task old_tail
          loomy_native_read "$line" _ _ _ _ _ _ _ new_task new_tail
@@ -57,7 +58,7 @@ loomy_native_accept() {
          fi
          NS_A[found]="$line"
        fi ;;
-    T) for (( i=0; i<${#NS_T[@]}; i++ )); do [[ "${NS_T[i]}" != "N|T|$key|"* ]] || found=$i; done
+    T) for (( i=${#NS_T[@]}-1; i>=0; i-- )); do [[ "${NS_T[i]}" != "N|T|$key|"* ]] || { found=$i; break; }; done
        if (( found < 0 )); then
          loomy_native_read "$line" _ _ _ _ _ _ _ _ ended _
          i=${#NS_T[@]}
@@ -234,6 +235,9 @@ loomy_native_fold() {
       st="${NS_AI_STATE[ai]}"; [[ "$st" != lost ]] || NS_FOLD_LOST[gi]=$(( NS_FOLD_LOST[gi] + 1 ))
     done
   done
+  # The frame may fold more (loomy_native_render) to stay within the viewport: keep the age-based fold as its base.
+  NS_FOLD_SET_BASE="$NS_FOLD_SET"; NS_FOLD_N_BASE=()
+  for (( gi=0; gi<${#NS_G[@]}; gi++ )); do [[ -z "${NS_FOLD_N[gi]:-}" ]] || NS_FOLD_N_BASE[gi]=${NS_FOLD_N[gi]}; done
 }
 # loomy_native_sorted <indexes...> -> NS_SORTED: running first, then newest first (the recap lists finished agents
 # newest first, then the active ones). Insertion sort in the shell for small sets, one sort(1) beyond.
@@ -316,6 +320,17 @@ loomy_native_agent() {
   [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
   NS_VISITED_IDX[ai]=1
   if (( ! ${NS_RECAP:-0} && ${NS_MODE:-0} == 0 )) && [[ "$NS_FOLD_SET" == *"|$ai|"* ]]; then return 0; fi
+  # An ended row is either in the live block or in the recap, never in both.
+  if (( ${NS_RECAP:-0} )) && [[ -n "${NS_LIVE_MODE:-}" ]]; then
+    local shown=0
+    # Active rows stay in the recap too: its scrolling detail keeps every active agent reachable.
+    if [[ "${NS_AI_STATE[ai]}" != running && "${NS_AI_STATE[ai]}" != waiting && "$NS_LIVE_MODE" == 0 && "$NS_FOLD_SET" != *"|$ai|"* ]]; then shown=1; fi
+    if (( shown )); then
+      loomy_native_sorted ${NS_CHILDREN[ai]}
+      for child_index in $NS_SORTED; do loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"; done
+      return 0
+    fi
+  fi
   if (( ${NS_MODE:-0} > 0 )) && [[ "${NS_AI_STATE[ai]}" != running && "${NS_AI_STATE[ai]}" != waiting ]]; then
     loomy_native_sorted ${NS_CHILDREN[ai]}
     for child_index in $NS_SORTED; do loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"; done
@@ -511,7 +526,9 @@ loomy_native_render() {
     count=$NS_LAYOUT_COUNT; hidden=$NS_LAYOUT_HIDDEN; compact=$NS_LAYOUT_COMPACT
     selected=$NS_LAYOUT_SELECTED; budget=$NS_LAYOUT_BUDGET
   else
-    local gi
+    local gi gidx=()
+    NS_FOLD_SET="${NS_FOLD_SET_BASE:-|}"; NS_FOLD_N=()
+    for (( gi=0; gi<${#NS_G[@]}; gi++ )); do [[ -z "${NS_FOLD_N_BASE[gi]:-}" ]] || NS_FOLD_N[gi]=${NS_FOLD_N_BASE[gi]}; done
     for (( gi=0; gi<${#NS_G[@]}; gi++ )); do
       row="${NS_G[gi]}"
       loomy_native_read "$row" kind kind key tool surface cwd presence state model effort seen _ freshness
@@ -529,6 +546,7 @@ loomy_native_render() {
       full[i]=0; active_counts[i]=0; detail[i]=0; ended_counts[i]=0; routes[i]=0; modes[i]=0
       for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
       local group_index=$j agent_index turn_index
+      gidx[i]=$group_index
       for agent_index in ${NS_GROUP_AGENTS[group_index]}; do
         aid="${NS_AI_KEY[agent_index]}"; state="${NS_AI_STATE[agent_index]}"
         start="${NS_AI_START[agent_index]}"; turn="${NS_AI_TURN[agent_index]}"
@@ -554,6 +572,45 @@ loomy_native_render() {
       total=$(( total + 2 + routes[i] + full[i] ))
     done
     total=$(( total + overhead )); available=$LV_HEIGHT
+    # A running agent must never be pushed off-screen: when the frame does not fit, fold the recently ended rows first
+    # (oldest ended first, across every live group) into each group's "+N earlier" line.
+    if (( total > available )) && [[ "${LOOMY_WATCH_VIEW:-tree}" != list ]]; then
+      local sq_lines="" sq_ai sq_g sq_cost sq_ok sq_child sq_turn sq_changed
+      for (( i=0; i<${#order[@]}; i++ )); do
+        (( modes[i] != 9 )) || continue
+        loomy_native_read "${order[i]}" _ _ _ _ _ _ presence _
+        [[ "$presence" == live ]] || continue
+        for sq_ai in ${NS_GROUP_AGENTS[gidx[i]]}; do
+          [[ "$NS_FOLD_SET" != *"|$sq_ai|"* ]] || continue
+          case "${NS_AI_STATE[sq_ai]}" in running|waiting|lost) continue ;; esac
+          loomy_native_stamp "$sq_ai"
+          sq_lines="$sq_lines$NS_STAMP $sq_ai $i"$'\n'
+        done
+      done
+      if [[ -n "$sq_lines" ]]; then
+        sq_lines="$(printf '%s' "$sq_lines" | LC_ALL=C sort -k1,1n -k2,2n)"
+        for _ in 1 2 3 4; do
+          sq_changed=0
+          while read -r _ sq_ai sq_g; do
+            [[ -n "$sq_ai" ]] || continue
+            (( total > available - 1 )) || break
+            [[ "$NS_FOLD_SET" != *"|$sq_ai|"* ]] || continue
+            sq_ok=1
+            for sq_child in ${NS_CHILDREN[sq_ai]}; do [[ "$NS_FOLD_SET" == *"|$sq_child|"* ]] || { sq_ok=0; break; }; done
+            (( sq_ok )) || continue
+            sq_cost=1; [[ -z "${NS_AI_TURN[sq_ai]}" ]] || sq_cost=2
+            for sq_turn in ${NS_AGENT_TURNS[sq_ai]}; do
+              if [[ "${NS_TI_PARENT[sq_turn]}" == "${NS_AI_KEY[sq_ai]}" && "${NS_TI_KEY[sq_turn]}" != "${NS_AI_TURN[sq_ai]}" ]]; then sq_cost=$(( sq_cost + 1 )); fi
+            done
+            total=$(( total - sq_cost )); full[sq_g]=$(( full[sq_g] - sq_cost ))
+            if (( ${NS_FOLD_N[gidx[sq_g]]:-0} == 0 )); then total=$(( total + 1 )); full[sq_g]=$(( full[sq_g] + 1 )); fi
+            NS_FOLD_N[gidx[sq_g]]=$(( ${NS_FOLD_N[gidx[sq_g]]:-0} + 1 ))
+            NS_FOLD_SET="$NS_FOLD_SET$sq_ai|"; compact=1; sq_changed=1
+          done <<<"$sq_lines"
+          (( sq_changed && total > available - 1 )) || break
+        done
+      fi
+    fi
     # Leave one line for scrolling detail once compaction is needed.
     if (( total > available )) || [[ "${LOOMY_WATCH_VIEW:-tree}" == list ]]; then available=$(( available - 1 )); fi
     # Collapse finished agents first, then turn rows, then group decoration.
@@ -628,10 +685,10 @@ loomy_native_render() {
     for (( i=0; i<${#order[@]}; i++ )); do
       for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
       (( modes[i] > 0 || ${NS_FOLD_N[j]:-0} > 0 )) || continue
-      NS_MODE=0; NS_FINISHED=0; NS_SELECTED='*'; NS_RECAP=1
+      NS_MODE=0; NS_FINISHED=0; NS_SELECTED='*'; NS_RECAP=1; NS_LIVE_MODE=${modes[i]}
       loomy_native_group "${order[i]}" "$j"
     done
-    NS_RECAP=0
+    NS_RECAP=0; NS_LIVE_MODE=""
   fi
   (( count > 0 )) || { tv word 'No roles running'; loomy_live_line "$word"; }
   (( hidden == 0 )) || { tv word '%s hidden groups' "$hidden"; loomy_live_line "$word"; }

@@ -363,7 +363,7 @@ loomy_watch_feed() {
       last unless kill 0,$owner;
       last if $until && !kill(0,$until);
       my $key="";
-      if ($select->can_read(0.20)) { my $n=sysread($input,my $bytes,32); last unless defined($n) && $n; $buf.=$bytes }
+      if ($select->can_read(0.10)) { my $n=sysread($input,my $bytes,32); last unless defined($n) && $n; $buf.=$bytes }
       if ($buf =~ s/^\e\[A//) { $key="up" }
       elsif ($buf =~ s/^\e\[B//) { $key="down" }
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
@@ -542,10 +542,16 @@ loomy_watch_legacy_accept() {
   if [[ "$1" == E\|* ]]; then
     loomy_live_accept "${1#E|}"; return 0
   fi
+  # The bounded logs (hundreds of rows per batch) take a shortcut: no field splitting, no growing string per row;
+  # the rows are joined once at logend.
+  case "$1" in
+    K\|L\|*) LEGACY_LOG_ARR[${#LEGACY_LOG_ARR[@]}]="${1#K|L|}"; return 0 ;;
+    K\|J\|*) LEGACY_SESSION_ARR[${#LEGACY_SESSION_ARR[@]}]="${1#K|J|}"; return 0 ;;
+  esac
   loomy_native_read "${1#K|}" item value tail
   case "$item" in
     reset) LEGACY_SEQ=$(( ${LEGACY_SEQ:-0} + 1 )); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_MONTH=(); LEGACY_PHASE=(); LEGACY_SESSIONS=(); LEGACY_VISIBLE=1 ;;
-    logreset) LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS="" ;;
+    logreset) LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS=""; LEGACY_LOG_ARR=(); LEGACY_SESSION_ARR=() ;;
     B) LEGACY_PHASE+=("$value|$tail") ;;
     U) LEGACY_USAGE="$value" ;;
     V) LEGACY_ADVISOR="$value" ;;
@@ -558,7 +564,11 @@ loomy_watch_legacy_accept() {
     C) LEGACY_MONTH+=("$value|$tail") ;;
     L) LEGACY_LOG_JSON="$LEGACY_LOG_JSON$value${tail:+|$tail}"$'\n' ;;
     J) LEGACY_SESSION_ROWS="$LEGACY_SESSION_ROWS$value|$tail"$'\n' ;;
-    logend) LEGACY_LOG_SEQ=$(( ${LEGACY_LOG_SEQ:-0} + 1 )); [[ "${view:-}" != status && "${view:-}" != log ]] || LEGACY_VISIBLE=1 ;;
+    logend)
+      (( ${#LEGACY_LOG_ARR[@]} == 0 )) || printf -v LEGACY_LOG_JSON '%s\n' "${LEGACY_LOG_ARR[@]}"
+      (( ${#LEGACY_SESSION_ARR[@]} == 0 )) || printf -v LEGACY_SESSION_ROWS '%s\n' "${LEGACY_SESSION_ARR[@]}"
+      LEGACY_LOG_ARR=(); LEGACY_SESSION_ARR=()
+      LEGACY_LOG_SEQ=$(( ${LEGACY_LOG_SEQ:-0} + 1 )); [[ "${view:-}" != status && "${view:-}" != log ]] || LEGACY_VISIBLE=1 ;;
   esac
 }
 # The pretty log (awk) and session events (perl) cost a process each: build them only for a view that shows them,
@@ -1097,7 +1107,7 @@ if (( WATCH )); then
   # shellcheck source=loomy-tree.sh
   source "$SCRIPT_DIR/loomy-tree.sh" --library
   loomy_live_init
-  LEGACY_SEQ=0; LEGACY_SESSIONS=(); LEGACY_PHASE=(); LEGACY_MONTH=(); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS=""; LEGACY_SESSION_PRETTY=""; LEGACY_LOG_PRETTY=""; LEGACY_LOG_SEQ=0; LEGACY_PRETTY_SEQ=-1; LEGACY_VISIBLE=0
+  LEGACY_SEQ=0; LEGACY_SESSIONS=(); LEGACY_PHASE=(); LEGACY_MONTH=(); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_LOG_JSON=""; LEGACY_LOG_ARR=(); LEGACY_SESSION_ARR=(); LEGACY_SESSION_ROWS=""; LEGACY_SESSION_PRETTY=""; LEGACY_LOG_PRETTY=""; LEGACY_LOG_SEQ=0; LEGACY_PRETTY_SEQ=-1; LEGACY_VISIBLE=0
   LEGACY_USAGE="0 0 0 0 0 0"; LEGACY_ADVISOR="0 0 0 -"; LEGACY_TOTAL="0 0"; LEGACY_COUNT=0; LEGACY_NATIVE=0; LEGACY_HAS_USAGE=0; LEGACY_HAS_ADVISOR=0
   legacy_stamp=""; legacy_frame=""
   # Internal failures leave the terminal controller alive; no command/source text is logged.
@@ -1154,6 +1164,9 @@ if (( WATCH )); then
     if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
     if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
     if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
+    # The bounded log rows (hundreds per batch) are collected inline, without a function call per row.
+    if [[ "$feed_line" == K\|L\|* ]]; then LEGACY_LOG_ARR[${#LEGACY_LOG_ARR[@]}]="${feed_line#K|L|}"; continue; fi
+    if [[ "$feed_line" == K\|J\|* ]]; then LEGACY_SESSION_ARR[${#LEGACY_SESSION_ARR[@]}]="${feed_line#K|J|}"; continue; fi
     if [[ "$feed_line" == K\|* ]]; then LEGACY_VISIBLE=0; loomy_watch_legacy_accept "$feed_line"; (( ! LEGACY_VISIBLE )) || native_dirty=1; continue; fi
     if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
     loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols

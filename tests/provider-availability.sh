@@ -253,7 +253,7 @@ run '95-99 percent readings still permit a real Claude attempt' bridge claude
 run 'both near quota providers stay available' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/usage.sh"; ! ai_provider_saturated codex && ! ai_provider_saturated claude' _ "$REPO"
 reset_case
 printf '{"rate_limits":{"rate_limit_reached_type":"primary"}}\n' >"$CODEX_HOME/sessions/quota.jsonl"
-run 'stale reached without reset permits a fresh attempt' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/usage.sh"; STUB_NOW=$(( $(stat -f %m "$2" 2>/dev/null || stat -c %Y "$2")+301 )); export STUB_NOW; ! ai_provider_saturated codex' _ "$REPO" "$CODEX_HOME/sessions/quota.jsonl"
+run 'stale reached without reset permits a fresh attempt' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/usage.sh"; STUB_NOW=$(( $(stat -c %Y "$2" 2>/dev/null || stat -f %m "$2")+301 )); export STUB_NOW; ! ai_provider_saturated codex' _ "$REPO" "$CODEX_HOME/sessions/quota.jsonl"
 reset_case
 run 'unknown chain model is explicitly refused' bash -c '"$1/bin/loomy" config set chain.codex.top gpt-9-test; [[ $? == 2 ]]' _ "$REPO"
 run 'validated local chain is accepted' "$REPO/bin/loomy" config set chain.codex.top gpt-6.1-sol

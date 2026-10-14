@@ -2,6 +2,14 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased (0.17.2)
+- Fix the Linux CI: the interrupted-delegation tests signalled a watchdog wrapper subshell instead of the bridge (the `bash`/`perl` test functions run the watchdog), so the bridge and its CLI processes were orphaned; they now start the bridge with `command bash`/`command perl` and signal it directly
+- Fix the provider-availability quota-age test on Linux: `stat -f %m` succeeds on GNU stat (filesystem status), so GNU `stat -c %Y` is tried first and BSD `stat -f %m` second
+- Keep running agents on screen: when the live block does not fit the viewport, recently ended rows now fold first (oldest ended first, across every live group) into each group's "+N earlier" line, before any group is compacted; the 30-minute rule still applies when space allows. A row folded to fit is listed once, in the recap, never also in the live block
+- Make the watch scale with the history: the bounded status/log batches (800 rows per second) no longer split every row in Bash (rows are collected in an array and joined once), and native agent/turn updates search the recent rows first and stop at the first match. Event-to-screen latency in the 40-trial replay stays under the one-second budget
+- Make the two-minute PTY replay run on Linux and on the Mac: Expect starts tmux with an explicit `TERM` and a sized PTY (80x24 without a controlling terminal), the Claude transcripts are written under the project slug directory Claude uses, the startup wait accepts the 8-character session key, a flag inside a single braced Expect block is passed unbraced, and once the live list is on completion means "nothing running" within 1.5 s (the list moves finished agents into the scrolling recap, rebuilt on every frame). The test guard now exposes tmux (a private symlink, Homebrew included) so tmux/PTY tests no longer skip on the Mac
+- Add `tests/fold-fit.sh`: four live groups, ended rows older than the running ones, several viewport heights (running rows visible, live block within the viewport, oldest folded first, no duplicate between live block and recap)
+
 ## 0.17.1 — 2026-10-14
 - A Codex turn that finished while no watch was running ends with its real state and time (its terminal record is found in the rollout), and a one-time repair corrects the turns older builds had ended as "unknown".
 - Discover Codex multi-agent v2 sessions through project cwd or runtime workspace roots, retain explicit parent nesting, and show nickname, role and path slug. Read paginated child lifecycle evidence from bounded head/tail slices; explicit completions show done or interrupted with their source end time. Fresh writes keep long-lived, old-date leads live without replaying their entire rollout; v1 completion semantics remain unchanged.

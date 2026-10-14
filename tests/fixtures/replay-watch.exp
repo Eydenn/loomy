@@ -30,11 +30,36 @@ proc visible {labels state started} {
         if {[llength $pending]} {after 40}
     }
 }
+# The live list moves every finished agent into the scrolling recap: once it is on, completion means that nothing
+# is running any more (header and rows), not that a finished row is still on the first screen. The recap grows with the
+# whole history and is rebuilt by Bash on every frame (3.2 on the Mac), so this step has a 1.5 s budget; the running
+# states and the tree phase keep the 1 s budget.
+proc settled {labels started} {
+    global maximum socket
+    while 1 {
+        expect -timeout 0 { -re {.+} {} eof {error "watch crashed during replay"} timeout {} }
+        set pane [exec tmux -S $socket capture-pane -p -t replay 2>@1]
+        set running 0
+        foreach line [split $pane \n] {
+            foreach label $labels {if {[string first $label $line] >= 0 && [regexp running $line]} {set running 1}}
+        }
+        if {!$running && [regexp -line {^0 running} $pane]} {
+            set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
+            if {$elapsed > $maximum} {set maximum $elapsed}
+            if {$elapsed >= 1500} {error "list did not settle: $elapsed ms (budget <1500)"}
+            return
+        }
+        if {([clock clicks -microseconds]-$started) >= 1500000} {error "list still shows running agents after 1.5s"}
+        after 40
+    }
+}
 set result [catch {
     exec perl $events $work seed 2>@1
-    spawn tmux -S $socket new-session -x 170 -y 70 -s replay bash [file join $repo scripts loomy-status.sh] --root $root --watch --full
+    spawn env TERM=xterm-256color tmux -S $socket new-session -x 170 -y 70 -s replay bash [file join $repo scripts loomy-status.sh] --root $root --watch --full
     set child [exp_pid]
-    expect {-re {codex cli cx-cli} {} eof {error "watch died on startup"} timeout {error "watch startup missing"}}
+    # Without a controlling terminal (CI) the PTY is 80x24 and tmux would shrink the window to it: size it explicitly.
+    stty rows 70 columns 170 < $spawn_out(slave,name)
+    expect -re {codex cli (x:)?cx-cli} {} eof {error "watch died on startup"} timeout {error "watch startup missing"}
     set soak_start [clock clicks -milliseconds]
     for {set trial 1} {$trial <= 40} {incr trial} {
         if {$trial == 21} {send "a"}
@@ -45,13 +70,13 @@ set result [catch {
         after 200
         set started [clock clicks -microseconds]
         exec perl $events $work end $trial 2>@1
-        visible $labels {done|idle waiting|completed} $started
+        if {$trial > 20} {settled $labels $started} else {visible $labels {done|idle waiting|completed} $started}
         set pane [exec tmux -S $socket capture-pane -p -t replay 2>@1]
         if {[string first bash-phantom $pane] >= 0} {error "phantom Bash row"}
         foreach label $labels {
             set count 0
             foreach line [split $pane \n] {if {[string first $label $line] >= 0} {incr count}}
-            if {$count != 1} {error "duplicate/missing $label in completed frame: $count"}
+            if {$count > 1 || ($trial <= 20 && $count != 1)} {error "duplicate/missing $label in completed frame: $count"}
         }
         # Accelerated bursts, sustained for at least two minutes, with varying tick phases.
         after [expr {2850+int(rand()*250)}]

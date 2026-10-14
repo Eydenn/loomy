@@ -7,7 +7,7 @@ export CODEX_HOME=foreign CLAUDE_CONFIG_DIR=foreign PATH="/foreign:$PATH"
 source "$REPO/tests/lib/guard.sh"
 trap - EXIT INT TERM HUP
 [[ -z "${CODEX_HOME:-}" && -z "${CLAUDE_CONFIG_DIR:-}" ]]
-[[ "$PATH" == "$LOOMY_TEST_STUBS:/usr/bin:/bin:/usr/sbin:/sbin" ]]
+[[ "$PATH" == "$LOOMY_TEST_STUBS:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin" ]]
 # Counters persist through the guard's command substitutions.
 test_guard_processes() {
   local n

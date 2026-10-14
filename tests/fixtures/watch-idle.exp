@@ -30,7 +30,8 @@ set result [catch {
     set f [open $timing r]; set output [read $f]; close $f
     if {![regexp {(\d+\.\d+) (\d+\.\d+) (\d+\.\d+)\s*$} $output all wall user sys]} {error "idle CPU timing missing"}
     set cpu [expr {100.0*($user+$sys)/$wall}]
-    if {$wall < 60} {error "idle watch duration $wall s (minimum 60 s)"}
+    # The q is sent after 60 s; the shell's elapsed time may round a few ms below that.
+    if {$wall < 59.5} {error "idle watch duration $wall s (minimum 59.5 s)"}
     if {$cpu >= $cpu_budget} {error "idle watch CPU $cpu% over $wall s (budget <$cpu_budget%)"}
 } reason]
 if {$child ne ""} {catch {exec kill $child 2>@1}; catch {close}; catch {wait}}

@@ -2,7 +2,7 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## Unreleased (0.17.0)
+## 0.17.0 — 2026-10-14
 
 ### Breaking
 - Route only catalog-validated chains: remove `gpt-6-astra`, `gpt-6-sol`, `claude-sonnet-5` and `claude-haiku-4-5` from built-in routing. Validate `chain.*` and `model.*` overrides against the current catalog; `models_mode` supports `latest` only. `loomy models --thrifty` is removed (exit 2); budget profiles still control effort.

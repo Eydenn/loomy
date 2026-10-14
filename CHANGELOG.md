@@ -2,6 +2,11 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased (0.17.3)
+- README captures: the top image is again the animated agent-tree diagram (roles, tools, models, efforts; key t) and the list view stays folded in `<details>`. `tools/capture-watch.sh` returns to the journal-based demo (tree = `LOOMY_TREE=diagram`, live = list) that 0.17.1 had replaced by a native-session fixture, which made the "tree" image look like the list; the fixture `capture-native.pl` is removed. The four SVGs are regenerated with the current renderer and the captions restored in both READMEs
+- Restore colours in the native list and tree rows (any project with native Claude or Codex sessions): rail and branch glyphs, state words by outcome (running yellow, done green, failed red, interrupted dim red, partial/blocked/lost yellow, idle and stale dim), model names, elapsed times, the "+N finished/earlier" folds and the running summary were printed without a single colour sequence. Colour is applied after layout, so widths and clipping are unchanged and `NO_COLOR` output is byte-identical
+- Add `tests/fixtures/native-colour.exp` (run by `tests/codex-native.sh`): a real PTY watch without `NO_COLOR` or `LOOMY_FORCE_COLOR` must show coloured running, interrupted, partial and idle rows in the tree list and the live list
+
 ## 0.17.2 — 2026-10-14
 - Always show the last 40 output lines of a failing test command in CI. Measure S5 reducer/render work in CPU time and scale test-only timing budgets with `LOOMY_TEST_TIME_SCALE` (1 locally, 3 in Linux CI), retaining structural checks, workloads and soak durations; timing failures report the measurement and budget.
 - Fix the Linux CI: the interrupted-delegation tests signalled a watchdog wrapper subshell instead of the bridge (the `bash`/`perl` test functions run the watchdog), so the bridge and its CLI processes were orphaned; they now start the bridge with `command bash`/`command perl` and signal it directly

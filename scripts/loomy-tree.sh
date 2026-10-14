@@ -277,8 +277,19 @@ loomy_native_draw() {
       loomy_live_time "$age"; tv state 'waiting since %s' "$LV_TIME"
       state="${NS_DRAW_STATE[i]} · $state"
     fi
-    loomy_native_line "${NS_DRAW_PREFIX[i]}" "${NS_DRAW_TASK[i]}" "${NS_DRAW_MODEL[i]}" "$state" "$elapsed"
+    NS_STATE_KIND="${NS_DRAW_KIND[i]:-}" loomy_native_line "${NS_DRAW_PREFIX[i]}" "${NS_DRAW_TASK[i]}" "${NS_DRAW_MODEL[i]}" "$state" "$elapsed"
   done
+}
+
+# Colour of a state word: the outcome glyph first, then the raw state (NS_STATE_KIND) for plain words.
+loomy_native_paint() {
+  case "$1" in
+    "✓"*) NS_PAINT="$C_GREEN" ;;
+    "✗"*) NS_PAINT="$C_RED" ;;
+    "⊘"*) NS_PAINT="$C_DIM$C_RED" ;;
+    "△"*|"■"*|"⇄"*|"Ⅱ"*|"!"*) NS_PAINT="$C_YELLOW" ;;
+    *) case "${NS_STATE_KIND:-}" in running|waiting|active) NS_PAINT="$C_YELLOW" ;; *) NS_PAINT="$C_DIM" ;; esac ;;
+  esac
 }
 
 # State and elapsed are reserved before fitting task, model or other optional detail.
@@ -289,7 +300,7 @@ loomy_native_line() {
     NS_RECORD_NATIVE=1
     local n=${#NS_DRAW_TYPE[@]}
     NS_DRAW_TYPE[n]=D; NS_DRAW_PREFIX[n]="$prefix"; NS_DRAW_TASK[n]="$task"; NS_DRAW_MODEL[n]="$model"
-    NS_DRAW_AGENT[n]="${NS_ROW_AGENT:-}"; NS_DRAW_STATE[n]="${NS_TIMER_STATE:-$state}"; NS_DRAW_TIME[n]="$elapsed"
+    NS_DRAW_AGENT[n]="${NS_ROW_AGENT:-}"; NS_DRAW_STATE[n]="${NS_TIMER_STATE:-$state}"; NS_DRAW_TIME[n]="$elapsed"; NS_DRAW_KIND[n]="${NS_STATE_KIND:-}"
     NS_DRAW_CLOCK[n]="${NS_TIMER_KIND:-}"; NS_DRAW_AT[n]="${NS_TIMER_AT:-0}"
   fi
   # Compound evidence labels can wrap on very narrow terminals; each state word stays whole.
@@ -309,7 +320,11 @@ loomy_native_line() {
   if (( room < 0 )); then prefix=""; room=$(( LV_WIDTH - ${#suffix} )); fi
   (( room >= 0 )) || room=0
   ai_task_title "$task" "$room"; task="$AI_TASK_TITLE"
-  text="$prefix$task$model$suffix"
+  # Colour after layout: widths above count visible characters only (loomy_live_clip skips colour sequences).
+  loomy_native_paint "$state"; [[ -z "${NS_PAINT_FORCE:-}" ]] || NS_PAINT="$NS_PAINT_FORCE"
+  [[ -z "$prefix" ]] || prefix="${C_RAIL}${prefix}${C_RESET}"
+  [[ -z "$model" ]] || model="${C_CYAN}${model}${C_RESET}"
+  text="${prefix}${task}${model} ${NS_PAINT}${state}${C_RESET}${C_DIM} · ${elapsed}${C_RESET}"
   loomy_live_line "$text"
 }
 
@@ -344,6 +359,7 @@ loomy_native_agent() {
     turnstate="${NS_AI_TURNSTATE[ai]}"; turns="${NS_AI_TURNS[ai]}"; seen="${NS_AI_SEEN[ai]:-}"
     for (( i=0; i<depth; i++ )); do indent="$indent  "; done
     active=0; [[ "$state" != running && "$state" != waiting ]] || active=1
+    local NS_STATE_KIND="$state"
     label="${task:-${role:-agent} ${key: -8}}"
     NS_TIMER_KIND=elapsed; NS_TIMER_AT=${start:-0}; NS_TIMER_STATE=""
     age=$(( LV_NOW - ${start:-LV_NOW} )); (( age >= 0 )) || age=0
@@ -378,7 +394,7 @@ loomy_native_agent() {
     fi
     NS_TIMER_STATE=""; [[ "$NS_TIMER_KIND" != idle ]] || NS_TIMER_KIND=""
     if (( ${NS_MODE:-0} < 2 )) && [[ -n "$turn" ]] && { (( ${NS_MODE:-0} == 0 )) || (( active )); }; then
-      loomy_native_outcome "${turnstate:-unknown}" "$outcome"; tstate="$NS_OUT"
+      loomy_native_outcome "${turnstate:-unknown}" "$outcome"; tstate="$NS_OUT"; NS_STATE_KIND="${turnstate:-unknown}"
       [[ "$duration" != "—" ]] || { d="—"; NS_TIMER_KIND=""; }
       if [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ && -n "$end" ]]; then loomy_live_time "$duration"; d="$LV_TIME"; NS_TIMER_KIND=""; fi
       local turnlabel="turn ${turn: -8}"
@@ -394,7 +410,7 @@ loomy_native_agent() {
       (( ${NS_MODE:-0} < 2 )) || break
       (( ${NS_MODE:-0} == 0 )) || (( active )) || continue
       [[ "$ta" == "$wanted" && "$tkey" != "$turn" ]] || continue
-      loomy_native_outcome "$tstate" "$tout"; tstate="$NS_OUT"
+      NS_STATE_KIND="$tstate"; loomy_native_outcome "$tstate" "$tout"; tstate="$NS_OUT"
       if [[ "$tduration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then loomy_live_time "$tduration"; d="$LV_TIME"; else d="—"; fi
       loomy_native_line "${indent}┃  ┗━ " "turn ${tkey: -8}" "" "$tstate" "$d"
     done
@@ -431,7 +447,7 @@ loomy_native_route() {
     if (( unknown )); then tv word 'model unknown'; keep="${keep:+$keep, }$word"; fi
     [[ -z "$keep" ]] || text="${text:+$text · }$fam: $keep"
   done
-  [[ -z "$text" ]] || loomy_live_line "  LOOMY · $text"
+  [[ -z "$text" ]] || loomy_live_line "  ${C_DIM}LOOMY · $text${C_RESET}"
 }
 
 # Modes: full hierarchy, finished summary, one row per active agent, bare active list. The recap pass (NS_RECAP=1)
@@ -465,7 +481,7 @@ loomy_native_group() {
     if [[ "$presence" == live ]]; then state="$word"; else state="$state · $word"; fi
     model=""
   fi
-  loomy_native_line '┏━ ' "$label" "$model" "$state" "$age"
+  NS_STATE_KIND="$state" loomy_native_line '┏━ ' "$label" "$model" "$state" "$age"
   NS_TIMER_KIND=""
   (( NS_MODE >= 3 || NS_RECAP )) || [[ "$presence" != live ]] || loomy_native_route "$key" "$gi"
   NS_VISITED_IDX=()
@@ -488,10 +504,10 @@ loomy_native_group() {
   if (( ! NS_RECAP && NS_MODE == 0 && ${NS_FOLD_N[gi]:-0} > 0 )); then
     tv word '%s earlier' "${NS_FOLD_N[gi]}"
     if (( ${NS_FOLD_LOST[gi]:-0} > 0 )); then tv fold_lost '%s lost' "${NS_FOLD_LOST[gi]}"; word="$word · $fold_lost"; fi
-    loomy_live_line "  +$word"
+    loomy_live_line "  $C_DIM+$word$C_RESET"
   fi
-  (( NS_FINISHED == 0 || NS_MODE == 0 )) || { tv word '%s finished' "$NS_FINISHED"; loomy_live_line "  +$word"; }
-  (( NS_MODE >= 3 )) || loomy_live_line '┗━'
+  (( NS_FINISHED == 0 || NS_MODE == 0 )) || { tv word '%s finished' "$NS_FINISHED"; loomy_live_line "  $C_DIM+$word$C_RESET"; }
+  (( NS_MODE >= 3 )) || loomy_live_line "${C_RAIL}┗━${C_RESET}"
 }
 
 loomy_native_render() {
@@ -514,7 +530,7 @@ loomy_native_render() {
   fi
   if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then
     NS_RECORD=1; NS_DRAW_AGENT=(); NS_DRAW_TYPE=(); NS_DRAW_TEXT=(); NS_DRAW_PREFIX=(); NS_DRAW_TASK=(); NS_DRAW_MODEL=()
-    NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=()
+    NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=(); NS_DRAW_KIND=()
   fi
   loomy_live_header
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || { loomy_live_line "$LV_HEADER"; overhead=$(( overhead + 2 )); }
@@ -671,14 +687,14 @@ loomy_native_render() {
     NS_LAYOUT_SELECTED=$selected; NS_LAYOUT_BUDGET=$budget
   fi
   NS_RECAP=0
-  tv word '%s running' "$count"; tv usage 'native usage unknown'; loomy_live_line "$word · $usage"
+  tv word '%s running' "$count"; tv usage 'native usage unknown'; loomy_live_line "$C_YELLOW$word$C_RESET$C_DIM · $usage$C_RESET"
   for (( i=0; i<${#order[@]}; i++ )); do
     (( modes[i] != 9 )) || continue
     NS_MODE=${modes[i]}; NS_FINISHED=${ended_counts[i]}; NS_SELECTED="$selected"
     for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
     loomy_native_group "${order[i]}" "$j"
   done
-  [[ "$selected" == '*' ]] || { tv word '%s running' "$(( count - budget ))"; loomy_live_line "  +$word"; }
+  [[ "$selected" == '*' ]] || { tv word '%s running' "$(( count - budget ))"; loomy_live_line "  $C_DIM+$word$C_RESET"; }
   # Watch pins everything before this delimiter; only the detailed remainder scrolls.
   [[ "${LOOMY_WATCH_PIN:-0}" != 1 ]] || loomy_live_line $'\036loomy-recap'
   if (( compact )); then
@@ -1075,7 +1091,7 @@ loomy_live_row() {
   task=""
   if (( room > 2 )); then ai_task_title "${LV_TASK[i]}" "$(( room - 2 ))"; task="${AI_TASK_TITLE:+  $AI_TASK_TITLE}"; fi
   if (( ${#reserved} > LV_WIDTH )); then
-    loomy_native_line '' '' '' "${LV_WORD[i]}$suffix" "$LV_TIME"
+    NS_PAINT_FORCE="$color" loomy_native_line '' '' '' "${LV_WORD[i]}$suffix" "$LV_TIME"
     LV_ROW_LINES=$(( LV_ROW_LINES + 1 ))
   else loomy_live_line "$color$text$model$bars ${LV_WORD[i]} $(printf '%5s' "$LV_TIME")$task$suffix$C_RESET"; fi
   if [[ -n "$flags" ]]; then loomy_live_line "   $flags"; LV_ROW_LINES=$(( LV_ROW_LINES + 1 )); fi
@@ -1180,7 +1196,7 @@ loomy_live_render() {
     for (( k=0; k<${#active_order[@]} && k<capacity; k++ )); do
       i=${active_order[k]}; selected="$selected$i|"
       d=$(( LV_NOW - ${LV_TS[i]:-LV_NOW} )); (( d >= 0 )) || d=0; loomy_live_time "$d"
-      loomy_native_line '  ' "${LV_LABEL[i]} · ${LV_TASK[i]}" " ${LV_MODELSHORT[i]}" "$(t "${LV_OBSERVED[i]:-running}")" "$LV_TIME"
+      NS_STATE_KIND=running loomy_native_line '  ' "${LV_LABEL[i]} · ${LV_TASK[i]}" " ${LV_MODELSHORT[i]}" "$(t "${LV_OBSERVED[i]:-running}")" "$LV_TIME"
     done
   fi
   group_seen='|'

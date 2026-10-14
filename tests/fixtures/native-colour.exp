@@ -1,0 +1,67 @@
+source [file join [file dirname [info script]] watchdog.exp]
+# Colour regression: the native list and tree rows keep their SGR colours in a real PTY (no NO_COLOR, no LOOMY_FORCE_COLOR).
+set timeout 20
+set repo [file normalize [file join [file dirname [info script]] .. ..]]
+set work [file normalize [exec mktemp -d $env(TMPDIR)/loomy-native-colour.XXXXXX]]
+set caught [catch {
+set root [file join $work project]
+set home [file join $work home]
+set sessions [file join $work codex sessions]
+file mkdir $home [file join $work config]
+set fixture [file join $repo tests fixtures codex-native.pl]
+exec perl $fixture seed $root $sessions [pid]
+log_user 0
+log_file -noappend [file join $work native-colour.log]
+spawn env -u NO_COLOR -u LOOMY_FORCE_COLOR HOME=$home XDG_CONFIG_HOME=$work/config CODEX_HOME=$work/codex LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin LOOMY_TREE=list COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
+set code 0
+foreach identity {consolidation enrichment review} {
+    expect {
+        -exact $identity {}
+        timeout { set code 1 }
+        eof { set code 1 }
+    }
+    if {$code != 0} { break }
+}
+if {$code == 0} {
+    # Tree list first (running = yellow), then the live list ([a]), then the terminal outcomes.
+    expect {
+        -re {\x1b\[33mrunning} {}
+        timeout { puts stderr "tree list: running state is not coloured"; set code 1 }
+        eof { set code 1 }
+    }
+}
+if {$code == 0} {
+    send "a"
+    expect {
+        -re {\x1b\[38;5;98m[^\n]*\x1b\[0m[^\n]*\x1b\[33mrunning} {}
+        timeout { puts stderr "live list: rail and running state are not coloured"; set code 1 }
+        eof { set code 1 }
+    }
+}
+if {$code == 0} {
+    exec perl $fixture finish $root $sessions [pid]
+    foreach {outcome label} [list {\x1b\[2m\x1b\[31m⊘ interrupted} interrupted {\x1b\[33m△ partial} partial {\x1b\[32m✓[^\n]*waiting since} "waiting since"] {
+        expect {
+            -re $outcome {}
+            timeout { puts stderr "live list: $label is not coloured"; set code 1 }
+            eof { set code 1 }
+        }
+        if {$code != 0} { break }
+    }
+}
+catch { send "q" }
+expect {
+    eof {}
+    timeout { set code 1; catch { exec kill [exp_pid] }; catch { close } }
+}
+catch { wait }
+} message options]
+if {$caught} {
+    catch { exec kill [exp_pid] }
+    catch { close }
+    catch { wait }
+}
+file delete -force $work
+if {$caught} { puts stderr $message; exit 1 }
+if {$code != 0} { puts stderr "Native watch PTY colour check failed"; exit 1 }
+puts "Native watch PTY colour check passed"

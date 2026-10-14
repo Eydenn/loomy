@@ -329,6 +329,7 @@ if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
   printf 'SKIP native watch PTY: explicitly disabled (lead must run on the Mac)\n'
 elif command -v expect >/dev/null 2>&1; then
   check 'real watch sampler displays identities and refreshes terminal outcomes' expect "$REPO/tests/fixtures/native-watch.exp"
+  check 'real watch PTY keeps the native list and tree colours (no NO_COLOR, no forced colour)' expect "$REPO/tests/fixtures/native-colour.exp"
 else printf 'SKIP native watch PTY: expect unavailable\n'; fi
 # v2 uses synthetic paginated histories, including a 36 MiB lead in an older date.
 ROOT="$WORK/v2"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2-codex"

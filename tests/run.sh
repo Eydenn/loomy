@@ -223,7 +223,7 @@ delegation_options_tests() {
   if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
 
   local cap_tmp="$WORK/capture-watch-tmp" cap_bin="$WORK/capture-watch-bin"
-  local cap_native="$WORK/capture-watch-native" cap_output language view live_label fold_label recap_label
+  local cap_native="$WORK/capture-watch-native" cap_output language view heading
   mkdir -p "$cap_tmp" "$cap_bin"
   cat >"$cap_bin/mkdir" <<'STUB'
 #!/usr/bin/env bash
@@ -242,22 +242,18 @@ STUB
   rm -f "$cap_bin/mkdir"
   mkdir -p "$cap_native"
   for language in en fr; do
-    if [[ "$language" == fr ]]; then
-      live_label='en direct'; fold_label='+4 plus anciens · 2 perdus'; recap_label='récapitulatif'
-    else
-      live_label=live; fold_label='+4 earlier · 2 lost'; recap_label=recap
-    fi
-    for view in live tree; do
+    for view in tree live; do
       cap_output="$cap_native/loomy-watch-$view-$language.svg"
-      run "capture watch: native fixture renders $view ($language)" env TMPDIR="$cap_tmp" PATH="$cap_bin:$PATH" bash "$REPO/tools/capture-watch.sh" "$language" "$view" "$cap_output"
-      if grep -Fq 'demo1234' "$cap_output" && grep -Fq "$live_label" "$cap_output"; then ok "capture watch: native live group is present ($view, $language)"; else ko "capture watch: native live group missing ($view, $language)"; fi
-      if grep -Fq "$fold_label" "$cap_output"; then ok "capture watch: earlier and lost entries fold ($view, $language)"; else ko "capture watch: fold summary missing ($view, $language)"; fi
-      if grep -Fq "$recap_label" "$cap_output"; then ok "capture watch: recap is present ($view, $language)"; else ko "capture watch: recap missing ($view, $language)"; fi
-      run "capture watch: running native agent precedes finished work ($view, $language)" perl -0777 -e '
-        local $/; my $svg=<>; $svg =~ /<g class="f"[^>]*>(.*?)<\/g>/s or die "frame missing"; my $frame=$1;
-        my $running=index($frame,"Review navigation"); my $finished=index($frame,"Earlier plan");
-        die "running row missing or follows finished work" unless $running>=0 && $finished>$running;
-      ' "$cap_output"
+      if [[ "$view" == tree ]]; then heading="LOOMY AGENT TREE"; [[ "$language" != fr ]] || heading="ARBRE DES AGENTS LOOMY"
+      else heading="IN PROGRESS"; [[ "$language" != fr ]] || heading="EN COURS"; fi
+      run "capture watch: $view renders ($language)" env TMPDIR="$cap_tmp" PATH="$cap_bin:$PATH" bash "$REPO/tools/capture-watch.sh" "$language" "$view" "$cap_output"
+      if grep -Fq "$heading" "$cap_output"; then ok "capture watch: $view heading is present ($language)"; else ko "capture watch: $view heading missing ($language)"; fi
+      if [[ "$view" == tree ]]; then
+        # The agent tree is the animated role diagram: boxes carry model and effort, and the frames animate.
+        if grep -Fq 'claude-sonnet-5-5' "$cap_output" || grep -Fq 'sonnet-5-5' "$cap_output"; then ok "capture watch: diagram shows role models ($language)"; else ko "capture watch: diagram role models missing ($language)"; fi
+        if [[ "$(grep -c '<g class="f"' "$cap_output")" -ge 6 ]]; then ok "capture watch: diagram is animated ($language)"; else ko "capture watch: diagram frames missing ($language)"; fi
+        if grep -Fq 'demo1234' "$cap_output"; then ko "capture watch: native list group leaked into the diagram ($language)"; else ok "capture watch: tree capture is the diagram, not the list ($language)"; fi
+      fi
       if LC_ALL=C grep -Eq '/Users/|/var/folders|/private/tmp|PRIVATE_|SECRET-' "$cap_output"; then ko "capture watch: local path or private marker leaked ($view, $language)"; else ok "capture watch: synthetic output is clean ($view, $language)"; fi
     done
   done

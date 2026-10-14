@@ -23,14 +23,14 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 
 ---
 
-<p align="center"><img src="docs/assets/loomy-watch-tree-fr.svg" alt="loomy watch : session native en direct, agents en cours, historique replié et récapitulatif" width="100%"></p>
-<p align="center"><sub>Arbre des agents (touche t) : les sessions natives montrent d'abord les agents en cours ; l'historique ancien ou perdu est replié dans le récapitulatif</sub></p>
+<p align="center"><img src="docs/assets/loomy-watch-tree-fr.svg" alt="loomy watch : arbre des rôles, outils, modèles et efforts" width="100%"></p>
+<p align="center"><sub>Arbre des agents (touche t) : chaque rôle avec l'outil, le modèle et l'effort réellement utilisés</sub></p>
 
 <details>
 <summary><b>Vue en direct (liste) : les agents en cours d'abord, puis le récapitulatif de session</b></summary>
 
-<p align="center"><img src="docs/assets/loomy-watch-live-fr.svg" alt="loomy watch : session native avec les agents en cours, l'historique replié et le récapitulatif" width="100%"></p>
-<p align="center"><sub>Vue en direct : les sessions natives affichent d'abord les agents en cours, replient les anciens ou perdus et gardent le récapitulatif dessous</sub></p>
+<p align="center"><img src="docs/assets/loomy-watch-live-fr.svg" alt="loomy watch : vue en direct des agents en cours et du récapitulatif de session" width="100%"></p>
+<p align="center"><sub>Vue en direct : les agents en cours d'abord, regroupés par demande ou par modèle ([v]), le récapitulatif de session en dessous</sub></p>
 
 </details>
 

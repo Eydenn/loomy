@@ -239,8 +239,9 @@ Release boundary: launch validation shares pause/invalid-model diagnostics; loca
 
 - `codex-native.pl` accepts top-level v2 thread metadata and the older `source.subagent.thread_spawn` envelope. Explicit `parent_thread_id` takes precedence; `session_id` identifies the lead when a subagent has no parent field. Parent traversal retains depth-two nesting. Eligibility uses canonical cwd or a runtime workspace root under the project; unrelated workspace paths are not checkpointed. Task labels combine sanitized nickname, free-form role and path slug, obeying journal task privacy.
 - Paginated children read at most 128 KiB of historical head and 128 KiB of current tail per poll, sharing the existing 2 MiB source/discovery budget. Recently written sources precede the rotating historical backlog; newly discovered children prioritize their explicit parent metadata. Byte-position fences prevent older catch-up from replacing newer lifecycle evidence. `item_completed` and `token_usage_record` can identify an active turn when its start lies outside the recent window; inter-agent metadata renews activity. Item completion alone is not turn completion. Explicit task/turn completion or abort records retain their real source end timestamp; trailing usage cannot reopen the same completed turn. Usage totals and message/tool contents remain unrecorded.
-- Lead history keeps its bounded head/tail reader across every date directory. File modification time also renews the 120-second source lease, including oversized newest records; it never invents a terminal state. Source evidence updates the reducer without journal heartbeat appends. Metadata upgrades preserve cursors and stable lifecycle keys. v2 completed rows show done/interrupted; v1 persistent-agent idle semantics remain unchanged. If an unseen active turn is inferred from the tail, its displayed start is the earliest available observation, not an invented historical start.
+- Lead history keeps its bounded head/tail reader across every date directory. File modification time also renews the 120-second source lease, including oversized newest records; it never invents a terminal state and never reopens a closed session (only new records do). Source evidence updates the reducer without journal heartbeat appends. Metadata upgrades preserve cursors and stable lifecycle keys. v2 completed rows show done/interrupted; v1 persistent-agent idle semantics remain unchanged. If an unseen active turn is inferred from the tail, its displayed start is the earliest available observation, not an invented historical start.
 - `tests/fixtures/codex-v2-sessions.pl` generates a 36 MiB old-date lead, four direct children and one nested child, with current writes and structural records only. Targeted native/live suites verify first-frame visibility, exact end timestamps, replay ordering, privacy and bounded reads; Mac PTY/process-leak validation remains a separate environment gate.
+
 ## Checkpoint cost
 
 Checkpoint JSON uses a reused optional system `JSON::XS` codec with PP-compatible
@@ -270,6 +271,7 @@ the remaining cost. PP-only installations retain the portable fallback, with a s
 benefit limited to avoiding identical writes. `tests/live-growth.sh` exercises both
 codecs, Unicode/boolean compatibility, unchanged snapshots/shards, backup recovery,
 private modes and overflow preservation alongside the existing crash/migration cases.
+
 ## 0.17.1 rendering
 
 Watch loads the classic status and tree renderers once. Its persistent sampler hooks

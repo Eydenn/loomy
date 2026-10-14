@@ -502,9 +502,10 @@ sub source_evidence {
         while ($m->{parent}) { last if $seen{$m->{id}}++; my $parent=$files{$m->{parent}} or last; $m=$parent->{meta} }
         my $key=$m->{parent} ? "codex:pending:$m->{parent}" : "codex:$m->{id}";
         my $s=$self->{sessions}{$key} or next;
-        my $ts=epoch($f->{last_evidence_ts}//$f->{last_observed_ts});
+        my $evidence=epoch($f->{last_evidence_ts}//$f->{last_observed_ts}); my $ts=$evidence;
         $ts=$f->{source_mtime} if ($f->{source_mtime}//0)>$ts && $f->{source_mtime}<=($ENV{LOOMY_NATIVE_NOW}//time)+1;
-        if ($s->{closed} && $ts>($s->{closed_at}//0)) { $s->{closed}=0; $s->{pid}=0 }
+        # Only new records reopen a closed session; a bare mtime (touch, rsync, backup) renews a lease, never reopens.
+        if ($s->{closed} && $evidence>($s->{closed_at}//0)) { $s->{closed}=0; $s->{pid}=0 }
         $s->{seen}=$ts if $ts>$s->{seen};
         my $a=$self->{agents}{"codex:$f->{meta}{id}"};
         my $own=epoch($f->{last_observed_ts});

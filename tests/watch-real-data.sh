@@ -162,6 +162,7 @@ check 'legacy incremental aggregates and shared frames stay byte-identical witho
     args=(); script=loomy-status.sh
     case "$view" in log) args=(--journal) ;; tree) script=loomy-tree.sh ;; list) script=loomy-tree.sh; args=(--once) ;; esac
     LOOMY_WATCH_PIN=1 LOOMY_WATCH_ID=legacy-direct LOOMY_NO_HEADER=1 LOOMY_TREE=list bash "$REPO/scripts/$script" --root "$ROOT" ${args[@]+"${args[@]}"} >"$WORK/direct-$view" 2>&1
+    loomy_watch_legacy_pretty
     loomy_watch_legacy_render >"$WORK/cache-$view" 2>&1 || { cat "$WORK/cache-$view"; exit 1; }
     cmp "$WORK/direct-$view" "$WORK/cache-$view" || { diff -u "$WORK/direct-$view" "$WORK/cache-$view"; exit 1; }
   done
@@ -178,4 +179,36 @@ check 'legacy incremental aggregates and shared frames stay byte-identical witho
     cmp "$WORK/cache-$view" "$WORK/no-read-$view"
   done
 ' _ "$REPO" "$WORK" "$LEGACY_ROOT"
+# Sampler memory and traffic: bounded dedup, native flag, aggregates only when changed.
+sed -n '/^read -r -d .. LOOMY_WATCH_LEGACY_PERL/,/^PERL$/p' "$REPO/scripts/loomy-status.sh" | sed '1d;$d' >"$WORK/legacy-sampler.pl"; echo "1;" >>"$WORK/legacy-sampler.pl"
+check 'sampler dedup memory is bounded and still drops a recent duplicate' env REPO="$REPO" perl -MJSON::PP -e '
+  require "$ENV{REPO}/scripts/lib/live-state.pl"; require $ARGV[0]; my $s=Loomy::WatchLegacy->new;
+  for my $i (1..26000) { $s->consume({type=>"delegation_start",id=>"id$i",ts=>"2026-01-01T00:00:00Z",role=>"developer",model=>"m"},0,0) }
+  my $n=scalar keys %{$s->{seen}}; my $p=scalar keys %{$s->{phase_seen}};
+  die "unbounded seen=$n phase=$p" if $n>20000 || $p>20000;
+  my $rows=@{$s->{rows}}; $s->consume({type=>"delegation_start",id=>"id26000",ts=>"2026-01-01T00:00:00Z",role=>"developer",model=>"m"},0,0);
+  die "recent duplicate counted twice" unless @{$s->{rows}}==$rows;
+' "$WORK/legacy-sampler.pl"
+check 'a running native turn counts as native; native activity alone resends no aggregates, only the log' env REPO="$REPO" perl -MJSON::PP -e '
+  require "$ENV{REPO}/scripts/lib/live-state.pl"; require $ARGV[0]; my $s=Loomy::WatchLegacy->new;
+  $s->consume({type=>"delegation_start",id=>"n1",bridge=>"codex-native",tool=>"codex",ts=>"2026-01-01T00:00:00Z",role=>"developer",model=>"m"},0,0);
+  my @a=$s->snapshot("codex",1,0);
+  die "native flag lost: @a" unless grep {/^K\|H\|0\|0\|0\|1$/} @a;
+  die "no first aggregates" unless grep {$_ eq "K|reset"} @a;
+  die "no first log" unless grep {$_ eq "K|logreset"} @a;
+  $s->consume({type=>"delegation_activity",id=>"n1",bridge=>"codex-native",tool=>"codex",ts=>"2026-01-01T00:00:05Z",activity=>"read",model=>"m"},0,0);
+  my @b=$s->snapshot("codex",1,0);
+  die "aggregates resent for activity: @b" if grep {$_ eq "K|reset"} @b;
+  my @c=$s->snapshot("codex",1,1);
+  die "key l did not flush the log" unless grep {$_ eq "K|logreset"} @c;
+' "$WORK/legacy-sampler.pl"
+check 'file mtime alone never reopens a closed session, a new record does' perl -e '
+  require "$ARGV[0]/scripts/lib/live-state.pl"; my $v=Loomy::LiveState->new;
+  $v->{sessions}{"codex:s1"}={closed=>1,closed_at=>100,pid=>0,seen=>100};
+  my $native={files=>{a=>{meta=>{id=>"s1"},source_mtime=>500,last_evidence_ts=>"1970-01-01T00:00:50Z"}}};
+  local $ENV{LOOMY_NATIVE_NOW}=1000; $v->source_evidence($native);
+  die "mtime reopened the session" unless $v->{sessions}{"codex:s1"}{closed};
+  $native->{files}{a}{last_evidence_ts}="1970-01-01T00:03:20Z"; $v->source_evidence($native);
+  die "new record did not reopen" if $v->{sessions}{"codex:s1"}{closed};
+' "$REPO"
 printf '%s watch real-data checks passed\n' "$PASS"

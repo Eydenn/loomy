@@ -26,7 +26,7 @@ loomy_live_init() {
 # Sanitized reducer deltas; row identities survive session ordering and timer frames.
 loomy_native_accept() {
   local line="$1" kind key i found=-1 row groups=() ended prior_end
-  local old_task new_task old_head new_head old_tail new_tail j next_seq title_only=0
+  local old_task new_task old_head new_head old_tail new_tail j next_seq title_only=0 patched=0
   loomy_native_read "$line" row kind key _
   if [[ "$kind" == native ]]; then NS_ENABLED=1; return 0; fi
   case "$kind" in
@@ -45,11 +45,13 @@ loomy_native_accept() {
          old_head="${NS_A[found]%"|$old_task|$old_tail"}"; new_head="${line%"|$new_task|$new_tail"}"
          if [[ "$old_head" == "$new_head" && "$old_tail" == "$new_tail" && "$old_task" != "$new_task" && "${NS_INDEX_SEQ:--1}" == "$LV_SEQ" ]]; then
            title_only=1; next_seq=$(( LV_SEQ + 1 )); loomy_native_title "$new_task"; new_task="$AI_TASK_TITLE"
+           patched=0
            for (( j=0; j<${#NS_DRAW_TYPE[@]}; j++ )); do
-             [[ "${NS_DRAW_AGENT[j]:-}" != "$key" ]] || NS_DRAW_TASK[j]="${new_task:-${NS_AI_ROLE[found]:-agent} ${key: -8}}"
+             [[ "${NS_DRAW_AGENT[j]:-}" != "$key" ]] || { NS_DRAW_TASK[j]="${new_task:-${NS_AI_ROLE[found]:-agent} ${key: -8}}"; patched=1; }
            done
            NS_AI_TASK[found]="$new_task"; NS_INDEX_A[found]="$line"; NS_INDEX_SEQ=$next_seq
-           NS_DRAW_KEY="${NS_DRAW_KEY/|$LV_SEQ|/|$next_seq|}"
+           # A static row nobody patched keeps its old title: leave the draw key stale so the frame is rebuilt.
+           (( ! patched )) || NS_DRAW_KEY="${NS_DRAW_KEY/|$LV_SEQ|/|$next_seq|}"
            NS_LAYOUT_KEY="${NS_LAYOUT_KEY/|$LV_SEQ|/|$next_seq|}"
            NS_FOLD_SEQ=$next_seq
          fi

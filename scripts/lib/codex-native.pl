@@ -916,7 +916,10 @@ sub poll {
         my $closed=$parent ? $parent->{closed_agents}{$m->{id}} : undef;
         $closed=undef if $closed && ((!$owner->{unbound} && epoch($closed)<epoch($owner->{ts})) || epoch($closed)<epoch($f->{started}));
         my $dead=$closed || (!$owner->{unbound} && ($owner->{ended} || $owner->{dead_at} || !alive($owner->{pid})));
-        if ($dead && $f->{at_eof} && $f->{id} && !$f->{finished}) {
+        # A turn still open when its owner died is interrupted everywhere (turn end, agent close, projected state);
+        # the 900 s quiet rule below only lets an idle agent close as done.
+        my $open_turn=$dead && $f->{at_eof} && $f->{id} && !$f->{finished};
+        if ($open_turn) {
             my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
             $ts=$f->{started} if epoch($ts)<epoch($f->{started});
             $emit->("$f->{id}:end",'delegation',$ts,{%$base,id=>$f->{id},model=>$f->{model},effort=>$f->{effort},status=>'interrupted',outcome=>'interrupted',duration_s=>undef});
@@ -925,7 +928,7 @@ sub poll {
         if ($dead && $f->{at_eof} && $f->{id}) {
             my $ts=$closed||$owner->{ended}||strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now));
             $ts=$f->{started} if epoch($ts)<epoch($f->{started});
-            $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>($closed || epoch($f->{last_observed_ts})>=$now-900 ? 'interrupted' : 'done')});
+            $emit->("agent:$m->{id}:$owner->{pid}:$owner->{ts}:close",'agent_closed',$ts,{%$base,id=>$f->{id},turn_id=>$f->{turn},status=>($closed || $open_turn || epoch($f->{last_observed_ts})>=$now-900 ? 'interrupted' : 'done')});
         }
         # Restore only an observed active turn; rotation is not new work or a new delegation.
         if (!$dead && $f->{id} && !$f->{finished} && !$s->{seen}{sha256_hex("$f->{id}:end")} && ($f->{journal_generation}//0)!=$generation && epoch($f->{started})>=epoch($owner->{ts})-10) {

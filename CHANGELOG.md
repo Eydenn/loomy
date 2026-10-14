@@ -9,6 +9,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - Cache legacy watch aggregates in the persistent sampler and share the loaded status/tree renderers: no full script launch or journal-history parsing on a frame. Decode unchanged native rows once and reuse title-only layout/ordering work; enforce <120 ms changed lists and <150 ms complete draw rebuilds.
 - Fold ended agents in the watch recap to their row and last turn, retaining the turn count. Show failed/interrupted/partial outcome glyphs on agent rows and fit long task titles at sentence/word boundaries while preserving the state label.
 - Add a regression for the classic tree's single-turn outcome glyph and singular label.
+- Keep the watch responsive under load: the cached legacy frame never paints from the screen paginator, sampler dedup memory is bounded, aggregates are re-sent only when one changed, the pretty log/session text is built lazily for the status and log views, and a running native turn keeps the native activity block. A bare file mtime no longer reopens a closed session, and an open turn of a dead owner is interrupted consistently.
 - Generate README watch captures from a structural native fixture with live grouping, running-first order, folded history, and recap.
 
 ## 0.17.0 — 2026-10-14

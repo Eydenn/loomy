@@ -172,17 +172,26 @@ watch_notify() {
 # The sampler owns legacy aggregates too; frames receive snapshots, never read history.
 read -r -d '' LOOMY_WATCH_LEGACY_PERL <<'PERL' || true
 use utf8;
+use Digest::MD5 ();
 package Loomy::WatchLegacy;
 sub title { my $s=text($_[0]); $s =~ s/^\s*(?:GOAL|TASK|OBJECTIF)\s*:\s*//i; $s =~ s/\bSCOPE\s*:.*//is; $s =~ s/[\r\n].*//s; $s =~ s/([.!?])(?:\s|$).*/$1/s; $s =~ s/\s+/ /g; $s =~ s/^\s+|\s+$//g; $s }
 sub alive { my $p=text($_[0]); $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == Errno::EPERM()) }
 sub new { bless {seq=>0,rows=>[],log=>[],sessionlog=>[],starts=>[],last=>[],models=>{},phase=>{},usage=>[0,0,0,0,0,0],advisor=>[0,0,0,"-","",0],total=>[0,0,0,0,0,0,0,0],monthly=>{},sessions=>{},seen=>{},avg=>{},done=>{}},shift }
 sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : "" }
+# Dedup memory is bounded: 16-byte digests of the canonical event, oldest forgotten beyond the cap.
+sub once {
+  my ($s,$name,$identity)=@_; my $key=Digest::MD5::md5(JSON::PP->new->canonical->utf8->encode($identity));
+  my $seen=$s->{$name}//={}; return 1 if $seen->{$key}++;
+  my $queue=$s->{"${name}_queue"}//=[]; push @$queue,$key;
+  if (@$queue>20000) { delete $seen->{$_} for splice @$queue,0,5000 }
+  return 0;
+}
 sub num { my $s=text($_[0]); $s =~ /^\d+(?:\.\d+)?$/ ? 0+$s : 0 }
 sub wire { my @v=@_; for (@v) {$_=text($_); s/[\x00-\x1f|]/ /g} join("|",@v) }
 # Archive bootstrap summaries are read once; current-file snapshots cannot add them twice.
 sub phase_consume {
   my ($s,$d,$pc,$px)=@_; my $ty=text($d->{type}); my %identity=%$d; delete $identity{snapshot};
-  return if $ty =~ /^(delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/ && $s->{phase_seen}{JSON::PP->new->canonical->encode(\%identity)}++;
+  return if $ty =~ /^(delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/ && $s->once("phase_seen",\%identity);
   my $ts=text($d->{ts}); my $tk=num($d->{tokens_in})+num($d->{tokens_out}); my $cost=num($d->{cost_usd});
   my $plan=text($d->{family}) eq "claude" ? $pc : $px;
   # Every completed event contributes once; bootstrap/task/audit summaries stop at done.
@@ -201,12 +210,13 @@ sub consume {
   my $owner=text($d->{tool}//$d->{family})."|".text($d->{owner_pid}//$d->{pid});
   ++$s->{lifetimes}{$owner} if $ty eq "session" && text($d->{event}) eq "end";
   $identity{owner_lifetime}=$s->{lifetimes}{$owner}//0 if $ty =~ /^(delegation_start|delegation_activity|session)$/;
-  return if $ty =~ /^(delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/ && $s->{seen}{JSON::PP->new->canonical->encode(\%identity)}++;
+  return if $ty =~ /^(delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/ && $s->once("seen",\%identity);
   my $ts=text($d->{ts}); my $tk=num($d->{tokens_in})+num($d->{tokens_out}); my $cost=num($d->{cost_usd});
   my $fam=text($d->{family}); my $plan=$fam eq "claude" ? $pc : $px;
   my $id=text($d->{id}); my $role=text($d->{role}); my $model=text($d->{model});
   my $task=title($d->{task}); my $status=text($d->{status}); my $outcome=text($d->{outcome});
   my $bridge=text($d->{bridge}); my $duration=num($d->{duration_s});
+  $s->{has_native}=1 if $bridge eq "codex-native";
   $s->phase_consume($d,$pc,$px);
   if ($ty eq "usage") {
     my $i=text($d->{scope}) eq "lead" ? 0 : 3; my $u=$s->{usage};
@@ -237,7 +247,7 @@ sub consume {
   elsif ($ty eq "skill") {($who,$what,$extra)=("skills",text($d->{event}),text($d->{name})." · ".substr(text($d->{reason}),0,52))}
   elsif ($ty eq "usage" && text($d->{scope}) eq "lead") {($who,$what,$extra)=("lead","replied",num($d->{messages})." msg · $model")}
   if ($who ne "") {push @{$s->{sessionlog}},wire($ts,$who,$what,$extra); shift @{$s->{sessionlog}} while @{$s->{sessionlog}}>400}
-  push @{$s->{log}},JSON::PP->new->canonical->encode($d); shift @{$s->{log}} while @{$s->{log}}>400;
+  push @{$s->{log}},JSON::PP->new->canonical->encode($d); shift @{$s->{log}} while @{$s->{log}}>400; $s->{log_dirty}=1;
   # Legacy rows carry the same normalized fields as the one-shot Bash reducer.
   $s->{dirty}=1;
   return if $bridge eq "claude-native" && text($d->{source}) eq "hook";
@@ -257,7 +267,7 @@ sub consume {
   push @{$s->{rows}},[$seq,$context,$row]; $s->{dirty}=1;
 }
 sub snapshot {
-  my ($s,$preferred,$native)=@_; my @out;
+  my ($s,$preferred,$native,$force_logs)=@_; my @out;
   if (delete $s->{dirty}) {
     push @out,"K|reset";
     for my $ph (sort keys %{$s->{phase}}) {my @v=@{$s->{phase}{$ph}}; $v[3]=sprintf "%.2f",$v[3]; push @out,wire("K","B",$ph,join(" ",@v))}
@@ -267,17 +277,24 @@ sub snapshot {
     for my $m (sort keys %{$s->{models}}) {my @v=@{$s->{models}{$m}}; $v[1]=sprintf "%.4f",$v[1]; push @out,wire("K","M","MODEL $m ".join(" ",@v))}
     push @out,map {"K|F|$_"} @{$s->{last}};
     for my $d (@{$s->{starts}}) {next if $s->{done}{text($d->{id})} || text($d->{bridge}) eq "codex-native"; my $a=$s->{avg}{text($d->{role})."|".text($d->{model})}; push @out,wire("K","R",$d->{pid},$d->{ts},$d->{role},$d->{model},substr(title($d->{task}),0,60),$a && $a->[1] ? int($a->[0]/$a->[1]) : "")}
-    push @out,wire("K","H",$s->{has_usage}//0,$s->{has_advisor}//0,$t[0],$t[5]);
+    push @out,wire("K","H",$s->{has_usage}//0,$s->{has_advisor}//0,$t[0],$s->{has_native}//0);
     push @out,wire("K","Q",$t[0],$s->{tokens}//0);
     push @out,map {wire("K","C",split(/\|/,$_),$s->{monthly}{$_})} sort keys %{$s->{monthly}};
-    push @out,map {"K|L|$_"} @{$s->{log}};
-    push @out,map {"K|J|$_"} @{$s->{sessionlog}};
     for my $key (reverse @{$s->{status_order}//[]}) {
       my $session=$s->{sessions}{$key}; next if !$session || $session->{ended};
       push @out,wire("K","O","open",$session->{pid},Loomy::LiveState::epoch($session->{ts}),$session->{tool});
     }
     push @out,wire("K","O","end","",Loomy::LiveState::epoch($s->{last_end}[0]),$s->{last_end}[1]) if $s->{last_end};
     push @out,"K|end";
+    # Aggregates are re-sent only when a visible one changed (native activity alone changes none).
+    my $digest=Digest::MD5::md5_hex(join("\n",@out));
+    if (($s->{agg_digest}//"") eq $digest) { @out=() } else { $s->{agg_digest}=$digest }
+  }
+  # The bounded logs feed the status and log views only: coalesce bursts to one batch per second, at once on l/t.
+  my $now=Time::HiRes::time();
+  if ($s->{log_dirty} && ($force_logs || $now-($s->{log_sent}//0)>=1)) {
+    push @out,"K|logreset",(map {"K|L|$_"} @{$s->{log}}),(map {"K|J|$_"} @{$s->{sessionlog}}),"K|logend";
+    $s->{log_dirty}=0; $s->{log_sent}=$now;
   }
   return @out if $native;
   my @starts=sort {$b->{seq}<=>$a->{seq}} values %{$s->{sessions}};
@@ -368,7 +385,7 @@ loomy_watch_feed() {
       $attempt->("reducer",sub {
         return unless $live;
         $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
-        $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native}),$live->projections($now));
+        $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native},$key =~ /^[ltLT]$/),$live->projections($now));
       });
       if ($failed) {print "W|error\n"; $failed=0}
       my $sig="";
@@ -398,7 +415,8 @@ loomy_watch_coalesce() {
     while IFS= read -r feed_line <&10; do
       if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
       if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
-      if [[ "$feed_line" == E\|* || "$feed_line" == K\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
+      if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
+      if [[ "$feed_line" == K\|* ]]; then LEGACY_VISIBLE=0; loomy_watch_legacy_accept "$feed_line"; (( ! LEGACY_VISIBLE )) || native_dirty=1; continue; fi
       if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
       loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
       return 0
@@ -526,7 +544,8 @@ loomy_watch_legacy_accept() {
   fi
   loomy_native_read "${1#K|}" item value tail
   case "$item" in
-    reset) LEGACY_SEQ=$(( ${LEGACY_SEQ:-0} + 1 )); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS=""; LEGACY_MONTH=(); LEGACY_PHASE=(); LEGACY_SESSIONS=() ;;
+    reset) LEGACY_SEQ=$(( ${LEGACY_SEQ:-0} + 1 )); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_MONTH=(); LEGACY_PHASE=(); LEGACY_SESSIONS=(); LEGACY_VISIBLE=1 ;;
+    logreset) LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS="" ;;
     B) LEGACY_PHASE+=("$value|$tail") ;;
     U) LEGACY_USAGE="$value" ;;
     V) LEGACY_ADVISOR="$value" ;;
@@ -539,16 +558,25 @@ loomy_watch_legacy_accept() {
     C) LEGACY_MONTH+=("$value|$tail") ;;
     L) LEGACY_LOG_JSON="$LEGACY_LOG_JSON$value${tail:+|$tail}"$'\n' ;;
     J) LEGACY_SESSION_ROWS="$LEGACY_SESSION_ROWS$value|$tail"$'\n' ;;
-    end)
-      LEGACY_LOG_PRETTY="$(printf '%s' "$LEGACY_LOG_JSON" | loomy_watch_log_pretty)"
-      LEGACY_SESSION_PRETTY="$(
-        ai_journal_tail() { printf '%s' "$LEGACY_LOG_JSON"; }
-        ai_journal_display_events "$J"
-      )" ;;
+    logend) LEGACY_LOG_SEQ=$(( ${LEGACY_LOG_SEQ:-0} + 1 )); [[ "${view:-}" != status && "${view:-}" != log ]] || LEGACY_VISIBLE=1 ;;
   esac
+}
+# The pretty log (awk) and session events (perl) cost a process each: build them only for a view that shows them,
+# and only when the sampler's log changed since the last build.
+loomy_watch_legacy_pretty() {
+  [[ "${view:-}" == status || "${view:-}" == log ]] || return 0
+  [[ "${LEGACY_PRETTY_SEQ:--1}" != "${LEGACY_LOG_SEQ:-0}" ]] || return 0
+  LEGACY_PRETTY_SEQ="${LEGACY_LOG_SEQ:-0}"
+  LEGACY_LOG_PRETTY="$(printf '%s' "$LEGACY_LOG_JSON" | loomy_watch_log_pretty)"
+  LEGACY_SESSION_PRETTY="$(
+    ai_journal_tail() { printf '%s' "$LEGACY_LOG_JSON"; }
+    ai_journal_display_events "$J"
+  )"
 }
 loomy_watch_legacy_render() (
   LOOMY_WATCH_REDUCED=1
+  # The frame is captured as text: the screen paginator of the controller must never draw from here.
+  UI_SCREEN=0; UI_PAGE_L=()
   now_s=$LV_NOW; TICK=$tick
   LOOMY_HL_DELEG=${hl_d:-0}; LOOMY_HL_PHASE=${hl_p:-0}
   LOOMY_WATCH_ID=$$; LOOMY_NO_CLEAR=1; LOOMY_NO_HEADER=1; LOOMY_TICK=$tick
@@ -1069,7 +1097,7 @@ if (( WATCH )); then
   # shellcheck source=loomy-tree.sh
   source "$SCRIPT_DIR/loomy-tree.sh" --library
   loomy_live_init
-  LEGACY_SEQ=0; LEGACY_SESSIONS=(); LEGACY_PHASE=(); LEGACY_MONTH=(); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS=""; LEGACY_SESSION_PRETTY=""; LEGACY_LOG_PRETTY=""
+  LEGACY_SEQ=0; LEGACY_SESSIONS=(); LEGACY_PHASE=(); LEGACY_MONTH=(); LEGACY_SUMMARY=""; LEGACY_LAST=""; LEGACY_RUNNING=""; LEGACY_LOG_JSON=""; LEGACY_SESSION_ROWS=""; LEGACY_SESSION_PRETTY=""; LEGACY_LOG_PRETTY=""; LEGACY_LOG_SEQ=0; LEGACY_PRETTY_SEQ=-1; LEGACY_VISIBLE=0
   LEGACY_USAGE="0 0 0 0 0 0"; LEGACY_ADVISOR="0 0 0 -"; LEGACY_TOTAL="0 0"; LEGACY_COUNT=0; LEGACY_NATIVE=0; LEGACY_HAS_USAGE=0; LEGACY_HAS_ADVISOR=0
   legacy_stamp=""; legacy_frame=""
   # Internal failures leave the terminal controller alive; no command/source text is logged.
@@ -1125,7 +1153,8 @@ if (( WATCH )); then
   while IFS= read -r feed_line <&8; do
     if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
     if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
-    if [[ "$feed_line" == E\|* || "$feed_line" == K\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
+    if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
+    if [[ "$feed_line" == K\|* ]]; then LEGACY_VISIBLE=0; loomy_watch_legacy_accept "$feed_line"; (( ! LEGACY_VISIBLE )) || native_dirty=1; continue; fi
     if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
     loomy_native_read "$feed_line" now dirty key LV_CLOCK watch_rows watch_cols
     [[ -n "$UNTIL" ]] && ! kill -0 "$UNTIL" 2>/dev/null && break
@@ -1205,7 +1234,9 @@ if (( WATCH )); then
       else
         legacy_key="$LEGACY_SEQ:$view:$size:$watch_body_height:$watch_cols:$tree_mode:$LV_GROUP"
         [[ "$view" != list && "$view" != tree ]] || legacy_key="$legacy_key:$timer"
+        [[ "$view" != status && "$view" != log ]] || legacy_key="$legacy_key:$LEGACY_LOG_SEQ"
         if [[ "$legacy_stamp" != "$legacy_key" || "$dirty" == 1 ]]; then
+          loomy_watch_legacy_pretty
           legacy_frame="$(loomy_watch_legacy_render 2>&1)" || true
           legacy_stamp="$legacy_key"
         fi

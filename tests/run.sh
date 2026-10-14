@@ -219,6 +219,7 @@ delegation_options_tests() {
   if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
 
   local cap_tmp="$WORK/capture-watch-tmp" cap_bin="$WORK/capture-watch-bin"
+  local cap_native="$WORK/capture-watch-native" cap_output language view live_label fold_label recap_label
   mkdir -p "$cap_tmp" "$cap_bin"
   cat >"$cap_bin/mkdir" <<'STUB'
 #!/usr/bin/env bash
@@ -226,8 +227,36 @@ for arg in "$@"; do [[ "$arg" == */demo-project ]] && exit 1; done
 exec /bin/mkdir "$@"
 STUB
   chmod +x "$cap_bin/mkdir"
+  cat >"$cap_bin/sleep" <<'STUB'
+#!/usr/bin/env bash
+if [[ "${1:-}" == 3600 ]]; then exec /bin/sleep "$@"; fi
+exit 0
+STUB
+  chmod +x "$cap_bin/sleep"
   fails "capture watch: init setup failure exits" 1 env TMPDIR="$cap_tmp" PATH="$cap_bin:$PATH" bash "$REPO/tools/capture-watch.sh" en "$WORK/capture-watch.svg"
   if find "$cap_tmp" -mindepth 1 -maxdepth 1 -name 'loomy-watch-capture.*' -print | grep -q .; then ko "capture watch: failed init left its temp dir"; else ok "capture watch: failed init removes its temp dir"; fi
+  rm -f "$cap_bin/mkdir"
+  mkdir -p "$cap_native"
+  for language in en fr; do
+    if [[ "$language" == fr ]]; then
+      live_label='en direct'; fold_label='+4 plus anciens · 2 perdus'; recap_label='récapitulatif'
+    else
+      live_label=live; fold_label='+4 earlier · 2 lost'; recap_label=recap
+    fi
+    for view in live tree; do
+      cap_output="$cap_native/loomy-watch-$view-$language.svg"
+      run "capture watch: native fixture renders $view ($language)" env TMPDIR="$cap_tmp" PATH="$cap_bin:$PATH" bash "$REPO/tools/capture-watch.sh" "$language" "$view" "$cap_output"
+      if grep -Fq 'demo1234' "$cap_output" && grep -Fq "$live_label" "$cap_output"; then ok "capture watch: native live group is present ($view, $language)"; else ko "capture watch: native live group missing ($view, $language)"; fi
+      if grep -Fq "$fold_label" "$cap_output"; then ok "capture watch: earlier and lost entries fold ($view, $language)"; else ko "capture watch: fold summary missing ($view, $language)"; fi
+      if grep -Fq "$recap_label" "$cap_output"; then ok "capture watch: recap is present ($view, $language)"; else ko "capture watch: recap missing ($view, $language)"; fi
+      run "capture watch: running native agent precedes finished work ($view, $language)" perl -0777 -e '
+        local $/; my $svg=<>; $svg =~ /<g class="f"[^>]*>(.*?)<\/g>/s or die "frame missing"; my $frame=$1;
+        my $running=index($frame,"Review navigation"); my $finished=index($frame,"Earlier plan");
+        die "running row missing or follows finished work" unless $running>=0 && $finished>$running;
+      ' "$cap_output"
+      if LC_ALL=C grep -Eq '/Users/|/var/folders|/private/tmp|PRIVATE_|SECRET-' "$cap_output"; then ko "capture watch: local path or private marker leaked ($view, $language)"; else ok "capture watch: synthetic output is clean ($view, $language)"; fi
+    done
+  done
 
   local bridge_pid child_pid attempts codex_pid_file="$WORK/codex-child.pid" claude_pid_file="$WORK/claude-child.pid"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"interrupted-bridge-test","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$J"
@@ -1207,8 +1236,15 @@ release_defects_tests() {
 # Persistent native agents: source timestamps, turn rows, agent boxes and observed routing.
 native_lifecycle_tests() {
   section "Native lifecycle"
-  local base np nc lang
+  local base np nc lang classic classic_nowz
   base="$(cd "$WORK" && pwd -P)"; np="$base/native-lifecycle"; nc="$base/native-lifecycle-codex"
+  classic="$base/classic-tree-native"
+  mkdir -p "$classic/.loomy/logs"
+  printf '%s\n' '---' 'ai_mode: SOLO' 'ai_lead: codex' '---' >"$classic/.loomy/brief.md"
+  classic_nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"classic-tree","pid":99999999}\n{"ts":"%s","type":"delegation","session":"classic-tree","id":"turn-one","agent_id":"classic-agent","bridge":"codex-native","tool":"codex","family":"codex","role":"developer","model":"gpt-6-luna","effort":"max","status":"ok","outcome":"partial","duration_s":12,"task":"Synthetic one-turn task"}\n' "$classic_nowz" "$classic_nowz" >"$classic/.loomy/logs/events.jsonl"
+  run "classic tree: render a single finished native turn" env LOOMY_WATCH_ID=classic-tree-test CODEX_HOME="$base/no-native-source" LOOMY_TREE=list COLUMNS=150 LINES=44 bash "$REPO/scripts/loomy-tree.sh" --root "$classic"
+  has "classic tree: partial glyph and singular one-turn label" '△ partial · 1 turn'
   mkdir -p "$np/.loomy/logs" "$nc/sessions"
   printf '%s\n' '---' 'ai_mode: SOLO' 'ai_lead: codex' '---' >"$np/.loomy/brief.md"
   printf 'phase=done\n' >"$np/.loomy/state"

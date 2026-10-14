@@ -337,6 +337,42 @@ sub v2_backfill {
     return (\%r,$used);
 }
 
+sub terminal_outcome {
+    my ($ev,$text)=@_; my $outcome='done';
+    $outcome=lc($1) if $text =~ /^\s*STATUS\s*:\s*(done|partial|blocked)\b/im;
+    $outcome='interrupted' if $ev =~ /aborted$/;
+    $outcome='failed' if $ev eq 'task_failed';
+    return $outcome;
+}
+
+# Forward scan for one turn's start and first terminal record between two offsets. Cheap string probes first, so a
+# multi-megabyte gap (watch not running, tail window skipped it) costs milliseconds.
+sub v2_find_end {
+    my ($path,$turn,$from,$to,$limit)=@_; my %r; my $used=0;
+    my $h=open_read($path) or return (\%r,0);
+    $from=0 if $from<0; return (\%r,0) unless $turn ne '' && $to>$from;
+    seek $h,$from,0 or return (\%r,0);
+    my $carry=''; my $left=$to-$from; $left=$limit if $left>$limit;
+    while ($left>0 && !$r{end}) {
+        my $want=$left<1048576 ? $left : 1048576;
+        my $n=sysread($h,my $buf,$want); last unless $n; $used+=$n; $left-=$n;
+        $buf=$carry.$buf; my $cut=rindex($buf,"\n");
+        if ($cut<0) { $carry=$buf; next }
+        $carry=substr($buf,$cut+1); $buf=substr($buf,0,$cut);
+        for my $line (split /\n/,$buf) {
+            next unless index($line,$turn)>=0 && ($line =~ /"task_started"/ || $line =~ /"(?:task_complete|turn_complete|task_failed|turn_aborted|task_aborted)"/);
+            my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH' && ref($d->{payload}) eq 'HASH';
+            my $p=$d->{payload}; next unless scalar_text($d->{type}) eq 'event_msg' && identity($p->{turn_id}) eq $turn;
+            my $event=scalar_text($p->{type}); my $ts=stamp($d->{timestamp}); next unless epoch($ts);
+            if ($event eq 'task_started') { $r{started}//=$ts }
+            elsif ($event =~ /^(?:task_complete|turn_complete|task_failed|turn_aborted|task_aborted)$/) {
+                $r{end}={ts=>$ts,event=>$event,started_at=>$p->{started_at},text=>scalar_text($p->{last_agent_message})}; last;
+            }
+        }
+    }
+    return (\%r,$used);
+}
+
 # Paginated children need current evidence before bounded historical catch-up finishes.
 # The head retains launch/context facts; positions fence older replay behind the tail.
 sub v2_records {
@@ -623,6 +659,20 @@ sub poll {
     if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s); return $s }
     $dirty=1 if ($jc->{read_bytes}//0);
     my $discovery_bytes=discover($s,$sessions,$root,$now)//0; $dirty=1 if $discovery_bytes;
+    # One-time repair: v2 turns ended "unknown" by older builds are re-resolved from their rollout (a later real end wins).
+    if (!$s->{unknown_repair_v1} && $jc->{at_eof} && $input eq $journal) {
+        $s->{unknown_repair_v1}=1; $dirty=1;
+        if (my $rh=open_read($journal)) {
+            my $n=0;
+            while (defined(my $line=<$rh>)) {
+                next unless index($line,'"status":"unknown"')>=0 && index($line,'"type":"delegation"')>=0 && index($line,'"cn:')>=0;
+                my $d=eval { decode_json($line) }; next unless ref($d) eq 'HASH' && ($d->{bridge}//'') eq 'codex-native';
+                next unless identity($d->{id}) =~ /^cn:/ && identity($d->{agent_id}) ne '' && identity($d->{turn_id}) ne '';
+                $s->{repair}{identity($d->{id})}={agent=>identity($d->{agent_id}),turn=>identity($d->{turn_id}),model=>identity($d->{model}),effort=>identity($d->{effort}),ts=>stamp($d->{ts})};
+                last if ++$n>=500;
+            }
+        }
+    }
     # Replay fences survive event-key pruning; only matching source inodes are seekable.
     for my $path (keys %{$s->{files}//{}}) {
         my $f=$s->{files}{$path}; my $d=$s->{recovery_sources}{$f->{meta}{id}} or next;
@@ -795,6 +845,21 @@ sub poll {
         }
         $f->{projected_lead}=$lead;
         $f->{projected_metadata}=2;
+        if ($m->{v2} && ref($s->{repair}) eq 'HASH') {
+            for my $rid (sort keys %{$s->{repair}}) {
+                my $r=$s->{repair}{$rid}; next unless $r->{agent} eq $m->{id};
+                delete $s->{repair}{$rid}; $dirty=1;
+                my ($found,$used)=v2_find_end($path,$r->{turn},0,(-s $path)//0,67108864);
+                my $e=$found->{end} or next;
+                my $started=$found->{started} // $r->{ts};
+                my $outcome=terminal_outcome($e->{event},$e->{text});
+                my $duration=epoch($e->{ts})-epoch($started); $duration=0 if $duration<0;
+                my $saved=$emitting_file; $emitting_file=undef;
+                $emit->("$rid:end:repair",'delegation',$e->{ts},{%$base,id=>$rid,turn_id=>$r->{turn},model=>$r->{model},effort=>$r->{effort},
+                    status=>($e->{event} =~ /complete$/ ? 'ok' : $e->{event} eq 'task_failed' ? 'error' : 'interrupted'),outcome=>$outcome,duration_s=>$duration});
+                $emitting_file=$saved;
+            }
+        }
         if ($budget>0) {
             $f->{last_observed_ts}//=observed_time($path,$f) if $f->{id} && !$f->{finished};
             $s->{read_rotation}=($path_slot{$path}+1)%@paths;
@@ -841,6 +906,13 @@ sub poll {
                     }
                     if ($f->{id} && !$f->{finished} && ($f->{turn}//'') ne $turn) {
                         my $seen=$facts->{ends}{$f->{turn}//''};
+                        # The tail window and its backfill can skip the whole gap where the previous turn ended
+                        # (watch not running for hours): look for its terminal record there before calling it unknown.
+                        if (!$seen && $m->{v2}) {
+                            my ($gap,$extra)=v2_find_end($path,$f->{turn}//'',$f->{offset}//0,$position,16777216);
+                            $budget-=$extra; $budget=0 if $budget<0; $dirty=1;
+                            $seen=$gap->{end};
+                        }
                         if ($seen && epoch($seen->{ts})>=epoch($f->{started})) { $end_turn->($seen->{event},$seen->{ts},$seen->{text}) }
                         else {
                             my $end=$f->{last_observed_ts}//observed_time($path,$f)//$f->{started};

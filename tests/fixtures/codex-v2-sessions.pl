@@ -111,6 +111,32 @@ if ($action eq 'seed') {
     my $call=row('response_item',{type=>'custom_tool_call',name=>'exec',call_id=>'synthetic-call',input=>''},-2);
     my $i=item(8,-3); $i->{payload}{turn_id}=id(28); my $u=usage(8,-1); $u->{payload}{turn_id}=id(28);
     append(8,$i,$call,$u);
+} elsif ($action eq 'gap-seed' || $action eq 'gap-finish') {
+    # Watch seen turn 1 running, then not running for hours: turn 1 completes and turn 2 starts far behind the tail.
+    if ($action eq 'gap-seed') {
+        make_path("$root/.loomy/logs","$root/src");
+        open my $brief,'>',"$root/.loomy/brief.md" or die $!;
+        print $brief "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $brief;
+        my $lead={id=>id(1),timestamp=>ts(-3600),cwd=>$root,originator=>'codex-tui',source=>'cli',thread_source=>'user',session_id=>id(1),history_mode=>'paginated'};
+        open my $f,'>',path(1) or die $!; print $f encode_json(row('session_meta',$lead,-3600)),"\n"; close $f;
+        append(1,event('task_started',1,-3590),row('turn_context',{turn_id=>id(11),model=>'gpt-6.1-sol',effort=>'high'},-3589));
+        my $m={id=>id(9),timestamp=>ts(-3000),cwd=>$root,runtime_workspace_roots=>["$root/src"],originator=>'codex-tui',
+            source=>{subagent=>{thread_spawn=>{parent_thread_id=>id(1),depth=>1,agent_path=>'/root/gap',agent_nickname=>'Aristotle',agent_role=>'worker'}}},
+            thread_source=>'subagent',session_id=>id(1),history_mode=>'paginated',multi_agent_version=>'v2',parent_thread_id=>id(1),
+            agent_nickname=>'Aristotle',agent_role=>'worker',agent_path=>'/root/gap'};
+        open $f,'>',path(9) or die $!; print $f encode_json(row('session_meta',$m,-3000)),"\n"; close $f;
+        append(9,event('task_started',9,-2990),row('turn_context',{turn_id=>id(19),model=>'gpt-6-luna',effort=>'max'},-2989),item(9,-2980));
+    } else {
+        padding(9,1024*1024);
+        append(9,event('task_complete',9,-1300,started_at=>($now-2990)*1000,completed_at=>($now-1300)*1000));
+        my $second=event('task_started',9,-1290); $second->{payload}{turn_id}=id(29); append(9,$second);
+        append(9,row('turn_context',{turn_id=>id(29),model=>'gpt-6-luna',effort=>'max'},-1289));
+        # Compaction records and a long run of work after the new turn started.
+        append(9,row('compacted',{message=>'',replacement_history=>[]},-1280));
+        padding(9,3*1024*1024);
+        my $i=item(9,-3); $i->{payload}{turn_id}=id(29); my $u=usage(9,-1); $u->{payload}{turn_id}=id(29);
+        append(9,$i,$u);
+    }
 } elsif ($action eq 'backlog') {
     for my $n (8..47) {
         my $m={id=>id($n),timestamp=>ts(-172800),cwd=>$root,multi_agent_version=>'v2',thread_source=>'subagent',parent_thread_id=>id(1),session_id=>id(1),history_mode=>'paginated',agent_nickname=>"Backlog$n",agent_role=>'explorer',agent_path=>"/root/old_$n"};

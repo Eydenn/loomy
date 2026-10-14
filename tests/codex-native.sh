@@ -444,4 +444,31 @@ check 'v2 lead finds its newest turn_context behind a busy tail and reports it c
  my @x=grep {$_->{type} eq "session_context" && $_->{session_key}=~/100001$/} @all; die unless @x;
  die unless $x[-1]{model} eq "gpt-6-luna" && $x[-1]{effort} eq "max" && $x[-1]{context_freshness} eq "current" && $x[-1]{turn_id}=~/100111$/;
 '
+# A turn that completed while no watch ran must end with its recorded state and time, not "unknown".
+ROOT="$WORK/v2gap"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/v2gap-codex"
+v2_fixture gap-seed
+for (( catchup=0; catchup<3; catchup++ )); do poll; done
+check 'v2 gap fixture: turn 1 is seen running before the gap' json_check 'die unless grep {$_->{type} eq "delegation_start" && $_->{turn_id}=~/100019$/} @native;'
+v2_fixture gap-finish
+for (( catchup=0; catchup<14; catchup++ )); do poll; done
+check 'v2 turn completed inside an unwatched gap ends done at its recorded time, never unknown' json_check '
+ my @c=grep {$_->{agent_id}=~/100009$/} @native;
+ my ($e1)=grep {$_->{type} eq "delegation" && $_->{turn_id}=~/100019$/} @c;
+ die "no end" unless $e1; die "end ".join(",",map {"$_=".($e1->{$_}//"")} qw(status outcome ts)) unless $e1->{status} eq "ok" && $e1->{outcome} eq "done" && $e1->{ts} eq "2026-10-14T00:38:20Z";
+ die "unknown end" if grep {$_->{type} eq "delegation" && $_->{status} eq "unknown"} @c;
+ die "second turn lost" unless grep {$_->{type} eq "delegation_start" && $_->{turn_id}=~/100029$/} @c;
+'
+# One-time repair of an "unknown" end written by an older build: a newer real end from the rollout wins.
+perl -MJSON::PP -e 'my ($idx,$j)=@ARGV; open my $f,"<",$idx or die; my $s=decode_json(do{local $/;<$f>}); close $f; delete $s->{unknown_repair_v1};
+ open $f,">",$idx or die; print $f encode_json($s); close $f;
+ open $f,"<",$j or die; my @l=<$f>; close $f;
+ for (@l) { my $d=decode_json($_); next unless ($d->{type}//"") eq "delegation" && ($d->{turn_id}//"")=~/100019$/;
+  @$d{qw(status outcome ts native_key)}=("unknown","unknown","2026-10-14T00:30:00Z","legacy-wrong-end"); $_=encode_json($d)."\n" }
+ open $f,">",$j or die; print $f @l; close $f;' "$ROOT/.loomy/logs/codex-native.idx" "$J"
+poll; poll
+check 'a stale unknown end from an older build is superseded by the rollout terminal record' json_check '
+ my @e=grep {$_->{type} eq "delegation" && $_->{turn_id}=~/100019$/} @native; die scalar(@e) unless @e==2;
+ my ($fix)=grep {($_->{status}//"") eq "ok"} @e; die "no repair" unless $fix && $fix->{outcome} eq "done" && $fix->{ts} eq "2026-10-14T00:38:20Z" && $fix->{duration_s}==1690;
+'
+check 'the reducer shows the repaired turn as done with the exact end' bash -c 'out="$(perl "$1/scripts/lib/live-state.pl" "$2" "" 2>/dev/null)"; grep -Eq "^N\\|T\\|[^|]*100019[^|]*\\|[^|]*\\|[^|]*\\|done\\|" <<<"$out"' _ "$REPO" "$ROOT"
 printf '%s native Codex checks passed\n' "$PASS"

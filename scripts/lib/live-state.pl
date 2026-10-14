@@ -424,7 +424,7 @@ sub consume {
         $turn->{state}=text($d->{state}//$d->{activity}) || 'unknown' unless $turn->{ended} || $ts<$turn->{seen};
         $a->{source_mtime}=text($d->{source_mtime}) if $tool eq 'claude' && text($d->{source_mtime}) =~ /^\d+(?:\.\d+)?$/;
     } elsif ($type eq 'delegation') {
-        return if ($turn->{started} && $ts<$turn->{started}) || ($turn->{ended} && $ts<$turn->{ended});
+        return if ($turn->{started} && $ts<$turn->{started}) || ($turn->{ended} && $ts<$turn->{ended} && ($turn->{state}//'') ne 'unknown');
         $turn->{ended}=$ts; $turn->{state}=text($d->{status}) eq 'ok' ? 'done' : text($d->{status}) eq 'error' ? 'failed' : text($d->{status}) || 'unknown';
         $turn->{outcome}=text($d->{outcome}) || 'unknown';
         $turn->{status}=text($d->{status}); $turn->{duration}=defined $d->{duration_s} && !ref($d->{duration_s}) ? text($d->{duration_s}) : '—';

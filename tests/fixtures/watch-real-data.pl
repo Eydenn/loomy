@@ -10,9 +10,24 @@ my $now=1791853200;
 sub ts { my @t=gmtime($_[0]); sprintf '%04d-%02d-%02dT%02d:%02d:%02dZ',$t[5]+1900,$t[4]+1,@t[3,2,1,0] }
 make_path("$root/.loomy/logs");
 open my $j,'>',"$root/.loomy/logs/events.jsonl" or die $!;
-sub put { my ($at,$type,%f)=@_; print $j encode_json({ts=>ts($at),type=>$type,%f}),"\n" }
+sub put { my ($at,$type,%f)=@_; my $fields=encode_json(\%f); $fields =~ s/^\{//; print $j '{"ts":',encode_json(ts($at)),',"type":',encode_json($type),',',$fields,"\n" }
 open my $b,'>',"$root/.loomy/brief.md" or die $!; print $b "---\nai_mode: SOLO\nai_lead: claude\n---\n\n# Fixture\n"; close $b;
 open my $s,'>',"$root/.loomy/state" or die $!; print $s "phase=done\n"; close $s;
+
+if (($ARGV[1]//"") eq 'legacy') {
+    put($now-900,'phase',phase=>'brief');
+    put($now-800,'session',event=>'start',tool=>'claude',session=>'legacy-fixture',pid=>0);
+    put($now-790,'request',id=>'request-one',session=>'legacy-fixture',excerpt=>'Structural request title');
+    my %d=(id=>'bridge-fixture',session=>'legacy-fixture',pid=>0,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'Structural bridge task');
+    put($now-700,'delegation_start',%d);
+    put($now-600,'usage',scope=>'lead',family=>'claude',tool=>'claude',messages=>2,cost_usd=>0.2,tokens_in=>100,tokens_out=>10,model=>'claude-sonnet-5-5');
+    put($now-590,'advisor',family=>'claude',calls=>1,cost_usd=>0.1,tokens_in=>50,tokens_out=>5,model=>'claude-opus-5-5');
+    put($now-580,'delegation',%d,status=>'ok',outcome=>'partial',duration_s=>120,cost_usd=>0.3,tokens_in=>200,tokens_out=>20);
+    put($now-500,'phase',phase=>'done');
+    put($now-400,'session',event=>'end',tool=>'claude',session=>'legacy-fixture',pid=>0);
+    close $j or die $!;
+    exit;
+}
 
 # Live Claude app lead: observed seconds ago.
 my %live=(schema=>2,tool=>'claude',family=>'claude',session_key=>'claude:applead1',session=>'applead1',surface=>'app',agent_id=>'applead1',source=>'transcript');
@@ -43,6 +58,14 @@ my %oc=(%old,id=>'old-turn-1',agent_id=>'child-old',parent_agent_id=>'codex:oldl
 put($now-399000,'delegation_start',%oc);
 put($now-398000,'delegation',%oc,status=>'ok',outcome=>'unknown',duration_s=>1000);
 
+# One ended identity reused for ten turns: recap keeps its last evidence only.
+for my $turn (1..10) {
+    my %m=(%oc,id=>"fold-turn-$turn",agent_id=>'multi-child',task=>'Repeated structural task');
+    put($now-397000+$turn*20,'delegation_start',%m);
+    put($now-396990+$turn*20,'delegation',%m,status=>'ok',outcome=>'partial',duration_s=>10);
+}
+put($now-396700,'agent_closed',%old,agent_id=>'multi-child');
+
 # Empty stale sessions: a hook-only start without any agent, and an observed session without agents.
 put($now-300000,'session',event=>'start',tool=>'codex',pid=>4194001);
 my %empty=(schema=>2,tool=>'codex',family=>'codex',session_key=>'codex:emptylead',session=>'emptylead',agent_id=>'emptylead',source=>'rollout');
@@ -53,4 +76,6 @@ put($now-350000,'session_context',%empty,model=>'gpt-6-luna',effort=>'medium');
 put($now-370000,'delegation_start',id=>'dlegacy001',pid=>4194002,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'Legacy bridge run never ended');
 put($now-371000,'delegation_start',id=>'dlegacy002',pid=>4194003,bridge=>'codex',role=>'executor',family=>'codex',model=>'gpt-6-luna',effort=>'max',task=>'Legacy bridge run finished');
 put($now-370500,'delegation',id=>'dlegacy002',bridge=>'codex',family=>'codex',status=>'ok',outcome=>'unknown',duration_s=>500);
+put($now-369000,'delegation_start',id=>'dfailed-long',pid=>4194004,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'A deliberately long structural bridge title with several complete words before the boundary. Second sentence excluded.');
+put($now-368900,'delegation',id=>'dfailed-long',bridge=>'codex',family=>'codex',status=>'error',outcome=>'failed',duration_s=>100);
 close $j or die $!;

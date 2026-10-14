@@ -100,4 +100,82 @@ check 'a lost child is not part of the live block of a compact frame' perl -0777
   die "lost row above the recap:\n$live" if $live=~/lost/;
   die "lost row missing from the recap" unless $s=~/recap.*! lost/s;
 ' "$WORK/small"
+check 'recap folds ten finished turns into one agent and its last turn, with the outcome on both rows' perl -0777 -e '
+  my $s=<>; my ($group)=$s=~/^(┏━ codex cli ldlead01[^\n]* recap.*?)(?=^┏━|\z)/ms; die "no stale recap" unless $group;
+  my @a=$group=~/^  ┣━ Repeated structural task[^\n]*/mg; die "agent rows: @a" unless @a==1 && $a[0]=~/△ partial[^\n]*10 turns/;
+  my @t=$group=~/^  ┃  ┗━ turn -turn-[^\n]*/mg;
+  die "historical turns shown: @t" unless @t==1 && $t[0]=~/turn -turn-10[^\n]*△ partial/;
+' "$WORK/full"
+check 'long bridge titles end on a complete word within 60 characters and preserve the failed glyph and word' perl -CSD -0777 -e '
+  use utf8; my $s=<>; my ($a)=$s=~/^  ┣━ (A deliberately[^\n]*)$/m; die "missing failed bridge" unless $a;
+  die "missing outcome: $a" unless $a=~/ ✗ failed · /;
+  my ($title)=$a=~/^(.*?) (?:6\.1-sol|✗)/; die "title exceeds 60: $a" unless defined $title && length($title)<=60;
+  die "unclean title: $title" unless $title=~/several…$/;
+  die "second sentence shown" if $a=~/Second sentence/;
+' "$WORK/full"
+# The real watch cache consumes append-only records; legacy frames share the direct renderers.
+LEGACY_ROOT="$WORK/legacy"
+perl "$REPO/tests/fixtures/watch-real-data.pl" "$LEGACY_ROOT" legacy
+check 'legacy incremental aggregates and shared frames stay byte-identical without a frame-time journal read or script launch' bash -c '
+  REPO="$1"; WORK="$2"; ROOT="$3"; J="$ROOT/.loomy/logs/events.jsonl"
+  LOOMY_STATUS_LIBRARY=1 source "$REPO/scripts/loomy-status.sh" --root "$ROOT"
+  source "$REPO/scripts/loomy-tree.sh" --library
+  loomy_live_init
+  perl -e "$LOOMY_WATCH_LEGACY_PERL"'\''
+    require "$ARGV[0]/scripts/lib/live-state.pl"; binmode STDOUT, ":encoding(UTF-8)";
+    my $reader=Loomy::LiveState->new; my $cache=Loomy::WatchLegacy->new;
+    $cache->consume($_,0,0) for $reader->journal_records($ARGV[1]);
+    print "$_\n" for $cache->snapshot("claude",0);
+    $reader->journal_records($ARGV[1]); die "warm history read" if $reader->{read_bytes};
+    die "unchanged cache emitted" if $cache->snapshot("claude",0);
+    open my $f,">>",$ARGV[1] or die $!;
+    print $f q({"ts":"2026-10-13T01:00:00Z","type":"usage","scope":"lead","family":"claude","messages":3,"cost_usd":0.4}); close $f;
+    die "partial append consumed" if $reader->journal_records($ARGV[1]);
+    open $f,">>",$ARGV[1] or die $!; print $f "\n"; close $f;
+    $cache->consume($_,0,0) for $reader->journal_records($ARGV[1]);
+    die "incremental usage wrong" unless $cache->{usage}[0]==5 && abs($cache->{usage}[1]-0.6)<1e-9;
+    die "done bootstrap changed" unless $cache->{phase}{phase}[2]==1 && abs($cache->{phase}{phase}[3]-0.6)<1e-9;
+    my $mission=Loomy::WatchLegacy->new;
+    for my $mode (qw(task_phase audit_phase)) {
+      my $first=$mode eq "task_phase" ? "plan" : "scope";
+      for my $cost (0.1,0.3) {
+        $mission->phase_consume({type=>$mode,phase=>$first,ts=>"2026-01-01T00:00:00Z"},0,0);
+        $mission->phase_consume({type=>"usage",cost_usd=>$cost},0,0);
+        $mission->phase_consume({type=>$mode,phase=>"done",ts=>"2026-01-01T00:01:00Z"},0,0);
+      }
+      die "mission summary failed to reset" unless abs($mission->{phase}{$mode}[3]-0.3)<1e-9;
+    }
+    my $archived=Loomy::WatchLegacy->new;
+    my $end={type=>"delegation",id=>"archived-end",cost_usd=>0.2,status=>"ok"};
+    $archived->phase_consume($end,0,0);
+    $archived->phase_consume({%$end,snapshot=>1},0,0);
+    die "archive snapshot counted twice" unless $archived->{phase}{phase}[2]==1;
+
+  '\'' "$REPO" "$J" >"$WORK/legacy.rows"
+  # Drop the append-only test event before comparing the initial cache to direct frames.
+  perl -i -ne '\''print unless /"messages":3/'\'' "$J"
+  LEGACY_SEQ=0
+  while IFS= read -r row; do loomy_watch_legacy_accept "$row"; done <"$WORK/legacy.rows"
+  LV_NOW=1791853200; LV_CLOCK=01:00:00; loomy_live_states; loomy_live_metadata
+  tick=$LV_NOW; size=--full; watch_body_height=80; tree_mode=list
+  for view in status log tree list; do
+    args=(); script=loomy-status.sh
+    case "$view" in log) args=(--journal) ;; tree) script=loomy-tree.sh ;; list) script=loomy-tree.sh; args=(--once) ;; esac
+    LOOMY_WATCH_PIN=1 LOOMY_WATCH_ID=legacy-direct LOOMY_NO_HEADER=1 LOOMY_TREE=list bash "$REPO/scripts/$script" --root "$ROOT" ${args[@]+"${args[@]}"} >"$WORK/direct-$view" 2>&1
+    loomy_watch_legacy_render >"$WORK/cache-$view" 2>&1 || { cat "$WORK/cache-$view"; exit 1; }
+    cmp "$WORK/direct-$view" "$WORK/cache-$view" || { diff -u "$WORK/direct-$view" "$WORK/cache-$view"; exit 1; }
+  done
+  view=tree; tree_mode=diagram
+  LOOMY_WATCH_ID=legacy-diagram LOOMY_NO_HEADER=1 LOOMY_TREE=diagram COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$WORK/direct-diagram" 2>&1
+  COLUMNS=170 LINES=65 loomy_watch_legacy_render >"$WORK/cache-diagram" 2>&1 || { cat "$WORK/cache-diagram"; exit 1; }
+  cmp "$WORK/direct-diagram" "$WORK/cache-diagram"
+  tree_mode=list
+  # Cache-only frames must also work with every history accessor replaced by a failure.
+  ai_journal_canonical() { return 99; }; ai_journal_all() { return 99; }
+  loomy_live_poll() { return 99; }; ai_journal_display_events() { return 99; }
+  for view in status log tree list; do
+    loomy_watch_legacy_render >"$WORK/no-read-$view" 2>&1 || { cat "$WORK/no-read-$view"; exit 1; }
+    cmp "$WORK/cache-$view" "$WORK/no-read-$view"
+  done
+' _ "$REPO" "$WORK" "$LEGACY_ROOT"
 printf '%s watch real-data checks passed\n' "$PASS"

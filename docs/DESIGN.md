@@ -270,3 +270,25 @@ the remaining cost. PP-only installations retain the portable fallback, with a s
 benefit limited to avoiding identical writes. `tests/live-growth.sh` exercises both
 codecs, Unicode/boolean compatibility, unchanged snapshots/shards, backup recovery,
 private modes and overflow preservation alongside the existing crash/migration cases.
+## 0.17.1 rendering
+
+Watch loads the classic status and tree renderers once. Its persistent sampler hooks
+`LiveState::consume` to accumulate legacy delegation, usage, advisor and phase totals
+alongside the native projection, without a second journal read. Bootstrap archives
+are read once at initialization; complete appends update the cache, and incomplete
+lines retry at the existing reducer cursor. `E` batches update the classic session
+reducer; `K` snapshots update aggregates and the bounded log presentation only after
+journal changes. Timer and navigation frames render cached data. No frame launches
+`loomy-status.sh`, `loomy-tree.sh` or `loomy-log.sh` or parses journal history.
+
+Native ownership indexes retain decoded rows across deltas. Title-only changes update
+the fitted draw inputs without rebuilding ownership or layout; root ordering stays
+cached until an ordering input changes. Full rebuilds remain checked against the
+same frame output. The performance fixture measures changed lists below 120 ms and
+complete tree/list draw rebuilds below 150 ms, including viewport composition and
+painting. View switching warms the selected layout before measuring a data change.
+
+Recaps fold ended agents to their identity row and last turn, retaining the turn
+count and outcome glyph. Titles stop at the first sentence and at 60 complete UTF-8
+characters/words; row fitting reserves outcome and elapsed text before optional
+labels. Structural fixtures cover ten turns, failed bridges and long titles.

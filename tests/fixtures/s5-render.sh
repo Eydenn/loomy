@@ -49,6 +49,7 @@ done
 # Projection changes invalidate ownership, layout and row inputs together.
 for view in tree list; do
   LOOMY_WATCH_VIEW=$view
+  LV_FRAME=""; loomy_native_render
   for trial in 1 2 3 4 5; do
     s5_id=""; s5_group=""; s5_parent=""; s5_state=""; s5_role=""; s5_tail=""
     loomy_native_read "${NS_A[0]}" s5_n s5_kind s5_id s5_group s5_parent s5_state s5_role s5_task s5_tail
@@ -58,9 +59,14 @@ for view in tree list; do
     loomy_live_viewport "$LV_FRAME" 170 0
     UI_HDR_TITLE="$LV_HEADER"; UI_FTR_KEYS="q quit"; UI_FTR_NOTE=""; UI_BODY_TOP=0
     _ui_page_draw 0 2>"$WORK/render-screen"
-    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=200)' "$start")"; then printf 'FAIL changed %s render (%s ms >=200)\n' "$view" "$elapsed"; exit 1; fi
+    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=($ARGV[1] eq "list" ? 120 : 150))' "$start" "$view")"; then printf 'FAIL changed %s render (%s ms over budget)\n' "$view" "$elapsed"; exit 1; fi
     printf 'PASS changed %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
-    cached="$LV_FRAME"; NS_DRAW_KEY=""; LV_FRAME=""; loomy_native_render
+    cached="$LV_FRAME"; NS_DRAW_KEY=""; LV_FRAME=""
+    start="$(perl -MTime::HiRes=time -e 'print time')"
+    loomy_native_render
+    loomy_live_viewport "$LV_FRAME" 170 0; _ui_page_draw 0 2>"$WORK/render-screen"
+    if ! elapsed="$(perl -MTime::HiRes=time -e 'my $ms=1000*(time-$ARGV[0]); printf "%.3f",$ms; exit($ms>=150)' "$start")"; then printf 'FAIL rebuild %s render (%s ms >=150)\n' "$view" "$elapsed"; exit 1; fi
+    printf 'PASS rebuild %s render trial %s (%s ms)\n' "$view" "$trial" "$elapsed"
     [[ "$cached" == "$LV_FRAME" ]] || { printf 'FAIL changed %s frame differs from rebuild\n' "$view"; exit 1; }
   done
 done

@@ -19,13 +19,14 @@ loomy_live_init() {
   LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=()
   LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_RESUME=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=(); LV_OBSERVED=(); LV_TURN_END=(); LV_CLOSED=()
   LV_REQ_ID=(); LV_REQ_TEXT=(); LV_REQ_TS=(); LV_REQ_SID=(); LV_REQUEST=-1
-  NS_ENABLED=0; NS_G=(); NS_A=(); NS_T=(); NS_LAYOUT_KEY=""; NS_INDEX_SEQ=-1; NS_DRAW_KEY=""; NS_STATE_SEQ=-1
+  NS_ORDER_SEQ=0; NS_SORT_ROOT_KEY=(); NS_SORT_ROOTS=(); NS_DRAW_TYPE=(); NS_DRAW_AGENT=(); NS_INDEX_A=(); NS_INDEX_T=(); NS_TI_KEY=(); NS_TI_GROUP=(); NS_TI_PARENT=(); NS_TI_STATE=(); NS_TI_OUTCOME=(); NS_TI_DURATION=(); NS_ENABLED=0; NS_G=(); NS_A=(); NS_T=(); NS_LAYOUT_KEY=""; NS_INDEX_SEQ=-1; NS_DRAW_KEY=""; NS_STATE_SEQ=-1
   LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=(); LV_SESSION_CONTEXT_FRESHNESS=""; LV_CONTEXT_NOTE=""
 }
 
 # Sanitized reducer deltas; row identities survive session ordering and timer frames.
 loomy_native_accept() {
   local line="$1" kind key i found=-1 row groups=() ended prior_end
+  local old_task new_task old_head new_head old_tail new_tail j next_seq title_only=0
   loomy_native_read "$line" row kind key _
   if [[ "$kind" == native ]]; then NS_ENABLED=1; return 0; fi
   case "$kind" in
@@ -38,7 +39,22 @@ loomy_native_accept() {
     G) for (( i=0; i<${#NS_G[@]}; i++ )); do [[ "${NS_G[i]}" != "N|G|$key|"* ]] || found=$i; done
        if (( found < 0 )); then NS_G+=("$line"); else NS_G[found]="$line"; fi ;;
     A) for (( i=0; i<${#NS_A[@]}; i++ )); do [[ "${NS_A[i]}" != "N|A|$key|"* ]] || found=$i; done
-       if (( found < 0 )); then NS_A+=("$line"); else NS_A[found]="$line"; fi ;;
+       if (( found < 0 )); then NS_A+=("$line"); else
+         loomy_native_read "${NS_A[found]}" _ _ _ _ _ _ _ old_task old_tail
+         loomy_native_read "$line" _ _ _ _ _ _ _ new_task new_tail
+         old_head="${NS_A[found]%"|$old_task|$old_tail"}"; new_head="${line%"|$new_task|$new_tail"}"
+         if [[ "$old_head" == "$new_head" && "$old_tail" == "$new_tail" && "$old_task" != "$new_task" && "${NS_INDEX_SEQ:--1}" == "$LV_SEQ" ]]; then
+           title_only=1; next_seq=$(( LV_SEQ + 1 )); loomy_native_title "$new_task"; new_task="$AI_TASK_TITLE"
+           for (( j=0; j<${#NS_DRAW_TYPE[@]}; j++ )); do
+             [[ "${NS_DRAW_AGENT[j]:-}" != "$key" ]] || NS_DRAW_TASK[j]="${new_task:-${NS_AI_ROLE[found]:-agent} ${key: -8}}"
+           done
+           NS_AI_TASK[found]="$new_task"; NS_INDEX_A[found]="$line"; NS_INDEX_SEQ=$next_seq
+           NS_DRAW_KEY="${NS_DRAW_KEY/|$LV_SEQ|/|$next_seq|}"
+           NS_LAYOUT_KEY="${NS_LAYOUT_KEY/|$LV_SEQ|/|$next_seq|}"
+           NS_FOLD_SEQ=$next_seq
+         fi
+         NS_A[found]="$line"
+       fi ;;
     T) for (( i=0; i<${#NS_T[@]}; i++ )); do [[ "${NS_T[i]}" != "N|T|$key|"* ]] || found=$i; done
        if (( found < 0 )); then
          loomy_native_read "$line" _ _ _ _ _ _ _ _ ended _
@@ -52,6 +68,7 @@ loomy_native_accept() {
        else NS_T[found]="$line"; fi ;;
     *) return 0 ;;
   esac
+  (( title_only )) || NS_ORDER_SEQ=$(( ${NS_ORDER_SEQ:-0} + 1 ))
   (( ! NS_ENABLED )) || LV_SEQ=$(( LV_SEQ + 1 ))
   return 0
 }
@@ -68,22 +85,36 @@ loomy_native_read() {
   done
 }
 
+# Titles are normalized once on deltas; keep complete UTF-8 words and the first sentence.
+loomy_native_title() {
+  local title="$1" punct LC_ALL=
+  title="${title%%$'\n'*}"; title="${title%%$'\r'*}"
+  case "$title" in GOAL:*|TASK:*|OBJECTIF:*) title="${title#*:}"; title="${title# }" ;; esac
+  for punct in '.' '!' '?'; do
+    [[ "$title" != *"$punct "* ]] || title="${title%%"$punct "*}$punct"
+  done
+  ai_task_title "$title" 60
+}
+
 # Index ownership only on deltas; timer frames never scan unrelated agents or recap turns.
 loomy_native_index() {
   [[ "${NS_INDEX_SEQ:--1}" != "$LV_SEQ" ]] || return 0
   local i j key sid parent slot owners i_owner LC_ALL=C
   local state role task model effort start end duration outcome turn seen turnstate turns
-  NS_AI_KEY=(); NS_AI_GROUP=(); NS_AI_PARENT=()
-  NS_AI_STATE=(); NS_AI_ROLE=(); NS_AI_TASK=(); NS_AI_MODEL=(); NS_AI_EFFORT=()
-  NS_AI_START=(); NS_AI_END=(); NS_AI_DURATION=(); NS_AI_OUTCOME=(); NS_AI_TURN=(); NS_AI_TURNSTATE=(); NS_AI_TURNS=(); NS_AI_SEEN=()
   NS_CHILDREN=(); NS_AGENT_TURNS=(); NS_GROUP_AGENTS=(); NS_GROUP_ROOTS=()
   for (( i=0; i<${#NS_A[@]}; i++ )); do
+    if [[ "${NS_INDEX_A[i]:-}" != "${NS_A[i]}" ]]; then
     loomy_native_read "${NS_A[i]}" _ _ key sid parent state role task model effort start end duration outcome turn seen turnstate turns
     NS_AI_KEY[i]="$key"; NS_AI_GROUP[i]="$sid"; NS_AI_PARENT[i]="$parent"
     NS_AI_STATE[i]="$state"; NS_AI_ROLE[i]="$role"; NS_AI_TASK[i]="$task"; NS_AI_MODEL[i]="$model"; NS_AI_EFFORT[i]="$effort"
     NS_AI_START[i]="$start"; NS_AI_END[i]="$end"; NS_AI_DURATION[i]="$duration"; NS_AI_OUTCOME[i]="$outcome"
     NS_AI_TURN[i]="$turn"; NS_AI_TURNSTATE[i]="$turnstate"; NS_AI_TURNS[i]="$turns"; NS_AI_SEEN[i]="$seen"
+    # Bridge prompts are already normalized by the feed; keep their title to one short sentence.
+    loomy_native_title "$task"; NS_AI_TASK[i]="$AI_TASK_TITLE"
+    NS_INDEX_A[i]="${NS_A[i]}"
+    fi
     NS_CHILDREN[i]=""; NS_AGENT_TURNS[i]=""
+    key="${NS_AI_KEY[i]}"
     slot="NS_OWNER_${key//[^a-zA-Z0-9]/_}"
     local "$slot="
   done
@@ -100,7 +131,13 @@ loomy_native_index() {
     done
   done
   for (( j=0; j<${#NS_T[@]}; j++ )); do
-    loomy_native_read "${NS_T[j]}" _ _ key sid parent _
+    if [[ "${NS_INDEX_T[j]:-}" != "${NS_T[j]}" ]]; then
+      loomy_native_read "${NS_T[j]}" _ _ key sid parent state outcome _ _ duration _
+      NS_TI_KEY[j]="$key"; NS_TI_GROUP[j]="$sid"; NS_TI_PARENT[j]="$parent"
+      NS_TI_STATE[j]="$state"; NS_TI_OUTCOME[j]="$outcome"; NS_TI_DURATION[j]="$duration"
+      NS_INDEX_T[j]="${NS_T[j]}"
+    fi
+    parent="${NS_TI_PARENT[j]}"; sid="${NS_TI_GROUP[j]}"
     slot="NS_OWNER_${parent//[^a-zA-Z0-9]/_}"
     owners="${!slot-}"
     for i in $owners; do
@@ -246,7 +283,7 @@ loomy_native_line() {
     NS_RECORD_NATIVE=1
     local n=${#NS_DRAW_TYPE[@]}
     NS_DRAW_TYPE[n]=D; NS_DRAW_PREFIX[n]="$prefix"; NS_DRAW_TASK[n]="$task"; NS_DRAW_MODEL[n]="$model"
-    NS_DRAW_STATE[n]="${NS_TIMER_STATE:-$state}"; NS_DRAW_TIME[n]="$elapsed"
+    NS_DRAW_AGENT[n]="${NS_ROW_AGENT:-}"; NS_DRAW_STATE[n]="${NS_TIMER_STATE:-$state}"; NS_DRAW_TIME[n]="$elapsed"
     NS_DRAW_CLOCK[n]="${NS_TIMER_KIND:-}"; NS_DRAW_AT[n]="${NS_TIMER_AT:-0}"
   fi
   # Compound evidence labels can wrap on very narrow terminals; each state word stays whole.
@@ -271,12 +308,17 @@ loomy_native_line() {
 }
 
 loomy_native_agent() {
-  local wanted="$1" depth="$2" group="$3" row kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns indent="" i label age d tkey ta tstate tout tduration turnrow active=0 word idle_word ai="${4:-0}" child_index turn_index
-  local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE=""
+  local wanted="$1" depth="$2" group="$3" row kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns indent="" i label age d tkey ta tstate tout tduration active=0 word idle_word ai="${4:-0}" child_index turn_index
+  local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE="" was_idle=0
   (( depth < 32 )) || return 0
   [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
   NS_VISITED_IDX[ai]=1
   if (( ! ${NS_RECAP:-0} && ${NS_MODE:-0} == 0 )) && [[ "$NS_FOLD_SET" == *"|$ai|"* ]]; then return 0; fi
+  if (( ${NS_MODE:-0} > 0 )) && [[ "${NS_AI_STATE[ai]}" != running && "${NS_AI_STATE[ai]}" != waiting ]]; then
+    loomy_native_sorted ${NS_CHILDREN[ai]}
+    for child_index in $NS_SORTED; do loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"; done
+    return 0
+  fi
   row="${NS_A[ai]}"
   if [[ "$row" == "N|A|$wanted|"* ]]; then
     key="${NS_AI_KEY[ai]}"; state="${NS_AI_STATE[ai]}"; role="${NS_AI_ROLE[ai]}"; task="${NS_AI_TASK[ai]}"
@@ -295,13 +337,18 @@ loomy_native_agent() {
       loomy_native_outcome "done" "$outcome"
       if [[ "$turns" == 1 ]]; then tv word '1 turn'; else tv word '%s turns' "$turns"; fi
       state="$NS_OUT · $word"
-    elif [[ "$state" == idle ]]; then state="✓ $idle_word"
+    elif [[ "$state" == idle ]]; then
+      was_idle=1; state="✓ $idle_word"
+      if [[ "$outcome" == partial || "$outcome" == blocked ]]; then loomy_native_outcome "done" "$outcome"; state="$NS_OUT · $idle_word"; fi
+      if (( ${turns:-0} > 1 )); then tv word '%s turns' "$turns"; state="$state · $word"; fi
     elif [[ "$state" == lost ]]; then
       # No evidence for longer than the lease: never running; the clock shows the time since the last evidence.
       loomy_native_outcome lost ""; state="$NS_OUT"
       if [[ "$seen" =~ ^[1-9][0-9]*$ ]]; then NS_TIMER_AT=$seen; age=$(( LV_NOW - seen )); (( age >= 0 )) || age=0; loomy_live_time "$age"; d="$LV_TIME"; fi
+    elif [[ "$state" == failed || "$state" == interrupted ]]; then
+      loomy_native_outcome "$state" "$outcome"; state="$NS_OUT"
     else tv state "$state"; fi
-    if [[ "$state" == "✓ $idle_word" && "$end" =~ ^[0-9]+$ ]]; then
+    if (( was_idle )) && [[ "$end" =~ ^[0-9]+$ ]]; then
       NS_TIMER_KIND=idle; NS_TIMER_AT=$end; NS_TIMER_STATE="$state"
       age=$(( LV_NOW - end )); (( age >= 0 )) || age=0
       loomy_live_time "$age"; d="$LV_TIME"; tv word 'waiting since %s' "$d"; state="$state · $word"; d="—"
@@ -309,7 +356,7 @@ loomy_native_agent() {
     if [[ "$model" == gpt-* || "$model" == claude-* ]]; then loomy_live_short_model "$model"; model=" $LV_SHORT${effort:+ $effort}"; else model=""; fi
     if (( ${NS_MODE:-0} == 0 )) || (( active )); then
       if [[ "${NS_SELECTED:-*}" == '*' || "$NS_SELECTED" == *"|$key|"* ]]; then
-        loomy_native_line "${indent}┣━ " "$label" "$model" "$state" "$d"
+        NS_ROW_AGENT="$key" loomy_native_line "${indent}┣━ " "$label" "$model" "$state" "$d"
       fi
     fi
     NS_TIMER_STATE=""; [[ "$NS_TIMER_KIND" != idle ]] || NS_TIMER_KIND=""
@@ -323,8 +370,10 @@ loomy_native_agent() {
     fi
     NS_TIMER_KIND=""
     for turn_index in ${NS_AGENT_TURNS[ai]}; do
-      turnrow="${NS_T[turn_index]}"
-      loomy_native_read "$turnrow" _ _ tkey _ ta tstate tout _ _ tduration _
+      # The recap folds historical turns of ended agents; keep only the latest evidence above.
+      (( ! ${NS_RECAP:-0} || active )) || break
+      tkey="${NS_TI_KEY[turn_index]}"; ta="${NS_TI_PARENT[turn_index]}"
+      tstate="${NS_TI_STATE[turn_index]}"; tout="${NS_TI_OUTCOME[turn_index]}"; tduration="${NS_TI_DURATION[turn_index]}"
       (( ${NS_MODE:-0} < 2 )) || break
       (( ${NS_MODE:-0} == 0 )) || (( active )) || continue
       [[ "$ta" == "$wanted" && "$tkey" != "$turn" ]] || continue
@@ -403,16 +452,22 @@ loomy_native_group() {
   NS_TIMER_KIND=""
   (( NS_MODE >= 3 || NS_RECAP )) || [[ "$presence" != live ]] || loomy_native_route "$key" "$gi"
   NS_VISITED_IDX=()
-  loomy_native_sorted ${NS_GROUP_ROOTS[gi]}
+  local sort_index=$(( gi * 2 + ${NS_RECAP:-0} )) sort_key="${NS_ORDER_SEQ:-0}|${NS_GROUP_ROOTS[gi]}"
+  if [[ "${NS_SORT_ROOT_KEY[sort_index]:-}" == "$sort_key" ]]; then NS_SORTED="${NS_SORT_ROOTS[sort_index]}";
+  else
+    loomy_native_sorted ${NS_GROUP_ROOTS[gi]}
+    NS_SORT_ROOT_KEY[sort_index]="$sort_key"; NS_SORT_ROOTS[sort_index]="$NS_SORTED"
+  fi
   for ai in $NS_SORTED; do
     loomy_native_agent "${NS_AI_KEY[ai]}" 1 "$key" "$ai"
   done
   # Late or unresolved parent links remain visible, then move under their proven parent.
-  loomy_native_sorted ${NS_GROUP_AGENTS[gi]}
-  for ai in $NS_SORTED; do
-    aid="${NS_AI_KEY[ai]}"
-    [[ "${NS_VISITED_IDX[ai]:-0}" == 1 ]] || loomy_native_agent "$aid" 1 "$key" "$ai"
+  local unresolved=""
+  for ai in ${NS_GROUP_AGENTS[gi]}; do
+    [[ "${NS_VISITED_IDX[ai]:-0}" == 1 ]] || unresolved="$unresolved $ai"
   done
+  loomy_native_sorted $unresolved
+  for ai in $NS_SORTED; do loomy_native_agent "${NS_AI_KEY[ai]}" 1 "$key" "$ai"; done
   if (( ! NS_RECAP && NS_MODE == 0 && ${NS_FOLD_N[gi]:-0} > 0 )); then
     tv word '%s earlier' "${NS_FOLD_N[gi]}"
     if (( ${NS_FOLD_LOST[gi]:-0} > 0 )); then tv fold_lost '%s lost' "${NS_FOLD_LOST[gi]}"; word="$word · $fold_lost"; fi
@@ -441,7 +496,7 @@ loomy_native_render() {
     return 0
   fi
   if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then
-    NS_RECORD=1; NS_DRAW_TYPE=(); NS_DRAW_TEXT=(); NS_DRAW_PREFIX=(); NS_DRAW_TASK=(); NS_DRAW_MODEL=()
+    NS_RECORD=1; NS_DRAW_AGENT=(); NS_DRAW_TYPE=(); NS_DRAW_TEXT=(); NS_DRAW_PREFIX=(); NS_DRAW_TASK=(); NS_DRAW_MODEL=()
     NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=()
   fi
   loomy_live_header
@@ -483,8 +538,7 @@ loomy_native_render() {
           candidates+=("$aid"); starts+=("${start:-0}")
         else ended_counts[i]=$(( ended_counts[i] + 1 )); fi
         for turn_index in ${NS_AGENT_TURNS[agent_index]}; do
-          row="${NS_T[turn_index]}"
-          loomy_native_read "$row" _ _ candidate _ sid _
+          candidate="${NS_TI_KEY[turn_index]}"; sid="${NS_TI_PARENT[turn_index]}"
           [[ "$sid" == "$aid" && "$candidate" != "$turn" ]] || continue
           full[i]=$(( full[i] + 1 ))
           [[ "$state" != running && "$state" != waiting ]] || detail[i]=$(( detail[i] + 1 ))
@@ -612,13 +666,8 @@ loomy_live_viewport() {
   for (( i=LV_SCROLL_TOP; i<${#recap_rows[@]} && i<LV_SCROLL_TOP+room; i++ )); do UI_PAGE_L+=("${recap_rows[i]}"); done
 }
 
-# loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
-loomy_live_poll() {
-  local native_line native_root="${ROOT:-${1%/.loomy/logs/events.jsonl}}"
-  # Like ai_codex_native_poll, keep adapter diagnostics out of the fitted frame.
-  while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
-  (( ! NS_ENABLED )) || return 0
-  local file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
+loomy_live_accept() {
+  local kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
   while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at; do
     case "$kind" in
       RESET) loomy_live_init; continue ;;
@@ -702,6 +751,17 @@ loomy_live_poll() {
         LV_TURN_END[found]="$ts"
         LV_RESUME[found]="$resume_at"; LV_FIN[found]=1; LV_DURATION[found]="$duration"; LV_COST[found]="$cost"; LV_STATUS[found]="$status"; LV_OUTCOME[found]="$outcome"; LV_END_SEQ[found]=$LV_SEQ ;;
     esac
+  done <<<"$1"
+}
+
+# loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
+loomy_live_poll() {
+  local native_line native_root="${ROOT:-${1%/.loomy/logs/events.jsonl}}"
+  # Like ai_codex_native_poll, keep adapter diagnostics out of the fitted frame.
+  while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
+  (( ! NS_ENABLED )) || return 0
+  local legacy_line file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
+  while IFS= read -r legacy_line; do loomy_live_accept "$legacy_line";
   done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
 
@@ -793,18 +853,20 @@ loomy_live_states() {
   if (( NS_ENABLED )); then
     [[ "${NS_STATE_SEQ:--1}" != "$LV_SEQ" ]] || return 0
     NS_STATE_SEQ=$LV_SEQ
+    loomy_native_index
     LV_DONE=${#NS_T[@]}; LV_ERRORS=0; LV_RUNNING=(); LV_FINISHED=(); LV_ACTIVE=0
     local nsrow nskey nssid nsstate nsout live_keys="|"
     for nsrow in ${NS_G[@]+"${NS_G[@]}"}; do
       loomy_native_read "$nsrow" _ _ nskey _ _ nsstate nsout _
       [[ "$nsout" != live ]] || { LV_ACTIVE=1; live_keys="$live_keys$nskey|"; }
     done
-    for nsrow in ${NS_A[@]+"${NS_A[@]}"}; do
-      loomy_native_read "$nsrow" _ _ nskey nssid _ nsstate _
+    local nsi
+    for (( nsi=0; nsi<${#NS_A[@]}; nsi++ )); do
+      nskey="${NS_AI_KEY[nsi]}"; nssid="${NS_AI_GROUP[nsi]}"; nsstate="${NS_AI_STATE[nsi]}"
       [[ "$live_keys" != *"|$nssid|"* || ( "$nsstate" != running && "$nsstate" != waiting ) ]] || LV_RUNNING+=("$nskey")
     done
-    for nsrow in ${NS_T[@]+"${NS_T[@]}"}; do
-      loomy_native_read "$nsrow" _ _ nskey _ _ nsstate nsout _
+    for (( nsi=0; nsi<${#NS_T[@]}; nsi++ )); do
+      nsstate="${NS_TI_STATE[nsi]}"; nsout="${NS_TI_OUTCOME[nsi]}"
       [[ "$nsstate" != failed && "$nsout" != failed ]] || LV_ERRORS=$(( LV_ERRORS + 1 ))
     done
     return 0
@@ -891,7 +953,7 @@ loomy_live_cache_row() {
     executor) label=Executor ;; explorer) label=Explorer ;; documenter) label=Documenter ;; *) label="${LV_ROLE[i]}" ;;
   esac
   tv label "$label"; LV_LABEL[i]="$label"
-  ai_task_title "${LV_TASK[i]}" 90; LV_TASK[i]="$AI_TASK_TITLE"
+  loomy_native_title "${LV_TASK[i]}"; LV_TASK[i]="$AI_TASK_TITLE"
   case "$tool" in claude|Claude) tool=Claude ;; codex|Codex) tool=Codex ;; *)
     case "${LV_MODEL[i]}" in claude-*) tool=Claude ;; gpt-*) tool=Codex ;; *) tool='?' ;; esac ;;
   esac
@@ -1240,47 +1302,8 @@ loomy_tree_routing() {
   done
 }
 
-# Watch sources only the reducer; ordinary loomy tree keeps its architectural diagram.
-if [[ "${1:-}" == --library ]]; then loomy_tree_log_enable; return 0; fi
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/ui.sh
-source "$SCRIPT_DIR/lib/ui.sh"
-# shellcheck source=lib/models.sh
-source "$SCRIPT_DIR/lib/models.sh"
-# shellcheck source=lib/journal.sh
-source "$SCRIPT_DIR/lib/journal.sh"
-# shellcheck source=lib/phases.sh
-source "$SCRIPT_DIR/lib/phases.sh"
-# shellcheck source=lib/usage.sh
-source "$SCRIPT_DIR/lib/usage.sh"
-# shellcheck source=lib/sessionlog.sh
-source "$SCRIPT_DIR/lib/sessionlog.sh"
-loomy_tree_log_enable
-
-ROOT=""; LIVE=0
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --once|--live) LIVE=1 ;;
-    --root) ROOT="${2:-}"; shift ;;
-    -h|--help) sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//; s/loomy-tree.sh/loomy tree/g' | i18n_lines; exit 0 ;;
-    *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
-  esac
-  shift
-done
-[[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
-ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || exit 1
-if [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
-  ai_codex_native_poll "$ROOT"
-  ai_claude_native_poll "$ROOT"
-fi
-J="$(ai_journal_file "$ROOT")"
-TICK="${LOOMY_TICK:-0}"
-now_s="${LOOMY_NATIVE_NOW:-$(date +%s)}"
-ai_detect_env "$ROOT"
-loomy_live_init; loomy_live_poll "$J"; LV_NOW="$now_s"; LV_CLOCK="$(date +%H:%M:%S)"; loomy_live_states; loomy_live_metadata
-if (( LIVE || NS_ENABLED )); then loomy_live_render; exit 0; fi
-
+# Render the classic layouts from the persistent reducer as well as the direct command.
+loomy_tree_classic_render() {
 dur() { if [[ "$1" == "—" ]]; then printf '—'; else ai_display_duration "$1"; printf '%s' "$AI_DURATION"; fi; }
 hm() { local e; e="$(ai_ts_epoch "$1")"; [[ -n "$e" ]] && { date -r "$e" +%H:%M:%S 2>/dev/null || date -d "@$e" +%H:%M:%S; }; }
 color_of() { case "$1" in TOP) printf '%s' "$C_MAGENTA" ;; FAST) printf '%s' "$C_GREEN" ;; *) printf '%s' "$C_CYAN" ;; esac; }
@@ -1389,9 +1412,13 @@ if (( DIAGRAM )); then
   # Tier counts use the reducer; advisor consultations are separate journal events.
   loomy_tree_routing
   if [[ -s "$J" ]]; then
+    if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
+    read -r a_n _ _ _ a_last a_tok <<<"$LEGACY_ADVISOR"
+    else
     read -r a_n a_tok a_last <<<"$(awk '
       function num(k) { if (match($0, "\"" k "\":[0-9]+")) { return substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 3) + 0 } return 0 }
       /"type":"advisor"/ { n += num("calls"); tk += num("tokens_in"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, tk + 0, l }' "$J")"
+    fi
   fi
   K_LEAD="$C_YELLOW"; K_ROUTE="$C_GREEN"; K_ROLE="$C_CYAN"; K_ADV="$C_MAGENTA"; K_DIM="$C_DIM"; K_TXT=""; K_B="$C_BOLD"
   bars() { case "$1" in low) BARS="▮▯▯▯" ;; medium) BARS="▮▮▯▯" ;; high) BARS="▮▮▮▯" ;; xhigh|max|ultra) BARS="▮▮▮▮" ;; *) BARS="" ;; esac; }
@@ -1624,7 +1651,7 @@ if (( DIAGRAM )); then
   LY=$(( BKY + 5 ))
   cv_box 0 "$LY" "$W" $(( LOGN + 2 )) "$K_DIM" "${TR_37}"
   ly=$(( LY + 1 ))
-  if rows="$(ai_session_log_rows "$ROOT" "$LOGN")"; then
+  if log_rows="$(ai_session_log_rows "$ROOT" "$LOGN")"; then
     while IFS='|' read -r ts who what extra; do
       tm="${ts:11:8}"; e=""
       if [[ "$ts" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]; then hms "$ts"; tm="$HMS"; e="$EP"; fi
@@ -1643,7 +1670,7 @@ if (( DIAGRAM )); then
       cv_right $(( W - 3 )) "$ly" "$K_DIM" "$right"
       (( new )) && cv_put 1 "$ly" "$C_YELLOW" "▸"
       ly=$(( ly + 1 ))
-    done <<<"$rows"
+    done <<<"$log_rows"
   else
     cv_put 2 "$ly" "$K_DIM" "${TR_38}"
   fi
@@ -1667,7 +1694,7 @@ if (( DIAGRAM )); then
   printf -v cvp '%s  ' "${C_RAIL}│${C_RESET}"
   cv_print "$cvp"
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${TR_39}"
-  exit 0
+  return 0
 fi
 
 # ---------------------------------------------------------------- list rendering
@@ -1679,8 +1706,12 @@ ui_rail "┏━ $lead_line"
 if [[ -n "$ADV" ]]; then
   a_n=0; a_last=""
   if [[ -s "$J" ]]; then
+    if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
+    read -r a_n _ _ _ a_last _ <<<"$LEGACY_ADVISOR"
+    else
     read -r a_n a_last <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       /"type":"advisor"/ { n += num("calls"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, l }' "$J")"
+    fi
   fi
   # The advisor glows for a few seconds after a consultation was logged.
   glow="$C_MAGENTA"; [[ -n "$a_last" ]] && (( now_s - $(ai_ts_epoch "$a_last" || echo 0) < 30 )) && glow="${C_BOLD}${C_MAGENTA}"
@@ -1738,9 +1769,56 @@ fi
 
 # ---------------------------------------------------------------- status line
 n_del=0; tok=0
+if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then read -r n_del tok <<<"$LEGACY_TOTAL"; else
 [[ -s "$J" ]] && read -r n_del tok <<<"$(ai_journal_canonical <"$J" | awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
   /"type":"delegation",/ { n++ } /"type":"(delegation|usage|advisor)"/ && !/delegation_start/ && !/"bridge":"subagent"|"cost_in":"usage"/ { t += num("tokens_in") + num("tokens_out") } END { print n + 0, t + 0 }')"
+fi
 ui_rail ""
 ui_rail "${C_BOLD}effort${C_RESET} [${L_EFFORT}]  ${C_BOLD}$(t "roles")${C_RESET} [$n_run/$n_roles $(t "running")]  ${C_BOLD}$(t "advisor")${C_RESET} [${ADV:-off}]  ${C_BOLD}$(t "delegations")${C_RESET} [$n_del]  ${C_BOLD}tokens${C_RESET} [$(ai_tokens_label "$tok")]"
 [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "$(t "live: loomy watch, then t")"
-exit 0
+return 0
+
+}
+
+# Watch sources only the reducer; ordinary loomy tree keeps its architectural diagram.
+if [[ "${1:-}" == --library ]]; then loomy_tree_log_enable; return 0; fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/ui.sh
+source "$SCRIPT_DIR/lib/ui.sh"
+# shellcheck source=lib/models.sh
+source "$SCRIPT_DIR/lib/models.sh"
+# shellcheck source=lib/journal.sh
+source "$SCRIPT_DIR/lib/journal.sh"
+# shellcheck source=lib/phases.sh
+source "$SCRIPT_DIR/lib/phases.sh"
+# shellcheck source=lib/usage.sh
+source "$SCRIPT_DIR/lib/usage.sh"
+# shellcheck source=lib/sessionlog.sh
+source "$SCRIPT_DIR/lib/sessionlog.sh"
+loomy_tree_log_enable
+
+ROOT=""; LIVE=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --once|--live) LIVE=1 ;;
+    --root) ROOT="${2:-}"; shift ;;
+    -h|--help) sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//; s/loomy-tree.sh/loomy tree/g' | i18n_lines; exit 0 ;;
+    *) t "Unknown argument: %s" "$1" >&2; echo >&2; exit 2 ;;
+  esac
+  shift
+done
+[[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
+ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || exit 1
+if [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
+  ai_codex_native_poll "$ROOT"
+  ai_claude_native_poll "$ROOT"
+fi
+J="$(ai_journal_file "$ROOT")"
+TICK="${LOOMY_TICK:-0}"
+now_s="${LOOMY_NATIVE_NOW:-$(date +%s)}"
+ai_detect_env "$ROOT"
+loomy_live_init; loomy_live_poll "$J"; LV_NOW="$now_s"; LV_CLOCK="$(date +%H:%M:%S)"; loomy_live_states; loomy_live_metadata
+if (( LIVE || NS_ENABLED )); then loomy_live_render; exit 0; fi
+
+loomy_tree_classic_render

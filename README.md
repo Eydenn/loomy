@@ -782,6 +782,7 @@ What Loomy guarantees (your project never pushed or deleted without you, existin
 | Status | Planned |
 |---|---|
 | 🔜 | **0.17.1 watch performance**: the remaining legacy frame paths move into the persistent feed (no script launch or history parsing per frame), and checkpoint load/save gets cheaper |
+| 🔜 | **0.18.0 Loomy notifications (macOS)**: a notification when a Loomy session starts or stops (project, tool, Claude or Codex, CLI or app; delegations optional, `loomy config set notify sessions|all|off`); clicking "started" brings the project's `loomy watch` to the front if it is already open (tmux pane, or the Terminal tab found by its tty), otherwise opens it. Sent by a small native helper, "Loomy" with its own name and icon, built and signed locally at install (`swiftc`, feasibility checked on macOS 27), instead of the current Script Editor notifications whose click leads nowhere. Fallback without click outside macOS or without the helper |
 | 🔜 | **Windows 11 through WSL2**: Loomy already runs on Linux (tested in CI), and Claude Code and Codex both run in WSL2. Remaining: WSL detection in `loomy doctor`, clipboard (`clip.exe`), notifications, `start --app` opening the Windows desktop apps, line endings forced to LF, a Windows section in the docs, then a check on a real Windows 11 machine. A few days |
 | 🎯&nbsp;RC | **Release candidate: validation in real conditions** |
 | | Questionnaire and UI split into smaller modules, tests grouped by topic |

@@ -4,7 +4,9 @@
 #   STUB_BROKEN_VERSION=1     "claude --version" fails
 #   STUB_LOG=file             records each call (tab-separated arguments)
 #   STUB_UNKNOWN_MODELS="…"   refuses those model ids (a model not released yet)
+#   STUB_ARGV_LOG=file        records the exact argument array as JSON
 set -u
+if [[ -n "${STUB_ARGV_LOG:-}" ]]; then perl -MJSON::PP -e 'print encode_json(\@ARGV)' -- "$@" >"$STUB_ARGV_LOG"; fi
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
 case "${1:-}" in
   --version)

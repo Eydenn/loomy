@@ -144,17 +144,19 @@ loomy_cli_run() (
   shift 3; [[ "${1:-}" == -- ]] || return 2; shift
   loomy_cli_check "$tool" "$role" "$model" || return $?
   if [[ "${LOOMY_CLI_PROBE:-0}" != 1 ]]; then
-    local arg pending=0 found=0
+    local arg pending=0 found=0 desktop=0
     for arg in "$@"; do
       if (( pending )); then [[ "$arg" == "$model" ]] || return 2; found=1; pending=0; continue; fi
       case "$arg" in
+        --desktop) [[ "$tool" != claude ]] || desktop=1 ;;
         -m|--model) pending=1 ;;
         --model=*) [[ "${arg#--model=}" == "$model" ]] || return 2; found=1 ;;
         model=*) return 2 ;; # Config must not override the checked model flag.
       esac
     done
     (( pending == 0 )) || return 2
-    if (( ! found )); then
+    # Desktop hands over an existing session and rejects model/effort flags.
+    if (( ! found && ! desktop )); then
       if [[ "$tool" == claude || "$tool" == local ]]; then set -- "$@" --model "$model"; else set -- "$@" -m "$model"; fi
     fi
   fi

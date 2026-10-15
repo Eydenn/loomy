@@ -233,6 +233,8 @@ loomy route claude-agents
 
 Role → model → effort matrix · `lead` · `get <role>` · `markdown` · `all` · `claude-agents` · `codex-profiles`
 
+`codex-profiles` prints version-aware advice without changing user configuration. Before Codex 0.134 it prints legacy TOML profiles; from 0.134 (or when the version is unknown) it shows how Loomy pins each role's model and effort per call with `-m` and `-c model_reasoning_effort=…`. Version detection uses only `codex --version` through Loomy's launch boundary.
+
 ### `loomy delegate codex <role> "…"`
 
 ```bash

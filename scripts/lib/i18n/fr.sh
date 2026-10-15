@@ -1085,7 +1085,7 @@ _t_fr() {
     '  markdown              Matrix as Markdown (for .loomy/docs/AI_MODEL_ROUTING.md)') _T='  markdown              Matrice au format Markdown (pour .loomy/docs/AI_MODEL_ROUTING.md)' ;;
     '  all                   Matrix of the 4 environments side by side (Markdown)') _T='  all                   Matrice des 4 environnements côte à côte (Markdown)' ;;
     '  claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)') _T='  claude-agents [DIR]   Génère les sous-agents Claude Code (défaut : <projet>/.claude/agents)' ;;
-    '  codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)') _T='  codex-profiles        Extrait TOML des profils Codex par rôle (à ajouter à ~/.codex/config.toml)' ;;
+    '  codex-profiles        Version-aware Codex model/effort advice per role (prints only)') _T='  codex-profiles        Conseils modèle/effort Codex par rôle selon la version (affichage seul)' ;;
     '  lead                  Launch command of the main session (lead agent)') _T='  lead                  Commande de lancement de la session principale (orchestrateur)' ;;
     'Options:') _T='Options :' ;;
     '  --root DIR            Project (default: current project)') _T='  --root DIR            Projet (défaut : projet courant)' ;;
@@ -2321,5 +2321,9 @@ _t_fr() {
     '1 turn') _T='1 tour' ;;
     '%s earlier') _T='%s plus anciens' ;;
     '%s lost') _T='%s perdus' ;;
+    'Codex version unavailable; legacy profile advice omitted.') _T='Version de Codex indisponible ; conseils sur les anciens profils omis.' ;;
+    'Codex %s: legacy [profiles.ai-*] sections are unsupported.') _T='Codex %s : les anciennes sections [profiles.ai-*] ne sont plus prises en charge.' ;;
+    'Loomy pins model and effort per call with -m and -c; no user configuration is changed.') _T='Loomy fixe le modèle et l’effort à chaque appel avec -m et -c ; aucune configuration utilisateur n’est modifiée.' ;;
+    'Invalid LOOMY_CLAUDE_ISOLATION: %s (expected off, bare or strict)') _T='LOOMY_CLAUDE_ISOLATION invalide : %s (valeurs attendues : off, bare ou strict)' ;;
   esac
 }

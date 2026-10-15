@@ -99,6 +99,63 @@ suite_summary() {
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
 }
 
+upstream_cli_tests() {
+  section "Upstream CLI flags"
+  local up="$WORK/upstream" version mode access argv env_args=() write_args=()
+  mkdir -p "$up/project/.loomy" "$up/home/.codex" "$up/home/.claude"
+  printf '%s\n' '---' 'name: Upstream' 'ai_mode: ORCHESTRATED' 'ai_lead: codex' 'budget: equilibre' '---' >"$up/project/.loomy/brief.md"
+  printf '# user config must stay unchanged\n' >"$up/home/.codex/config.toml"
+  cp "$up/home/.codex/config.toml" "$up/codex-before"
+  printf '{"hooks":{},"enabledPlugins":{}}\n' >"$up/home/.claude/settings.json"
+  cp "$up/home/.claude/settings.json" "$up/claude-before"
+  for version in 0.133.9 0.134.0 0.162.1 1.0.0 unknown failed; do
+    : >"$up/meta.log"
+    if [[ "$version" == failed ]]; then
+      run "Codex advice: failed version query" env HOME="$up/home" STUB_CODEX_BROKEN_VERSION=1 STUB_LOG="$up/meta.log" bash "$REPO/scripts/loomy-route.sh" --root "$up/project" codex-profiles
+    else
+      run "Codex advice: version $version" env HOME="$up/home" STUB_CODEX_VERSION="$version" STUB_LOG="$up/meta.log" bash "$REPO/scripts/loomy-route.sh" --root "$up/project" codex-profiles
+    fi
+    if [[ "$version" == 0.133.9 ]]; then
+      has "old Codex: legacy TOML retained" '^\[profiles.ai-lead\]$'
+      has "old Codex: profile invocation retained" 'codex --profile ai-lead'
+    else
+      hasnt "current/unknown Codex: no legacy TOML" '^\[profiles\.'
+      has "current/unknown Codex: model and effort pinned per call" '^codex -m [a-z0-9.-]+ -c model_reasoning_effort=[a-z]+$'
+      if [[ "$version" == unknown || "$version" == failed ]]; then
+        has "unknown Codex: explicit diagnostic" 'version unavailable'
+      else has "current Codex: unsupported sections explained" 'sections are unsupported'; fi
+    fi
+    run "Codex advice: only meta --version, no model call" bash -c '[[ "$(cat "$1")" == $'"'"'codex\t--version'"'"' ]]' _ "$up/meta.log"
+    run "Codex advice: user config unchanged" cmp "$up/codex-before" "$up/home/.codex/config.toml"
+  done
+  for access in read write; do
+    for mode in default off bare strict; do
+      argv="$up/$access-$mode.json"; env_args=(); write_args=()
+      [[ "$mode" == default ]] || env_args=(LOOMY_CLAUDE_ISOLATION="$mode")
+      if [[ "$access" == write ]]; then env_args+=(LOOMY_FAILOVER_FROM=codex); write_args=(--write); fi
+      run "Claude isolation: $access/$mode" env -u LOOMY_CLAUDE_ISOLATION HOME="$up/home" ${env_args[@]+"${env_args[@]}"} STUB_ARGV_LOG="$argv" bash -c 'cd "$1" && bash "$2/scripts/loomy-delegate-claude.sh" reviewer --model sonnet --effort high "${@:3}" "Isolation fixture"' _ "$up/project" "$REPO" ${write_args[@]+"${write_args[@]}"}
+      run "Claude isolation: exact argv $access/$mode (including empty setting sources)" perl -MJSON::PP -e '
+        my ($path,$mode,$access)=@ARGV; open my $f,"<",$path or die; local $/; my $a=decode_json(<$f>);
+        die unless shift(@$a) eq "-p" && shift(@$a) =~ /Isolation fixture/;
+        die unless shift(@$a) eq "--session-id" && shift(@$a) =~ /^[0-9a-f-]{36}$/;
+        my @want=("--output-format","json","--max-turns","8","--model","sonnet","--effort","high");
+        if ($access eq "write") {push @want,"--permission-mode","acceptEdits","--settings",($mode eq "strict" ? q({"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}) : q({"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}))}
+        else {push @want,"--disallowedTools","Edit,Write,NotebookEdit"}
+        push @want,"--bare" if $mode eq "bare";
+        if ($mode eq "strict") {push @want,"--strict-mcp-config","--mcp-config",q({"mcpServers":{}}),"--setting-sources",""; push @want,"--settings",q({"disableAllHooks":true}) if $access eq "read"}
+        die "argv differs: ".encode_json($a) unless encode_json($a) eq encode_json(\@want);
+      ' "$argv" "${mode/default/strict}" "$access"
+    done
+  done
+  rm -f "$up/invalid.json"
+  fails "Claude isolation: invalid mode refused" 2 env LOOMY_CLAUDE_ISOLATION=typo STUB_ARGV_LOG="$up/invalid.json" bash -c 'cd "$1" && bash "$2/scripts/loomy-delegate-claude.sh" reviewer "Invalid isolation"' _ "$up/project" "$REPO"
+  has "Claude isolation: invalid mode diagnostic" 'Invalid LOOMY_CLAUDE_ISOLATION'
+  run "Claude isolation: invalid mode never launches CLI" test ! -e "$up/invalid.json"
+  run "Claude isolation: user config unchanged" cmp "$up/claude-before" "$up/home/.claude/settings.json"
+  run "desktop: launch boundary omits unsupported model flag" env STUB_ARGV_LOG="$up/desktop.json" bash -c 'source "$1/scripts/lib/launch.sh"; ROOT="$2"; loomy_cli_run claude lead sonnet -- --desktop --resume 88888888-8888-8888-8888-888888888888' _ "$REPO" "$up/project"
+  run "desktop: exact supported argv" perl -MJSON::PP -e 'local $/; die unless encode_json(decode_json(<>)) eq encode_json(["--desktop","--resume","88888888-8888-8888-8888-888888888888"])' "$up/desktop.json"
+}
+
 hermetic_tests() {
   section "Hermeticity"
   local hp="$WORK/hermetic" tool
@@ -1654,6 +1711,7 @@ replay_soak_tests() {
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
+    'Upstream CLI flags') upstream_cli_tests ;;
     'Hermeticity') hermetic_tests ;;
     'W47') w47_tests ;;
     'Bash 3.2 pitfalls') w47_static_tests ;;
@@ -1727,6 +1785,7 @@ if [[ "${1:-}" == --section && "${2:-}" == 'Native Codex' ]]; then
   suite_summary
   (( FAIL == 0 )); exit $?
 fi
+upstream_cli_tests
 hermetic_tests
 live_view_tests
 if [[ "${1:-}" == --section && "${2:-}" == 'Live view' ]]; then

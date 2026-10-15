@@ -2,6 +2,12 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## Unreleased
+- Make `route codex-profiles` advice version-aware: legacy TOML only before Codex 0.134; current or unknown versions get explicit per-call model/effort commands, without editing user configuration.
+- Isolate headless Claude delegations by default: the bridge runs `claude -p` with an explicit empty MCP set, no setting sources and hooks disabled, so a project's `.mcp.json` servers and project hooks no longer start inside delegated runs (verified on Claude Code 2.1.296 with subscription auth). `LOOMY_CLAUDE_ISOLATION=off` restores the previous behaviour; `bare` is kept as an internal candidate only (it breaks subscription auth).
+- Audit upstream CLI flags and stop adding unsupported `--model` to Claude Desktop resume handovers. Keep statusLine event-driven; the optional upstream `refreshInterval` is not implemented.
+- Add hermetic version-boundary and bridge isolation argv tests, including quota-write sandbox settings and invalid-mode refusal.
+
 ## 0.17.3 — 2026-10-14
 - README captures: the top image is again the animated agent-tree diagram (roles, tools, models, efforts; key t) and the list view stays folded in `<details>`. `tools/capture-watch.sh` returns to the journal-based demo (tree = `LOOMY_TREE=diagram`, live = list) that 0.17.1 had replaced by a native-session fixture, which made the "tree" image look like the list; the fixture `capture-native.pl` is removed. The four SVGs are regenerated with the current renderer and the captions restored in both READMEs
 - Restore colours in the native list and tree rows (any project with native Claude or Codex sessions): rail and branch glyphs, state words by outcome (running yellow, done green, failed red, interrupted dim red, partial/blocked/lost yellow, idle and stale dim), model names, elapsed times, the "+N finished/earlier" folds and the running summary were printed without a single colour sequence. Colour is applied after layout, so widths and clipping are unchanged and `NO_COLOR` output is byte-identical

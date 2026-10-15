@@ -99,6 +99,12 @@ REQUESTED=0
 OFF_ROUTING="$(ai_delegate_off_routing "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "${LOOMY_FAILOVER_FROM:-}")"
 WHY_JSON=",\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"requested\":$([[ $REQUESTED == 1 ]] && echo true || echo false),\"off_routing\":\"$OFF_ROUTING\",\"why\":$(ai_json_str "$(ai_task_excerpt "$O_WHY")")"
 MAX_TURNS="${DELEGATE_CLAUDE_MAX_TURNS:-${CLAUDE_MAX_TURNS:-8}}"
+# strict by default: verified on Claude Code 2.1.296 with subscription auth (no project MCP server, no project hook).
+ISOLATION="${LOOMY_CLAUDE_ISOLATION:-strict}"
+case "$ISOLATION" in
+  off|bare|strict) ;;
+  *) t "Invalid LOOMY_CLAUDE_ISOLATION: %s (expected off, bare or strict)" "$ISOLATION" >&2; echo >&2; exit 2 ;;
+esac
 
 PROMPT="$ROLE_GUIDANCE
 
@@ -119,16 +125,26 @@ trap 'rm -rf "$TMP"' EXIT
 LOOMY_CLI_SESSION_ID="$(perl -e 'printf "%08x-%04x-4%03x-8%03x-%012x",rand(2**32),rand(2**16),rand(2**12),rand(2**12),rand(2**48)')"
 export LOOMY_CLI_SESSION_ID
 run_claude() {
+  local isolation_args=() settings='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
+  case "$ISOLATION" in
+    bare) isolation_args=(--bare) ;;
+    strict)
+      # Keep the user's auth store; block inherited settings/hooks and allow only Loomy's empty MCP set.
+      isolation_args=(--strict-mcp-config --mcp-config '{"mcpServers":{}}' --setting-sources "")
+      if (( WRITES )); then settings='{"disableAllHooks":true,"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
+      else isolation_args+=(--settings '{"disableAllHooks":true}'); fi
+      ;;
+  esac
   if (( WRITES )); then
     # Like Codex's workspace-write sandbox: file edits accepted in the project, shell commands only inside Claude
     # Code's sandbox (filesystem limited to the project, no network); anything else is refused, never asked.
     loomy_cli_bridge_exec claude "$ROLE" "$1" -- -p "$PROMPT" --session-id "$LOOMY_CLI_SESSION_ID" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" --permission-mode acceptEdits \
-      --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
+      --settings "$settings" ${isolation_args[@]+"${isolation_args[@]}"}
   else
     loomy_cli_bridge_exec claude "$ROLE" "$1" -- -p "$PROMPT" --session-id "$LOOMY_CLI_SESSION_ID" --output-format json --max-turns "$MAX_TURNS" \
       --model "$1" --effort "$EFFORT" \
-      --disallowedTools "Edit,Write,NotebookEdit"
+      --disallowedTools "Edit,Write,NotebookEdit" ${isolation_args[@]+"${isolation_args[@]}"}
   fi
 }
 BEFORE=""

@@ -52,6 +52,32 @@ The design deliberately avoids preloading every specialised role or a large secu
 
 - `tools/capture-watch.sh`: regenerates the animated README live-view SVG with `tools/capture-watch.sh <en|fr> <out.svg>`, using an isolated disposable project, CLI test stubs and synthetic journal events with live local processes; renders 24 frames through `scripts/loomy-tree.sh --once`, converts them with `tools/ansi2svg.py`, and checks the heading, local-path exclusion and size below 300 KB.
 
+## Upstream CLI flags
+
+Audit dated 2026-10-15 against the [Codex CLI reference](https://developers.openai.com/codex/cli/reference), [Codex configuration reference](https://developers.openai.com/codex/config-reference), [Claude CLI reference](https://code.claude.com/docs/en/cli-reference) and [hook policy](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks) (study checks W03c/W03h/W04b/W04c). This is a documentation/argv audit with hermetic stubs, not an installed-client authentication or isolation certification.
+
+| Provider / callers | Complete passed options and values | Upstream result / action |
+| --- | --- | --- |
+| Codex lead (`start`, `task`, `audit`, route advice); launch boundary | `-m MODEL`, `-c model_reasoning_effort=EFFORT`; resumed start: `resume --last` | Supported; effort support depends on client/model. No change to routing or efforts. |
+| Codex bridge | `exec -m MODEL -c model_reasoning_effort=EFFORT -s read-only\|workspace-write -C ROOT --skip-git-repo-check --ephemeral --json -o FILE` | Supported; `-s` is sandbox, not approval policy. |
+| Codex doctor/models probe; feedback triage | `exec -m MODEL -c model_reasoning_effort=low\|medium -s read-only --skip-git-repo-check --ephemeral -o FILE` | Supported. Probe runs only when requested; this audit never runs a real probe. |
+| Codex route `codex-profiles` (printed advice only) | Before 0.134: `--profile ai-ROLE` with `[profiles.ai-ROLE]`; 0.134+ or unknown version: explicit `-m MODEL -c model_reasoning_effort=EFFORT` | Legacy sections removed in 0.134.0 (W03h); version read through `loomy_cli_meta codex --version`. Unknown/failed detection gets an explicit note and per-call advice. No user config writes. Current `--profile` uses separate files; Loomy does not generate them. |
+| Claude lead (`start`, `task`, `audit`, route advice); launch boundary | `--model MODEL --effort EFFORT`, optional `--advisor MODEL`; resumed start: `--continue` | Supported; effort/advisor availability depends on client/model. |
+| Claude Desktop handover | `--desktop --resume SESSION_ID` | Requires 2.1.285+ (existing version gate). Desktop rejects model flags; the launch boundary now omits its automatic `--model` addition for this handover. |
+| Claude bridge, default `off` | `-p PROMPT --session-id UUID --output-format json --max-turns N --model MODEL --effort EFFORT`; read: `--disallowedTools Edit,Write,NotebookEdit`; quota-write: `--permission-mode acceptEdits --settings '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'` | Supported (W04b/W04c); existing argv unchanged. Unresolved headless permission requests remain denied. Project MCP/hooks can load without a trust prompt. |
+| Claude bridge, internal `bare` candidate | Default bridge options plus `--bare` | Documented minimal discovery mode; auth/config/isolation effects must be tested on the installed version before rollout. |
+| Claude bridge, internal `strict` candidate | Default bridge options plus `--strict-mcp-config --mcp-config '{"mcpServers":{}}' --setting-sources ''`; `--settings` adds `"disableAllHooks":true` (merged with sandbox settings for quota-write) | Explicit empty MCP set and per-run hook denial; no inherited user/project/local settings. Auth store stays in place. Managed policy may still require MCP/hooks; this is not certified plugin/config isolation. |
+| Claude doctor/models probe | `-p PROMPT --output-format json --max-turns 1 --model MODEL --effort low --tools '' --strict-mcp-config` | Supported; no tools. Probe changes are outside the bridge isolation switch. |
+| Claude local writer / feedback triage | `-p --model MODEL --tools '' --strict-mcp-config PROMPT` | Supported; no tools. Local writer also uses a disposable `CLAUDE_CONFIG_DIR` and the local API endpoint. That empty user directory is precedent, not proof that project hooks are disabled; bridge strict uses explicit hook denial without replacing the subscription auth store. |
+| Both providers, metadata / repair | `--version`; Claude repair: `update` | Through `loomy_cli_meta`; no model call. Its allowlisted `login`/`auth` subcommands have no current caller. |
+
+Loomy passes neither `--full-auto` nor `--approve-for-me`, and sets no Codex `approval_policy` or `-a` option. W03c's removal of `--full-auto` therefore requires no launch replacement. Current approval values are `on-request`, `never`, or granular config; `untrusted` is unsupported and `on-failure` deprecated. Inherited user policy is unchanged. `--approve-for-me` conflicts with an explicit `-s` sandbox and must not be substituted blindly. Claude's newer `--permission-prompts none` is not added to the unchanged default bridge.
+
+`LOOMY_CLAUDE_ISOLATION=off|bare|strict` is internal; unset means `strict`, invalid values fail before launch. Real test on Claude Code 2.1.296 with subscription auth (2026-10-15, trap project with a project MCP server and a project hook): `off` started both; `bare` failed with "Not logged in" (subscription auth unavailable), so it stays an unused candidate; `strict` answered with neither started, in read and write modes. `off` remains available for diagnosis. No mode falls back to another on failure.
+
+StatusLine freshness remains event-driven (W05). Upstream's optional `refreshInterval` (at least one second) is **not implemented by Loomy**: no timer registration, user statusLine rewrite, or provider refresh call is added. Idle silence is not a fresh quota zero.
+
+
 
 ## Live performance and resilient watch
 

@@ -18,7 +18,7 @@ Commands:
   markdown              Matrix as Markdown (for .loomy/docs/AI_MODEL_ROUTING.md)
   all                   Matrix of the 4 environments side by side (Markdown)
   claude-agents [DIR]   Generates the Claude Code subagents (default: <project>/.claude/agents)
-  codex-profiles        TOML excerpt of the Codex profiles per role (to add to ~/.codex/config.toml)
+  codex-profiles        Version-aware Codex model/effort advice per role (prints only)
   lead                  Launch command of the main session (lead agent)
 
 Options:
@@ -131,6 +131,20 @@ case "$CMD" in
     ;;
 
   codex-profiles)
+    version="$(ai_codex_version)"
+    if [[ -z "$version" ]] || ai_version_ge "$version" 0.134.0; then
+      if [[ -z "$version" ]]; then
+        printf '# '; t "Codex version unavailable; legacy profile advice omitted."; echo
+      else
+        printf '# '; t "Codex %s: legacy [profiles.ai-*] sections are unsupported." "$version"; echo
+      fi
+      printf '# '; t "Loomy pins model and effort per call with -m and -c; no user configuration is changed."; echo
+      for r in $AI_ROLES; do
+        ai_route "$r" codex "$AI_PROFILE"
+        printf '\n# %s\ncodex -m %s -c model_reasoning_effort=%s\n' "$r" "$R_MODEL" "$R_EFFORT"
+      done
+      exit 0
+    fi
     printf '# '; t "Loomy — Codex profiles per role (profile %s, catalog from %s)" "$(ai_profile_label "$AI_PROFILE")" "$AI_CATALOG_DATE"; echo
     echo "# Usage : codex --profile ai-lead | ai-developer | …"
     for r in $AI_ROLES; do

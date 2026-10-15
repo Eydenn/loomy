@@ -233,6 +233,8 @@ loomy route claude-agents
 
 Matrice du projet · `lead` · `get <rôle>` · `markdown` · `all` · `claude-agents` · `codex-profiles`
 
+`codex-profiles` affiche des conseils selon la version sans modifier la configuration utilisateur. Avant Codex 0.134, il affiche les anciens profils TOML ; à partir de 0.134 (ou si la version est inconnue), il montre comment Loomy fixe le modèle et l’effort de chaque rôle à chaque appel avec `-m` et `-c model_reasoning_effort=…`. La détection utilise uniquement `codex --version` via le point de lancement de Loomy.
+
 ### `loomy delegate codex <role> "…"`
 
 ```bash

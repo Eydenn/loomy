@@ -25,7 +25,7 @@ TEST_TIMES="${LOOMY_TEST_TIMES:-0}"   # the suite's own setting, read before the
 WATCH_PS="${LOOMY_TEST_WATCH_PS:-1}"
 NATIVE_PTY="${LOOMY_TEST_NATIVE_PTY:-1}"   # explicit sandbox opt-out; Mac default stays enabled
 TEST_TIME_SCALE="$(command perl "$HERE/fixtures/time-scale.pl")" || exit $?
-for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_TOOLS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$_v"; done
+for _v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$_v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_TOOLS|LOOMY_TEST_GUARD_LOG|LOOMY_TEST_CORE|LOOMY_TEST_NEXT_ROOT|LOOMY_TEST_ENTRY_LOG) continue ;; esac; unset "$_v"; done
 # Isolated environment: controlled configuration, HOME and PATH, no colours.
 mkdir -p "$WORK/tmp"
 export TMPDIR="$WORK/tmp"
@@ -97,6 +97,64 @@ wait_for() {
 suite_summary() {
   run "hermetic: no real AI CLI, no leaked process/session/temp file" test_guard_gate
   printf '\n%d passed, %d failed\n' "$PASS" "$FAIL"
+}
+
+core_seam_tests() {
+  section "Core seam"
+  local cs="$WORK/core-seam"
+  mkdir -p "$cs/compat/bin" "$cs/compat/scripts" "$cs/fixture/scripts"
+  printf '#!/bin/bash\nprintf "shell:%%s\\n" "$*"\nprintf relay-error >&2\nexit 7\n' >"$cs/fixture/scripts/loomy-seam.sh"
+  printf '#!/bin/bash\nprintf "next:%%s\\n" "$*"\n' >"$cs/compat/bin/loomy"
+  cp "$cs/compat/bin/loomy" "$cs/compat/scripts/loomy-seam.sh"
+  cp "$cs/fixture/scripts/loomy-seam.sh" "$cs/fixture/scripts/loomy-missing.sh"
+  printf '[[ "$#" == 2 && "$1" == "two words" && -z "$2" ]]\n' >"$cs/fixture/scripts/loomy-argv.sh"
+  printf ':\n' >"$cs/fixture/scripts/loomy-library.sh"
+  chmod +x "$cs/compat/bin/loomy" "$cs/compat/scripts/loomy-seam.sh"
+  # The nested probes have no children left to inspect; the outer suite keeps its real gate.
+  cat >"$cs/probe.sh" <<'PROBE'
+set -euo pipefail
+REPO="$1"; WORK="$2"; fixture="$3"; mode="$4"
+mkdir -p "$WORK"
+source "$REPO/tests/lib/guard.sh"
+bash -n "$BASH_ENV"
+pgrep() { return 1; }
+[[ "$XDG_STATE_HOME" == "$WORK/state" && -d "$XDG_STATE_HOME" ]]
+case "$mode" in
+  shell)
+    [[ "$LOOMY_TEST_CORE" == shell ]]
+    rc=0
+    bash "$fixture/scripts/loomy-seam.sh" 'two words' tail >"$WORK/out" 2>"$WORK/err" || rc=$?
+    [[ "$rc" == 7 && "$(cat "$WORK/out")" == 'shell:two words tail' && "$(cat "$WORK/err")" == relay-error ]]
+    "$REPO/bin/loomy" version >"$WORK/version"
+    grep -q "$(cat "$REPO/VERSION")" "$WORK/version"
+    grep -q $'shell\tscripts/loomy-seam.sh\t' "$LOOMY_TEST_ENTRY_LOG"
+    grep -q $'shell\tbin/loomy\t' "$LOOMY_TEST_ENTRY_LOG"
+    bash "$fixture/scripts/loomy-argv.sh" 'two words' ''
+    before="$(wc -l <"$LOOMY_TEST_ENTRY_LOG")"
+    source "$fixture/scripts/loomy-library.sh"
+    [[ "$(wc -l <"$LOOMY_TEST_ENTRY_LOG")" == "$before" ]]
+    ;;
+  next)
+    [[ "$("$REPO/bin/loomy" 'two words')" == 'next:two words' ]]
+    [[ "$(bash "$fixture/scripts/loomy-seam.sh" relay)" == next:relay ]]
+    grep -q $'next\tbin/loomy\t' "$LOOMY_TEST_ENTRY_LOG"
+    grep -q $'next\tscripts/loomy-seam.sh\t' "$LOOMY_TEST_ENTRY_LOG"
+    ;;
+  missing-relay)
+    rc=0; bash "$fixture/scripts/loomy-missing.sh" || rc=$?
+    [[ "$rc" == 99 ]]
+    ;;
+esac
+PROBE
+  run "core seam: default shell, isolated XDG state, CLI/relay streams, exit and log" env -u LOOMY_TEST_CORE XDG_STATE_HOME="$cs/poison" bash "$cs/probe.sh" "$REPO" "$cs/default" "$cs/fixture" shell
+  run "core seam: explicit shell" env LOOMY_TEST_CORE=shell bash "$cs/probe.sh" "$REPO" "$cs/shell" "$cs/fixture" shell
+  run "core seam: next selects compatible CLI and relay without assertion changes" env LOOMY_TEST_CORE=next LOOMY_TEST_NEXT_ROOT="$cs/compat" bash "$cs/probe.sh" "$REPO" "$cs/next" "$cs/fixture" next
+  run "core seam: no fallback for a missing next relay" env LOOMY_TEST_CORE=next LOOMY_TEST_NEXT_ROOT="$cs/compat" bash "$cs/probe.sh" "$REPO" "$cs/missing-relay" "$cs/fixture" missing-relay
+  run "core seam: missing next core skips before assertions" env LOOMY_TEST_CORE=next LOOMY_TEST_NEXT_ROOT="$cs/absent" bash "$cs/probe.sh" "$REPO" "$cs/skip" "$cs/fixture" unreachable
+  has "core seam: named skip" '^SKIP probe.sh \[core=next\]: built compatibility entrypoint unavailable'
+  run "core seam: skip removes temporary root" test ! -e "$cs/skip"
+  fails "core seam: invalid selector is an error" 2 env LOOMY_TEST_CORE=typo bash "$cs/probe.sh" "$REPO" "$cs/invalid" "$cs/fixture" unreachable
+  run "core seam: inherited XDG state was never created" test ! -e "$cs/poison"
 }
 
 upstream_cli_tests() {
@@ -1711,6 +1769,7 @@ replay_soak_tests() {
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
+    'Core seam') core_seam_tests ;;
     'Upstream CLI flags') upstream_cli_tests ;;
     'Hermeticity') hermetic_tests ;;
     'W47') w47_tests ;;
@@ -1785,6 +1844,7 @@ if [[ "${1:-}" == --section && "${2:-}" == 'Native Codex' ]]; then
   suite_summary
   (( FAIL == 0 )); exit $?
 fi
+core_seam_tests
 upstream_cli_tests
 hermetic_tests
 live_view_tests

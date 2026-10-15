@@ -3,6 +3,7 @@
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
 ## Unreleased
+- Add a shared shell/next test entrypoint selector with named skips for an unavailable next core, private XDG state and disposable dispatch accounting; preserve existing assertions and provider guards.
 - Make `route codex-profiles` advice version-aware: legacy TOML only before Codex 0.134; current or unknown versions get explicit per-call model/effort commands, without editing user configuration.
 - Isolate headless Claude delegations by default: the bridge runs `claude -p` with an explicit empty MCP set, no setting sources and hooks disabled, so a project's `.mcp.json` servers and project hooks no longer start inside delegated runs (verified on Claude Code 2.1.296 with subscription auth). `LOOMY_CLAUDE_ISOLATION=off` restores the previous behaviour; `bare` is kept as an internal candidate only (it breaks subscription auth).
 - Audit upstream CLI flags and stop adding unsupported `--model` to Claude Desktop resume handovers. Keep statusLine event-driven; the optional upstream `refreshInterval` is not implemented.

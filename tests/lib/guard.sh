@@ -4,8 +4,8 @@
 # shellcheck disable=SC2034  # exported contract used by product scripts
 [[ -n "${WORK:-}" && -d "$WORK" ]] || { printf 'ko test guard: missing work directory\n' >&2; exit 1; }
 WORK="$(cd "$WORK" && pwd -P)"
-export TMPDIR="$WORK/tmp" TMUX_TMPDIR="$WORK/tmux"
-mkdir -p "$TMPDIR" "$TMUX_TMPDIR"
+export TMPDIR="$WORK/tmp" TMUX_TMPDIR="$WORK/tmux" XDG_STATE_HOME="$WORK/state"
+mkdir -p "$TMPDIR" "$TMUX_TMPDIR" "$XDG_STATE_HOME"
 chmod 700 "$TMUX_TMPDIR"
 unset TMUX TMUX_PANE CODEX_HOME CLAUDE_CONFIG_DIR
 LOOMY_TEST_STUBS="$(cd "$(dirname "${BASH_SOURCE[0]}")/../stubs" && pwd -P)"
@@ -18,6 +18,57 @@ _guard_tmux="$(PATH="$PATH:/opt/homebrew/bin:/usr/local/bin" command -v tmux || 
 unset _guard_tmux
 export LOOMY_TEST_TOOLS
 export PATH="$LOOMY_TEST_STUBS:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# BASH_ENV observes executable Bash entrypoints, including direct/project relay calls,
+# without replacing source files that implementation tests inspect or source.
+export LOOMY_TEST_CORE="${LOOMY_TEST_CORE:-shell}"
+export LOOMY_TEST_ENTRY_LOG="$WORK/core-entrypoints.tsv"
+_guard_repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+export LOOMY_TEST_NEXT_ROOT="${LOOMY_TEST_NEXT_ROOT:-$_guard_repo/tests/next/compat}"
+case "$LOOMY_TEST_CORE" in
+  shell) ;;
+  next)
+    if [[ "$LOOMY_TEST_NEXT_ROOT" != /* || ! -x "$LOOMY_TEST_NEXT_ROOT/bin/loomy" ]]; then
+      printf 'SKIP %s [core=next]: built compatibility entrypoint unavailable (%s/bin/loomy)\n' "${0##*/}" "$LOOMY_TEST_NEXT_ROOT"
+      rm -rf "$WORK"
+      exit 0
+    fi ;;
+  *) printf 'ko test guard: invalid LOOMY_TEST_CORE=%s (expected shell|next)\n' "$LOOMY_TEST_CORE" >&2
+     rm -rf "$WORK"; exit 2 ;;
+esac
+: >"$LOOMY_TEST_ENTRY_LOG"
+chmod 600 "$LOOMY_TEST_ENTRY_LOG"
+export BASH_ENV="$WORK/core-entrypoint-hook.sh"
+{
+  printf '#!/usr/bin/env bash\n_test_core_enter() {\n'
+  printf '_test_core=%q\n_test_next=%q\n_test_log=%q\n' "$LOOMY_TEST_CORE" "$LOOMY_TEST_NEXT_ROOT" "$LOOMY_TEST_ENTRY_LOG"
+  cat <<'HOOK'
+# Compatibility wrappers own Rust dispatch; a selection log is not Rust-hit proof.
+_test_entry=""
+case "$0" in
+  "$_test_next"/*) ;; # Do not dispatch a compatibility wrapper recursively.
+  */bin/loomy) _test_entry=bin/loomy ;;
+  */scripts/loomy-*.sh) _test_entry="scripts/${0##*/}" ;;
+esac
+if [[ -n "$_test_entry" ]]; then
+  _test_target="$0"
+  if [[ "$_test_core" == next ]]; then
+    _test_target="$_test_next/$_test_entry"
+    if [[ ! -x "$_test_target" ]]; then
+      printf 'ko test core next: missing entrypoint %s\n' "$_test_target" >&2
+      exit 99
+    fi
+  fi
+  printf '%s\t%s\t%s\n' "$_test_core" "$_test_entry" "$_test_target" >>"$_test_log" || exit 99
+  if [[ "$_test_core" == next ]]; then exec "$_test_target" "$@"; fi
+fi
+unset _test_core _test_next _test_log _test_entry _test_target
+}
+# Bash 3.2 sets script $0/argv after BASH_ENV; defer until its first command.
+trap 'trap - DEBUG; _test_core_enter "$@"; unset -f _test_core_enter' DEBUG
+HOOK
+} >"$BASH_ENV"
+unset _guard_repo
 
 # pgrep treats its argument as a regexp; escape paths before matching, exclude this shell.
 test_guard_processes() {

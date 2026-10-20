@@ -196,7 +196,7 @@ fi
 # Every session start checks the pieces Loomy owns and completes what is missing (routing documents, role
 # subagents, orchestration rule), so a setup interrupted midway is repaired before the lead agent works.
 LP_DONE=()
-if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; then loomy_project_repair "$ROOT" 2>/dev/null || true; fi
+if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; then loomy_project_repair "$ROOT" existing-memory 2>/dev/null || true; fi
 
 # ---------------------------------------------------------------- contexte
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }

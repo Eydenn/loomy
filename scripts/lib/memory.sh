@@ -25,8 +25,17 @@ loomy_memory_state_init() {
   # Written for the models, read by the user if they like: English (fewer tokens than other languages for every model)
   # and telegraphic, whatever the documentation language.
   if [[ ! -e "$f" ]]; then
-    printf '# Work state\n\n<!-- For the agents. English, telegraphic bullets, no prose; 40 lines max; replace what is outdated. Kept by the lead agent after each important step and before ending a session; given back at the start of every session, Claude Code or Codex. -->\n\n## Done\n\n## In progress\n\n## Decisions\n\n## Dead ends\n\n## Next\n\n## Open questions\n' >"$f" || return 0
+    printf '# Work state\n\n<!-- For the agents. English, telegraphic bullets, no prose; aim for 40 lines, keeping the latest three dead ends even over budget; replace what is outdated. Kept by the lead agent after each important step and before ending a session; given back at the start of every session, Claude Code or Codex. -->\n\n## Done\n\n## In progress\n\n## Decisions\n\n## Dead ends\n\n## Next\n\n## Open questions\n' >"$f" || return 0
   fi
+  loomy_memory_state_migrate "$1"
+  return 0
+}
+
+# loomy_memory_state_migrate <root>: readers may migrate and archive an existing STATE, never create one.
+loomy_memory_state_migrate() {
+  local d f
+  d="$(loomy_memory_dir "$1")"; f="$d/STATE.md"
+  [[ -f "$f" && ! -L "$d" && ! -L "$f" ]] || return 0
   # Append only. Preserve the existing bytes, including CRLF and a missing final newline.
   perl -MFcntl=:flock -MTime::HiRes=stat,utime -e '
     open my $f, "+<", $ARGV[0] or exit; flock($f, LOCK_EX) or exit;
@@ -42,8 +51,8 @@ loomy_memory_state_init() {
   return 0
 }
 
-# loomy_memory_state_budget <root>: archive oldest dead-end bullets until STATE fits 40 lines. Never discard other
-# content: if it alone exceeds the budget, the lead must condense it. Save the archive before changing STATE.
+# loomy_memory_state_budget <root>: archive oldest dead ends until STATE fits 40 lines, keeping the latest three.
+# Never discard other content; the lead must condense any remaining overflow. Save the archive before changing STATE.
 loomy_memory_state_budget() {
   local d; d="$(loomy_memory_dir "$1")"
   [[ -L "$d" || -L "$d/STATE.md" || -L "$d/DEAD-ENDS.md" ]] && return 0
@@ -52,13 +61,19 @@ loomy_memory_state_budget() {
     open my $f, "+<", $state or exit; flock($f, LOCK_EX) or exit;
     my @stat = stat($f);
     my @lines = <$f>; exit if @lines <= 40;
-    my ($dead, @entries);
+    my ($dead, $entry, @entries);
     for my $i (0 .. $#lines) {
-      if ($lines[$i] =~ /^## /) { $dead = $lines[$i] =~ /^## Dead ends[ \t]*\r?\n?$/; next }
-      push @entries, $i if $dead && $lines[$i] =~ /^- \S/;
+      if ($lines[$i] =~ /^## /) { $dead = $lines[$i] =~ /^## Dead ends[ \t]*\r?\n?$/; undef $entry; next }
+      if ($dead && $lines[$i] =~ /^- \S/) { push @entries, [$i]; $entry = $#entries }
+      elsif ($dead && defined($entry) && $lines[$i] =~ /^[ \t]+\S/) { push @{$entries[$entry]}, $i }
+      else { undef $entry }
     }
-    my $n = @lines - 40; $n = @entries if $n > @entries; exit unless $n;
-    my %move = map { $_ => 1 } @entries[0 .. $n - 1];
+    my (%move, $left); $left = @lines;
+    for my $i (0 .. $#entries - 3) {
+      last if $left <= 40;
+      $move{$_} = 1 for @{$entries[$i]}; $left -= @{$entries[$i]};
+    }
+    exit unless %move;
     open my $a, "+>>", $archive or exit; flock($a, LOCK_EX) or exit;
     if (-s $a) { seek($a, -1, 2) or exit; read($a, my $last, 1) == 1 or exit; print $a "\n" if $last ne "\n" }
     else { print $a "# Archived dead ends\n\n" or exit }
@@ -136,22 +151,42 @@ loomy_memory_digest() {
   return 0
 }
 
-# loomy_memory_state <root> [max lines]: no comments or empty sections; latest five dead ends first (320 chars each),
-# then the rest of STATE, within the same line budget. The files retain the full entries.
+# loomy_memory_state <root> [max lines]: no comments or empty sections; latest three dead ends first (320 chars each),
+# joined with their indented continuations, then the rest of STATE within the line budget. Fall back to the archive
+# if STATE has no dead ends. The files retain the full entries and any free text.
 loomy_memory_state() {
-  local f; f="$(loomy_memory_dir "$1")/STATE.md"
-  loomy_memory_state_init "$1"
-  [[ -f "$f" ]] || return 0
-  awk '/<!--/ { c = 1 } c { if (/-->/) c = 0; next } { print }' "$f" \
-    | awk -v max="${2:-40}" '
-      /^## / { dead = ($0 ~ /^## Dead ends[ \t]*\r?$/); h = dead ? "" : $0; next }
-      dead { if (/^- /) ends[++n] = substr($0, 1, 320); next }
+  local d f
+  d="$(loomy_memory_dir "$1")"; f="$d/STATE.md"
+  loomy_memory_state_migrate "$1"
+  { [[ ! -f "$f" ]] || cat "$f"; } | awk -v max="${2:-40}" -v archive="$d/DEAD-ENDS.md" '
+      function dead_line(line) {
+        if (line ~ /^- [^[:space:]]/) {
+          ends[++n] = substr(line, 1, 320); active = n
+          if (n > 3) delete ends[n - 3]
+        } else if (active && line ~ /^[ \t]+[^[:space:]]/) {
+          sub(/^[ \t]+/, "", line); ends[active] = substr(ends[active] " " line, 1, 320)
+        } else active = 0
+      }
+      /<!--/ { c = 1 }
+      c { if (/-->/) c = 0; active = 0; next }
+      { sub(/\r$/, "") }
+      /^## / { dead = ($0 ~ /^## Dead ends[ \t]*$/); h = dead ? "" : $0; active = 0; next }
+      dead { dead_line($0); next }
       NF && !/^# / { if (h != "") { rest[++r] = h; h = "" } rest[++r] = $0 }
       END {
+        if (!n) {
+          active = 0; c = 0
+          while ((getline line < archive) > 0) {
+            if (line ~ /<!--/) c = 1
+            if (c) { if (line ~ /-->/) c = 0; active = 0; continue }
+            sub(/\r$/, "", line); dead_line(line)
+          }
+          close(archive)
+        }
         if (n) {
           out[++k] = "## Dead ends"
-          if (n > 5) out[++k] = "(Latest 5; full ledger in .loomy/memory/STATE.md.)"
-          for (i = (n > 5 ? n - 4 : 1); i <= n; i++) out[++k] = ends[i]
+          if (n > 3) out[++k] = "(Latest 3; full ledger in .loomy/memory/STATE.md and .loomy/memory/DEAD-ENDS.md.)"
+          for (i = (n > 3 ? n - 2 : 1); i <= n; i++) out[++k] = ends[i]
         }
         for (i = 1; i <= r; i++) out[++k] = rest[i]
         for (i = 1; i <= k && i <= max; i++) print out[i]

@@ -124,6 +124,32 @@ _lp_templates() {
   if [[ "$(_lp_doc_lang "$1")" == fr && -d "$base/fr/templates" ]]; then echo "$base/fr/templates"; else echo "$base/templates"; fi
 }
 
+# _lp_data_skill <root>: the bundled bootstrap skill, only for data projects, in each active family's native folder.
+# Existing skills stay untouched; the shared copy in .loomy/skills/ remains available through START.md.
+_lp_data_skill() {
+  local r="$1" src base d dest
+  [[ "$(_ai_brief_get "$r/.loomy/brief.md" type 2>/dev/null)" == data ]] || return 0
+  src="$r/.loomy/skills/project-bootstrap"
+  if [[ ! -f "$src/SKILL.md" || ! -f "$src/references/data.md" ]]; then
+    base="${LOOMY_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+    [[ "$(_lp_doc_lang "$r")" == fr && -d "$base/fr/skills" ]] && base="$base/fr"
+    src="$base/skills/project-bootstrap"
+  fi
+  [[ -f "$src/SKILL.md" ]] || return 0
+  # shellcheck source=skills.sh
+  declare -F _sk_dirs >/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/skills.sh"
+  while IFS= read -r d; do
+    dest="$d/project-bootstrap"
+    _sk_safe_dir "$r" "$dest" || continue
+    [[ ! -e "$r/$dest" ]] || continue
+    if mkdir -p "$r/$d" && cp -R "$src" "$r/$dest"; then
+      _sk_gitignore "$r" "/$dest/"
+      LP_DONE+=("$dest/")
+    fi
+  done < <(_sk_dirs "$r" "")
+  return 0
+}
+
 # _lp_agent_untouched <subagent> <generated>: true when the subagent differs from the generated one only by its model
 # and effort lines, and its model is one Loomy routes (a chain of the catalog or the built-in one).
 _lp_agent_untouched() {
@@ -270,6 +296,7 @@ loomy_project_repair() {
   loomy_claude_hooks_merge "$r" || true
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
   route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
+  _lp_data_skill "$r"
   mkdir -p "$docs"
   # Routing, workflow and orchestration documents (the agent may refine them; never overwritten).
   for f in WORKFLOW ORCHESTRATION MODEL_ROUTING; do

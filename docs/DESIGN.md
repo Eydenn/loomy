@@ -7,7 +7,7 @@ The decisions behind the main choices are recorded in [`docs/adr/`](adr/README.m
 - `START.md`: temporary setup and orchestration contract, copied to a project's root by `loomy init` from the template `bootstrap/START.md` (`fr/bootstrap/START.md` in French).
 - `templates/AGENTS.md`: compact project rules for Codex.
 - `templates/CLAUDE.md`: compact compatibility layer for Claude Code.
-- `skills/project-bootstrap/`: reusable workflow, with progressively loaded references.
+- `skills/project-bootstrap/`: reusable workflow, with progressively loaded references. Only data projects load `references/data.md`: figures require executed, versioned code and cited outputs/snapshots, temporal validation uses a held-out period split by time, and an independent routed agent validates results (another role/model of the same family in SOLO). Agents see schemas, statistics and anonymised samples, never the full data set. Project repair installs the bundled skill into the active family's native folder (`.claude/skills/` or `.agents/skills/`, both in hybrid), only for data projects; existing skills are preserved and START.md also points to the shared `.loomy/skills/` reference.
 - `external-skills/`: integrations that must stay current with their original source.
 - `fr/`: French copies of the agent-facing documents above, installed when French is detected.
 - `scripts/`: deterministic setup tools.

@@ -31,6 +31,7 @@ When Codex and Claude Code are both used, prefer a shared workflow file and thin
 Read `references/orchestration.md` to decide complexity, risk, delegation, review, Codex/Claude collaboration, cross-model orchestration and token budget.
 Read `references/documentation.md` to generate the permanent project files.
 Read `references/model-routing.md` to choose models, reasoning effort or subagent tiers.
+Only read `references/data.md` for a Data & analysis project (`type: data` in the brief); carry its evidence, temporal validation and privacy rules into the proposal and permanent project instructions.
 Only read `references/security.md` for a security-sensitive architecture or an explicit audit request.
 
 ## Hybrid project layout

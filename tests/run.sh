@@ -1766,12 +1766,105 @@ replay_soak_tests() {
   fi
 }
 
+data_guidance_tests() {
+  section "Data guidance"
+  local lang setup mode lead kind root answers family native src f
+  local evidence snapshot temporal holdout memory output independent privacy recap condition gate
+  for lang in en fr; do
+    if [[ "$lang" == fr ]]; then
+      evidence='code exécuté et versionné'; snapshot="script producteur.*instantané"
+      temporal='jamais.*découpage aléatoire'; independent='SOLO.*rôle/modèle différent de la même famille'
+      holdout='période réservée.*séparée dans le temps'; memory='jamais.*mémoire'; output='requête.*script.*sortie conservée'
+      privacy='jamais le jeu de données complet'; recap='Données et analyse : chiffres'
+      condition='Uniquement pour `type: data`'; gate='Ne lis `references/data.md` que pour'
+    else
+      evidence='executed, versioned code'; snapshot='producing script.*data snapshot'
+      temporal='never a random split'; independent='SOLO.*different role/model of the same family'
+      holdout='held-out period split by time'; memory='never.*memory'; output='query.*script.*saved output'
+      privacy='never the full data set'; recap='Data & analysis: figures'
+      condition='Only for `type: data`'; gate='Only read `references/data.md` for'
+    fi
+    for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
+      case "$setup" in
+        claude-solo) mode=SOLO; lead=claude ;;
+        codex-solo) mode=SOLO; lead=codex ;;
+        *) mode=ORCHESTRATED; lead="${setup#hybrid-}" ;;
+      esac
+      for kind in data api; do
+        root="$WORK/data-$lang-$setup-$kind"; answers="$root-answers.md"
+        printf -- '---\ntype: %s\ntraits: ""\nai_mode: %s\nai_lead: %s\ndoc_language: %s\ngit_init: no\ngithub_repo: no\ncommit_after_setup: no\npush_after_commit: no\n---\n' "$kind" "$mode" "$lead" "$lang" >"$answers"
+        run "$lang/$setup/$kind: init" env LOOMY_LANG="$lang" "$LOOMY" init "$root" --answers "$answers" --yes --no-clipboard
+        file_has "$lang/$setup/$kind: mode retained" "$root/.loomy/brief.md" "^ai_mode: $mode$"
+        file_has "$lang/$setup/$kind: lead retained" "$root/.loomy/brief.md" "^ai_lead: $lead$"
+        file_has "$lang/$setup/$kind: data reference is conditional" "$root/START.md" "$condition"
+        if [[ "$kind" == data ]]; then
+          has "$lang/$setup: recap mentions the data rules" "$recap"
+          if grep -q 'Sonnet 5.5,.*1M' "$root/.loomy/brief.md"; then ko "$lang/$setup: fixed Claude recommendation in data brief"
+          else ok "$lang/$setup: model advice follows the routed families"; fi
+          for f in "$root/START.md" "$root/.loomy/brief.md" "$root/.loomy/skills/project-bootstrap/references/data.md"; do
+            file_has "$lang/$setup: evidence in ${f##*/}" "$f" "$evidence"
+            file_has "$lang/$setup: provenance in ${f##*/}" "$f" "$snapshot"
+            file_has "$lang/$setup: time split in ${f##*/}" "$f" "$temporal"
+            file_has "$lang/$setup: held-out period in ${f##*/}" "$f" "$holdout"
+            file_has "$lang/$setup: no numbers from memory in ${f##*/}" "$f" "$memory"
+            file_has "$lang/$setup: code and output in ${f##*/}" "$f" "$output"
+            file_has "$lang/$setup: independent solo review in ${f##*/}" "$f" "$independent"
+          done
+          for f in "$root/START.md" "$root/.loomy/skills/project-bootstrap/references/data.md"; do
+            file_has "$lang/$setup: privacy boundary in ${f##*/}" "$f" "$privacy"
+          done
+        else
+          hasnt "$lang/$setup: no data recommendation for API" "$recap"
+          if grep -qE "$evidence|$temporal|$independent" "$root/.loomy/brief.md"; then ko "$lang/$setup: data-only brief rules leaked to API"
+          else ok "$lang/$setup: API brief unchanged by data rules"; fi
+        fi
+        for family in claude codex; do
+          native=.claude; [[ "$family" == codex ]] && native=.agents
+          native="$root/$native/skills/project-bootstrap"
+          if [[ "$kind" == data && ( "$mode" != SOLO || "$lead" == "$family" ) ]]; then
+            file_has "$lang/$setup: $family loads data reference only when relevant" "$native/SKILL.md" "$gate"
+            run "$lang/$setup: $family skill and references match shared source" diff -r "$root/.loomy/skills/project-bootstrap" "$native"
+            file_has "$lang/$setup: $family bundled skill stays out of Git" "$root/.gitignore" "/${native#"$root/"}/"
+          else
+            [[ ! -e "$native" ]] && ok "$lang/$setup/$kind: no unused $family bootstrap skill" || ko "$lang/$setup/$kind: unexpected $family bootstrap skill"
+          fi
+        done
+      done
+    done
+  done
+  # Repair must preserve custom skills, respect native path boundaries and support older projects without a copy.
+  root="$WORK/data-repair"; mkdir -p "$root/.loomy" "$root/.agents/skills/project-bootstrap"
+  printf -- '---\ntype: data\nai_mode: HYBRID\nai_lead: codex\ndoc_language: fr\n---\n' >"$root/.loomy/brief.md"
+  printf 'custom bootstrap\n' >"$root/.agents/skills/project-bootstrap/SKILL.md"
+  data_skill_repair() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; _lp_data_skill "$2"' _ "$REPO" "$1"; }
+  run "data repair: missing bundled copy uses installed French source" data_skill_repair "$root"
+  run "data repair: fallback has complete French reference" cmp "$REPO/fr/skills/project-bootstrap/references/data.md" "$root/.claude/skills/project-bootstrap/references/data.md"
+  file_has "data repair: existing Codex skill preserved" "$root/.agents/skills/project-bootstrap/SKILL.md" '^custom bootstrap$'
+  run "data repair: repeated repair succeeds" data_skill_repair "$root"
+  run "data repair: repeated repair keeps native source intact" diff -r "$REPO/fr/skills/project-bootstrap" "$root/.claude/skills/project-bootstrap"
+  run "data repair: ignore entry occurs once" bash -c '[[ "$(grep -cxF "/.claude/skills/project-bootstrap/" "$1/.gitignore")" == 1 ]]' _ "$root"
+  root="$WORK/data-stale-copy"; mkdir -p "$root/.loomy/skills/project-bootstrap"
+  cp "$WORK/data-repair/.loomy/brief.md" "$root/.loomy/brief.md"
+  printf 'older bundled skill\n' >"$root/.loomy/skills/project-bootstrap/SKILL.md"
+  run "data repair: older bundled copy uses current installed source" data_skill_repair "$root"
+  run "data repair: older project gets current French rules" cmp "$REPO/fr/skills/project-bootstrap/references/data.md" "$root/.agents/skills/project-bootstrap/references/data.md"
+  for native in .claude .claude/skills .claude/skills/project-bootstrap .agents .agents/skills .agents/skills/project-bootstrap; do
+    root="$WORK/data-link-${native//\//-}"; src="$root-outside"
+    mkdir -p "$root/.loomy" "$src" "$(dirname "$root/$native")"
+    cp "$WORK/data-repair/.loomy/brief.md" "$root/.loomy/brief.md"
+    ln -s "$src" "$root/$native"
+    run "data repair: symlink at $native refused" data_skill_repair "$root"
+    [[ -z "$(ls -A "$src")" ]] && ok "data repair: no write through $native" || ko "data repair: write escaped through $native"
+  done
+}
+
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
     'Core seam') core_seam_tests ;;
     'Upstream CLI flags') upstream_cli_tests ;;
     'Hermeticity') hermetic_tests ;;
+    'Data guidance') data_guidance_tests ;;
     'W47') w47_tests ;;
     'Bash 3.2 pitfalls') w47_static_tests ;;
     'Subscriptions, quotas and stats') quota_stats_tests ;;
@@ -1847,6 +1940,7 @@ fi
 core_seam_tests
 upstream_cli_tests
 hermetic_tests
+data_guidance_tests
 live_view_tests
 if [[ "${1:-}" == --section && "${2:-}" == 'Live view' ]]; then
   suite_summary

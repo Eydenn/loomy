@@ -2,6 +2,12 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.17.6 — 2026-10-20
+- `loomy stats`, `loomy log` and `loomy status` now flag reviewer and security answers that report no findings without a `TRIED` section ("review without TRIED"); the answer's own status is never rewritten, and older journals still display as before. Empty findings are recognised in their common forms (`None.`, `No findings`, `aucun`, bold field names).
+- The Dead ends reminder is no longer repeated at every session start when `AGENTS.md` / `CLAUDE.md` already carry the rule; the latest dead ends themselves are still shown.
+- A delegation never stops before writing its journal line, even if the optional review metadata cannot be computed.
+- Fix: an install from a git worktree is recognised as a git install (`loomy version --all`, `loomy update`).
+
 ## 0.17.5 — 2026-10-20
 - Reviewer and security results now add a short `TRIED` section (what was attacked, at most 8 lines) when they find no defect; the lead treats an empty `FINDINGS` without `TRIED` as an incomplete review (`partial`). Works with Claude alone, Codex alone and hybrid setups.
 - Add a shared "Dead ends" ledger to `.loomy/memory/STATE.md`: one line per rejected approach, never retried without a new reason. It is shown at session start for Claude and Codex and carried across handovers. Older entries are archived to `.loomy/memory/DEAD-ENDS.md` (the latest three are always kept); reading never creates `STATE.md`.

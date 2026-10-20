@@ -521,7 +521,7 @@ SUMMARY · FINDINGS (path:line, evidence) · FILES · CHECKS · RISKS · NEXT
 
 The bridges add this contract to their prompt, generated Claude subagents carry it, and the lead agent is told to act on `STATUS`. The log records the outcome: `loomy status` and `loomy log` mark ◐ partial and ■ blocked results, `loomy stats` shows how many answers followed the format. Projects set up before this option keep free text; switch any project with `loomy brief` (questionnaire again) or for all of them with `loomy config set delegation_format structured` (`auto`: each project's choice).
 
-When a reviewer or security role finds no defect, it adds a short `TRIED` section (what it attacked); an empty `FINDINGS` without `TRIED` counts as an incomplete review. For Data & analysis projects, a managed rule in `AGENTS.md` / `CLAUDE.md` requires figures from executed, versioned code, time-split held-out validation for temporal data, and a validator that is not the proposer.
+When a reviewer or security role finds no defect, it adds a short `TRIED` section (what it attacked); an empty `FINDINGS` without `TRIED` counts as an incomplete review, and `loomy stats`, `loomy log` and `loomy status` flag it. For Data & analysis projects, a managed rule in `AGENTS.md` / `CLAUDE.md` requires figures from executed, versioned code, time-split held-out validation for temporal data, and a validator that is not the proposer.
 
 This is a text protocol that works with Claude and Codex as they are. Exchanging internal model states ("latent communication") is still research: it needs access to the models' internals, which the Claude and Codex products don't offer.
 

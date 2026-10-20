@@ -239,6 +239,14 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi
+  (
+    LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
+    if [[ "$LOOMY_UI_LANG" == fr ]]; then
+      # shellcheck source=i18n/fr.sh
+      source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"
+    fi
+    t '- Dead ends: before proposing an approach, check `.loomy/memory/STATE.md` and `.loomy/memory/DEAD-ENDS.md` if present. Append evidence-backed rejections under `## Dead ends`, oldest first, one physical line per entry: `- <approach> — <why it died> (<evidence path or ref>) · do not retry without a new reason`. Never retry one without stating the new reason. Aim for 40 STATE lines; `loomy memory` archives older entries on overflow but always keeps the latest three, even over budget. Preserve this shared ledger in every handoff.'; echo
+  )
   echo "<!-- loomy:orchestration:end -->"
 }
 
@@ -257,7 +265,8 @@ _lp_ensure_block() {
   rm -f "$tmp"
 }
 
-# loomy_project_repair <root>: creates what is missing among the pieces Loomy owns; LP_DONE lists what was done.
+# loomy_project_repair <root> [existing-memory]: creates missing pieces; context readers only migrate existing STATE.
+# LP_DONE lists what was done.
 loomy_project_repair() {
   local r="$1" tpl docs f route lead tmpd n u dest
   LP_DONE=()
@@ -306,8 +315,12 @@ loomy_project_repair() {
     [[ -n "$tmpd" ]] && rm -rf "$tmpd"
   fi
   # Shared memory: the work state file, and the delegation results kept out of Git (findings can be sensitive).
-  if [[ ! -f "$(loomy_memory_dir "$r")/STATE.md" ]]; then
+  if [[ "${2:-}" == existing-memory ]]; then
+    loomy_memory_state_migrate "$r"
+  elif [[ ! -f "$(loomy_memory_dir "$r")/STATE.md" ]] || ! grep -q '^## Dead ends[[:space:]]*$' "$(loomy_memory_dir "$r")/STATE.md"; then
     loomy_memory_state_init "$r"; [[ -f "$(loomy_memory_dir "$r")/STATE.md" ]] && LP_DONE+=(".loomy/memory/STATE.md")
+  else
+    loomy_memory_state_budget "$r"
   fi
   # History and work files stay out of the project repository, whatever the AI-files mode.
   loomy_gitignore_sync "$r"; [[ "$LP_GI_CHANGED" == 1 ]] && LP_DONE+=(".gitignore: Loomy history and work files")

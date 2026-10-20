@@ -1766,12 +1766,306 @@ replay_soak_tests() {
   fi
 }
 
+dead_ends_tests() {
+  section "Dead ends"
+  local base="$WORK/dead-ends" lang setup mode lead p state archive doc tool hooks hook src i other
+  mkdir -p "$base"
+  for lang in en fr; do
+    for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
+      case "$setup" in
+        claude-solo) mode=SOLO; lead=claude ;;
+        codex-solo) mode=SOLO; lead=codex ;;
+        hybrid-claude) mode=HYBRID; lead=claude ;;
+        hybrid-codex) mode=HYBRID; lead=codex ;;
+      esac
+      p="$base/$lang-$setup"; state="$p/.loomy/memory/STATE.md"; archive="$p/.loomy/memory/DEAD-ENDS.md"
+      printf -- '---\nname: "%s"\ngoal: "Memory fixture"\nrepo: new\ntype: custom\nai_mode: %s\nai_lead: %s\n---\n' "$lang-$setup" "$mode" "$lead" >"$base/answers.md"
+      run "dead ends $lang/$setup: generated project" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" init "$p" --answers "$base/answers.md" --yes --no-clipboard
+      file_has "dead ends $lang/$setup: new STATE section" "$state" '^## Dead ends$'
+      # Bootstrap installs the agent documents from these templates. Repair must also upgrade an older block.
+      for doc in AGENTS.md CLAUDE.md; do sed '/^- .*DEAD-ENDS.md/d' "$p/.loomy/templates/$doc" >"$p/$doc"; done
+      run "dead ends $lang/$setup: managed blocks upgraded" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p"
+      for doc in AGENTS.md CLAUDE.md .loomy/templates/AGENTS.md .loomy/templates/CLAUDE.md .loomy/templates/HANDOFF.md; do
+        file_has "dead ends $lang/$setup: $doc carries ledger and archive" "$p/$doc" 'DEAD-ENDS.md'
+        file_has "dead ends $lang/$setup: $doc carries the entry format" "$p/$doc" '<approach> — <why it died> \(<evidence path or ref>\) · do not retry without a new reason'
+        file_has "dead ends $lang/$setup: $doc documents one physical line" "$p/$doc" 'one physical line per entry|une seule ligne physique par entrée'
+        file_has "dead ends $lang/$setup: $doc keeps three even over budget" "$p/$doc" 'latest three, even over budget|trois dernières, même au-delà du budget'
+        if [[ "$lang" == fr ]]; then
+          file_has "dead ends $lang/$setup: $doc is translated" "$p/$doc" 'Impasses|impasses'
+        else
+          file_has "dead ends $lang/$setup: $doc requires a new reason" "$p/$doc" 'without stating (the|a) new reason'
+        fi
+      done
+      rm -f "$state"
+      run "dead ends $lang/$setup: missing STATE result fixture" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" pending reviewer stub ok task "SUMMARY: unincorporated finding"; loomy_memory_digest "$2" 4 new >"$3"' _ "$REPO" "$p" "$base/new-before.txt"
+      run "dead ends $lang/$setup: library reads missing STATE" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"; loomy_memory_digest "$2" 4 new' _ "$REPO" "$p"
+      has "dead ends $lang/$setup: library leaves new results visible" 'unincorporated finding'
+      run "dead ends $lang/$setup: library does not create STATE" test ! -e "$state"
+      for tool in claude codex; do
+        hooks="$p/.claude/settings.json"; [[ "$tool" != codex ]] || hooks="$p/.codex/hooks.json"
+        hook="$(perl -MJSON::PP -e 'local $/; my $d=decode_json(<>); for my $g (@{$d->{hooks}{SessionStart}}) {for my $h (@{$g->{hooks}}) {print $h->{command} if $h->{command}=~/loomy-context/}}' "$hooks")"
+        run "dead ends $lang/$setup: generated $tool hook reads missing STATE" env CLAUDE_PROJECT_DIR="$p" LOOMY_LANG=en LOOMY_UI_LANG=en bash -c 'cd "$1" && printf "%s\n" '\''{"source":"startup"}'\'' | bash -c "$2"' _ "$p" "$hook"
+        has "dead ends $lang/$setup: $tool hook leaves new results visible" 'unincorporated finding'
+        run "dead ends $lang/$setup: $tool hook does not create STATE" test ! -e "$state"
+      done
+      run "dead ends $lang/$setup: memory command reads missing STATE" "$LOOMY" memory --root "$p"
+      has "dead ends $lang/$setup: memory command leaves results visible" 'unincorporated finding'
+      run "dead ends $lang/$setup: memory command does not create STATE" test ! -e "$state"
+      run "dead ends $lang/$setup: readers leave new digest unchanged" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_digest "$2" 4 new | cmp - "$3"' _ "$REPO" "$p" "$base/new-before.txt"
+      # Migration preserves CRLF, the missing final newline and the lead's timestamp (used by the result digest).
+      printf '# Work state\r\n\r\n## Decisions\r\n- Keep the existing decision' >"$state"
+      cp "$state" "$base/before.md"; touch -t 202601010000 "$state" "$base/before.md"
+      run "dead ends $lang/$setup: session migrates old STATE" env LOOMY_LANG=en LOOMY_UI_LANG=en bash "$p/.loomy/scripts/loomy-context.sh" --root "$p"
+      has "dead ends $lang/$setup: migration does not hide new results" 'unincorporated finding'
+      run "dead ends $lang/$setup: migration preserves every original byte and mtime" perl -MTime::HiRes=stat -e '
+        local $/; open my $a,"<",$ARGV[0] or die; open my $b,"<",$ARGV[1] or die;
+        die unless <$b> eq <$a>."\r\n\r\n## Dead ends\r\n";
+        die unless (stat($ARGV[0]))[9] == (stat($ARGV[1]))[9];
+      ' "$base/before.md" "$state"
+      cp "$state" "$base/migrated.md"
+      run "dead ends $lang/$setup: migration repeated" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p"
+      run "dead ends $lang/$setup: migration is idempotent" cmp "$base/migrated.md" "$state"
+      # 44 physical lines: archive the first four entries only, preserving unrelated sections byte for byte.
+      {
+        printf '# Work state\n\n## Done\n- Keep verified progress\n\n## Dead ends\n'
+        for (( i=1; i<=35; i++ )); do
+          printf -- '- approach-%02d — rejected (tests/evidence-%02d.log) · do not retry without a new reason\n' "$i" "$i"
+        done
+        printf '\n## Next\n- Keep the follow-up\n'
+      } >"$state"
+      touch -t 202601010000 "$state"
+      run "dead ends $lang/$setup: overflow through memory command" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" memory --root "$p"
+      has "dead ends $lang/$setup: archive visible" 'DEAD-ENDS.md'
+      run "dead ends $lang/$setup: 40 lines, oldest archived, no loss, timestamp kept" perl -MTime::HiRes=stat -e '
+        open my $s,"<",$ARGV[0] or die; my @state=<$s>; die unless @state==40;
+        open my $a,"<",$ARGV[1] or die; my @archive=<$a>;
+        my @old=grep { /^- approach-/ } @archive; die unless @old==4;
+        for my $i (1..35) {
+          my $line=sprintf("- approach-%02d — rejected (tests/evidence-%02d.log) · do not retry without a new reason\n",$i,$i);
+          my $kept=grep { $_ eq $line } @state; my $moved=grep { $_ eq $line } @old;
+          die unless $kept==($i>4 ? 1:0) && $moved==($i<=4 ? 1:0);
+        }
+        my $rest=join("",grep { !/^- approach-/ } @state);
+        die unless $rest eq "# Work state\n\n## Done\n- Keep verified progress\n\n## Dead ends\n\n## Next\n- Keep the follow-up\n";
+        die unless (stat($ARGV[0]))[9] == (stat($ARGV[2]))[9];
+      ' "$state" "$archive" "$base/before.md"
+      cp "$state" "$base/state-kept.md"; cp "$archive" "$base/archive-kept.md"
+      run "dead ends $lang/$setup: repeated budget enforcement" "$LOOMY" memory --root "$p"
+      run "dead ends $lang/$setup: no duplicate archive entries" cmp "$base/archive-kept.md" "$archive"
+      run "dead ends $lang/$setup: STATE stays unchanged" cmp "$base/state-kept.md" "$state"
+      run "dead ends $lang/$setup: state and archive ignored by project Git" git -C "$p" check-ignore -- .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md
+      for tool in claude codex; do
+        hooks="$p/.claude/settings.json"; [[ "$tool" != codex ]] || hooks="$p/.codex/hooks.json"
+        hook="$(perl -MJSON::PP -e 'local $/; my $d=decode_json(<>); for my $g (@{$d->{hooks}{SessionStart}}) {for my $h (@{$g->{hooks}}) {print $h->{command} if $h->{command}=~/loomy-context/}}' "$hooks")"
+        for src in startup compact; do
+          run "dead ends $lang/$setup: generated $tool hook ($src)" env CLAUDE_PROJECT_DIR="$p" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'cd "$1" && printf "{\"session_id\":\"dead-ends\",\"source\":\"%s\"}\n" "$3" | bash -c "$2"' _ "$p" "$hook" "$src"
+          has "dead ends $lang/$setup: $tool/$src shared ledger" 'approach-35.*tests/evidence-35.log'
+          has "dead ends $lang/$setup: $tool/$src archive pointer" 'DEAD-ENDS.md'
+          if [[ "$lang" == fr ]]; then
+            has "dead ends $lang/$setup: $tool/$src retry rule translated" 'avant de proposer une approche.*nouvelle raison, en précisant laquelle'
+          else
+            has "dead ends $lang/$setup: $tool/$src retry rule" 'Check Dead ends before proposing an approach; never retry one without a new reason, and say which'
+          fi
+          if perl -e '
+            my @lines=grep { /^    - approach-/ } <>; die unless @lines==3;
+            for (@lines) { s/^    //; chomp; die if length>320 }
+          ' "$OUT"; then ok "dead ends $lang/$setup: $tool/$src three entries, one line each, capped"
+          else ko "dead ends $lang/$setup: $tool/$src ledger cap"; fi
+        done
+      done
+      other=codex; [[ "$lead" != codex ]] || other=claude
+      printf 'master=%s\nacting=%s\nmanual=1\nsince=1\nreason=manual\n' "$lead" "$other" >"$p/.loomy/failover"
+      run "dead ends $lang/$setup: cross-family relay context" env LOOMY_LANG=en LOOMY_UI_LANG=en bash "$p/.loomy/scripts/loomy-context.sh" --root "$p" --tool "$other"
+      has "dead ends $lang/$setup: relay carries shared STATE and archive" 'Shared relay memory: read .loomy/memory/STATE.md \(Dead ends\) and .loomy/memory/DEAD-ENDS.md'
+      has "dead ends $lang/$setup: next family sees the same entry" 'approach-35.*tests/evidence-35.log'
+      # Reviewer repro: Done alone fills the budget; the latest three dead ends must survive every read.
+      {
+        printf '# Work state\n\n## Done\n'
+        for (( i=1; i<=38; i++ )); do printf -- '- done-%02d\n' "$i"; done
+        printf '\n## Dead ends\n'
+        for (( i=1; i<=3; i++ )); do printf -- '- heavy-%02d (evidence-%02d.log)\n' "$i" "$i"; done
+      } >"$state"
+      touch -t 202601010000 "$state"; cp -p "$state" "$base/heavy-before.md"
+      run "dead ends $lang/$setup: 38 Done bullets and three dead ends" "$LOOMY" memory --root "$p"
+      run "dead ends $lang/$setup: latest three kept intact over budget" cmp "$base/heavy-before.md" "$state"
+      run "dead ends $lang/$setup: over-budget read preserves timestamp" perl -MTime::HiRes=stat -e 'die unless (stat($ARGV[0]))[9] == (stat($ARGV[1]))[9]' "$base/heavy-before.md" "$state"
+      run "dead ends $lang/$setup: no extra archive entries" cmp "$base/archive-kept.md" "$archive"
+      run "dead ends $lang/$setup: context includes the three retained entries" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p" --tool "$lead"
+      cp "$OUT" "$base/heavy-context.txt"
+      run "dead ends $lang/$setup: three retained entries lead the bounded context" perl -e 'local $/; my $t=<>; die unless $t =~ /## Dead ends\n    - heavy-01[^\n]*\n    - heavy-02[^\n]*\n    - heavy-03/; my ($s)=$t =~ /Work state [^\n]*\n(.*?)(?=\n- |\z)/s; die unless defined($s) && scalar(split /\n/,$s)<=40' "$base/heavy-context.txt"
+      printf '  continuation (heavy-03-detail.log)\nFree text stays in STATE.\n  Unattached detail.\n' >>"$state"
+      cp "$state" "$base/heavy-continued.md"
+      run "dead ends $lang/$setup: generated context tolerates continuations" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p" --tool "$lead"
+      has "dead ends $lang/$setup: continuation attached to its bullet" 'heavy-03 \(evidence-03.log\) continuation \(heavy-03-detail.log\)$'
+      hasnt "dead ends $lang/$setup: unrelated free text ignored" 'Free text stays|Unattached detail'
+      run "dead ends $lang/$setup: free text and continuations kept in STATE" cmp "$base/heavy-continued.md" "$state"
+    done
+  done
+  run "dead ends: resumed session does not repeat memory" bash -c 'printf "%s\n" '\''{"source":"resume"}'\'' | bash "$1/.loomy/scripts/loomy-context.sh" --root "$1" --hook start --tool codex' _ "$p"
+  hasnt "dead ends: no repeated ledger on resume" 'Check Dead ends|approach-35'
+  run "dead ends: memory can be disabled" "$LOOMY" config set memory off
+  run "dead ends: context respects memory off" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p"
+  hasnt "dead ends: no ledger when memory is off" 'Check Dead ends|approach-35'
+  run "dead ends: restore memory" "$LOOMY" config set memory on
+  # The companion sync is local-only; memory/delegations must remain excluded even as both ledgers are backed up.
+  run "dead ends: local private remote fixture" git init --bare -q -b main "$base/private.git"
+  run "dead ends: private backup includes the archive" "$LOOMY" privacy --root "$p" private --remote "$base/private.git"
+  printf '.loomy/memory/DEAD-ENDS.md\n.loomy/memory/STATE.md\n' >"$base/private-paths.txt"
+  run "dead ends: private repository tracks STATE and archive" bash -c 'git --git-dir="$1/.loomy/ai.git" ls-files -- .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md | LC_ALL=C sort | cmp - "$2"' _ "$p" "$base/private-paths.txt"
+  run "dead ends: archive backed up in the local private remote" bash -c 'git --git-dir="$1" show main:.loomy/memory/DEAD-ENDS.md | cmp - "$2"' _ "$base/private.git" "$archive"
+  run "dead ends: private sync excludes full delegation findings" bash -c 'test -z "$(git --git-dir="$1/.loomy/ai.git" ls-files -- .loomy/memory/delegations/)"' _ "$p"
+  p="$base/long-entry"; mkdir -p "$p/.loomy/memory"; state="$p/.loomy/memory/STATE.md"
+  perl -e 'print "# Work state\n\n## Done\n- Keep progress\n\n## Dead ends\n- ", "x" x 1000, " — rejected (evidence.log) · do not retry without a new reason\n"' >"$state"
+  cp "$state" "$base/long-before.md"
+  run "dead ends: small context prioritizes a long ledger entry" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2" 3' _ "$REPO" "$p"
+  if perl -e 'my @l=<>; chomp @l; die unless @l==3 && $l[0] eq "## Dead ends" && length($l[1])==320 && $l[2] eq "## Done"' "$OUT"; then
+    ok "dead ends: actual 320-character entry cap inside the total context budget"
+  else ko "dead ends: long entry or context cap"; fi
+  run "dead ends: display cap does not truncate the stored evidence" cmp "$base/long-before.md" "$state"
+  p="$base/continuations"; mkdir -p "$p/.loomy/memory"; state="$p/.loomy/memory/STATE.md"; archive="$p/.loomy/memory/DEAD-ENDS.md"
+  {
+    printf '# Work state\n\n## Done\n'
+    for (( i=1; i<=38; i++ )); do printf -- '- done-%02d\n' "$i"; done
+    printf '\n## Dead ends\nFree text before entries.\n    Unattached indentation.\n'
+  } >"$base/continued-prefix.md"
+  printf -- '- old-1\n  first evidence (old-1.log)\n\tsecond evidence\n- old-2\n  evidence (old-2.log)\n' >"$base/continued-old.md"
+  {
+    printf 'Free text between entries.\n- recent-1\n  first evidence (recent-1.log)\n\tsecond evidence\nFree text after a continuation.\n  Unattached after free text.\n- recent-2\n'
+    perl -e 'print "  ", "x" x 500, " (recent-2.log)\n"'
+    printf -- '- recent-3\n  evidence (recent-3.log)\n\n## Next\n- Keep the follow-up\n'
+  } >"$base/continued-kept.md"
+  cat "$base/continued-prefix.md" "$base/continued-old.md" "$base/continued-kept.md" >"$state"
+  cat "$base/continued-prefix.md" "$base/continued-kept.md" >"$base/continued-expected.md"
+  touch -t 202601010000 "$state"
+  run "dead ends: archive complete entries with continuations" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"' _ "$REPO" "$p"
+  has "dead ends: indented continuations joined on one line" '^- recent-1 first evidence \(recent-1.log\) second evidence$'
+  has "dead ends: last continuation joined" '^- recent-3 evidence \(recent-3.log\)$'
+  hasnt "dead ends: free text and unattached indentation omitted" 'Free text|Unattached|old-[12]'
+  cp "$OUT" "$base/continued-context.txt"
+  run "dead ends: joined continuation capped at 320 characters" perl -e 'my @l=grep { /^- recent-2 / } <>; die unless @l==1; chomp $l[0]; die unless length($l[0])==320' "$base/continued-context.txt"
+  run "dead ends: only older entry blocks removed, all free text preserved" cmp "$base/continued-expected.md" "$state"
+  { printf '# Archived dead ends\n\n'; cat "$base/continued-old.md"; } >"$base/continued-archive.md"
+  run "dead ends: complete older entry blocks archived without loss" cmp "$base/continued-archive.md" "$archive"
+  run "dead ends: multiline overflow keeps three entries and mtime" perl -MTime::HiRes=stat -e 'open my $s,"<",$ARGV[1] or die; my @l=<$s>; die unless @l>40 && scalar(grep { /^- recent-/ } @l)==3; die unless (stat($ARGV[1]))[9] == (stat($ARGV[0]))[9]' "$base/before.md" "$state"
+  cp -p "$state" "$base/continued-before.md"
+  run "dead ends: repeated multiline read" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"' _ "$REPO" "$p"
+  run "dead ends: repeated read does not duplicate continuations" cmp "$base/continued-archive.md" "$archive"
+  run "dead ends: repeated read preserves full retained evidence" cmp "$base/continued-before.md" "$state"
+  # Older releases could empty STATE entirely; context must recover the latest archive entries without copying them.
+  printf '# Work state\n\n## Dead ends\nKeep this free text.\n\n## Next\n- Keep the follow-up\n' >"$state"
+  cp -p "$state" "$base/empty-before.md"
+  printf '# Archived dead ends\n\n- archived-1\n- archived-2\n  evidence (archive-2.log)\n- archived-3\n- archived-4\n  evidence (archive-4.log)\n' >"$archive"
+  run "dead ends: empty section falls back to archive tail" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"' _ "$REPO" "$p"
+  has "dead ends: fallback joins archived continuations" '^- archived-2 evidence \(archive-2.log\)$'
+  has "dead ends: fallback includes latest archived evidence" '^- archived-4 evidence \(archive-4.log\)$'
+  hasnt "dead ends: fallback excludes older entries and free text" 'archived-1|Keep this free text'
+  run "dead ends: fallback preserves existing STATE bytes" cmp "$base/empty-before.md" "$state"
+  run "dead ends: fallback preserves existing STATE mtime" perl -MTime::HiRes=stat -e 'die unless (stat($ARGV[0]))[9] == (stat($ARGV[1]))[9]' "$base/empty-before.md" "$state"
+  rm -f "$state"
+  run "dead ends: absent STATE also falls back to archive" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"' _ "$REPO" "$p"
+  has "dead ends: archive available without STATE" 'archived-4 evidence'
+  run "dead ends: archive fallback never creates STATE" test ! -e "$state"
+  p="$base/missing-memory"; mkdir -p "$p"
+  run "dead ends: absent memory directory is a silent read" bash -c 'set -euo pipefail; source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"' _ "$REPO" "$p"
+  run "dead ends: reader does not create a memory directory" test ! -e "$p/.loomy"
+  # A failed archive write keeps STATE intact; a symbolic link must not redirect the archival writes.
+  p="$base/linked-archive"; mkdir -p "$p/.loomy/memory"; state="$p/.loomy/memory/STATE.md"
+  perl -e 'print "## Dead ends\n"; print "- rejected (evidence.log) · do not retry without a new reason\n" for 1..42' >"$state"
+  cp "$state" "$base/linked-before.md"
+  ln -s "$base/long-before.md" "$p/.loomy/memory/DEAD-ENDS.md"
+  run "dead ends: symlink archive refused without stopping its caller" bash -c 'set -euo pipefail; source "$1/scripts/lib/memory.sh"; loomy_memory_state_budget "$2"' _ "$REPO" "$p"
+  run "dead ends: refused archive preserves STATE" cmp "$base/linked-before.md" "$state"
+  run "dead ends: archive symlink target stays intact" cmp "$base/long-before.md" "$base/long-entry/.loomy/memory/STATE.md"
+}
+
+shared_memory_tests() {
+  section "Shared memory"
+  local SM MF MS SL SW JW i tpl="$WORK/_tpl-memory"
+# Shared memory (.loomy/memory/): results of the delegations, work state, given back at the start of every session.
+SM="$WORK/memoire"
+run "memory: generated project" "$LOOMY" init "$SM" --yes --no-clipboard
+cp -R "$SM" "$tpl"
+printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"
+[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
+grep -qxF '.loomy/memory/' "$SM/.gitignore" && ok "memory: shared state and delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
+(cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
+MF="$(ls "$SM"/.loomy/memory/delegations/*-executor-*.md 2>/dev/null | head -1)"
+[[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/delegations" 2>&1))"
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"Map the CSV schemas"}}' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"STATUS: done\nSUMMARY: three CSV files, one key\nNEXT: load them"}]}}' >"$WORK/sub.jsonl"
+printf '{"agent_id":"a1","agent_type":"explorer","agent_transcript_path":"%s","transcript_path":"%s"}' "$WORK/sub.jsonl" "$WORK/sub.jsonl" \
+  | CLAUDE_PROJECT_DIR="$SM" bash "$SM/.loomy/scripts/loomy-context.sh" --hook subagent >/dev/null 2>&1
+MS="$(ls "$SM"/.loomy/memory/delegations/*-explorer-*.md 2>/dev/null | head -1)"
+[[ -n "$MS" ]] && grep -q 'Map the CSV schemas' "$MS" && grep -q 'three CSV files, one key' "$MS" && ok "memory: native subagent result saved from its transcript" || ko "memory: subagent result not saved"
+[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md present" || ko "memory: STATE.md lost"
+mv "$SM/.loomy/memory/STATE.md.new" "$SM/.loomy/memory/STATE.md"; touch -t 202601010000 "$SM/.loomy/memory/STATE.md"
+bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
+has "memory: work state given at session start" "Work state \(.loomy/memory/STATE.md"
+has "memory: decisions in the context" "DuckDB on Parquet"
+hasnt "memory: empty sections left out" "## In progress"
+has "memory: latest results in short" "explorer · subagent · ok · .*three CSV files, one key · next: load them"
+has "memory: Codex result in short" "executor · .* · ok · .*answer from the codex double · next: finish it"
+# Cost: the block is bounded, absent when a session is resumed, and results already taken into STATE.md are not repeated.
+python3 - "$OUT" <<'PY2' && ok "memory: block bounded (under 3,000 characters)" || ko "memory: block too large"
+import sys, re
+t = open(sys.argv[1], encoding="utf-8").read()
+i = t.find("Work state (.loomy"); j = t.find("\n- ", t.find("Latest delegation results") + 5)
+sys.exit(0 if 0 <= i and len(t[i:j if j > 0 else None]) < 3000 else 1)
+PY2
+echo '{"session_id":"r1","source":"resume"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >"$OUT" 2>&1
+hasnt "memory: nothing added when a session is resumed" "Work state \(.loomy|Latest delegation results"
+touch "$SM/.loomy/memory/STATE.md"
+bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
+hasnt "memory: results already in STATE.md not repeated" "Latest delegation results"
+has "memory: work state still given" "DuckDB on Parquet"
+"$LOOMY" config set memory off >/dev/null 2>&1; bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1; "$LOOMY" config set memory on >/dev/null 2>&1
+hasnt "memory: memory off, nothing given" "Work state \(.loomy"
+echo '{"session_id":"s1","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >/dev/null 2>&1
+echo '{"session_id":"s2","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
+has "memory: switching tool, picks up from the memory" "previous session ran in Claude Code"
+echo '{"session_id":"s3","source":"compact"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
+has "memory: given back after a compaction" "DuckDB on Parquet"
+hasnt "memory: same tool, no switch notice" "previous session ran in"
+run "loomy memory" bash -c "cd '$SM' && '$LOOMY' memory"
+has "loomy memory: work state and results" "SHARED MEMORY"
+has "loomy memory: result listed" "three CSV files"
+run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
+has "loomy memory show: full text of the latest" "Map the CSV schemas"
+for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; [ "$3" = 3 ] && sleep 1' _ "$REPO" "$SM" "$i"; done
+[[ "$(ls "$SM/.loomy/memory/delegations" | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest results pruned" || ko "memory: pruning ($(ls "$SM/.loomy/memory/delegations" | wc -l))"
+# Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.
+mem() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; shift; "$@"' _ "$REPO" "$@"; }
+LOOMY_MEMORY_KEEP=abc mem loomy_memory_save "$SM" i1 "my/role x" m ok "task" $'summary: lower case\nchecks: passed\nnext: go on'
+[[ $? -eq 0 ]] && ok "memory: invalid retention value does not stop the caller" || ko "memory: save failed"
+mem loomy_memory_digest "$SM" 1 >"$OUT" 2>&1
+has "memory: odd role saved under a clean name" "my-role-x"
+has "memory: lowercase fields read, next one not swallowed" ": lower case · next: go on"
+mkdir -p "$WORK/ailleurs"; for i in 1 2 3; do echo x >"$WORK/ailleurs/$i.md"; done
+SL="$WORK/memlien"; mkdir -p "$SL/.loomy/memory"; ln -s "$WORK/ailleurs" "$SL/.loomy/memory/delegations"
+LOOMY_MEMORY_KEEP=1 mem loomy_memory_save "$SL" i2 role m ok task result
+[[ "$(ls "$WORK/ailleurs" | wc -l | tr -d ' ')" == 3 ]] && ok "memory: never writes or prunes through a symbolic link" || ko "memory: files touched through the link"
+(cd "$SM" && "$LOOMY" memory show 999) >"$OUT" 2>&1
+has "loomy memory show: out of range refused" "choose N from 1 to"
+SW="$WORK/memoutil"; cp -R "$tpl" "$SW"; JW="$SW/.loomy/logs/events.jsonl"; mkdir -p "$(dirname "$JW")"
+printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":1}" >>"$JW"
+echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
+has "memory: Codex after Claude (launcher + hook events), switch seen" "previous session ran in Claude Code"
+printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' '{"ts":"2026-10-02T09:00:00Z","type":"session","event":"start","tool":"codex","pid":2}' >"$JW"
+echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
+hasnt "memory: a later Codex session, no switch notice" "previous session ran in"
+bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" >"$OUT" 2>&1
+hasnt "memory: no switch notice outside the start hook" "previous session ran in"
+grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/memory/STATE.md' "$REPO/templates/CLAUDE.md" && ok "memory: the lead agent is told to keep STATE.md" || ko "memory: no instruction for STATE.md"
+
+}
+
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
     'Core seam') core_seam_tests ;;
     'Upstream CLI flags') upstream_cli_tests ;;
     'Hermeticity') hermetic_tests ;;
+    'Dead ends') dead_ends_tests ;;
+    'Shared memory') shared_memory_tests ;;
     'W47') w47_tests ;;
     'Bash 3.2 pitfalls') w47_static_tests ;;
     'Subscriptions, quotas and stats') quota_stats_tests ;;
@@ -4202,78 +4496,8 @@ hasnt "rename: nothing to say the second time" "scripts → loomy-"
 others=""; for f in "$REPO"/scripts/*.sh; do case "${f##*/}" in loomy-*) ;; *) others="$others ${f##*/}" ;; esac; done
 [[ -z "$others" ]] && ok "every script is named loomy-*" || ko "scripts not named loomy-*:$others"
 
-# Shared memory (.loomy/memory/): results of the delegations, work state, given back at the start of every session.
-SM="$WORK/memoire"; fresh_init "$SM"
-printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"
-[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
-grep -qxF '.loomy/memory/' "$SM/.gitignore" && ok "memory: shared state and delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
-(cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
-MF="$(ls "$SM"/.loomy/memory/delegations/*-executor-*.md 2>/dev/null | head -1)"
-[[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/delegations" 2>&1))"
-printf '%s\n' '{"type":"user","message":{"role":"user","content":"Map the CSV schemas"}}' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"STATUS: done\nSUMMARY: three CSV files, one key\nNEXT: load them"}]}}' >"$WORK/sub.jsonl"
-printf '{"agent_id":"a1","agent_type":"explorer","agent_transcript_path":"%s","transcript_path":"%s"}' "$WORK/sub.jsonl" "$WORK/sub.jsonl" \
-  | CLAUDE_PROJECT_DIR="$SM" bash "$SM/.loomy/scripts/loomy-context.sh" --hook subagent >/dev/null 2>&1
-MS="$(ls "$SM"/.loomy/memory/delegations/*-explorer-*.md 2>/dev/null | head -1)"
-[[ -n "$MS" ]] && grep -q 'Map the CSV schemas' "$MS" && grep -q 'three CSV files, one key' "$MS" && ok "memory: native subagent result saved from its transcript" || ko "memory: subagent result not saved"
-[[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md present" || ko "memory: STATE.md lost"
-mv "$SM/.loomy/memory/STATE.md.new" "$SM/.loomy/memory/STATE.md"; touch -t 202601010000 "$SM/.loomy/memory/STATE.md"
-bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
-has "memory: work state given at session start" "Work state \(.loomy/memory/STATE.md"
-has "memory: decisions in the context" "DuckDB on Parquet"
-hasnt "memory: empty sections left out" "## In progress"
-has "memory: latest results in short" "explorer · subagent · ok · .*three CSV files, one key · next: load them"
-has "memory: Codex result in short" "executor · .* · ok · .*answer from the codex double · next: finish it"
-# Cost: the block is bounded, absent when a session is resumed, and results already taken into STATE.md are not repeated.
-python3 - "$OUT" <<'PY2' && ok "memory: block bounded (under 3,000 characters)" || ko "memory: block too large"
-import sys, re
-t = open(sys.argv[1], encoding="utf-8").read()
-i = t.find("Work state (.loomy"); j = t.find("\n- ", t.find("Latest delegation results") + 5)
-sys.exit(0 if 0 <= i and len(t[i:j if j > 0 else None]) < 3000 else 1)
-PY2
-echo '{"session_id":"r1","source":"resume"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >"$OUT" 2>&1
-hasnt "memory: nothing added when a session is resumed" "Work state \(.loomy|Latest delegation results"
-touch "$SM/.loomy/memory/STATE.md"
-bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
-hasnt "memory: results already in STATE.md not repeated" "Latest delegation results"
-has "memory: work state still given" "DuckDB on Parquet"
-"$LOOMY" config set memory off >/dev/null 2>&1; bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1; "$LOOMY" config set memory on >/dev/null 2>&1
-hasnt "memory: memory off, nothing given" "Work state \(.loomy"
-echo '{"session_id":"s1","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool claude >/dev/null 2>&1
-echo '{"session_id":"s2","source":"startup"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
-has "memory: switching tool, picks up from the memory" "previous session ran in Claude Code"
-echo '{"session_id":"s3","source":"compact"}' | bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" --hook start --tool codex >"$OUT" 2>&1
-has "memory: given back after a compaction" "DuckDB on Parquet"
-hasnt "memory: same tool, no switch notice" "previous session ran in"
-run "loomy memory" bash -c "cd '$SM' && '$LOOMY' memory"
-has "loomy memory: work state and results" "SHARED MEMORY"
-has "loomy memory: result listed" "three CSV files"
-run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
-has "loomy memory show: full text of the latest" "Map the CSV schemas"
-for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; [ "$3" = 3 ] && sleep 1' _ "$REPO" "$SM" "$i"; done
-[[ "$(ls "$SM/.loomy/memory/delegations" | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest results pruned" || ko "memory: pruning ($(ls "$SM/.loomy/memory/delegations" | wc -l))"
-# Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.
-mem() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; shift; "$@"' _ "$REPO" "$@"; }
-LOOMY_MEMORY_KEEP=abc mem loomy_memory_save "$SM" i1 "my/role x" m ok "task" $'summary: lower case\nchecks: passed\nnext: go on'
-[[ $? -eq 0 ]] && ok "memory: invalid retention value does not stop the caller" || ko "memory: save failed"
-mem loomy_memory_digest "$SM" 1 >"$OUT" 2>&1
-has "memory: odd role saved under a clean name" "my-role-x"
-has "memory: lowercase fields read, next one not swallowed" ": lower case · next: go on"
-mkdir -p "$WORK/ailleurs"; for i in 1 2 3; do echo x >"$WORK/ailleurs/$i.md"; done
-SL="$WORK/memlien"; mkdir -p "$SL/.loomy/memory"; ln -s "$WORK/ailleurs" "$SL/.loomy/memory/delegations"
-LOOMY_MEMORY_KEEP=1 mem loomy_memory_save "$SL" i2 role m ok task result
-[[ "$(ls "$WORK/ailleurs" | wc -l | tr -d ' ')" == 3 ]] && ok "memory: never writes or prunes through a symbolic link" || ko "memory: files touched through the link"
-(cd "$SM" && "$LOOMY" memory show 999) >"$OUT" 2>&1
-has "loomy memory show: out of range refused" "choose N from 1 to"
-SW="$WORK/memoutil"; fresh_init "$SW"; JW="$SW/.loomy/logs/events.jsonl"; mkdir -p "$(dirname "$JW")"
-printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"type\":\"session\",\"event\":\"start\",\"tool\":\"codex\",\"pid\":1}" >>"$JW"
-echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
-has "memory: Codex after Claude (launcher + hook events), switch seen" "previous session ran in Claude Code"
-printf '%s\n' '{"ts":"2026-10-01T08:00:00Z","type":"session","event":"start","tool":"claude"}' '{"ts":"2026-10-02T09:00:00Z","type":"session","event":"start","tool":"codex","pid":2}' >"$JW"
-echo '{"source":"startup"}' | bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" --hook start --tool codex >"$OUT" 2>&1
-hasnt "memory: a later Codex session, no switch notice" "previous session ran in"
-bash "$SW/.loomy/scripts/loomy-context.sh" --root "$SW" >"$OUT" 2>&1
-hasnt "memory: no switch notice outside the start hook" "previous session ran in"
-grep -q 'loomy/memory/STATE.md' "$SM/CLAUDE.md" 2>/dev/null || grep -q 'loomy/memory/STATE.md' "$REPO/templates/CLAUDE.md" && ok "memory: the lead agent is told to keep STATE.md" || ko "memory: no instruction for STATE.md"
+dead_ends_tests
+shared_memory_tests
 
 # Launch: status line segment, reminder when tracking isn't open, shell hook, opening in the desktop app.
 SL2="$WORK/lancement"; fresh_init "$SL2"

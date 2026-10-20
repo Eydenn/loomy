@@ -3,7 +3,7 @@
 #   loomy-memory.sh              work state, then the latest results in short
 #   loomy-memory.sh -n N         the latest N results (10 by default)
 #   loomy-memory.sh show [N]     the full text of a result (the latest by default, N = rank from the latest)
-# Files: .loomy/memory/STATE.md (local, never versioned in the project repository; kept in the private repository in private mode), .loomy/memory/delegations/ (kept out of Git).
+# Files: .loomy/memory/STATE.md and DEAD-ENDS.md (local, backed up in private mode), .loomy/memory/delegations/ (local).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,12 +39,16 @@ if [[ -n "$SHOW" ]]; then
 fi
 
 ui_section "$(t "SHARED MEMORY")" "$(t "what carries the work from one session and one tool to the next")"
-state="$(loomy_memory_state "$ROOT" 60)"
+state="$(loomy_memory_state "$ROOT" 40)"
 if [[ -n "$state" ]]; then
   ui_kv "$(t "Work state")" ".loomy/memory/STATE.md"
   while IFS= read -r l; do ui_rail "   $l"; done <<<"$state"
 else
   ui_kv "$(t "Work state")" "${C_DIM}$(t "empty for now: the lead agent fills it in after each important step")${C_RESET}"
+fi
+ui_rail "   $(t "Check Dead ends before proposing an approach; never retry one without a new reason, and say which.")"
+if [[ -f "$D/DEAD-ENDS.md" ]]; then
+  ui_kv "$(t "Dead ends archive")" ".loomy/memory/DEAD-ENDS.md"
 fi
 ui_rail ""
 dig="$(loomy_memory_digest "$ROOT" "$N")"

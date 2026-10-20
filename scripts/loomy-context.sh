@@ -196,7 +196,7 @@ fi
 # Every session start checks the pieces Loomy owns and completes what is missing (routing documents, role
 # subagents, orchestration rule), so a setup interrupted midway is repaired before the lead agent works.
 LP_DONE=()
-if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; then loomy_project_repair "$ROOT" 2>/dev/null || true; fi
+if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; then loomy_project_repair "$ROOT" existing-memory 2>/dev/null || true; fi
 
 # ---------------------------------------------------------------- contexte
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }
@@ -251,8 +251,9 @@ lf_context_lines "$ROOT" "$TOOL"
 # carries the thread from one session to the next, after a compaction, and between Claude Code and Codex.
 # Cost: only when the conversation doesn't already hold it (new session, /clear, after a compaction; not when a
 # session is resumed), capped (40 lines of state, 4 results not yet in the state), cached by the tool afterwards.
-mem_state=""; mem_dig=""
+mem_state=""; mem_dig=""; mem_on=0
 if [[ "${src:-}" != "resume" && "$(loomy_config_get memory 2>/dev/null || true)" != "off" ]]; then
+  mem_on=1
   mem_state="$(loomy_memory_state "$ROOT" 40)"
   mem_dig="$(loomy_memory_digest "$ROOT" 4 new)"
 fi
@@ -274,6 +275,9 @@ if [[ "$HOOK" == "start" && -s "$J" && "${src:-startup}" == "startup" ]]; then
   if [[ -n "$ptool" && "$ptool" != "$TOOL" ]]; then
     t "- The previous session ran in %s: pick up the work from the shared memory below (work state and latest results), not from scratch." "$( [[ "$ptool" == codex ]] && echo Codex || echo "Claude Code")"; echo
   fi
+fi
+if (( mem_on )); then
+  t "- Check Dead ends before proposing an approach; never retry one without a new reason, and say which. Record evidence-backed rejections in .loomy/memory/STATE.md; check the full ledger there and .loomy/memory/DEAD-ENDS.md (older entries) when relevant."; echo
 fi
 if [[ -n "$mem_state" ]]; then
   t "- Work state (.loomy/memory/STATE.md, kept by you):"; echo

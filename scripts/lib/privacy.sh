@@ -124,7 +124,7 @@ privacy_companion_config() {
   ai_git "$1" config status.showUntrackedFiles no
   ai_git "$1" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
   mkdir -p "$d/info"
-  # History and work files never go in the private repository either (STATE.md is force-added by the backup).
+  # History and work files never go in the private repository either (STATE.md and DEAD-ENDS.md are force-added).
   grep -qxF '/.loomy/ai.git/' "$d/info/exclude" 2>/dev/null || printf '/.loomy/ai.git/\n/.loomy/logs/\n' >>"$d/info/exclude"
   while IFS= read -r p; do
     grep -qxF "/$p" "$d/info/exclude" 2>/dev/null || printf '/%s\n' "$p" >>"$d/info/exclude"

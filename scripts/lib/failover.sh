@@ -274,6 +274,7 @@ lf_prompt_notice() {
     lf_notice_due "$root" return || return 0
     lf_notice_mark "$root" return
     t "[Loomy] %s has quota again and takes the lead back: finish the current step, write .loomy/docs/HANDOFF.md and update STATE.md for it, commit if allowed, then tell the user to end this session (/exit): Loomy hands back automatically." "$(lf_tool_name "$(lf_get "$root" master)")"
+    t " Preserve evidence-backed Dead ends in .loomy/memory/STATE.md and .loomy/memory/DEAD-ENDS.md for the next lead."
     return 0
   fi
   ai_detect_env "$root" 2>/dev/null || true
@@ -288,6 +289,7 @@ lf_prompt_notice() {
   lf_notice_due "$root" prepare || return 0
   lf_notice_mark "$root" prepare
   t "[Loomy] %s quota at %s %%: finish the current step, write .loomy/docs/HANDOFF.md (From, To, Done, Next) and update .loomy/memory/STATE.md, commit if the brief allows it, then tell the user to end this session (/exit): Loomy continues on %s automatically, and %s takes the lead back once its quota allows." "$name" "$max" "$oname" "$name"
+  t " Preserve evidence-backed Dead ends in .loomy/memory/STATE.md and .loomy/memory/DEAD-ENDS.md for the next lead."
   return 0
 }
 
@@ -305,6 +307,7 @@ lf_context_lines() {
       t "- Temporary lead: %s in place of %s since %s (quota %s); %s takes the lead back once its quota allows. Read .loomy/docs/HANDOFF.md first." "$(lf_tool_name "$a")" "$(lf_tool_name "$m")" "${since:-?}" "$r" "$(lf_tool_name "$m")"
     fi
     echo
+    t "- Shared relay memory: read .loomy/memory/STATE.md (Dead ends) and .loomy/memory/DEAD-ENDS.md if present; never retry a dead end without stating a new reason."; echo
     return 0
   fi
   # No relay: the master back as lead (the last relay event is a lead_return of the last 10 minutes).
@@ -318,9 +321,12 @@ lf_context_lines() {
   [[ "$m" == "$tool" && -n "$a" ]] || return 0
   if [[ "$ev" == *'"manual":true'* ]]; then
     t "- Back as lead agent after a manual relay: %s led; read .loomy/docs/HANDOFF.md and .loomy/memory/STATE.md and check its commits." "$(lf_tool_name "$a")"
+    echo
+    t "- Shared relay memory: read .loomy/memory/STATE.md (Dead ends) and .loomy/memory/DEAD-ENDS.md if present; never retry a dead end without stating a new reason."
     echo; return 0
   fi
   t "- Back as lead agent: %s led during your quota pause; read .loomy/docs/HANDOFF.md and check its commits." "$(lf_tool_name "$a")"
   echo
+  t "- Shared relay memory: read .loomy/memory/STATE.md (Dead ends) and .loomy/memory/DEAD-ENDS.md if present; never retry a dead end without stating a new reason."; echo
   return 0
 }

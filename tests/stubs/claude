@@ -5,6 +5,7 @@
 #   STUB_LOG=file             records each call (tab-separated arguments)
 #   STUB_UNKNOWN_MODELS="…"   refuses those model ids (a model not released yet)
 #   STUB_ARGV_LOG=file        records the exact argument array as JSON
+#   STUB_RESULT_FILE=file    returns this verbatim result (also in structured mode)
 set -u
 if [[ -n "${STUB_ARGV_LOG:-}" ]]; then perl -MJSON::PP -e 'print encode_json(\@ARGV)' -- "$@" >"$STUB_ARGV_LOG"; fi
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'claude\t%s\n' "$*") >>"$STUB_LOG"; fi
@@ -37,4 +38,7 @@ text="${STUB_CLAUDE_TEXT:-answer from the claude double}"
 case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields (newlines escaped for the JSON output).
 case "$*" in *"STATUS: done | partial | blocked"*) text='STATUS: blocked\nSUMMARY: answer from the claude double\nFINDINGS:\n- none\nFILES:\n- none\nCHECKS:\n- none\nRISKS:\n- missing access\nNEXT: grant access' ;; esac
+if [[ -n "${STUB_RESULT_FILE:-}" ]]; then
+  text="$(perl -MJSON::PP -MEncode=decode -0777 -ne 'print substr(encode_json(decode("UTF-8",$_)),1,-1)' "$STUB_RESULT_FILE")"
+fi
 printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","total_cost_usd":0.0123,"usage":{"input_tokens":120,"cache_creation_input_tokens":0,"cache_read_input_tokens":80,"output_tokens":40}}\n' "$text"

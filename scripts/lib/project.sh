@@ -124,11 +124,22 @@ _lp_templates() {
   if [[ "$(_lp_doc_lang "$1")" == fr && -d "$base/fr/templates" ]]; then echo "$base/fr/templates"; else echo "$base/templates"; fi
 }
 
-# _lp_agent_untouched <subagent> <generated>: true when the subagent differs from the generated one only by its model
-# and effort lines, and its model is one Loomy routes (a chain of the catalog or the built-in one).
+# The exact previous generation, before the shared TRIED rule and field were added.
+_lp_agent_before_tried() {
+  LOOMY_TRIED_FIELD="$(ai_result_tried_field)" perl -0777 -pe '
+    s/\n<!-- loomy:review-result:start -->\n.*?\n<!-- loomy:review-result:end -->\n//s;
+    s/\Q$ENV{LOOMY_TRIED_FIELD}\E\n//;
+  ' "$1"
+}
+
+# _lp_agent_untouched <subagent> <generated>: true when only Loomy's generated additions, model and effort differ,
+# and the model is one Loomy routes (a chain of the catalog or the built-in one).
 _lp_agent_untouched() {
   local m chains
-  diff -q <(grep -vE '^(model|effort):' "$1") <(grep -vE '^(model|effort):' "$2") >/dev/null 2>&1 || return 1
+  if ! diff -q <(grep -vE '^(model|effort):' "$1") <(grep -vE '^(model|effort):' "$2") >/dev/null 2>&1; then
+    # Compare with the exact pre-TRIED generation too; other user edits still prevent replacement.
+    diff -q <(grep -vE '^(model|effort):' "$1") <(_lp_agent_before_tried "$2" | grep -vE '^(model|effort):') >/dev/null 2>&1 || return 1
+  fi
   m="$(sed -n 's/^model:[[:space:]]*//p' "$1" | head -1 | tr -d '[:space:]')"
   [[ -n "$m" ]] || return 1
   chains=" $AI_CHAIN_CLAUDE_TOP $AI_CHAIN_CLAUDE_MID $AI_CHAIN_CLAUDE_FAST claude-haiku-4-5 claude-sonnet-5 claude-opus-5 claude-opus-4-8 "
@@ -239,6 +250,11 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi
+  (
+    LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
+    if [[ "$LOOMY_UI_LANG" == fr ]]; then source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"; fi
+    printf '\n- '; ai_review_tried_rule
+  )
   echo "<!-- loomy:orchestration:end -->"
 }
 

@@ -79,6 +79,9 @@ elif [[ "$SANDBOX" == "read-only" ]] && ai_role_writes "$ROLE"; then
   GUIDANCE="$GUIDANCE $(t "For this task the sandbox is read-only: don't modify any file.")"
 fi
 
+case "$ROLE" in reviewer|security) GUIDANCE="$GUIDANCE
+$(ai_review_tried_rule)" ;; esac
+
 PROMPT="$GUIDANCE
 
 $(t "Task handed over by the lead agent:")

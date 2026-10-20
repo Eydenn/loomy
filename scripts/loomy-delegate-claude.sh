@@ -106,6 +106,9 @@ case "$ISOLATION" in
   *) t "Invalid LOOMY_CLAUDE_ISOLATION: %s (expected off, bare or strict)" "$ISOLATION" >&2; echo >&2; exit 2 ;;
 esac
 
+case "$ROLE" in reviewer|security) ROLE_GUIDANCE="$ROLE_GUIDANCE
+$(ai_review_tried_rule)" ;; esac
+
 PROMPT="$ROLE_GUIDANCE
 
 $(t "Task handed over by the lead agent:")

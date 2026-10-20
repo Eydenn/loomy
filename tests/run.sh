@@ -1766,10 +1766,133 @@ replay_soak_tests() {
   fi
 }
 
+review_tried_tests() {
+  section "Review TRIED"
+  local bt="$WORK/review-tried" lang setup mode lead project doc role agent tool kind bp fixture row_pattern
+  mkdir -p "$bt"
+  for lang in en fr; do
+    for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
+      mode=SOLO; lead="$setup"
+      case "$setup" in
+        claude-solo) lead=claude ;; codex-solo) lead=codex ;;
+        hybrid-*) mode=HYBRID; lead="${setup#hybrid-}" ;;
+      esac
+      project="$bt/$lang-$setup"
+      printf -- '---\nname: "B01 %s %s"\ngoal: "review evidence"\nrepo: new\nai_mode: %s\nai_lead: %s\nbudget: equilibre\ndelegation_format: structured\ngithub_repo: none\nai_files: local\n---\n' "$lang" "$setup" "$mode" "$lead" >"$bt/answers.md"
+      run "$lang/$setup: generate project" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" init "$project" --answers "$bt/answers.md" --yes --no-clipboard
+      file_has "$lang/$setup: selected mode" "$project/.loomy/brief.md" "^ai_mode: $mode$"
+      file_has "$lang/$setup: selected lead" "$project/.loomy/brief.md" "^ai_lead: $lead$"
+      file_has "$lang/$setup: brief contract includes TRIED" "$project/.loomy/brief.md" 'FINDINGS / TRIED / FILES'
+      printf '# User project\n\nKeep user instructions.\n' >"$project/AGENTS.md"
+      cp "$project/AGENTS.md" "$project/CLAUDE.md"
+      run "$lang/$setup: repair generates tool instructions" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_project_repair "$2"' _ "$REPO" "$project"
+      for doc in AGENTS.md CLAUDE.md; do
+        file_has "$lang/$setup: $doc carries native review rule" "$project/$doc" 'TRIED.*FINDINGS|FINDINGS.*TRIED'
+        file_has "$lang/$setup: $doc handles incomplete reviews" "$project/$doc" 'STATUS: partial'
+        file_has "$lang/$setup: $doc preserves user text" "$project/$doc" '^Keep user instructions\.$'
+      done
+      file_has "$lang/$setup: generated orchestration contract" "$project/.loomy/docs/AI_ORCHESTRATION.md" '^TRIED:$'
+      if [[ "$lang" == fr ]]; then
+        file_has "$setup: French review rule" "$project/AGENTS.md" 'Une revue avec FINDINGS vide ou valant none et sans TRIED est incomplète'
+        file_has "$setup: French orchestration rule" "$project/.loomy/docs/AI_ORCHESTRATION.md" 'au plus 8 lignes à puces'
+      fi
+      run "$lang/$setup: context" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash "$REPO/scripts/loomy-context.sh" --root "$project"
+      has "$lang/$setup: context includes TRIED" 'FINDINGS / TRIED / FILES'
+      has "$lang/$setup: context includes incomplete review rule" 'TRIED.*STATUS: partial'
+      if [[ "$lead" == claude ]]; then
+        run "$lang/$setup: generate free-form native roles" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" LOOMY_DELEGATION_FORMAT=free "$LOOMY" route --root "$project" claude-agents "$bt/free-$lang-$setup"
+        for role in reviewer security; do
+          agent="$project/.claude/agents/$role.md"
+          [[ -f "$agent" ]] || continue
+          file_has "$lang/$setup: free-form native $role rule" "$bt/free-$lang-$setup/$role.md" 'TRIED.*STATUS: partial'
+          file_has "$lang/$setup: native $role contract" "$agent" '^TRIED:$'
+          file_has "$lang/$setup: native $role rule" "$agent" 'TRIED.*STATUS: partial'
+          # Represent the old generation and an old project template, before the TRIED additions.
+          perl -0777 -pe 's/\n<!-- loomy:review-result:start -->\n.*?\n<!-- loomy:review-result:end -->\n//s; s/^TRIED:\n[^\n]*\n//m' "$agent" >"$bt/old-agent.md"
+          cp "$bt/old-agent.md" "$agent"
+          perl -0777 -pi -e 's/\n<!-- loomy:review-result:start -->\n.*?\n<!-- loomy:review-result:end -->\n//s' "$project/.loomy/templates/claude-agents/$role.md"
+        done
+        run "$lang/$setup: old untouched roles migrate on repair" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_project_repair "$2"' _ "$REPO" "$project"
+        for role in reviewer security; do
+          agent="$project/.claude/agents/$role.md"
+          [[ -f "$agent" ]] || continue
+          file_has "$lang/$setup: old native $role gains TRIED" "$agent" '^TRIED:$'
+          file_has "$lang/$setup: old template gains shared $role rule" "$agent" 'TRIED.*STATUS: partial'
+          if [[ "$role" == security ]]; then
+            sed 's/^model:.*/model: opus/' "$agent" >"$bt/hand-model.md"; cp "$bt/hand-model.md" "$agent"
+          else printf '\nUser review customisation.\n' >>"$agent"; fi
+          cp "$agent" "$bt/custom-$role.md"
+        done
+        printf '\nUser orchestration customisation.\n' >>"$project/.loomy/docs/AI_ORCHESTRATION.md"
+        cp "$project/.loomy/docs/AI_ORCHESTRATION.md" "$bt/user-orchestration.md"
+        run "$lang/$setup: normal template update" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" init "$project" --update
+        run "$lang/$setup: repeat repair" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/project.sh"; loomy_project_repair "$2"' _ "$REPO" "$project"
+        for role in reviewer security; do
+          agent="$project/.claude/agents/$role.md"
+          [[ -f "$agent" ]] || continue
+          run "$lang/$setup: custom $role preserved" cmp "$bt/custom-$role.md" "$agent"
+        done
+        run "$lang/$setup: existing orchestration doc preserved" cmp "$bt/user-orchestration.md" "$project/.loomy/docs/AI_ORCHESTRATION.md"
+      fi
+    done
+  done
+  cat >"$bt/tried.md" <<'RESULT'
+STATUS: done
+SUMMARY: no defects found after targeted checks
+FINDINGS:
+- none
+TRIED:
+- scripts/lib/models.sh: empty FINDINGS → accepted
+- `true`: command with "quotes" and \backslash → passed
+- edge input: empty string → handled
+- edge input: Unicode → preserved
+- file boundary: next section → separate
+- shell input: spaces → preserved
+- scope: changed files → inspected
+- recap: next action → retained
+FILES:
+- none
+CHECKS:
+- `true` — passed
+RISKS:
+- none
+NEXT: inspect the review evidence
+RESULT
+  perl -0777 -pe 's/FINDINGS:\n- none\n/FINDINGS:\n/' "$bt/tried.md" >"$bt/empty.md"
+  perl -0777 -pe 's/TRIED:\n.*?(?=FILES:)//s' "$bt/tried.md" >"$bt/legacy.md"
+  for tool in codex claude; do
+    for role in reviewer security; do
+      case "$role" in reviewer) row_pattern='[Rr]eviewer' ;; security) row_pattern='[Ss]ecurity' ;; esac
+      for kind in tried empty legacy; do
+        bp="$bt/bridge-$tool-$role-$kind"; mkdir -p "$bp/.loomy"
+        cp "$bt/en-hybrid-codex/.loomy/brief.md" "$bp/.loomy/brief.md"
+        fixture="$bt/$kind.md"
+        run "$tool/$role/$kind: bridge parses result" env STUB_RESULT_FILE="$fixture" STUB_LOG="$bt/prompt.log" bash -c 'cd "$1" && "$2" delegate "$3" "$4" "B01 review evidence"' _ "$bp" "$LOOMY" "$tool" "$role"
+        file_has "$tool/$role/$kind: prompt contract" "$bt/prompt.log" '^TRIED:$'
+        file_has "$tool/$role/$kind: reported outcome retained" "$bp/.loomy/logs/events.jsonl" '"format":"structured","outcome":"done"'
+        run "$tool/$role/$kind: archive preserves full result" bash -c 'for f in "$1"/.loomy/memory/delegations/*.md; do sed -n "/^STATUS:/,\$p" "$f" >"$3"; cmp "$2" "$3" || exit; done' _ "$bp" "$fixture" "$bt/archived.md"
+        run "$tool/$role/$kind: show result" "$LOOMY" memory --root "$bp" show
+        if [[ "$kind" == legacy ]]; then hasnt "$tool/$role: legacy result accepted without TRIED" '^TRIED:$'
+        else has "$tool/$role/$kind: TRIED visible" '^TRIED:$'; has "$tool/$role/$kind: eighth bullet retained" 'recap: next action → retained'; fi
+        run "$tool/$role/$kind: recap" "$LOOMY" memory --root "$bp"
+        has "$tool/$role/$kind: summary and next stay separate" 'no defects found after targeted checks · next: inspect the review evidence'
+        run "$tool/$role/$kind: field boundaries" bash -c 'source "$1/scripts/lib/memory.sh"; for f in "$2"/.loomy/memory/delegations/*.md; do [[ "$(_lm_field "$f" FILES)" == " none" || "$(_lm_field "$f" FILES)" == none ]] || exit 1; [[ "$(_lm_field "$f" NEXT)" == " inspect the review evidence" || "$(_lm_field "$f" NEXT)" == "inspect the review evidence" ]] || exit 1; done' _ "$REPO" "$bp"
+        run "$tool/$role/$kind: watch frame" env COLUMNS=132 LINES=40 LOOMY_TREE=list bash "$REPO/scripts/loomy-tree.sh" --root "$bp" --once
+        has "$tool/$role/$kind: watch row present" "$row_pattern"
+        run "$tool/$role/$kind: log recap" "$LOOMY" log --root "$bp"
+        has "$tool/$role/$kind: log row present" "$role"
+      done
+      run "$tool/$role: free-form prompt retains review rule" env LOOMY_DELEGATION_FORMAT=free STUB_LOG="$bt/free-$tool-$role.log" bash -c 'cd "$1" && "$2" delegate "$3" "$4" "B01 free review"' _ "$bp" "$LOOMY" "$tool" "$role"
+      file_has "$tool/$role: free-form review is verifiable" "$bt/free-$tool-$role.log" 'TRIED.*STATUS: partial'
+    done
+  done
+}
+
 if [[ "${1:-}" == --section ]]; then
   model_section=1
   case "${2:-}" in
     'Core seam') core_seam_tests ;;
+    'Review TRIED') review_tried_tests ;;
     'Upstream CLI flags') upstream_cli_tests ;;
     'Hermeticity') hermetic_tests ;;
     'W47') w47_tests ;;
@@ -3643,6 +3766,7 @@ run "bounded checkpoints and progressive journal reconstruction" bash "$HERE/liv
 section "W2/W3 resume and session-only"
 run "desktop session resume and session-scoped tool routing" bash "$HERE/resume-app.sh"
 
+review_tried_tests
 section "Structured delegations"
 run "native Codex lifecycle, rendering, privacy and bounded replay" bash "$HERE/codex-native.sh"
 run "agent tree borders, padding, wrapped titles and responsive terminal layouts" bash "$HERE/tree-layout.sh"

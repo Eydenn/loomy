@@ -2273,7 +2273,7 @@ structured_delegation_tests() {
 }
 
 review_evidence_setup_tests() {
-  local project="$1" lang="$2" setup="$3" tools="$4" base="$5" tool role surface label
+  local project="$1" lang="$2" setup="$3" tools="$4" base="$5" tool role surface label kind findings tried
   for tool in $tools; do
     # An old structured review has no evidence metadata; readers must not infer an incomplete review from it.
     mkdir -p "$project/.loomy/logs"
@@ -2323,6 +2323,22 @@ review_evidence_setup_tests() {
     label='review without TRIED'; [[ "$lang" != fr ]] || label='revue sans TRIED'
     has "$lang/$setup/$tool: cached log labels incomplete reviews" "$label"
     run "$lang/$setup/$tool: readers leave the journal intact" cmp "$base/journal-before.jsonl" "$project/.loomy/logs/events.jsonl"
+    for kind in empty tried finding; do
+      findings='No finding.'; [[ "$lang" != fr ]] || findings='aucun défaut'
+      tried=""
+      case "$kind" in
+        tried) tried=$'  **tRiEd:**  \n- edge case → passed' ;;
+        finding) findings="$findings"$'\n- [low] file:1 — real defect' ;;
+      esac
+      printf 'STATUS: done\nSUMMARY: checked\n  **fInDiNgS:**  %s  \n%s\n  **FILES:**\n- none\nNEXT: integrate\n' "$findings" "$tried" >"$base/normalized.md"
+      : >"$project/.loomy/logs/events.jsonl"
+      run "$lang/$setup/$tool/$kind: generated bridge accepts Markdown fields" env STUB_RESULT_FILE="$base/normalized.md" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'cd "$1" && bash "$1/.loomy/scripts/loomy-delegate-$2.sh" reviewer "Review Markdown evidence"' _ "$project" "$tool"
+      run "$lang/$setup/$tool/$kind: only empty reviews without evidence are flagged" perl -MJSON::PP -e '
+        my $kind=shift; my @r=grep {($_->{type}//"") eq "delegation"} map {decode_json($_)} <>;
+        die unless @r==1 && $r[0]{outcome} eq "done" && $r[0]{status} eq "ok" &&
+          ($r[0]{review}//"") eq ($kind eq "empty" ? "incomplete" : "");
+      ' "$kind" "$project/.loomy/logs/events.jsonl"
+    done
   done
 }
 
@@ -2516,6 +2532,62 @@ PERL
     [[ "$(ai_result_json reviewer $'\''STATUS: done\nSUMMARY: no FINDINGS section'\'')" != *'\''"review":'\''* ]] || exit 1
     [[ "$(ai_result_json reviewer $'\''FINDINGS: none\nTRIED:'\'')" == '\'',"format":"structured","outcome":"unformatted"'\'' ]]
   ' _ "$REPO" "$bt/missing-tried.md"
+  run "review evidence: EN/FR empty forms, casing, Markdown, whitespace and real findings" bash -euo pipefail -c '
+    source "$1/scripts/lib/models.sh"
+    for marker in "" None None. none! "No findings" "No finding." Aucun Aucune "aucun défaut" Rien - n/a "NO FINDINGS" "NO FINDING." AUCUN AUCUNE "AUCUN DÉFAUT" RIEN N/A; do
+      for heading in FINDINGS: "**fInDiNgS:**" "**FINDINGS**:"; do
+        for role in reviewer security; do
+          for kind in empty empty-tried tried finding inline-finding; do
+            findings="$marker"; tried=""; expected=",\"format\":\"structured\",\"outcome\":\"done\""
+            case "$kind" in
+              empty|empty-tried) expected="$expected,\"review\":\"incomplete\"" ;;
+            esac
+            case "$kind" in
+              empty-tried) tried="$(printf "  **TRIED:**  \n- %s  " "$marker")" ;;
+              tried) tried="$(printf "  **tRiEd:**  \n- edge case → passed")" ;;
+              finding) findings="$(printf "%s\n- [low] file:1 — real defect" "$marker")" ;;
+              inline-finding) findings="$marker: file:1 — real defect" ;;
+            esac
+            text="$(printf "STATUS: done\nSUMMARY: checked\n  %s  \n  * %s  \n%s\n  FILES:\n- none\nNEXT: go" "$heading" "$findings" "$tried")"
+            got="$(ai_result_json "$role" "$text")"
+            if [[ "$got" != "$expected" ]]; then
+              printf "FAIL %s/%s/%s/%s: %s\n" "$role" "$heading" "$marker" "$kind" "$got" >&2
+              exit 1
+            fi
+          done
+        done
+      done
+    done
+  ' _ "$REPO"
+  mkdir -p "$bt/failing-perl"
+  cat >"$bt/failing-perl/perl" <<'PERL'
+#!/bin/bash
+printf 'called\n' >>"$STUB_PERL_LOG"
+[[ "$STUB_PERL_OUTPUT" != partial ]] || printf ',"review":'
+exit 42
+PERL
+  chmod +x "$bt/failing-perl/perl"
+  run "review evidence: failed Perl never aborts strict callers or leaks partial JSON" env STUB_PERL_LOG="$bt/perl-calls.log" bash -euo pipefail -c '
+    source "$1/scripts/lib/models.sh"
+    export PATH="$2:$PATH"
+    text="$(printf "STATUS: done\nSUMMARY: checked\nFINDINGS: none\nFILES:\n- none")"
+    for mode in silent partial; do
+      export STUB_PERL_OUTPUT="$mode"
+      for role in reviewer security; do
+        metadata="$(ai_result_json "$role" "$text")"
+        [[ "$metadata" == ",\"format\":\"structured\",\"outcome\":\"done\"" ]]
+        printf "{\"type\":\"delegation\",\"role\":\"%s\"%s}\n" "$role" "$metadata" >>"$3"
+        ai_result_json "$role" "$text" >"$4"
+        [[ "$(cat "$4")" == "$metadata" ]]
+      done
+    done
+    [[ "$(wc -l <"$STUB_PERL_LOG" | tr -d " ")" == 8 ]]
+  ' _ "$REPO" "$bt/failing-perl" "$bt/fallback.jsonl" "$bt/fallback-metadata"
+  run "review evidence: journal lines remain valid after Perl failures" perl -MJSON::PP -ne '
+    my $r=decode_json($_); ++$n;
+    die unless $r->{type} eq "delegation" && $r->{format} eq "structured" && $r->{outcome} eq "done" && !exists $r->{review};
+    END {die unless $n==4}
+  ' "$bt/fallback.jsonl"
 }
 
 if [[ "${1:-}" == --section ]]; then

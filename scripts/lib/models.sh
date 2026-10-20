@@ -617,27 +617,29 @@ ai_result_outcome() {
 
 # ai_result_json <role> <text>: structured metadata; review evidence never changes the reported outcome.
 ai_result_json() {
-  local outcome
+  local outcome review_json
   outcome="$(ai_result_outcome "$2")"
   printf ',"format":"structured","outcome":"%s"' "${outcome:-unformatted}"
   [[ -n "$outcome" ]] || return 0
   case "$1" in reviewer|security) ;; *) return 0 ;; esac
-  printf '%s' "$2" | perl -0777 -ne '
+  review_json="$(printf '%s' "$2" | perl -CS -0777 -ne '
     my (%fields,$field);
     for (split /\r?\n/) {
-      if (/^(STATUS|SUMMARY|FINDINGS|TRIED|FILES|CHECKS|RISKS|NEXT):[ \t]*(.*)$/) {
-        $field=$1; $fields{$field}.="$2\n";
+      s/^[ \t]*\*\*([A-Z]+)(?::\*\*|\*\*:)/$1:/i;
+      if (/^[ \t]*(STATUS|SUMMARY|FINDINGS|TRIED|FILES|CHECKS|RISKS|NEXT):[ \t]*(.*)$/i) {
+        $field=uc $1; $fields{$field}.="$2\n";
       } elsif (defined $field) { $fields{$field}.="$_\n" }
     }
     sub content {
       my $s=shift // "";
       $s =~ s/^[ \t]*[-*](?:[ \t]+|$)//mg;
-      $s =~ s/^[ \t]*(?:none)?[ \t]*$//img;
+      $s =~ s/^[ \t]*(?:(?:none|no[ \t]+findings?|aucun(?:e|[ \t]+d\x{e9}faut)?|rien|n\/a)[.!]?|-)?[ \t]*$//img;
       $s =~ s/\s+//g;
       return length $s;
     }
     print q{,"review":"incomplete"} if exists $fields{FINDINGS} && !content($fields{FINDINGS}) && !content($fields{TRIED});
-  '
+  ')" || review_json=""  # Optional metadata must never interrupt the bridge or leave partial JSON.
+  printf '%s' "$review_json"
 }
 
 # ai_env_for <mode> <lead>: works out the environment from the mode, the requested main tool and the installed tools.

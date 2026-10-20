@@ -3,10 +3,10 @@
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
 ## 0.17.5 — 2026-10-20
-- Reviewer and security results now add a short `TRIED` section (what was attacked, at most 8 lines) when they find no defect; an empty `FINDINGS` without `TRIED` counts as an incomplete review (`partial`). Works with Claude alone, Codex alone and hybrid setups.
+- Reviewer and security results now add a short `TRIED` section (what was attacked, at most 8 lines) when they find no defect; the lead treats an empty `FINDINGS` without `TRIED` as an incomplete review (`partial`). Works with Claude alone, Codex alone and hybrid setups.
 - Add a shared "Dead ends" ledger to `.loomy/memory/STATE.md`: one line per rejected approach, never retried without a new reason. It is shown at session start for Claude and Codex and carried across handovers. Older entries are archived to `.loomy/memory/DEAD-ENDS.md` (the latest three are always kept); reading never creates `STATE.md`.
 - Data & analysis projects get a managed rule in `AGENTS.md` / `CLAUDE.md`: figures only from executed, versioned code (script and saved output cited), time-split held-out validation for temporal data, and the validator is never the proposer.
-- Fix: tests no longer age out with fixed dates.
+- Fix: the native-lifecycle and Claude replay test fixtures follow the current time instead of fixed dates, so they no longer age out.
 
 ## 0.17.4 — 2026-10-15
 - Add a shared shell/next test entrypoint selector with named skips for an unavailable next core, private XDG state and disposable dispatch accounting; preserve existing assertions and provider guards.

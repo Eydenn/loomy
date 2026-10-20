@@ -4,6 +4,7 @@
 #   STUB_WRITE=1   in the workspace-write sandbox, creates a file in the working folder
 #   STUB_SLEEP=N   waits N seconds before answering
 #   STUB_LOG=file  records each call (tab-separated arguments)
+#   STUB_RESULT_FILE=file    returns this verbatim result (also in structured mode)
 #   STUB_CODEX_VERSION=VERSION / STUB_CODEX_BROKEN_VERSION=1 controls the meta version query
 set -u
 if [[ -n "${STUB_LOG:-}" ]]; then (IFS=$'\t'; printf 'codex\t%s\n' "$*") >>"$STUB_LOG"; fi
@@ -59,6 +60,7 @@ case "$prompt" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields.
 # shellcheck disable=SC2016  # Literal response contract, without command expansion.
 case "$prompt" in *"STATUS: done | partial | blocked"*) text="$(printf 'STATUS: partial\nSUMMARY: answer from the codex double\nFINDINGS:\n- [low] a.txt:1 — stub\nFILES:\n- none\nCHECKS:\n- `true` — passed\nRISKS:\n- none\nNEXT: finish it')" ;; esac
+[[ -z "${STUB_RESULT_FILE:-}" ]] || text="$(cat "$STUB_RESULT_FILE")"
 if [[ -n "${STUB_WRITE:-}" && "$sandbox" == "workspace-write" ]]; then echo "written by the double" >"$dir/fichier_doublure.txt"; fi
 echo '{"type":"thread.started","thread_id":"stub"}'
 [[ -z "${STUB_CODEX_NONFATAL:-}" ]] || printf '%s' "$STUB_CODEX_NONFATAL" | perl -MJSON::PP -0777 -ne 'print encode_json({type=>"error",message=>$_}),"\n"'

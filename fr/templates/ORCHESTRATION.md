@@ -53,6 +53,8 @@ STATUS: done | partial | blocked
 SUMMARY: une ou deux phrases
 FINDINGS:
 - [high|medium|low] chemin:ligne — fait, avec sa preuve
+TRIED:
+- ce qui a été attaqué → résultat
 FILES:
 - chemin — ce qui a changé (ou : none)
 CHECKS:
@@ -61,6 +63,8 @@ RISKS:
 - risque ouvert (ou : none)
 NEXT: ce que l'orchestrateur doit faire de ce résultat
 ```
+
+Inclus TRIED uniquement si FINDINGS est vide ou vaut `none` : au plus 8 lignes à puces, chacune « ce qui a été attaqué → résultat » (cas, fichiers, commandes, entrées limites), sans copier de fichiers. Obligatoire pour les rôles reviewer et security, facultatif pour les autres. Une revue avec FINDINGS vide et sans TRIED est incomplète : traite-la comme `STATUS: partial`, même si elle indique `done`. Transmets aussi cette règle et le contrat de résultat aux sous-agents natifs reviewer et security.
 
 Agis selon STATUS : `partial` ou `blocked` signifie que la tâche n'est pas terminée ; lis RISKS et NEXT avant de décider. Le journal enregistre le résultat (◐ partiel, ■ bloqué dans `loomy status`), et `loomy stats` indique combien de réponses ont respecté le format.
 

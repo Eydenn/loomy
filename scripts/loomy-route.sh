@@ -118,12 +118,21 @@ case "$CMD" in
       exit 0
     fi
     mkdir -p "$dest"
+    review_rule="$(ai_review_tried_rule)"
     for r in $AI_ROLES; do
       [[ "$r" == "lead" ]] && continue
       ai_resolve "$r" "$AI_ENV" "$AI_PROFILE"
       [[ "$R_FAMILY" == "claude" ]] || continue
       [[ -f "$tpl_dir/$r.md" ]] || continue
-      sed -e "s/__MODEL__/$R_MODEL/" -e "s/__EFFORT__/$R_EFFORT/" "$tpl_dir/$r.md" >"$dest/$r.md"
+      sed -e "s/__MODEL__/$R_MODEL/" -e "s/__EFFORT__/$R_EFFORT/" "$tpl_dir/$r.md" \
+        | LOOMY_REVIEW_RULE="$review_rule" awk '
+            /^__REVIEW_RESULT_RULE__$/ { print ENVIRON["LOOMY_REVIEW_RULE"]; next } { print }' >"$dest/$r.md"
+      # Older project templates also get the shared rule until their next template update.
+      case "$r" in reviewer|security)
+        if ! grep -q '^<!-- loomy:review-result:start -->$' "$dest/$r.md"; then
+          printf '\n<!-- loomy:review-result:start -->\n%s\n<!-- loomy:review-result:end -->\n' "$review_rule" >>"$dest/$r.md"
+        fi ;;
+      esac
       # Structured delegations: the subagent answers the lead agent with the same fixed fields as the bridges.
       if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then printf '\n%s\n' "$(ai_result_contract)" >>"$dest/$r.md"; fi
       echo "$dest/$r.md  ($R_MODEL, $R_EFFORT)"

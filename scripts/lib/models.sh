@@ -587,12 +587,22 @@ ai_delegation_format() {
   case "$v" in structured) echo structured ;; *) echo free ;; esac
 }
 
+# Shared review evidence rule for native roles, bridges and lead instructions.
+ai_review_tried_rule() {
+  t "Reviewer and security roles: when FINDINGS is empty or none, include TRIED immediately after FINDINGS, with 1 to 8 bullet lines, each \"what was attacked → result\" (cases, files, commands, edge inputs); no file dumps. TRIED is optional for other roles; omit it when findings exist. A review with empty or none FINDINGS and no TRIED is incomplete: treat it as STATUS: partial. Pass this rule to native reviewer and security subagents."; echo
+}
+
+ai_result_tried_field() {
+  printf 'TRIED:\n- %s\n' "$(t "what was attacked → result (only with empty or none FINDINGS; at most 8 bullets; no file dumps; required for reviewer/security, optional for other roles)")"
+}
+
 # ai_result_contract: the answer format asked from a delegated role (field names stay in English: the bridges read them).
 ai_result_contract() {
   t "Answer with exactly these fields, nothing before or after, one short line per item:"; echo
   printf '%s\n' "STATUS: done | partial | blocked"
   printf 'SUMMARY: %s\n' "$(t "one or two sentences")"
   printf 'FINDINGS:\n- [high|medium|low] path:line — %s\n' "$(t "fact, with its evidence")"
+  ai_result_tried_field
   printf 'FILES:\n- path — %s\n' "$(t "what changed (or: none)")"
   printf 'CHECKS:\n- `command` — passed | failed | not run\n'
   printf 'RISKS:\n- %s\n' "$(t "open risk (or: none)")"

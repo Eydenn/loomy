@@ -465,7 +465,7 @@ ask_all() {
     UI_LABEL="$(t "Delegation format")"
     choose_coded DELEG_FORMAT "How should agents exchange tasks and results?" "$(ans delegation_format structured)" \
       "Structured exchanges are shorter and easier for the lead agent to check; free text reads like a conversation." \
-      "structured|Structured (recommended)|Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges." \
+      "structured|Structured (recommended)|Fixed fields, no prose: tasks as GOAL / SCOPE / FILES / ACCEPTANCE, results as STATUS / SUMMARY / FINDINGS / TRIED / FILES / CHECKS / RISKS / NEXT. Fewer tokens, results checked by the bridges." \
       "free|Free text|Each agent answers in its own words, as concisely as it sees fit."
     UI_LABEL="$(t "START.md afterwards")"
     choose_coded HISTORY "After initialisation, what to do with START.md?" "$(ans bootstrap_history archive)" \
@@ -871,7 +871,7 @@ write_brief() {
       t "- Work only on the \`%s\` branch, created from \`%s\`, which stays untouched. Never merge into or push \`%s\` yourself: at the end, offer a pull request or a merge, as the user prefers." "$ADOPT_BRANCH" "$BASE_BRANCH" "$BASE_BRANCH"; echo
     fi
     if [[ "$DELEG_FORMAT" == "structured" ]]; then
-      t "- Delegations in structured form: see \"Structured delegations\" in \`.loomy/docs/AI_ORCHESTRATION.md\` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / FILES / CHECKS / RISKS / NEXT)."; echo
+      t "- Delegations in structured form: see \"Structured delegations\" in \`.loomy/docs/AI_ORCHESTRATION.md\` (tasks: GOAL / SCOPE / FILES / ACCEPTANCE; results: STATUS / SUMMARY / FINDINGS / TRIED / FILES / CHECKS / RISKS / NEXT)."; echo
     fi
     t "- Update progress with \`.loomy/scripts/loomy-status.sh set <phase>\`."; echo
   } >"$BRIEF"

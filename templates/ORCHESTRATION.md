@@ -53,6 +53,8 @@ STATUS: done | partial | blocked
 SUMMARY: one or two sentences
 FINDINGS:
 - [high|medium|low] path:line — fact, with its evidence
+TRIED:
+- what was attacked → result
 FILES:
 - path — what changed (or: none)
 CHECKS:
@@ -61,6 +63,8 @@ RISKS:
 - open risk (or: none)
 NEXT: what the lead agent should do with this result
 ```
+
+Include TRIED only when FINDINGS is empty or `none`: at most 8 bullet lines, each "what was attacked → result" (cases, files, commands, edge inputs), without file dumps. It is required for reviewer and security roles, optional for other roles. A review with empty FINDINGS and no TRIED is incomplete: treat it as `STATUS: partial`, even if it says `done`. Pass this rule and result contract to native reviewer and security subagents too.
 
 Act on STATUS: `partial` or `blocked` means the task is not done; read RISKS and NEXT before deciding. The log records the outcome (◐ partial, ■ blocked in `loomy status`), and `loomy stats` shows how many answers followed the format.
 

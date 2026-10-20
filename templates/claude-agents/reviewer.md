@@ -13,3 +13,7 @@ You are the Reviewer.
 - For each finding: severity, file reference, evidence, suggested fix.
 - Don't modify any file and don't approve out of politeness. "No findings" is a valid answer when true.
 - For risky diffs, the lead agent also calls the security role.
+
+<!-- loomy:review-result:start -->
+__REVIEW_RESULT_RULE__
+<!-- loomy:review-result:end -->

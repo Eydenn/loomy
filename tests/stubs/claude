@@ -39,6 +39,6 @@ case "$*" in *"Reply exactly: OK"*) text="OK" ;; esac
 # Structured delegation asked: answer with the contract's fields (newlines escaped for the JSON output).
 case "$*" in *"STATUS: done | partial | blocked"*) text='STATUS: blocked\nSUMMARY: answer from the claude double\nFINDINGS:\n- none\nFILES:\n- none\nCHECKS:\n- none\nRISKS:\n- missing access\nNEXT: grant access' ;; esac
 if [[ -n "${STUB_RESULT_FILE:-}" ]]; then
-  text="$(perl -MJSON::PP -MEncode=decode -0777 -ne 'print substr(encode_json(decode("UTF-8",$_)),1,-1)' "$STUB_RESULT_FILE")"
+  text="$(perl -MJSON::PP -MEncode=decode -0777 -ne 'print substr(encode_json([decode("UTF-8",$_)]),2,-2)' "$STUB_RESULT_FILE")"
 fi
 printf '{"type":"result","subtype":"success","is_error":false,"result":"%s","total_cost_usd":0.0123,"usage":{"input_tokens":120,"cache_creation_input_tokens":0,"cache_read_input_tokens":80,"output_tokens":40}}\n' "$text"

@@ -304,7 +304,9 @@ t "- Delegations: always run the bridges in the foreground and wait for them to 
 if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then
   t "- Structured delegations: write each task as GOAL / SCOPE / FILES / ACCEPTANCE; results come back as STATUS / SUMMARY / FINDINGS / TRIED / FILES / CHECKS / RISKS / NEXT (see .loomy/docs/AI_ORCHESTRATION.md). Act on STATUS: partial or blocked means the task is not done."; echo
 fi
-printf '%s' '- '; ai_review_tried_rule
+if ! _lp_has_review_tried_rule "$ROOT" "$TOOL"; then
+  printf -- '- '; ai_review_tried_rule
+fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
 # Official skills of the project (the agents load them from their folders): names only, and how to add more.
 if [[ -s "$ROOT/.loomy/skills.lock" ]]; then

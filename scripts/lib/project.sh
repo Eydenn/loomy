@@ -210,6 +210,26 @@ loomy_project_rename_scripts() {
   return 0
 }
 
+# _lp_review_tried_rule <root>: the shared review rule, in the project's document language.
+_lp_review_tried_rule() (
+  LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
+  if [[ "$LOOMY_UI_LANG" == fr ]]; then source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"; fi
+  printf -- '- '; ai_review_tried_rule
+)
+
+# _lp_has_review_tried_rule <root> <tool>: the tool's complete managed block carries the current rule.
+_lp_has_review_tried_rule() {
+  local f="$1/CLAUDE.md"
+  [[ "$2" != codex ]] || f="$1/AGENTS.md"
+  [[ -f "$f" ]] || return 1
+  LP_TRIED="$(_lp_review_tried_rule "$1")" awk '
+    /^<!-- loomy:orchestration:start/ { block = 1; current = 0; next }
+    /^<!-- loomy:orchestration:end -->$/ { if (block && current) found = 1; block = 0; next }
+    block && $0 == ENVIRON["LP_TRIED"] { current = 1 }
+    END { exit !found }
+  ' "$f"
+}
+
 # _lp_block <root>: the managed orchestration block, in the project's language.
 _lp_block() {
   echo "<!-- loomy:orchestration:start · managed by Loomy, updated automatically -->"
@@ -250,11 +270,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi
-  (
-    LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
-    if [[ "$LOOMY_UI_LANG" == fr ]]; then source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"; fi
-    printf '\n- '; ai_review_tried_rule
-  )
+  _lp_review_tried_rule "$1"
   echo "<!-- loomy:orchestration:end -->"
 }
 

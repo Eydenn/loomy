@@ -615,6 +615,31 @@ ai_result_outcome() {
   printf '%s' "$1" | grep -oE 'STATUS:[[:space:]]*(done|partial|blocked)' | head -1 | sed 's/.*[[:space:]:]//'
 }
 
+# ai_result_json <role> <text>: structured metadata; review evidence never changes the reported outcome.
+ai_result_json() {
+  local outcome
+  outcome="$(ai_result_outcome "$2")"
+  printf ',"format":"structured","outcome":"%s"' "${outcome:-unformatted}"
+  [[ -n "$outcome" ]] || return 0
+  case "$1" in reviewer|security) ;; *) return 0 ;; esac
+  printf '%s' "$2" | perl -0777 -ne '
+    my (%fields,$field);
+    for (split /\r?\n/) {
+      if (/^(STATUS|SUMMARY|FINDINGS|TRIED|FILES|CHECKS|RISKS|NEXT):[ \t]*(.*)$/) {
+        $field=$1; $fields{$field}.="$2\n";
+      } elsif (defined $field) { $fields{$field}.="$_\n" }
+    }
+    sub content {
+      my $s=shift // "";
+      $s =~ s/^[ \t]*[-*](?:[ \t]+|$)//mg;
+      $s =~ s/^[ \t]*(?:none)?[ \t]*$//img;
+      $s =~ s/\s+//g;
+      return length $s;
+    }
+    print q{,"review":"incomplete"} if exists $fields{FINDINGS} && !content($fields{FINDINGS}) && !content($fields{TRIED});
+  '
+}
+
 # ai_env_for <mode> <lead>: works out the environment from the mode, the requested main tool and the installed tools.
 # Sets AI_ENV and AI_ENV_NOTE (explanation of the fallback, possibly empty).
 ai_env_for() {

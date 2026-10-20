@@ -217,18 +217,28 @@ _lp_review_tried_rule() (
   printf -- '- '; ai_review_tried_rule
 )
 
-# _lp_has_review_tried_rule <root> <tool>: the tool's complete managed block carries the current rule.
-_lp_has_review_tried_rule() {
+# _lp_dead_ends_rule <root>: the shared ledger rule, in the project's document language.
+_lp_dead_ends_rule() (
+  LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
+  if [[ "$LOOMY_UI_LANG" == fr ]]; then source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"; fi
+  t '- Dead ends: before proposing an approach, check `.loomy/memory/STATE.md` and `.loomy/memory/DEAD-ENDS.md` if present. Append evidence-backed rejections under `## Dead ends`, oldest first, one physical line per entry: `- <approach> — <why it died> (<evidence path or ref>) · do not retry without a new reason`. Never retry one without stating the new reason. Aim for 40 STATE lines; `loomy memory` archives older entries on overflow but always keeps the latest three, even over budget. Preserve this shared ledger in every handoff.'; echo
+)
+
+# _lp_has_managed_rule <root> <tool> <rule>: the tool's complete managed block carries this exact rule.
+_lp_has_managed_rule() {
   local f="$1/CLAUDE.md"
   [[ "$2" != codex ]] || f="$1/AGENTS.md"
   [[ -f "$f" ]] || return 1
-  LP_TRIED="$(_lp_review_tried_rule "$1")" awk '
+  LP_RULE="$3" awk '
     /^<!-- loomy:orchestration:start/ { block = 1; current = 0; next }
     /^<!-- loomy:orchestration:end -->$/ { if (block && current) found = 1; block = 0; next }
-    block && $0 == ENVIRON["LP_TRIED"] { current = 1 }
+    block && $0 == ENVIRON["LP_RULE"] { current = 1 }
     END { exit !found }
   ' "$f"
 }
+
+_lp_has_review_tried_rule() { _lp_has_managed_rule "$1" "$2" "$(_lp_review_tried_rule "$1")"; }
+_lp_has_dead_ends_rule() { _lp_has_managed_rule "$1" "$2" "$(_lp_dead_ends_rule "$1")"; }
 
 # _lp_block <root>: the managed orchestration block, in the project's language.
 _lp_block() {
@@ -270,14 +280,7 @@ You are the **lead agent**. Every request in this project (a feature, a bug, the
 - If the Loomy setup is unfinished (`START.md` still present), finish it first.
 EN
   fi
-  (
-    LOOMY_UI_LANG="$(_lp_doc_lang "$1")"
-    if [[ "$LOOMY_UI_LANG" == fr ]]; then
-      # shellcheck source=i18n/fr.sh
-      source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh"
-    fi
-    t '- Dead ends: before proposing an approach, check `.loomy/memory/STATE.md` and `.loomy/memory/DEAD-ENDS.md` if present. Append evidence-backed rejections under `## Dead ends`, oldest first, one physical line per entry: `- <approach> — <why it died> (<evidence path or ref>) · do not retry without a new reason`. Never retry one without stating the new reason. Aim for 40 STATE lines; `loomy memory` archives older entries on overflow but always keeps the latest three, even over budget. Preserve this shared ledger in every handoff.'; echo
-  )
+  _lp_dead_ends_rule "$1"
   _lp_review_tried_rule "$1"
   if [[ "$(_ai_brief_get "$1/.loomy/brief.md" type 2>/dev/null)" == data ]]; then
     (

@@ -248,8 +248,7 @@ if [[ $STATUS -ne 0 ]] || grep -q '"is_error":true' <<<"$OUT"; then RESULT="erro
 FORMAT_JSON=""
 if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   ANSWER="$OUT"; command -v python3 >/dev/null 2>&1 && ANSWER="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
-  OUTCOME="$(ai_result_outcome "$ANSWER")"
-  FORMAT_JSON=",\"format\":\"structured\",\"outcome\":\"${OUTCOME:-unformatted}\""
+  FORMAT_JSON="$(ai_result_json "$ROLE" "$ANSWER")"
 fi
 CHANGED=0; AFTER=""
 if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

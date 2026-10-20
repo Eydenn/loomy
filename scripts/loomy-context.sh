@@ -276,7 +276,7 @@ if [[ "$HOOK" == "start" && -s "$J" && "${src:-startup}" == "startup" ]]; then
     t "- The previous session ran in %s: pick up the work from the shared memory below (work state and latest results), not from scratch." "$( [[ "$ptool" == codex ]] && echo Codex || echo "Claude Code")"; echo
   fi
 fi
-if (( mem_on )); then
+if (( mem_on )) && ! _lp_has_dead_ends_rule "$ROOT" "$TOOL"; then
   t "- Check Dead ends before proposing an approach; never retry one without a new reason, and say which. Record evidence-backed rejections in .loomy/memory/STATE.md; check the full ledger there and .loomy/memory/DEAD-ENDS.md (older entries) when relevant."; echo
 fi
 if [[ -n "$mem_state" ]]; then

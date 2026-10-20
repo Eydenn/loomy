@@ -61,6 +61,7 @@ DATA="$(ai_journal_all "$ROOT" | ai_journal_canonical | awk -v since="$SINCE" -v
       r = field("role"); n++; d = num("duration_s"); dur += d
       ok = (field("status") == "ok"); availability = (field("status") == "paused" || field("status") == "handed_over"); if (!ok && !availability) err++; if (field("status") == "paused") paused++; if (field("status") == "handed_over") handed++; if (field("failover_from") != "") fo++
       if (field("format") == "structured") { sf++; oc = field("outcome"); if (oc == "unformatted") suf++; else if (oc == "partial") sp++; else if (oc == "blocked") sb++ }
+      if (field("review") == "incomplete") ri++
       rn[r]++; rd[r] += d; rt[r] += ti + to; rv[r] += c; rp[r] = (rp[r] == "" ? plan : (rp[r] == plan ? plan : 2)); if (!ok && !availability) re[r]++
       mn[m]++; dn[day]++
     } else {
@@ -70,13 +71,13 @@ DATA="$(ai_journal_all "$ROOT" | ai_journal_canonical | awk -v since="$SINCE" -v
   }
   END {
     printf "NATIVE|%d\n", native
-    printf "ALL|%s|%s|%d|%d|%d|%d|%d|%d|%.4f|%.4f|%d|%d|%.4f|%d|%d|%.4f|%d|%d|%d|%d|%d|%d|%d\n", first, last, n, err, dur, ti_all, tc_all, to_all, ac, pv, lr, lt, lv, sn, st, sv, fo, sf, suf, sp, sb, paused, handed
+    printf "ALL|%s|%s|%d|%d|%d|%d|%d|%d|%.4f|%.4f|%d|%d|%.4f|%d|%d|%.4f|%d|%d|%d|%d|%d|%d|%d|%d\n", first, last, n, err, dur, ti_all, tc_all, to_all, ac, pv, lr, lt, lv, sn, st, sv, fo, sf, suf, sp, sb, paused, handed, ri
     for (r in rn) printf "ROLE|%s|%d|%d|%d|%.4f|%d|%d\n", r, rn[r], rd[r], rt[r], rv[r], rp[r], re[r]
     for (m in md) printf "MODEL|%s|%d|%d|%d|%d|%d|%.4f|%d\n", m, mn[m], mu[m], mi[m], mc[m], mo[m], mv[m], md[m]
     for (d in dt) printf "DAY|%s|%d|%d|%.4f|%.4f\n", d, dn[d], dt[d], da[d], dp[d]
   }')"
 
-IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB PAUSED HANDED <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
+IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB PAUSED HANDED RI <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
 IFS='|' read -r _ NATIVE <<<"$(printf '%s\n' "$DATA" | grep '^NATIVE|')"
 
 # Only timestamps and lifecycle metadata leave this reader; never request text.
@@ -176,7 +177,7 @@ else
     (( PAUSED == 0 && HANDED == 0 )) || ui_kv "$(t 'Availability')" "$(t '%s paused' "$PAUSED") · $(t '%s handed over' "$HANDED")"
     (( FO > 0 )) && ui_kv "$(t "Switched")" "$(t "%s delegation(s) moved to the other tool (quota nearly exhausted)" "$FO")"
     if (( SF > 0 )); then
-      ui_kv "$(t "Structured")" "$(t "%s of %s answers followed the format" "$(( SF - SUF ))" "$SF")$( (( SP > 0 )) && printf ' · %s' "$(t "%s partial" "$SP")")$( (( SB > 0 )) && printf ' · %s' "$(t "%s blocked" "$SB")")"
+      ui_kv "$(t "Structured")" "$(t "%s of %s answers followed the format" "$(( SF - SUF ))" "$SF")$( (( SP > 0 )) && printf ' · %s' "$(t "%s partial" "$SP")")$( (( SB > 0 )) && printf ' · %s' "$(t "%s blocked" "$SB")")$( (( RI > 0 )) && printf ' · %s' "$(t "%s review(s) without TRIED" "$RI")")"
     fi
     ui_kv "$(t "Duration")" "$(t "%s in total · %s on average" "$(dur_label "$DUR")" "$(dur_label $(( DUR / N )))")"
   fi

@@ -176,7 +176,7 @@ use Digest::MD5 ();
 package Loomy::WatchLegacy;
 sub title { my $s=text($_[0]); $s =~ s/^\s*(?:GOAL|TASK|OBJECTIF)\s*:\s*//i; $s =~ s/\bSCOPE\s*:.*//is; $s =~ s/[\r\n].*//s; $s =~ s/([.!?])(?:\s|$).*/$1/s; $s =~ s/\s+/ /g; $s =~ s/^\s+|\s+$//g; $s }
 sub alive { my $p=text($_[0]); $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == Errno::EPERM()) }
-sub new { bless {seq=>0,rows=>[],log=>[],sessionlog=>[],starts=>[],last=>[],models=>{},phase=>{},usage=>[0,0,0,0,0,0],advisor=>[0,0,0,"-","",0],total=>[0,0,0,0,0,0,0,0],monthly=>{},sessions=>{},seen=>{},avg=>{},done=>{}},shift }
+sub new { bless {seq=>0,rows=>[],log=>[],sessionlog=>[],starts=>[],last=>[],models=>{},phase=>{},usage=>[0,0,0,0,0,0],advisor=>[0,0,0,"-","",0],total=>[0,0,0,0,0,0,0,0,0],monthly=>{},sessions=>{},seen=>{},avg=>{},done=>{}},shift }
 sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : "" }
 # Dedup memory is bounded: 16-byte digests of the canonical event, oldest forgotten beyond the cap.
 sub once {
@@ -226,6 +226,7 @@ sub consume {
   if ($ty eq "delegation_start") {push @{$s->{starts}},$d; shift @{$s->{starts}} while @{$s->{starts}}>20}
   if ($ty eq "delegation") {
     $s->{done}{$id}=1; my $t=$s->{total}; ++$t->[0];
+    ++$t->[8] if text($d->{review}) eq "incomplete";
     if ($bridge eq "codex-native") {++$t->[5]; ++$t->[2] if $status ne "ok"}
     else {
       my $m=$s->{models}{$model}//=[0,0,0,$plan]; ++$m->[0]; $m->[2]+=$tk;
@@ -502,6 +503,7 @@ loomy_watch_log_pretty() {
       -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
       -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
       -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \
+      -v T_REVIEW="$(t "review without TRIED")" \
       -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" '
     BEGIN { n = split(pm, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") { split(a[i], kv, "="); split(kv[2], il, ":"); idx[kv[1]] = il[1]; lab[kv[1]] = il[2] } }
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
@@ -522,7 +524,7 @@ loomy_watch_log_pretty() {
       else if (ty == "delegation") {
         ok = field("status") == "ok"; oc = field("outcome")
         mk = ok ? G "✓" Z : E "✗" Z; if (ok && oc == "partial") mk = Y "◐" Z; if (ok && oc == "blocked") mk = Y "■" Z
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") cut(field("task"), 36), Z
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") cut(field("task"), 36), Z, (field("review") == "incomplete" ? " · " Y T_REVIEW Z : "")
       }
       else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {
@@ -874,21 +876,22 @@ else
     summary="$(ai_journal_canonical <"$JOURNAL" | grep '"type":"delegation"' | awk -v pc="$PLAN_C" -v px="$PLAN_X" '
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
-      { if (field("bridge") == "codex-native") { n++; native++; if (field("status") != "ok") err++; next }
+      { if (field("review") == "incomplete") ri++
+        if (field("bridge") == "codex-native") { n++; native++; if (field("status") != "ok") err++; next }
         m = field("model"); f = field("family"); plan = (f == "claude" ? pc : px) + 0
         tk = num("tokens_in") + num("tokens_out"); calls[m]++; tok[m] += tk; mp[m] = plan
         if (plan) { ptok += tk } else { cost[m] += num("cost_usd"); total += num("cost_usd"); api++ }
         n++; st=field("status"); if (st == "paused") paused++; else if (st == "handed_over") handed++; else if (st != "ok") err++ }
-      END { printf "TOTAL %d %.4f %d %d %d %d %d %d\n", n, total, err, api, ptok, native, paused, handed
+      END { printf "TOTAL %d %.4f %d %d %d %d %d %d %d\n", n, total, err, api, ptok, native, paused, handed, ri
             for (m in calls) printf "MODEL %s %d %.4f %d %d\n", m, calls[m], cost[m], tok[m], mp[m] }')"
 fi
-    read -r _ n_calls total_cost n_err n_api plan_tok n_native n_paused n_handed <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
+    read -r _ n_calls total_cost n_err n_api plan_tok n_native n_paused n_handed n_review <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
     # API part: its cost; subscription part: its tokens (the quota is in the plans lines).
     d_val=""
     (( n_api > 0 )) && d_val="${C_BOLD}\$${total_cost}${C_RESET}"
     (( n_api < n_calls - n_native )) && d_val="${d_val:+$d_val · }${C_BOLD}$(ai_tokens_label "$plan_tok")${C_RESET} $(t "tokens")"
     (( n_native == 0 )) || d_val="${d_val:+$d_val · }$(t 'native usage unknown')"
-    ui_kv "$(t "Delegations")" "${C_BOLD}${n_calls}${C_RESET} · ${d_val}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")"
+    ui_kv "$(t "Delegations")" "${C_BOLD}${n_calls}${C_RESET} · ${d_val}$( [[ "${n_err:-0}" != "0" ]] && printf ' · %s%s%s' "$C_RED" "$(t "%s failed" "$n_err")" "$C_RESET")$( (( n_review > 0 )) && printf ' · %s' "$(t "%s review(s) without TRIED" "$n_review")")"
     (( n_paused == 0 && n_handed == 0 )) || ui_kv "$(t 'Availability')" "$(t '%s paused' "$n_paused") · $(t '%s handed over' "$n_handed")"
     last_n=5
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else

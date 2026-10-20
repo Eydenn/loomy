@@ -1923,7 +1923,8 @@ data_guidance_tests() {
 
 dead_ends_tests() {
   section "Dead ends"
-  local base="$WORK/dead-ends" lang setup mode lead p state archive doc tool hooks hook src i other
+  local base="$WORK/dead-ends" lang setup mode lead p state archive doc tool hooks hook src i other other_lang kind
+  local reminder='^- (Check Dead ends before proposing|Consulte les impasses \(Dead ends\) avant de proposer)'
   mkdir -p "$base"
   for lang in en fr; do
     for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
@@ -2010,23 +2011,37 @@ dead_ends_tests() {
       run "dead ends $lang/$setup: STATE stays unchanged" cmp "$base/state-kept.md" "$state"
       run "dead ends $lang/$setup: state and archive ignored by project Git" git -C "$p" check-ignore -- .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md
       for tool in claude codex; do
+        doc=CLAUDE.md; [[ "$tool" != codex ]] || doc=AGENTS.md
+        cp "$p/$doc" "$base/current-$doc"
         hooks="$p/.claude/settings.json"; [[ "$tool" != codex ]] || hooks="$p/.codex/hooks.json"
         hook="$(perl -MJSON::PP -e 'local $/; my $d=decode_json(<>); for my $g (@{$d->{hooks}{SessionStart}}) {for my $h (@{$g->{hooks}}) {print $h->{command} if $h->{command}=~/loomy-context/}}' "$hooks")"
         for src in startup compact; do
           run "dead ends $lang/$setup: generated $tool hook ($src)" env CLAUDE_PROJECT_DIR="$p" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'cd "$1" && printf "{\"session_id\":\"dead-ends\",\"source\":\"%s\"}\n" "$3" | bash -c "$2"' _ "$p" "$hook" "$src"
           has "dead ends $lang/$setup: $tool/$src shared ledger" 'approach-35.*tests/evidence-35.log'
           has "dead ends $lang/$setup: $tool/$src archive pointer" 'DEAD-ENDS.md'
-          if [[ "$lang" == fr ]]; then
-            has "dead ends $lang/$setup: $tool/$src retry rule translated" 'avant de proposer une approche.*nouvelle raison, en précisant laquelle'
-          else
-            has "dead ends $lang/$setup: $tool/$src retry rule" 'Check Dead ends before proposing an approach; never retry one without a new reason, and say which'
-          fi
+          hasnt "dead ends $lang/$setup: $tool/$src does not repeat the managed rule" "$reminder"
           if perl -e '
             my @lines=grep { /^    - approach-/ } <>; die unless @lines==3;
             for (@lines) { s/^    //; chomp; die if length>320 }
           ' "$OUT"; then ok "dead ends $lang/$setup: $tool/$src three entries, one line each, capped"
           else ko "dead ends $lang/$setup: $tool/$src ledger cap"; fi
         done
+        other_lang=fr; [[ "$lang" != fr ]] || other_lang=en
+        run "dead ends $lang/$setup/$tool: different UI language" env LOOMY_NO_REPAIR=1 LOOMY_LANG="$other_lang" LOOMY_UI_LANG="$other_lang" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p" --tool "$tool"
+        hasnt "dead ends $lang/$setup/$tool: detection uses document language" "$reminder"
+        # Only a complete current block belonging to this tool may suppress the reminder.
+        for kind in absent outdated outside unterminated; do
+          case "$kind" in
+            absent) printf '# User instructions\n' >"$p/$doc" ;;
+            outdated) sed '/^- .*<approach>/d' "$base/current-$doc" >"$p/$doc" ;;
+            outside) sed -n '/^- .*<approach>/p' "$base/current-$doc" >"$p/$doc" ;;
+            unterminated) sed '/^<!-- loomy:orchestration:end -->$/d' "$base/current-$doc" >"$p/$doc" ;;
+          esac
+          run "dead ends $lang/$setup/$tool: $kind block" env LOOMY_NO_REPAIR=1 LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p" --tool "$tool"
+          has "dead ends $lang/$setup/$tool: $kind block gets reminder" "$reminder"
+          has "dead ends $lang/$setup/$tool: $kind block keeps ledger data" 'approach-35.*tests/evidence-35.log'
+        done
+        cp "$base/current-$doc" "$p/$doc"
       done
       other=codex; [[ "$lead" != codex ]] || other=claude
       printf 'master=%s\nacting=%s\nmanual=1\nsince=1\nreason=manual\n' "$lead" "$other" >"$p/.loomy/failover"
@@ -2257,11 +2272,66 @@ structured_delegation_tests() {
   [[ "$(bash -c 'source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; ai_delegation_format "$2"' _ "$REPO" "$SD/legacy")" == free ]] && ok "older project without the option: free text" || ko "older project: format changed"
 }
 
+review_evidence_setup_tests() {
+  local project="$1" lang="$2" setup="$3" tools="$4" base="$5" tool role surface label
+  for tool in $tools; do
+    # An old structured review has no evidence metadata; readers must not infer an incomplete review from it.
+    mkdir -p "$project/.loomy/logs"
+    printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","type":"delegation","id":"legacy-review","bridge":"codex","family":"codex","role":"reviewer","model":"stub","status":"ok","format":"structured","outcome":"done"}' >"$project/.loomy/logs/events.jsonl"
+    for role in reviewer security; do
+      run "$lang/$setup/$tool/$role: generated bridge without TRIED" env STUB_RESULT_FILE="$base/missing-tried.md" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c 'cd "$1" && bash "$1/.loomy/scripts/loomy-delegate-$2.sh" "$3" "Review evidence fixture"' _ "$project" "$tool" "$role"
+      run "$lang/$setup/$tool/$role: incomplete flag with reported STATUS intact" perl -MJSON::PP -e '
+        my $role=shift; my @rows=map {decode_json($_)} <>;
+        my @r=grep {($_->{type}//"") eq "delegation" && ($_->{role}//"") eq $role && ($_->{id}//"") ne "legacy-review"} @rows;
+        die unless @r==1 && $r[0]{review} eq "incomplete" && $r[0]{outcome} eq "done" && $r[0]{status} eq "ok";
+      ' "$role" "$project/.loomy/logs/events.jsonl"
+    done
+    cp "$project/.loomy/logs/events.jsonl" "$base/journal-before.jsonl"
+    for surface in stats log status; do
+      run "$lang/$setup/$tool: $surface shows review evidence" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" "$surface" --root "$project"
+      if [[ "$surface" == log ]]; then
+        label='review without TRIED'; [[ "$lang" != fr ]] || label='revue sans TRIED'
+      else
+        label='2 review\(s\) without TRIED'; [[ "$lang" != fr ]] || label='2 revue\(s\) sans TRIED'
+      fi
+      has "$lang/$setup/$tool: $surface labels incomplete reviews" "$label"
+    done
+    run "$lang/$setup/$tool: compact status" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" "$LOOMY" status --root "$project" --compact
+    has "$lang/$setup/$tool: compact count excludes legacy review" "$label"
+    run "$lang/$setup/$tool: cached watch status and log" env LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" bash -c '
+      REPO="$1"; ROOT="$2"; base="$3"; J="$ROOT/.loomy/logs/events.jsonl"
+      LOOMY_STATUS_LIBRARY=1 source "$REPO/scripts/loomy-status.sh" --root "$ROOT"
+      source "$REPO/scripts/loomy-tree.sh" --library
+      loomy_live_init
+      perl -e "$LOOMY_WATCH_LEGACY_PERL"'\''
+        require "$ARGV[0]/scripts/lib/live-state.pl";
+        my $reader=Loomy::LiveState->new; my $cache=Loomy::WatchLegacy->new;
+        $cache->consume($_,0,0) for $reader->journal_records($ARGV[1]);
+        binmode STDOUT, ":encoding(UTF-8)"; print "$_\n" for $cache->snapshot("claude",0);
+      '\'' "$REPO" "$ROOT/.loomy/logs/events.jsonl" >"$base/review.rows"
+      while IFS= read -r row; do loomy_watch_legacy_accept "$row"; done <"$base/review.rows"
+      LV_NOW="$(date +%s)"; LV_CLOCK=12:00:00; loomy_live_states; loomy_live_metadata
+      tick=$LV_NOW; size=--compact; watch_body_height=80; tree_mode=list
+      view=status; loomy_watch_legacy_pretty
+      ai_journal_canonical() { return 99; }; ai_journal_all() { return 99; }
+      for view in status log; do
+        loomy_watch_legacy_pretty
+        loomy_watch_legacy_render || exit
+      done
+    ' _ "$REPO" "$project" "$base"
+    has "$lang/$setup/$tool: cached count excludes legacy review" "$label"
+    label='review without TRIED'; [[ "$lang" != fr ]] || label='revue sans TRIED'
+    has "$lang/$setup/$tool: cached log labels incomplete reviews" "$label"
+    run "$lang/$setup/$tool: readers leave the journal intact" cmp "$base/journal-before.jsonl" "$project/.loomy/logs/events.jsonl"
+  done
+}
+
 review_tried_tests() {
   section "Review TRIED"
   local bt="$WORK/review-tried" lang other_lang setup mode lead project doc role agent tool kind bp fixture row_pattern
   local rule_pattern='^- .*TRIED.*STATUS: partial.*(reviewer|security)'
   mkdir -p "$bt"
+  printf 'STATUS: done\nSUMMARY: review complete\nFINDINGS:\n\nFILES:\n- none\nCHECKS:\n- `true` — passed\nRISKS:\n- none\nNEXT: integrate\n' >"$bt/missing-tried.md"
   for lang in en fr; do
     for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
       mode=SOLO; lead="$setup"
@@ -2349,6 +2419,8 @@ review_tried_tests() {
         done
         run "$lang/$setup: existing orchestration doc preserved" cmp "$bt/user-orchestration.md" "$project/.loomy/docs/AI_ORCHESTRATION.md"
       fi
+      tool="$lead"; [[ "$mode" != HYBRID ]] || tool='claude codex'
+      review_evidence_setup_tests "$project" "$lang" "$setup" "$tool" "$bt"
     done
   done
   cat >"$bt/tried.md" <<'RESULT'
@@ -2399,6 +2471,11 @@ PERL
         run "$tool/$role/$kind: bridge parses result" env STUB_RESULT_FILE="$fixture" STUB_LOG="$bt/prompt.log" bash -c 'cd "$1" && "$2" delegate "$3" "$4" "B01 review evidence"' _ "$bp" "$LOOMY" "$tool" "$role"
         file_has "$tool/$role/$kind: prompt contract" "$bt/prompt.log" '^TRIED:$'
         file_has "$tool/$role/$kind: reported outcome retained" "$bp/.loomy/logs/events.jsonl" '"format":"structured","outcome":"done"'
+        if [[ "$kind" == legacy ]]; then
+          file_has "$tool/$role/$kind: missing evidence marked" "$bp/.loomy/logs/events.jsonl" '"review":"incomplete"'
+        else
+          run "$tool/$role/$kind: supplied evidence is complete" bash -c '! grep -q '\''"review":"incomplete"'\'' "$1"' _ "$bp/.loomy/logs/events.jsonl"
+        fi
         run "$tool/$role/$kind: archive preserves full result" bash -c 'for f in "$1"/.loomy/memory/delegations/*.md; do sed -n "/^STATUS:/,\$p" "$f" >"$3"; cmp "$2" "$3" || exit; done' _ "$bp" "$fixture" "$bt/archived.md"
         run "$tool/$role/$kind: show result" "$LOOMY" memory --root "$bp" show
         if [[ "$kind" == legacy ]]; then hasnt "$tool/$role: legacy result accepted without TRIED" '^TRIED:$'
@@ -2415,6 +2492,30 @@ PERL
       file_has "$tool/$role: free-form review is verifiable" "$bt/free-$tool-$role.log" 'TRIED.*STATUS: partial'
     done
   done
+  run "review evidence: field boundaries, none, CRLF, roles and reported outcomes" bash -c '
+    source "$1/scripts/lib/models.sh"
+    for role in reviewer security; do
+      for status in done partial blocked; do
+        for findings in "" "none" "- none" "  * NONE  "; do
+          for tried in "" "TRIED:" "TRIED: none" $'\''TRIED:\n- none'\''; do
+            text="$(printf "STATUS: %s\nSUMMARY: checked\nFINDINGS: %s\n%s\nFILES:\n- file.txt\nCHECKS:\n- true\nRISKS:\n- none\nNEXT: go" "$status" "$findings" "$tried")"
+            got="$(ai_result_json "$role" "$text")"
+            [[ "$got" == ",\"format\":\"structured\",\"outcome\":\"$status\",\"review\":\"incomplete\"" ]] || exit 1
+            got="$(ai_result_json "$role" "$(printf "%s\n" "$text" | perl -pe '\''s/\n/\r\n/g'\'')")"
+            [[ "$got" == *'\''"review":"incomplete"'\'' ]] || exit 1
+          done
+        done
+      done
+    done
+    for text in $'\''STATUS: done\nSUMMARY: checked\nFINDINGS: none\nTRIED:\n- edge case → passed\nFILES:\n- none'\'' $'\''STATUS: done\nSUMMARY: checked\nFINDINGS:\n- [low] file:1 — defect\nFILES:\n- none'\''; do
+      [[ "$(ai_result_json reviewer "$text")" != *'\''"review":'\''* ]] || exit 1
+    done
+    for role in developer explorer documenter; do
+      [[ "$(ai_result_json "$role" "$(cat "$2")")" != *'\''"review":'\''* ]] || exit 1
+    done
+    [[ "$(ai_result_json reviewer $'\''STATUS: done\nSUMMARY: no FINDINGS section'\'')" != *'\''"review":'\''* ]] || exit 1
+    [[ "$(ai_result_json reviewer $'\''FINDINGS: none\nTRIED:'\'')" == '\'',"format":"structured","outcome":"unformatted"'\'' ]]
+  ' _ "$REPO" "$bt/missing-tried.md"
 }
 
 if [[ "${1:-}" == --section ]]; then

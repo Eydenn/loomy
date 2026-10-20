@@ -38,7 +38,7 @@ method_of() {
     */.bun/*|*/install/global/node_modules/*) echo "bun" ;;
     */node_modules/*) echo "npm" ;;
     */Cellar/*) echo "brew" ;;
-    *) if [[ -d "$2/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
+    *) if [[ -e "$2/.git" ]]; then echo "git"; else echo "manuel"; fi ;;
   esac
 }
 install_method() { method_of "$INVOKED" "$LOOMY_HOME"; }

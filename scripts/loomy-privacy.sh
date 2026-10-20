@@ -91,14 +91,14 @@ do_sync() {
   done
   (( ${#paths[@]} )) || { ui_info "$(t "no AI file to back up")"; return 0; }
   # The companion repository reads the project's .gitignore, which now excludes the history and work files:
-  # it keeps nothing of them but the continuity notes STATE.md and HANDOFF.md (force-added); what it tracked before is
+  # it keeps nothing of them but the continuity notes STATE.md, DEAD-ENDS.md and HANDOFF.md (force-added); what it tracked before is
   # dropped from its index.
   privacy_companion_config "$ROOT"
   while IFS= read -r p; do
     ai_git "$ROOT" rm -r --cached --quiet --ignore-unmatch -- "$p" >/dev/null 2>&1 || true
   done < <(loomy_history_pathspecs)
   ai_git "$ROOT" add -A -- "${paths[@]}"
-  for p in .loomy/memory/STATE.md .loomy/docs/HANDOFF.md; do [[ -f "$ROOT/$p" ]] && ai_git "$ROOT" add -f -- "$p"; done
+  for p in .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md .loomy/docs/HANDOFF.md; do [[ -f "$ROOT/$p" ]] && ai_git "$ROOT" add -f -- "$p"; done
   if ! ai_git "$ROOT" diff --cached --quiet 2>/dev/null; then
     msg="loomy: AI files $(date '+%Y-%m-%d %H:%M')"
     ai_git "$ROOT" commit -q -m "$msg"

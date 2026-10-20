@@ -279,6 +279,14 @@ EN
     t '- Dead ends: before proposing an approach, check `.loomy/memory/STATE.md` and `.loomy/memory/DEAD-ENDS.md` if present. Append evidence-backed rejections under `## Dead ends`, oldest first, one physical line per entry: `- <approach> — <why it died> (<evidence path or ref>) · do not retry without a new reason`. Never retry one without stating the new reason. Aim for 40 STATE lines; `loomy memory` archives older entries on overflow but always keeps the latest three, even over budget. Preserve this shared ledger in every handoff.'; echo
   )
   _lp_review_tried_rule "$1"
+  if [[ "$(_ai_brief_get "$1/.loomy/brief.md" type 2>/dev/null)" == data ]]; then
+    (
+      LOOMY_UI_LANG="$(_lp_doc_lang "$1")"; export LOOMY_UI_LANG
+      # shellcheck source=i18n.sh
+      source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
+      t "- Data results: every figure comes from executed, versioned code (script + saved output); cite the producing script and data snapshot. For temporal data, validate on a held-out period split by time, never a random split. The validator must not be the proposer. Agents see schemas, statistics and anonymised samples, never the full data set. See \`.loomy/skills/project-bootstrap/references/data.md\`."; echo
+    )
+  fi
   echo "<!-- loomy:orchestration:end -->"
 }
 

@@ -96,6 +96,8 @@ Si `.loomy/brief.md` existe, lis-le en premier. Il contient les réponses de l'u
 
 Traite-le comme un entretien déjà mené : confirme-le en une ligne, ne repose pas ces questions, et signale tout ce que le dépôt contredit.
 
+Uniquement pour `type: data`, lis `.loomy/skills/project-bootstrap/references/data.md` avant d'explorer les sources (aussi disponible dans le skill `project-bootstrap` installé). Les agents consultent les schémas, statistiques et échantillons anonymisés, jamais le jeu de données complet.
+
 Inspecte le dépôt avant de poser des questions.
 
 Établis uniquement ce qui se déduit facilement des fichiers existants :
@@ -165,6 +167,11 @@ Avant toute modification du projet, présente une proposition concise contenant 
 - Stratégie de déploiement ou de distribution, si pertinent
 
 Pour un projet **Données et analyse** (`type: data`), structure la proposition en pipeline : ingestion → stockage brut (jamais modifié) → transformations versionnées → jeux de données analytiques → livrables (rapports, tableaux de bord, outil, API, modèles, comme dans le brief). Dimensionne la stack selon le volume (`detail2`) : Python avec Polars pour des mégaoctets, DuckDB ou Polars sur Parquet pour des gigaoctets, un entrepôt ou un moteur distribué pour des téraoctets. Prévois des tests de qualité des données et la traçabilité de chaque chiffre publié. Les agents ne reçoivent jamais le jeu de données complet : schémas, statistiques et échantillons anonymisés seulement ; avec des données sensibles, ce qui doit voir des valeurs réelles passe par un modèle local, ou par aucun modèle.
+
+Pour ce type, inclus ces règles dans la proposition et les instructions permanentes du projet :
+
+- Chaque chiffre provient de code exécuté et versionné (requête/script + sortie conservée), jamais de la mémoire d'un modèle ; les rapports citent le script producteur et l'instantané des données.
+- Des données temporelles exigent une période réservée à la validation, séparée dans le temps, jamais un découpage aléatoire qui laisse fuiter le futur. Un autre agent valide le résultat proposé via la revue croisée routée ; en SOLO, utilise un rôle/modèle différent de la même famille.
 
 ### Profil d'exécution
 Classe en interne et indique :

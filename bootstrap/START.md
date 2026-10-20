@@ -96,6 +96,8 @@ If `.loomy/brief.md` exists, read it first. It holds the user's answers to the t
 
 Treat it as an interview already held: confirm it in one line, don't ask these questions again, and flag anything the repository contradicts.
 
+Only for `type: data`, read `.loomy/skills/project-bootstrap/references/data.md` before exploring the sources (also available in the installed `project-bootstrap` skill). Agents inspect schemas, statistics and anonymised samples, never the full data set.
+
 Inspect the repository before asking questions.
 
 Only establish what is easy to infer from the existing files:
@@ -165,6 +167,11 @@ Before any change to the project, present a concise proposal containing:
 - Deployment or distribution strategy, if relevant
 
 For a **Data & analysis** project (`type: data`), structure the proposal as a pipeline: ingestion → raw storage (never modified) → versioned transformations → analytical data sets → deliverables (reports, dashboards, tool, API, models, as in the brief). Size the stack on the volume (`detail2`): Python with Polars for megabytes, DuckDB or Polars on Parquet for gigabytes, a warehouse or a distributed engine for terabytes. Plan data-quality tests and the traceability of every published figure. Agents never receive the full data set: schemas, statistics and anonymised samples only; with sensitive data, whatever must see real values runs on a local model or not through a model at all.
+
+For this type, include these rules in the proposal and the permanent project instructions:
+
+- Every figure comes from executed, versioned code (query/script + saved output), never a model's memory; reports cite the producing script and data snapshot.
+- Temporal data requires a held-out period split by time, never a random split that leaks the future. A different agent validates the proposed result through the routed cross review; in SOLO, use a different role/model of the same family.
 
 ### Execution profile
 Classify internally and state:

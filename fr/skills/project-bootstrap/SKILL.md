@@ -31,6 +31,7 @@ Quand Codex et Claude Code sont tous deux utilisés, préfère un fichier de wor
 Lis `references/orchestration.md` pour décider de la complexité, du risque, de la délégation, de la relecture, de la collaboration Codex/Claude, de l'orchestration entre modèles et du budget de tokens.
 Lis `references/documentation.md` pour générer les fichiers permanents du projet.
 Lis `references/model-routing.md` pour choisir les modèles, l'effort de raisonnement ou les niveaux des sous-agents.
+Ne lis `references/data.md` que pour un projet Données et analyse (`type: data` dans le brief) ; reporte ses règles de preuve, de validation temporelle et de confidentialité dans la proposition et les instructions permanentes du projet.
 Ne lis `references/security.md` que pour une architecture sensible en sécurité ou une demande explicite d'audit.
 
 ## Structure d'un projet hybride

@@ -673,9 +673,6 @@ compute_recos() {
   if (( n >= 4 )) && [[ "$BUDGET" == "econome" ]]; then
     tv r "Many key characteristics for the Thrifty profile: Balanced will need fewer retries on this complexity."; RECOS+=("$r")
   fi
-  if [[ "$TYPE" == "data" ]]; then
-    tv r "Data & analysis: figures from executed, versioned code (script + output, cited snapshot); temporal validation on a held-out period split by time, with independent review."; RECOS+=("$r")
-  fi
   if [[ ",$TRAITS," == *",bigdata,"* || "$TYPE" == "data" ]]; then
     case "$EXPLORE_LINE" in
       *sonnet*|*opus*|*sol*|*astra*) ;;
@@ -726,12 +723,16 @@ show_recap() {
   ui_rail ""
   # What the answers turn into for the agents, then what is worth adjusting.
   local c first=1
-  if [[ -n "$TRAITS" ]]; then
+  if [[ -n "$TRAITS" || "$TYPE" == data ]]; then
     ui_rail_group "$(t "What Loomy will configure")"
     for c in ${TRAITS//,/ }; do
       trait_check "$c"; [[ -n "$TC" ]] || continue
       if (( first )); then ui_rail_kvw "$(t "Checks")" "$TC"; first=0; else ui_rail_kvw "" "$TC"; fi
     done
+    if [[ "$TYPE" == data ]]; then
+      tv c "Data & analysis: figures from executed, versioned code (script + output, cited snapshot); temporal validation on a held-out period split by time, with independent review."
+      if (( first )); then ui_rail_kvw "$(t "Checks")" "$c"; else ui_rail_kvw "" "$c"; fi
+    fi
     ui_rail ""
   fi
   # Official skills these answers bring (from the catalog; installed during the setup with the "auto" policy).

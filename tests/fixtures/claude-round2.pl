@@ -78,6 +78,8 @@ if ($finding eq 'R1') {
     launch('killed',511); notification('killed','killed',512);
     die 'killed notification not interrupted' unless poll()->{sessions}{lead}{calls}{killed}{state} eq 'interrupted';
     # A long resumed head shares its filename identity; real time must not close it mid-replay.
+    # Keep this real-clock replay recent, with its +510s completion already in the past.
+    $clock=time-600;
     my $replay="$work/R3-replay"; make_path("$replay/.loomy/logs");
     my $file="$projects/".Loomy::ClaudeNative::slug($replay).'/lead.jsonl';
     rows($file,{sessionId=>'lead',cwd=>$replay,type=>'assistant',timestamp=>ts(1),message=>{stop_reason=>undef,

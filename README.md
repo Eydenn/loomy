@@ -521,6 +521,8 @@ SUMMARY · FINDINGS (path:line, evidence) · FILES · CHECKS · RISKS · NEXT
 
 The bridges add this contract to their prompt, generated Claude subagents carry it, and the lead agent is told to act on `STATUS`. The log records the outcome: `loomy status` and `loomy log` mark ◐ partial and ■ blocked results, `loomy stats` shows how many answers followed the format. Projects set up before this option keep free text; switch any project with `loomy brief` (questionnaire again) or for all of them with `loomy config set delegation_format structured` (`auto`: each project's choice).
 
+When a reviewer or security role finds no defect, it adds a short `TRIED` section (what it attacked); an empty `FINDINGS` without `TRIED` counts as an incomplete review. For Data & analysis projects, a managed rule in `AGENTS.md` / `CLAUDE.md` requires figures from executed, versioned code, time-split held-out validation for temporal data, and a validator that is not the proposer.
+
 This is a text protocol that works with Claude and Codex as they are. Exchanging internal model states ("latent communication") is still research: it needs access to the models' internals, which the Claude and Codex products don't offer.
 
 
@@ -535,6 +537,7 @@ Each agent starts from zero by design; the thread of the work is kept in `.loomy
 
 - **Given back at the start of a session**, Claude Code or Codex, and after a compaction: the work state, then the results the lead agent hasn't taken into it yet. When the previous session ran in the other tool, the lead agent is told to pick up from there.
 - **Built for cost.** Nothing is added at each message, nor when a session is resumed (the conversation already holds it). The block is capped (40 lines of state, 4 results in one line each) and cached by the tool afterwards: a few hundred tokens per new session, instead of tens of thousands to explore again. `STATE.md` is written in English and in telegraphic style, whatever the documentation language: the fewest tokens for every model. To hand findings to a role, the lead agent points it to the file instead of copying it.
+- **Dead ends ledger.** `STATE.md` has a shared "Dead ends" section: one line per rejected approach, never retried without a new reason. It is given back at session start in Claude Code and Codex and carried across handovers. Older entries are archived to `.loomy/memory/DEAD-ENDS.md`; the latest three always stay. Reading never creates `STATE.md`.
 - **Given back as data, not instructions**: the lead agent checks a result before acting on it.
 - `loomy memory` shows the work state and the latest results, `loomy memory show [N]` the full text of one; `loomy config set memory off` stops giving it back.
 

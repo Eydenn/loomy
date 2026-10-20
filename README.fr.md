@@ -521,6 +521,8 @@ SUMMARY · FINDINGS (chemin:ligne, preuve) · FILES · CHECKS · RISKS · NEXT
 
 Les bridges ajoutent ce contrat à leur prompt, les sous-agents Claude générés le portent, et l'orchestrateur a pour consigne d'agir selon `STATUS`. Le journal enregistre le résultat : `loomy status` et `loomy log` marquent ◐ les résultats partiels et ■ les résultats bloqués, `loomy stats` indique combien de réponses ont respecté le format. Les projets créés avant cette option restent en texte libre ; change un projet avec `loomy brief` (questionnaire refait) ou tous avec `loomy config set delegation_format structured` (`auto` : le choix de chaque projet).
 
+Quand un rôle de revue ou de sécurité ne trouve aucun défaut, il ajoute une courte section `TRIED` (ce qu'il a attaqué) ; un `FINDINGS` vide sans `TRIED` compte comme une revue incomplète. Pour les projets de type « Données et analyse », une règle gérée dans `AGENTS.md` / `CLAUDE.md` impose des chiffres issus de code exécuté et versionné, une validation sur une période réservée découpée dans le temps pour les données temporelles, et un validateur distinct de l'auteur de la proposition.
+
 C'est un protocole texte, qui fonctionne avec Claude et Codex tels quels. L'échange des états internes des modèles (« communication latente ») relève encore de la recherche : il faut accéder à l'intérieur des modèles, ce que les produits Claude et Codex ne permettent pas.
 
 
@@ -535,6 +537,7 @@ Chaque agent part de zéro, volontairement ; le fil du travail est gardé dans `
 
 - **Redonnée au début d'une session**, Claude Code comme Codex, et après un compactage : l'état du travail, puis les résultats que l'orchestrateur n'y a pas encore repris. Quand la session précédente s'est tenue dans l'autre outil, l'orchestrateur est prévenu de reprendre à partir de là.
 - **Pensée pour le coût.** Rien n'est ajouté à chaque message, ni à la reprise d'une session (la conversation la contient déjà). Le bloc est plafonné (40 lignes d'état, 4 résultats d'une ligne chacun) puis mis en cache par l'outil : quelques centaines de tokens par nouvelle session, au lieu de dizaines de milliers pour tout réexplorer. `STATE.md` est écrit en anglais et en style télégraphique, quelle que soit la langue de la documentation : le moins de tokens pour tous les modèles. Pour transmettre des constats à un rôle, l'orchestrateur lui indique le fichier au lieu de le recopier.
+- **Registre des impasses.** `STATE.md` contient une section « Dead ends » partagée : une ligne par approche écartée, à ne jamais retenter sans nouvelle raison. Elle est redonnée au début d'une session dans Claude Code comme dans Codex et suit les passations. Les entrées plus anciennes sont archivées dans `.loomy/memory/DEAD-ENDS.md` ; les trois dernières restent toujours. Une simple lecture ne crée jamais `STATE.md`.
 - **Redonnée comme des données, pas des instructions** : l'orchestrateur vérifie un résultat avant d'agir dessus.
 - `loomy memory` montre l'état du travail et les derniers résultats, `loomy memory show [N]` le texte complet de l'un d'eux ; `loomy config set memory off` arrête de la redonner.
 

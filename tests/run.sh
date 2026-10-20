@@ -1425,6 +1425,7 @@ native_lifecycle_tests() {
   has "native: turn rows have done state" '\|worker\|done\|'
   run "native: observed counts follow Luna model tier for both turns" bash -c '
     source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/loomy-tree.sh" --library
+    ROOT="${2%/.loomy/logs/events.jsonl}"
     loomy_live_init; loomy_live_poll "$2"; loomy_tree_routing; test "$n_tot:$T_TOP:$T_MID:$T_FAST:$ROUTE_CLAUDE:$ROUTE_CODEX" = 2:0:0:2:0:1
   ' _ "$REPO" "$np/.loomy/logs/events.jsonl"
   # Independent synthetic legacy journal covers implicit close times and owner shutdown.
@@ -1462,7 +1463,7 @@ native_lifecycle_tests() {
   cp "$np/.loomy/logs/events.jsonl" "$np/before-repeat"
   run "native: closed replay does not duplicate terminal or close events" bash -c 'perl "$1/scripts/lib/codex-native.pl" "$2" "$3/sessions" && cmp "$2/before-repeat" "$2/.loomy/logs/events.jsonl"' _ "$REPO" "$np" "$nc"
   # A real Claude delegation in the same lead session adds its family, without old sessions leaking.
-  printf '{"ts":"2026-10-13T01:00:00Z","type":"delegation","session":"owner","id":"mixed","bridge":"claude","family":"claude","tool":"claude","role":"reviewer","model":"claude-sonnet-5-5","status":"ok","outcome":"done","duration_s":1}\n' >>"$np/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"delegation","session":"owner","id":"mixed","bridge":"claude","family":"claude","tool":"claude","role":"reviewer","model":"claude-sonnet-5-5","status":"ok","outcome":"done","duration_s":1}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$np/.loomy/logs/events.jsonl"
   run "native: mixed routing shows both model families" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
   has "native: both routing families" 'codex: 6-luna.*claude: sonnet-5-5|claude: sonnet-5-5.*codex: 6-luna'
 }

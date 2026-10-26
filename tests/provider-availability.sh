@@ -29,6 +29,17 @@ run() { local d="$1"; shift; if "$@" >"$OUT" 2>&1; then ok "$d"; else ko "$d (co
 fails() { local d="$1" want="$2"; shift 2; "$@" >"$OUT" 2>&1; local got=$?; if [[ "$got" == "$want" ]]; then ok "$d"; else ko "$d (code $got, expected $want)"; fi; }
 has() { if grep -qE -- "$2" "$OUT"; then ok "$1"; else ko "$1"; fi; }
 file_has() { if grep -qE -- "$3" "$2" 2>/dev/null; then ok "$1"; else ko "$1"; fi; }
+event_has() {
+  local title="$1" path="$2" predicate="$3"
+  if perl -MJSON::PP -e '
+    my $predicate=shift; my $found=0;
+    while (<>) {
+      my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH";
+      local $_=$e; my $match=eval $predicate; die $@ if $@; $found=1 if $match;
+    }
+    exit($found ? 0 : 1);
+  ' "$predicate" "$path"; then ok "$title"; else ko "$title"; fi
+}
 no_ko() { ! grep -q '=ko' "$XDG_CONFIG_HOME/loomy/models.state" 2>/dev/null; }
 reset_case() {
   rm -f "$XDG_CONFIG_HOME"/loomy/* "$WORK/project/.loomy/logs/events.jsonl" "$WORK/project/.loomy/logs/content-policy.conf" "$CODEX_HOME/sessions/quota.jsonl"
@@ -64,7 +75,7 @@ run 'credits never writes ko' no_ko
 file_has 'one Codex call only' "$STUB_LOG" '^codex.*-m.gpt-6.1-sol'
 file_has 'Claude gets the routed model' "$STUB_LOG" '--model.claude-sonnet-5-5'
 file_has 'handover has a terminal event' "$journal" '"status":"handed_over"'
-file_has 'successful other provider has failover metadata' "$journal" '"status":"ok".*"failover_from":"codex"'
+event_has 'successful other provider has failover metadata' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "ok" && ($_->{failover_from}//"") eq "codex"'
 run 'same-second handover has distinct lifecycle IDs' bash -c '[[ $(sed -n "s/.*\"id\":\"\([^\"]*\).*/\1/p" "$1" | sort -u | wc -l | tr -d " ") == 2 ]]' _ "$journal"
 
 reset_case
@@ -72,7 +83,7 @@ export STUB_CODEX_CREDITS_DEPLETED=1 STUB_CLAUDE_ERROR='rate_limit_error: usage 
 fails 'two real refusals pause after one handover' 75 bridge codex
 has 'pause is explicit' 'PAUSED: provider claude'
 run 'neither provider poisons model cache' no_ko
-file_has 'pause carries outcome and expected reset' "$journal" '"status":"paused","outcome":"waiting_for_reset","resume_at":1791885900'
+event_has 'pause carries outcome and expected reset' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "paused" && ($_->{outcome}//"") eq "waiting_for_reset" && ($_->{resume_at}//0)==1791885900'
 run 'exactly two calls, no same-provider retry' bash -c '[[ $(grep -Ec "^(codex.*exec|claude.*-p)" "$STUB_LOG") == 2 ]]'
 
 reset_case
@@ -287,7 +298,8 @@ git init -q "$WORK/project"
 printf '.loomy/\n' >"$WORK/project/.gitignore"
 export STUB_CODEX_ERROR='rate limit retry_after: 60' STUB_WRITE=1
 run 'partial writer refusal hands over' bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write 'bounded implementation'
-file_has 'handover records partial changed files' "$journal" '"status":"handed_over".*"files_changed":1,"changed_files":\["partial.txt"\]'
+event_has 'handover records partial changed count without paths' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "handed_over" && ($_->{files_changed}//0)==1 && !exists($_->{changed_files})'
+has 'handover shows partial paths before leaving the attempt, capture off' '^- "partial.txt"$'
 run 'handover display is distinct from failed' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$journal"
 has 'timeline names handover' 'handed over'
 run 'stats counts handover separately' bash "$REPO/scripts/loomy-stats.sh" --root "$WORK/project"
@@ -298,7 +310,17 @@ printf 'five_hour_pct=100\nfive_hour_reset=%s\n' $(( STUB_NOW+3600 )) >"$XDG_CON
 export STUB_CODEX_ERROR='rate limit retry_after: 60' STUB_WRITE=1
 allow_results
 fails 'partial writer refusal pauses when other is blocked' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write --effort high --why 'writer pause' 'bounded implementation'
-file_has 'pause records partial changed files' "$journal" '"status":"paused".*"files_changed":1,"changed_files":\["partial.txt"\]'
+event_has 'pause records partial changed count without paths' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "paused" && ($_->{files_changed}//0)==1 && !exists($_->{changed_files})'
+has 'pause shows partial paths before leaving the attempt, capture on' '^- "partial.txt"$'
+run 'pause retains partial paths in the authorized private result' python3 - "$WORK/project" <<'PYPARTIAL'
+import json, pathlib, sys
+memory=pathlib.Path(sys.argv[1])/'.loomy/memory'
+receipts=[json.loads(p.read_text()) for p in (memory/'receipts-v1').glob('*.json')]
+paused=[r for r in receipts if r['status']=='paused' and r['files_changed']==1 and 'result_ref' in r]
+assert paused
+assert any('partial.txt' in json.loads((memory/'private-results-v1'/f'{r["id"]}.json').read_text())['result'] for r in paused)
+assert all('partial.txt' not in json.dumps(r) for r in receipts)
+PYPARTIAL
 run 'pause memory contains exact structured role/options' resume_matches developer codex gpt-6.1-sol high workspace-write 'writer pause' 'bounded implementation'
 run 'display formatter shows paused without failure' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$journal"
 has 'display formatter includes pause deadline' 'paused.*until [0-9]{2}:[0-9]{2}'
@@ -326,7 +348,8 @@ printf 'existing partial work\n' >"$WORK/project/partial.txt"
 printf 'five_hour_pct=100\nfive_hour_reset=%s\n' $(( STUB_NOW+3600 )) >"$XDG_CONFIG_HOME/loomy/claude-limits"
 export STUB_CODEX_ERROR='rate limit' STUB_WRITE=1
 fails 'writer refusal detects a write to an already dirty file' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write 'bounded implementation'
-file_has 'already dirty file is retained in paused event' "$journal" '"status":"paused".*"files_changed":1,"changed_files":\["partial.txt"\]'
+event_has 'already dirty file is counted in paused event' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "paused" && ($_->{files_changed}//0)==1 && !exists($_->{changed_files})'
+has 'already dirty partial paths remain visible, capture off' '^- "partial.txt"$'
 reset_case
 printf '{"rate_limits":{"primary":{"window_minutes":300,"used_percent":100,"resets_at":%s}}}\n' $(( STUB_NOW+3600 )) >"$CODEX_HOME/sessions/quota.jsonl"
 run 'ordinary doctor can read a quota without updating its cache' bash "$REPO/scripts/loomy-doctor.sh" --root "$WORK/project" --compact

@@ -8,6 +8,27 @@ source "$(dirname "${BASH_SOURCE[0]}")/content-policy.sh"
 
 loomy_memory_dir() { printf '%s/.loomy/memory' "$1"; }
 
+# Group launcher/hook starts for the current tool within five minutes. Journal
+# projections and legacy rows have different key orders; only JSON values count.
+loomy_memory_previous_tool() {
+  [[ -s "$1/.loomy/logs/events.jsonl" ]] || return 0
+  perl -e '
+    require shift @ARGV;
+    my @starts;
+    while (<>) {
+      my $e=eval {JSON::PP::decode_json($_)};
+      next unless ref($e) eq "HASH" && ($e->{type}//"") eq "session" && ($e->{event}//"") eq "start";
+      next unless ($e->{tool}//"") =~ /\A(?:claude|codex)\z/;
+      my $at=Loomy::LiveState::epoch($e->{ts}); next unless $at;
+      push @starts, [$at,$e->{tool}];
+    }
+    exit unless @starts>1;
+    my $last=pop @starts;
+    pop @starts while @starts && $starts[-1][1] eq $last->[1] && $last->[0]-$starts[-1][0]<=300;
+    print $starts[-1][1] if @starts;
+  ' "$(dirname "${BASH_SOURCE[0]}")/live-state.pl" "$1/.loomy/logs/events.jsonl" 2>/dev/null || true
+}
+
 # loomy_memory_state_init <root>: create STATE.md, or append its missing Dead ends section without rewriting it.
 loomy_memory_state_init() {
   local d f

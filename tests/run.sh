@@ -4016,7 +4016,13 @@ qenv env LOOMY_CODEX_BIN="$WORK/relay-stubs/codex" bash -c '
 ' _ "$REPO" "$LR"
 [[ "$(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl" 2>/dev/null || true)" == 1 ]] \
   && ok "lead relay: repeated apply journals one handover" || ko "lead relay: repeated apply journal count was $(grep -c '"type":"lead_failover"' "$LR/.loomy/logs/events.jsonl" 2>/dev/null || true)"
-[[ -f "$LR/.loomy/failover" && "$(wc -l <"$LR/.loomy/failover" | tr -d ' ')" == 5 && ! -e "$LR/.loomy/failover.lock" ]] \
+[[ ! -e "$LR/.loomy/failover.lock" ]] && perl -e '
+  open my $f,"<",shift or die; my %state;
+  while (<$f>) {chomp; my ($key,$value)=split /=/,$_,2; die "duplicate relay key" if exists $state{$key}; $state{$key}=$value}
+  die "relay identity lost" unless $state{master} eq "claude" && $state{acting} eq "codex";
+  die "relay start lost" unless $state{since}=~/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
+  die "relay quota lost" unless length($state{reason}) && $state{resume_at}=~/^\d+$/ && $state{quota_window} eq "5h" && $state{used_percent}==97;
+' "$LR/.loomy/failover" \
   && ok "lead relay: repeated apply keeps one state and releases the lock" || ko "lead relay: repeated apply state or lock is wrong"
 got="$(lead_relay_decide)"
 [[ "$got" == "codex continue" && -f "$LR/.loomy/failover" ]] \

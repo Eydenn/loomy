@@ -556,6 +556,31 @@ p=Path(sys.argv[1])/'.loomy/memory'
 assert len(list((p/'receipts-v1').glob('[!.]*.json')))==4
 assert len(list((p/'private-results-v1').glob('[!.]*.json')))==4
 PYLOCK
+# Session continuity must read both old and projected journals, including hook
+# duplicates and malformed unrelated rows, without treating an old start as new.
+project session-order
+check 'session continuity uses JSON values for legacy and projected starts' python3 - "$REPO" "$P" <<'PYSESSION'
+import json, pathlib, subprocess, sys
+repo, root = map(pathlib.Path, sys.argv[1:])
+journal = root/'.loomy/logs/events.jsonl'
+def start(tool, ts):
+    return dict(ts=ts, type='session', event='start', tool=tool, session=tool)
+claude = start('claude', '2026-10-01T08:00:00Z')
+codex = start('codex', '2026-10-02T09:00:00.125Z')
+hook = start('codex', '2026-10-02T09:00:01Z')
+later = start('codex', '2026-10-03T09:00:00Z')
+for ordered in (False, True):
+    for rows, expected in (([], ''), ([hook], ''), ([claude, codex, hook], 'claude'),
+                           ([claude, codex, later], 'codex'),
+                           ([codex, claude], 'codex')):
+        journal.write_text(''.join(json.dumps(row, sort_keys=ordered)+'\n' for row in rows)
+                           +'invalid json\n[]\n'
+                           +json.dumps(dict(type='session', event='start', tool='codex', ts='invalid'))+'\n')
+        output = subprocess.check_output(['bash', '-c',
+            'source "$1/scripts/lib/memory.sh"; loomy_memory_previous_tool "$2"',
+            '_', str(repo), str(root)], text=True)
+        assert output == expected, (ordered, rows, output, expected)
+PYSESSION
 printf '\nContent memory: %s passed, %s failed\n' "$PASS" "$FAIL"
 test_guard_gate || FAIL=$((FAIL+1))
 ((FAIL==0))

@@ -319,7 +319,7 @@ id=d179297280012345; DELEG_ID="$id"; role=reviewer; ROLE="$role"; parent=d179297
 model=gpt-6-luna; MODEL="$model"; START_MODEL="$model"; effort=max; EFFORT=max
 AI_PROFILE=equilibre; SANDBOX=read-only; task=PRIVATE_DESCRIPTION; TASK=PRIVATE_TASK
 bg=true; requested=true; req=true; offroute=model; tool=codex; TOOL=codex; src=startup
-pid=12345; child=12345; scope=subagent; agent=reviewer; signal=TERM
+pid=12345; child=12345; scope=subagent; agent=reviewer; signal=TERM; signal_json=',"signal":15'
 duration=12; DURATION=12; T_IN=10; T_CACHED=2; T_CWRITE=1; T_OUT=4
 COST=0.01; COST_SRC=reported; CHANGED=2; CHANGED_FILES_JSON='["PRIVATE_PATH"]'
 family=codex; resume=1792972860; RESULT=ok; result=ok; started=1792972788
@@ -354,7 +354,7 @@ for path in sorted((repo/'scripts').rglob('*.sh')):
                     chunks += [f'PH_TYPE={phase}; PHASE_ARG={value}; src={source}; fromlock="{fromlock}"\n{extra}\n{expression}\n']
 assert collections.Counter(path for path,line in templates)=={
     'scripts/lib/failover.sh':2,'scripts/lib/journal.sh':3,'scripts/lib/launch.sh':5,
-    'scripts/lib/skills.sh':2,'scripts/lib/usage.sh':2,'scripts/loomy-context.sh':2,
+    'scripts/lib/skills.sh':2,'scripts/lib/usage.sh':3,'scripts/loomy-context.sh':2,
     'scripts/loomy-delegate-claude.sh':2,'scripts/loomy-delegate-codex.sh':2,
     'scripts/loomy-start.sh':2,'scripts/loomy-status.sh':1}, 'shell constructor census drift (addition/removal)'
 chunks.append('loomy_cli_bridge_start "$ROOT" "$id" codex reviewer codex "$model" max read-only PRIVATE_TASK 1 model PRIVATE_WHY')
@@ -417,6 +417,9 @@ for agent_type in ('developer','Explore','custom private agent type'):
     assert len(ends)==1 and ends[0]['model']=='claude-haiku-4-5-20251001' and ends[0]['outcome']=='partial' and ends[0]['cost_in']=='usage' and ends[0]['cost_usd']==0
     starts = [e for e in events if e['type']=='delegation_start']
     assert len(starts)==1 and starts[0]['label_ref']==ends[0]['label_ref']
+    assert ends[0]['id']==starts[0]['id'] and ends[0]['agent_id']=='agent1' and ends[0]['duration_s']>=0
+    assert all(ends[0][key]==0 for key in ('tokens_in','tokens_cached','tokens_out'))
+    assert usage[0]['agent']==agent_type if re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}',agent_type) else re.fullmatch(r'sha256:[a-f0-9]{64}',usage[0]['agent'])
     assert starts[0]['agent_type']==ends[0]['agent_type']==(agent_type if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,39}',agent_type) else 'unknown')
     assert all(e['policy_generation']==3 for e in events)
     labels = [json.loads(x) for x in (root/'.loomy/logs/display-context-v1.jsonl').read_text().splitlines()]
@@ -705,6 +708,10 @@ tr.write_text(json.dumps({'type':'assistant','message':{'id':'msg_1','model':'cl
 run(['/bin/bash','-c',price_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(advisor_root),TRANSCRIPT=str(tr)))
 a=[e for e in rows(advisor_root) if e['type']=='advisor']
 assert len(a)==1 and (a[0]['model'],a[0]['calls'],a[0]['tokens_in'])==('claude-opus-5-5',1,35648)
+u=[e for e in rows(advisor_root) if e['type']=='usage']
+assert len(u)==1 and u[0]['scope']=='lead' and u[0]['tool']=='claude' and u[0]['agent'] is None
+assert u[0]['model']=='claude-sonnet-5-5' and u[0]['tokens_in']==102 and u[0]['tokens_cached']==1000 and u[0]['tokens_out']==50
+assert a[0]['scope']=='lead' and a[0]['tool']=='claude' and a[0]['tokens_out']==476 and 'agent' not in a[0]
 print('PASS Haiku long/base numeric costs [0.5, 0.505] and real advisor model/calls/tokens retained')
 
 # Real bridge traps, without relying on removed task excerpts to locate a start.

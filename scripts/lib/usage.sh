@@ -347,7 +347,7 @@ ai_delegate_memory_record() {
 # Called after delegation_start: one cross-provider handover, or a final paused event.
 # Uses the bridge's task/options and journal fields so signal cleanup cannot report an interruption afterwards.
 ai_delegate_provider_guard() {
-  local family="$1" reason="${2:-}" other="codex" can_switch=1 resume other_reset id duration model
+  local family="$1" reason="${2:-}" other="codex" can_switch=1 resume other_reset id duration model partial_files=""
   [[ "$family" != "codex" ]] || other=claude
   if [[ -z "$reason" ]]; then
     if ai_provider_saturated "$family"; then reason=saturated
@@ -361,11 +361,24 @@ ai_delegate_provider_guard() {
   ai_model_usable "$model" "$other" || can_switch=0
   duration=$(( $(date +%s) - STARTED ))
   ai_delegate_changed_files
+  # Paths stay out of the structural journal. Show partial writes before leaving
+  # this attempt, and retain the same list only in an authorized private result.
+  if (( CHANGED > 0 )); then
+    partial_files="$(printf '%s' "$CHANGED_FILES_JSON" | perl -MJSON::PP -0777 -ne '
+      print "FILES:\n"; print "- ",encode_json($_),"\n" for @{decode_json($_)};
+    ')"
+    if [[ "$family" == codex ]]; then
+      t "loomy-delegate-codex: the working tree changed — review with 'git diff' before accepting:" >&2
+    else
+      t "loomy-delegate-claude: the working tree changed — review with 'git diff' before accepting:" >&2
+    fi
+    printf '\n%s\n' "$partial_files" >&2
+  fi
   if (( can_switch )); then
     t "Provider %s unavailable (%s): %s handed to %s once." "$family" "$reason" "$ROLE" "$other" >&2; echo >&2
     loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"handed_over\",\"outcome\":\"handed_over\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
-    ai_delegate_memory_record handed_over
+    ai_delegate_memory_record handed_over "$partial_files"
     local fwd=()
     [[ -z "$O_EFFORT" ]] || fwd+=(--effort "$O_EFFORT")
     [[ "$SANDBOX" != "workspace-write" ]] || fwd+=(--write)
@@ -387,7 +400,7 @@ ai_delegate_provider_guard() {
   id="$DELEG_ID"
   loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"paused\",\"outcome\":\"waiting_for_reset\",\"resume_at\":$resume,\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
   FINAL_WRITTEN=1
-  ai_delegate_memory_record paused "" "$resume"
+  ai_delegate_memory_record paused "$partial_files" "$resume"
   t "PAUSED: provider %s unavailable (%s); no provider has room. Expected reset/recheck: %s (epoch %s)." "$family" "$reason" "$(_ai_reset_label "$resume")" "$resume" >&2; echo >&2
   exit 75
 }

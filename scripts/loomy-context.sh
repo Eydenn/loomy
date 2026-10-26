@@ -263,18 +263,7 @@ fi
 # Previous session in the other tool (start hook only): the start events of the same session (the launcher and the
 # hook both record one) are grouped when they are less than 5 minutes apart.
 if [[ "$HOOK" == "start" && -s "$J" && "${src:-startup}" == "startup" ]]; then
-  ptool="$(grep '"type":"session","event":"start"' "$J" 2>/dev/null | awk '
-    function ep(ts,   y, m, d) { y = substr(ts, 1, 4) + 0; m = substr(ts, 6, 2) + 0; d = substr(ts, 9, 2) + 0
-      if (m <= 2) { y--; m += 12 }
-      return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d - 719469) * 86400 + substr(ts, 12, 2) * 3600 + substr(ts, 15, 2) * 60 + substr(ts, 18, 2) }
-    { ts = ""; tool = ""
-      if (match($0, /"ts":"[^"]*"/)) ts = substr($0, RSTART + 6, RLENGTH - 7)
-      if (match($0, /"tool":"[^"]*"/)) tool = substr($0, RSTART + 8, RLENGTH - 9)
-      n++; E[n] = ep(ts); T[n] = tool }
-    END { if (n < 2) exit
-      i = n - 1
-      while (i >= 1 && T[i] == T[n] && E[n] - E[i] <= 300) i--
-      if (i >= 1) print T[i] }')"
+  ptool="$(loomy_memory_previous_tool "$ROOT")"
   if [[ -n "$ptool" && "$ptool" != "$TOOL" ]]; then
     t "- The previous session ran in %s: pick up the work from the shared memory below (work state and latest results), not from scratch." "$( [[ "$ptool" == codex ]] && echo Codex || echo "Claude Code")"; echo
   fi

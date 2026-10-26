@@ -9,7 +9,7 @@ use Time::HiRes ();
 use IO::Handle;
 my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
 require "$lib/codex-native.pl";
-my (%cache,%inventory,%watch,%diagnosed,%retry);
+my (%cache,%inventory,%watch,%diagnosed,%retry,%busy);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
 our $content_writer;
@@ -374,7 +374,8 @@ sub poll {
     my $root=abs_path($_[0])//$_[0]; my $idx="$root/.loomy/logs/claude-native.idx";
     return if ($retry{$idx}//0)>Time::HiRes::time();
     my $result=eval {poll_locked(@_)}; my $error=$@;
-    if (!defined $result) {$retry{$idx}=Time::HiRes::time()+5}
+    # A busy events.lock is transient (a hook or bridge append): the watch retries on its next tick.
+    if (!defined $result) {$retry{$idx}=Time::HiRes::time()+5 unless delete $busy{$idx}}
     else {delete $retry{$idx}}
     if ($error) {delete $cache{$idx}; die $error}
     return $result;
@@ -402,7 +403,7 @@ sub poll_locked {
             $dirty=1 if ($e->{task}//'') ne ''; $e->{task}='' if exists $e->{task}; $saved=$json->encode($e);
         }
     }
-    my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
+    $!=0; my $journal_lock=Loomy::LiveState::journal_lock($dir) or do {$busy{$idx}=1 if $!{EWOULDBLOCK} || $!{EAGAIN}; return};
     local $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
     Loomy::LiveState::recover_rotation($journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
@@ -444,8 +445,10 @@ sub poll_locked {
     my @paths=sort keys %{$s->{files}//{}}; my $rotation=$s->{rotation}//0;
     for my $slot (0..$#paths) {
         last if $budget<=0; my $path=$paths[($rotation+$slot)%@paths]; my $f=$s->{files}{$path};
-        # Cold one-shot polls also pay module/projection costs: leave CPU headroom below 80 ms.
-        my $cap=$f->{meta}{agent} ? 262144 : 1572864;
+        # Discovery also pays metadata and initial lifecycle projection costs.
+        # Keep that first backlog slice small; read_transcript still reserves its
+        # tail probe, and subsequent slices retain the normal catch-up throughput.
+        my $cap=$f->{meta}{agent} ? 262144 : $discovered ? 524288 : 1572864;
         my $limit=$budget<$cap ? $budget : $cap;
         my $used=read_transcript($s,$path,$f,$limit);
         $budget-=$used; $dirty=1 if $used;
@@ -459,14 +462,17 @@ sub poll_locked {
         # R1 compares projected signatures in RAM, keeping persisted sent values
         # and their format unchanged. Replay may supply either old JSON or a digest.
         my $signature=sub {Loomy::LiveState::content_signature($content_writer,$type,$_[0])};
-        my $event_signature=$signature->($encoded);
+        my $event_signature;
         my $prior=$replayed_signatures{$key}//$s->{sent}{$key};
-        if (defined($prior) && $signature->($prior) eq $event_signature) {
+        # Identical canonical bodies necessarily project identically. Most cold
+        # catch-up polls revisit unchanged calls; avoid decoding/projecting twice.
+        if (defined($prior) && ($prior eq $encoded || $signature->($prior) eq ($event_signature=$signature->($encoded)))) {
             # Reconstruct the original serialized-body representation only when
             # missing, just as a first emit would; never persist the journal digest.
             unless (exists $s->{sent}{$key}) {$s->{sent}{$key}=$encoded; $dirty=1}
             return;
         }
+        $event_signature//=$signature->($encoded);
         my %row=(%$body,($body->{turn_id} ? (agent_type=>$body->{role}) : ()),ts=>$ts,type=>$type,checkpoint_key=>$key,checkpoint_value=>$event_signature,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native');
         if ($body->{turn_id}) {
             my $ref=Loomy::LiveState::content_label($content_writer,'delegation',$body->{turn_id},$body->{session},'claude-description');

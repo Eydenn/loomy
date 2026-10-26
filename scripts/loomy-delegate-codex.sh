@@ -18,13 +18,12 @@ source "$SCRIPT_DIR/lib/usage.sh"
 source "$SCRIPT_DIR/lib/launch.sh"
 
 ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
-ai_delegate_opts codex "$@" || exit 2
-shift "$O_SHIFT"
-TASK="${1:-}"
+ai_delegate_bridge_opts codex "$@" || exit 2
 
 if [[ "$ROLE" == "-h" || "$ROLE" == "--help" || -z "$ROLE" || -z "$TASK" ]]; then
   t "Usage: %s <executor|developer|documenter|reviewer|explorer|debugger|architect|security> [options] \"task\"" "$0" >&2; echo >&2
   t "Options: --model <id>, --effort <low|medium|high|xhigh|max>, --write | --read-only (override the role's sandbox), --why \"reason\"; they win over the environment variables." >&2; echo >&2
+  t '--task-label "..." (explicit-lead)' >&2; echo >&2
   t "Possible overrides: DELEGATE_CODEX_MODEL, DELEGATE_CODEX_EFFORT, AI_ROUTE_PROFILE (econome|equilibre|qualite)" >&2; echo >&2
   exit 2
 fi
@@ -141,14 +140,20 @@ delegate_stop_child() {
   CHILD_PID=""
 }
 delegate_finish() {
-  local signal="$1" exit_code="$2" duration
+  local signal="$1" exit_code="$2" duration signal_json=""
+  case "$signal" in
+    INT) signal_json=',"signal":2' ;;
+    TERM) signal_json=',"signal":15' ;;
+    HUP) signal_json=',"signal":1' ;;
+  esac
   trap '' INT TERM HUP
   trap - EXIT
   delegate_stop_child
   if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
     duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
-    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"estimate\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\"$signal_json,\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"estimate\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
+    ai_delegate_memory_record interrupted
   fi
   rm -rf "$TMP"
   exit "$exit_code"
@@ -157,9 +162,10 @@ trap 'delegate_finish INT 130' INT
 trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
-ai_delegate_journal_start "$ROOT" "$DELEG_ID" codex "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
+ai_delegate_memory_start codex
 loomy_cli_check codex "$ROLE" "$MODEL" || exit $?
 run_codex() {
+  unset LOOMY_RESUME_DESCRIPTOR LOOMY_FAILOVER_FROM LOOMY_TASK_REF
   loomy_cli_bridge_exec codex "$ROLE" "$1" -- exec -m "$1" -c "model_reasoning_effort=$EFFORT" -s "$SANDBOX" -C "$ROOT" \
     --skip-git-repo-check --ephemeral --json -o "$TMP/last.txt" "$PROMPT" </dev/null >"$TMP/log.txt" 2>&1
 }
@@ -202,8 +208,8 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
 fi
 loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"codex\",\"role\":\"$ROLE\",\"family\":\"codex\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$T_IN,\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":${COST:-0},\"cost_source\":\"estimate\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 FINAL_WRITTEN=1
-# Shared memory: the task and the full result, for the next sessions and the other tool.
-loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$(cat "$TMP/last.txt" 2>/dev/null || true)"
+# Structural receipt and, when authorized, a separate private task/result.
+ai_delegate_memory_record "$RESULT" "$(cat "$TMP/last.txt" 2>/dev/null || true)"
 
 if [[ $STATUS -ne 0 ]]; then
   t "loomy-delegate-codex: codex exec failed (code %s). Last log lines:" "$STATUS" >&2; echo >&2

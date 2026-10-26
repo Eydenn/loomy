@@ -55,7 +55,8 @@ Don't use these calls for trivial tasks, routine confirmations or repeated back-
 
 Bridge options, before the task text: pick the role from the intent of the work; when the user names a model or effort, pass `--model <id> --effort <level> --why "user request"`, and `--write` when the role must produce files.
 
-- Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
+- Provider availability: exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model. If another pause occurs, use its new resume_at; never launch twice for the same pause.
+- Bridge labels: pass `--task-label "Short task title"` explicitly on each delegation. Saving requires the human-approved `explicit-lead` grant; never derive a label from the task body.
 
 ## Parallel requests
 

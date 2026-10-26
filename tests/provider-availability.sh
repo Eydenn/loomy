@@ -7,6 +7,8 @@ REPO="$(cd "$HERE/.." && pwd)"
 WORK="$(mktemp -d "/tmp/loomy-provider-tests.XXXXXX")"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"
+# shellcheck source=lib/content-grant.sh
+source "$REPO/tests/lib/content-grant.sh"
 for v in $(env | sed -nE 's/^((LOOMY|AI|DELEGATE|STUB)_[A-Z0-9_]*|CLAUDE_PROJECT_DIR|CODEX_HOME)=.*/\1/p'); do case "$v" in LOOMY_TEST_GUARD|LOOMY_TEST_STUBS|LOOMY_TEST_GUARD_LOG) continue ;; esac; unset "$v"; done
 mkdir -p "$WORK/bin" "$WORK/tmp" "$WORK/home" "$WORK/config/loomy" "$WORK/project/.loomy" "$WORK/codex/sessions"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex" TMPDIR="$WORK/tmp"
@@ -29,10 +31,28 @@ has() { if grep -qE -- "$2" "$OUT"; then ok "$1"; else ko "$1"; fi; }
 file_has() { if grep -qE -- "$3" "$2" 2>/dev/null; then ok "$1"; else ko "$1"; fi; }
 no_ko() { ! grep -q '=ko' "$XDG_CONFIG_HOME/loomy/models.state" 2>/dev/null; }
 reset_case() {
-  rm -f "$XDG_CONFIG_HOME"/loomy/* "$WORK/project/.loomy/logs/events.jsonl" "$CODEX_HOME/sessions/quota.jsonl"
+  rm -f "$XDG_CONFIG_HOME"/loomy/* "$WORK/project/.loomy/logs/events.jsonl" "$WORK/project/.loomy/logs/content-policy.conf" "$CODEX_HOME/sessions/quota.jsonl"
   printf 'plan_claude=pro\nplan_codex=business\n' >"$XDG_CONFIG_HOME/loomy/config"
   : >"$STUB_LOG"
   unset STUB_CODEX_CREDITS_DEPLETED STUB_CODEX_ERROR STUB_CODEX_ERROR_EXIT STUB_CLAUDE_ERROR STUB_UNKNOWN_MODELS STUB_FAIL STUB_CODEX_TEXT STUB_CODEX_NONFATAL STUB_CLAUDE_TEXT STUB_CLAUDE_RESULT_ERROR STUB_CLAUDE_ERROR_EXIT STUB_WRITE STUB_SLEEP LOOMY_MODEL_PROBE_TIMEOUT
+}
+allow_results() { test_content_grant "$REPO" "$WORK/project"; }
+resume_matches() {
+  python3 - "$WORK/project" "$@" <<'PYRESUME'
+import json, pathlib, sys
+p=pathlib.Path(sys.argv[1])/'.loomy/memory'
+role, provider, model, effort, sandbox, why, task=sys.argv[2:]
+for f in (p/'receipts-v1').glob('*.json'):
+ r=json.loads(f.read_text())
+ if r['status']!='paused' or 'result_ref' not in r: continue
+ b=json.loads((p/f'private-results-v1/{r["id"]}.json').read_text())
+ d=b['resume']
+ if b['task']!=task: continue
+ assert (d['role'],d['provider'],d['model'],d['effort'],d['sandbox'])==(role,provider,model,effort,sandbox), d
+ assert d['options']['why']==why and 'Resume:' not in json.dumps(b)
+ break
+else: raise AssertionError('authorized paused result missing')
+PYRESUME
 }
 bridge() { bash "$REPO/scripts/loomy-delegate-$1.sh" reviewer "bounded review"; }
 journal="$WORK/project/.loomy/logs/events.jsonl"
@@ -155,8 +175,9 @@ run 'repository access failure never marks ko' no_ko
 reset_case
 printf 'five_hour_pct=100\nfive_hour_reset=1791890500\n' >"$XDG_CONFIG_HOME/loomy/claude-limits"
 export STUB_CODEX_CREDITS_DEPLETED=1
-fails 'pause persists full task for orchestrator resume' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer 'Full paused task with options and instructions for later resumption'
-run 'resume task kept in existing delegation memory' bash -c 'grep -ql "Full paused task with options and instructions for later resumption" "$PWD"/.loomy/memory/delegations/*.md'
+allow_results
+fails 'opted-in pause retains full task for orchestrator resume' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer 'Full paused task with options and instructions for later resumption'
+run 'resume task held in private results with structured options' resume_matches reviewer codex gpt-6.1-sol high read-only '' 'Full paused task with options and instructions for later resumption'
 
 reset_case
 export STUB_CODEX_ERROR='{"type":"turn.failed","error":{"message":"workspace_member_credits_depleted"}}' STUB_CODEX_ERROR_EXIT=0
@@ -275,9 +296,10 @@ rm -f "$WORK/project/partial.txt"
 reset_case
 printf 'five_hour_pct=100\nfive_hour_reset=%s\n' $(( STUB_NOW+3600 )) >"$XDG_CONFIG_HOME/loomy/claude-limits"
 export STUB_CODEX_ERROR='rate limit retry_after: 60' STUB_WRITE=1
+allow_results
 fails 'partial writer refusal pauses when other is blocked' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write --effort high --why 'writer pause' 'bounded implementation'
 file_has 'pause records partial changed files' "$journal" '"status":"paused".*"files_changed":1,"changed_files":\["partial.txt"\]'
-run 'pause memory contains exact role/options to relaunch' bash -c 'grep -q "Resume:.*developer.*--effort high.*--write.*--why.*writer" "$PWD"/.loomy/memory/delegations/*.md'
+run 'pause memory contains exact structured role/options' resume_matches developer codex gpt-6.1-sol high workspace-write 'writer pause' 'bounded implementation'
 run 'display formatter shows paused without failure' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$journal"
 has 'display formatter includes pause deadline' 'paused.*until [0-9]{2}:[0-9]{2}'
 printf '%s\n' '---' 'name: availability view' 'ai_mode: ORCHESTRATED' 'ai_lead: codex' '---' >"$WORK/project/.loomy/brief.md"
@@ -316,9 +338,11 @@ run 'start print makes no model calls' bash "$REPO/scripts/loomy-start.sh" --roo
 run 'start print left providers untouched' bash -c '! grep -Eq "^(codex.*exec|claude.*-p)" "$STUB_LOG"'
 
 reset_case
+rm -rf "$WORK/project/.loomy/memory"
 export STUB_CODEX_ERROR='rate limit' STUB_CLAUDE_ERROR='rate limit'
+allow_results
 fails 'writer paused after a handover keeps a valid resumption bridge' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write --model gpt-6.1-sol --effort high 'bounded implementation'
-run 'resumption returns to original bridge with original model and permissions' bash -c 'grep -q "Resume:.*loomy-delegate-codex.sh developer.*--model gpt-6.1-sol.*--write" "$PWD"/.loomy/memory/delegations/*.md'
+run 'resumption keeps original provider/model/permissions without a shell string' resume_matches developer codex gpt-6.1-sol high workspace-write '' 'bounded implementation'
 
 printf '\nProvider availability: %s passed, %s failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

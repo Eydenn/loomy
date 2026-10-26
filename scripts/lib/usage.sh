@@ -249,6 +249,101 @@ ai_delegate_changed_files() {
   CHANGED="$(printf '%s' "$CHANGED_FILES_JSON" | perl -MJSON::PP -0777 -ne 'print scalar @{decode_json($_)}')"
 }
 
+# Bridge-only display option: preserve the shared model parser's existing API.
+ai_delegate_bridge_opts() {
+  local family="$1"; shift
+  local opts=() bridge_why="" saw_why=0
+  O_TASK_LABEL=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task-label)
+        if [[ $# -lt 2 || -z "$2" ]]; then
+          t "Error: option %s needs a value." "$1" >&2; echo >&2; return 2
+        fi
+        O_TASK_LABEL="$2"; shift 2 ;;
+      --why)
+        opts+=("$1"); shift
+        if [[ $# -gt 0 ]]; then
+          bridge_why="$(printf '%s' "$1" | perl -MEncode=decode,encode -0777 -ne '
+            my $s=decode("UTF-8",$_); $s=~s/[\r\n\t]/ /g; print encode("UTF-8",substr($s,0,200));')"
+          saw_why=1; opts+=("$bridge_why"); shift
+        fi ;;
+      --model|--effort)
+        opts+=("$1"); shift
+        [[ $# -eq 0 ]] || { opts+=("$1"); shift; } ;;
+      --write|--read-only) opts+=("$1"); shift ;;
+      *) break ;;
+    esac
+  done
+  set -- ${opts[@]+"${opts[@]}"} "$@"
+  ai_delegate_opts "$family" "$@" || return $?
+  # The shared parser predates Unicode-safe cuts; preserve the bridge's bounded
+  # character string even under LC_ALL=C, without changing other callers.
+  (( ! saw_why )) || O_WHY="$bridge_why"
+  shift "$O_SHIFT"; TASK="${1:-}"
+}
+
+# Snapshot effective options before any provider handover. A routed model is
+# retained even when it was not explicitly requested. No shell command is saved.
+ai_delegate_memory_start() {
+  local family="$1" label="" turns="" isolation="" label_status=0 task_ref=""
+  if [[ "$family" == claude ]]; then turns="$MAX_TURNS"; isolation="$ISOLATION"; fi
+  if [[ -n "${LOOMY_FAILOVER_FROM:-}" && -n "${LOOMY_RESUME_DESCRIPTOR:-}" ]]; then
+    RESUME_DESCRIPTOR="$(printf '%s\0' "$LOOMY_RESUME_DESCRIPTOR" "$ROLE" "$LOOMY_FAILOVER_FROM" | _lm_backend descriptor-env "$ROOT" 2>/dev/null)" || RESUME_DESCRIPTOR=""
+  else
+    RESUME_DESCRIPTOR="$(printf '%s\0' "$ROLE" "$family" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE" \
+      "$O_WHY" "$O_TASK_LABEL" "$turns" "$isolation" | _lm_backend descriptor "$ROOT")" || RESUME_DESCRIPTOR=""
+  fi
+  BRIDGE_FAILOVER_FROM="${LOOMY_FAILOVER_FROM:-}"
+  LABEL_JSON=""
+  if [[ -n "$O_TASK_LABEL" ]]; then
+    if label="$(printf '%s\0' "$O_TASK_LABEL" | _lm_backend label "$ROOT" "$DELEG_ID")"; then
+      [[ -z "$label" ]] || LABEL_JSON=",\"label_ref\":$label"
+    else
+      label_status=$?
+      if [[ "$label_status" == 3 && -t 2 && -z "${LOOMY_TASK_LABEL_NOTICE_SHOWN:-}" ]]; then
+        t "label not recorded (explicit-lead not granted)" >&2; echo >&2
+        export LOOMY_TASK_LABEL_NOTICE_SHOWN=1
+      fi
+    fi
+  fi
+  TASK_REF_JSON=""
+  if [[ -n "${LOOMY_TASK_REF:-}" ]]; then
+    task_ref="$(printf '%s\0' "$LOOMY_TASK_REF" | _lm_backend task-ref "$ROOT")" || task_ref=""
+    [[ -z "$task_ref" ]] || TASK_REF_JSON=",\"task_ref\":$task_ref"
+  fi
+  WHY_JSON="$WHY_JSON$LABEL_JSON$TASK_REF_JSON"
+  FORMAT_JSON=""; CHANGED=0
+  ai_delegate_memory_record running "" 0
+  loomy_cli_end "$ROOT" "\"type\":\"delegation_start\",\"id\":\"$DELEG_ID\",\"pid\":$$,\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"sandbox\":\"$SANDBOX\"$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+}
+
+# The receipt is a closed structural object. Only the separate private body may
+# contain task/result/options. Re-resolve policy on every transition, including 75.
+ai_delegate_memory_record() {
+  local state="$1" text="${2:-}" reset="${3:-0}" metadata ref format="${FORMAT_JSON:-}" ended
+  ended="$(date +%s)"; [[ "$state" != running ]] || ended=0
+  metadata="$(printf '%s\0' "$DELEG_ID" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$state" "$STARTED" "$ended" "$reset" "${CHANGED:-0}" "$format" "${LABEL_JSON:-}${TASK_REF_JSON:-}" \
+    | perl -MJSON::PP -0777 -ne '
+      my ($id,$role,$model,$effort,$sandbox,$status,$started,$ended,$resume,$changed,$format,$label)=split /\0/;
+      my $extra=eval {decode_json("{".($format=~s/^,//r)."}")} || {};
+      my $labels=eval {decode_json("{".($label=~s/^,//r)."}")} || {};
+      print encode_json({version=>1,id=>$id,attempt_id=>$id,session_key=>undef,role=>$role,model=>$model,effort=>$effort,sandbox=>$sandbox,
+        status=>$status,outcome=>($status eq "ok" ? $extra->{outcome}//"ok" : $status eq "running" ? "unknown" : $status eq "paused" ? "waiting_for_reset" : $status),started_at=>0+$started,
+        ended_at=>0+$ended,resume_at=>0+$resume,files_changed=>0+$changed,format=>$extra->{format}//"unknown",review=>$extra->{review}//"unknown",%$labels});
+    ')"
+  if ref="$(printf '%s\0' "$metadata" "$TASK" "$text" "${RESUME_DESCRIPTOR:-}" | _lm_backend save "$ROOT" "$$")"; then
+    MEMORY_RESULT_REF="$ref"
+  else
+    MEMORY_RESULT_REF=""
+    t "result not saved / original task required" >&2; echo >&2
+  fi
+  if [[ "$state" == paused && -z "$MEMORY_RESULT_REF" ]]; then
+    t "original task required to resume" >&2; echo >&2
+  fi
+  return 0
+}
+
 # Called after delegation_start: one cross-provider handover, or a final paused event.
 # Uses the bridge's task/options and journal fields so signal cleanup cannot report an interruption afterwards.
 ai_delegate_provider_guard() {
@@ -259,7 +354,7 @@ ai_delegate_provider_guard() {
     elif ! ai_model_usable "$MODEL" "$family"; then reason=model
     else return 0; fi
   fi
-  [[ -z "${LOOMY_FAILOVER_FROM:-}" ]] || can_switch=0
+  [[ -z "${LOOMY_FAILOVER_FROM:-${BRIDGE_FAILOVER_FROM:-}}" ]] || can_switch=0
   if [[ "$other" == "claude" ]]; then ai_has_claude || can_switch=0; else ai_has_codex || can_switch=0; fi
   ai_provider_saturated "$other" && can_switch=0
   model="$(ai_route "$ROLE" "$other" "$AI_PROFILE"; printf '%s' "$R_MODEL")"
@@ -270,15 +365,17 @@ ai_delegate_provider_guard() {
     t "Provider %s unavailable (%s): %s handed to %s once." "$family" "$reason" "$ROLE" "$other" >&2; echo >&2
     loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"handed_over\",\"outcome\":\"handed_over\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
+    ai_delegate_memory_record handed_over
     local fwd=()
     [[ -z "$O_EFFORT" ]] || fwd+=(--effort "$O_EFFORT")
     [[ "$SANDBOX" != "workspace-write" ]] || fwd+=(--write)
     [[ "$SANDBOX" != "read-only" ]] || fwd+=(--read-only)
     [[ -z "$O_WHY" ]] || fwd+=(--why "$O_WHY")
+    [[ -z "$O_TASK_LABEL" ]] || fwd+=(--task-label "$O_TASK_LABEL")
     # Replace the bridge after closing its event so the destination owns signal cleanup.
     rm -rf "$TMP"
     trap - EXIT INT TERM HUP
-    LOOMY_ATTEMPT="" LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-$O_MODEL}" LOOMY_FAILOVER_FROM="$family" \
+    LOOMY_RESUME_DESCRIPTOR="$RESUME_DESCRIPTOR" LOOMY_ATTEMPT="" LOOMY_REQUESTED_MODEL="${LOOMY_REQUESTED_MODEL:-$O_MODEL}" LOOMY_FAILOVER_FROM="$family" \
       exec bash "$SCRIPT_DIR/loomy-delegate-$other.sh" "$ROLE" ${fwd[@]+"${fwd[@]}"} "$TASK"
   fi
   resume="$(ai_provider_reset "$family")"
@@ -290,17 +387,7 @@ ai_delegate_provider_guard() {
   id="$DELEG_ID"
   loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"paused\",\"outcome\":\"waiting_for_reset\",\"resume_at\":$resume,\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
   FINAL_WRITTEN=1
-  # A resumed handover starts a fresh attempt on its original bridge (including writer permissions).
-  local relaunch resume_family="${LOOMY_FAILOVER_FROM:-$family}" resume_model="${LOOMY_REQUESTED_MODEL:-$O_MODEL}"
-  printf -v relaunch '%q ' bash "$ROOT/.loomy/scripts/loomy-delegate-$resume_family.sh" "$ROLE"
-  [[ -z "$resume_model" ]] || { printf -v id '%q ' --model "$resume_model"; relaunch="$relaunch$id"; }
-  printf -v id '%q ' --effort "$EFFORT"; relaunch="$relaunch$id"
-  [[ "$SANDBOX" != workspace-write ]] || relaunch="$relaunch--write "
-  [[ "$SANDBOX" != read-only ]] || relaunch="$relaunch--read-only "
-  [[ -z "$O_WHY" ]] || { printf -v id '%q ' --why "$O_WHY"; relaunch="$relaunch$id"; }
-  printf -v id '%q' "$TASK"; relaunch="$relaunch$id"
-  loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" paused "$TASK" "waiting_for_reset resume_at=$resume
-Resume: $relaunch"
+  ai_delegate_memory_record paused "" "$resume"
   t "PAUSED: provider %s unavailable (%s); no provider has room. Expected reset/recheck: %s (epoch %s)." "$family" "$reason" "$(_ai_reset_label "$resume")" "$resume" >&2; echo >&2
   exit 75
 }

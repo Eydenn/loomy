@@ -18,13 +18,12 @@ source "$SCRIPT_DIR/lib/usage.sh"
 source "$SCRIPT_DIR/lib/launch.sh"
 
 ROLE="${1:-}"; [[ $# -gt 0 ]] && shift
-ai_delegate_opts claude "$@" || exit 2
-shift "$O_SHIFT"
-TASK="${1:-}"
+ai_delegate_bridge_opts claude "$@" || exit 2
 
 if [[ "$ROLE" == "-h" || "$ROLE" == "--help" || -z "$ROLE" || -z "$TASK" ]]; then
   t "Usage: %s <architect|debugger|security|reviewer|explorer> [options] \"task\"" "$0" >&2; echo >&2
   t "Options: --model <claude-* id|opus|sonnet|haiku>, --effort <low|medium|high|xhigh|max>, --write (only during a quota failover) | --read-only, --why \"reason\"; they win over the environment variables." >&2; echo >&2
+  t '--task-label "..." (explicit-lead)' >&2; echo >&2
   t "Old names accepted: architecture, debug, review, research." >&2; echo >&2
   t "Possible overrides: DELEGATE_CLAUDE_MODEL, DELEGATE_CLAUDE_EFFORT, DELEGATE_CLAUDE_MAX_TURNS, AI_ROUTE_PROFILE" >&2; echo >&2
   exit 2
@@ -128,6 +127,7 @@ trap 'rm -rf "$TMP"' EXIT
 LOOMY_CLI_SESSION_ID="$(perl -e 'printf "%08x-%04x-4%03x-8%03x-%012x",rand(2**32),rand(2**16),rand(2**12),rand(2**12),rand(2**48)')"
 export LOOMY_CLI_SESSION_ID
 run_claude() {
+  unset LOOMY_RESUME_DESCRIPTOR LOOMY_FAILOVER_FROM LOOMY_TASK_REF
   local isolation_args=() settings='{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true}}'
   case "$ISOLATION" in
     bare) isolation_args=(--bare) ;;
@@ -190,14 +190,20 @@ delegate_stop_child() {
   CHILD_PID=""
 }
 delegate_finish() {
-  local signal="$1" exit_code="$2" duration
+  local signal="$1" exit_code="$2" duration signal_json=""
+  case "$signal" in
+    INT) signal_json=',"signal":2' ;;
+    TERM) signal_json=',"signal":15' ;;
+    HUP) signal_json=',"signal":1' ;;
+  esac
   trap '' INT TERM HUP
   trap - EXIT
   delegate_stop_child
   if (( ! FINAL_WRITTEN )) && delegate_start_exists && ! delegate_final_exists; then
     duration=$(( $(date +%s) - STARTED )); (( duration >= 0 )) || duration=0
-    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\",\"signal\":\"$signal\",\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"reported\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$START_MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"interrupted\",\"outcome\":\"interrupted\"$signal_json,\"duration_s\":$duration,\"tokens_in\":0,\"tokens_cached\":0,\"tokens_out\":0,\"cost_usd\":0,\"cost_source\":\"reported\",\"files_changed\":0$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
     FINAL_WRITTEN=1
+    ai_delegate_memory_record interrupted
   fi
   rm -rf "$TMP"
   exit "$exit_code"
@@ -206,7 +212,7 @@ trap 'delegate_finish INT 130' INT
 trap 'delegate_finish TERM 143' TERM
 trap 'delegate_finish HUP 129' HUP
 trap 'delegate_finish EXIT "$?"' EXIT
-ai_delegate_journal_start "$ROOT" "$DELEG_ID" claude "$ROLE" claude "$MODEL" "$EFFORT" "$SANDBOX" "$TASK" "$REQUESTED" "$OFF_ROUTING" "$O_WHY"
+ai_delegate_memory_start claude
 loomy_cli_check claude "$ROLE" "$MODEL" || exit $?
 set +e
 run_claude "$MODEL" >"$TMP/out.json" 2>"$TMP/err.log" &
@@ -257,9 +263,9 @@ if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&
 fi
 loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
 FINAL_WRITTEN=1
-# Shared memory: the task and the full result, for the next sessions and the other tool.
+# Structural receipt and, when authorized, a separate private task/result.
 MEM_RESULT="$OUT"; command -v python3 >/dev/null 2>&1 && MEM_RESULT="$(python3 -c 'import json, sys; print(json.loads(sys.stdin.read()).get("result", ""))' <<<"$OUT" 2>/dev/null || printf '%s' "$OUT")"
-loomy_memory_save "$ROOT" "$DELEG_ID" "$ROLE" "$MODEL" "$RESULT" "$TASK" "$MEM_RESULT"
+ai_delegate_memory_record "$RESULT" "$MEM_RESULT"
 t "loomy-delegate-claude: %ss · input tokens %s (%s cached), output %s · cost \$%s" "$DURATION" "$(( T_IN + T_CACHED + T_CWRITE ))" "$T_CACHED" "$T_OUT" "$(awk -v c="$COST" 'BEGIN { printf "%.4f", c }')" >&2; echo >&2
 
 # Handed over by the Codex bridge: its caller expects Codex's plain answer, not Claude's JSON.

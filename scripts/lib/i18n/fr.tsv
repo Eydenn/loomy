@@ -2340,3 +2340,62 @@ Reviewer and security roles: when FINDINGS is empty or none, include TRIED immed
 what was attacked → result (only with empty or none FINDINGS; at most 8 bullets; no file dumps; required for reviewer/security, optional for other roles)	ce qui a été attaqué → résultat (uniquement si FINDINGS est vide ou vaut none ; au plus 8 puces ; sans copier de fichiers ; obligatoire pour reviewer/security, facultatif pour les autres rôles)
 %s review(s) without TRIED	%s revue(s) sans TRIED
 review without TRIED	revue sans TRIED
+# Content policy and first-use grants (release 1); shared with later content tickets.
+context unavailable	contexte indisponible
+Private results: off · receipts available	Résultats privés : désactivés · reçus disponibles
+Keep today's task clarity with bounded local labels; the existing excerpt grant is separate.	Gardez la clarté actuelle avec des libellés locaux bornés ; l’autorisation existante des extraits est distincte.
+Labels/results are excluded from sync/export; the existing project excerpt grant is unchanged.	Libellés/résultats exclus des synchronisations/exports ; l’autorisation existante des extraits du projet est conservée.
+Human confirmation required: run this command directly in your terminal.	Confirmation humaine nécessaire : lancer cette commande directement dans votre terminal.
+Content confirmation declined or aborted; no new grant saved.	Confirmation refusée ou interrompue ; aucune nouvelle autorisation enregistrée.
+Content operation failed.	Échec de l’opération sur le contenu.
+Selected limits: %s graphemes / %s UTF-8 bytes; Codex %s ASCII each; label store %s bytes.	Limites choisies : %s graphèmes / %s octets UTF-8 ; Codex %s ASCII chacun ; stockage %s octets.
+Selected result limits: %s records / %s bytes each / %s bytes total / %s days.	Limites choisies des résultats : %s entrées / %s octets chacune / %s octets au total / %s jours.
+result not saved	résultat non enregistré
+Use --task-label for a deliberate short title; never use a full task as a label.	Utiliser --task-label pour un titre court délibéré ; ne jamais utiliser la tâche complète comme libellé.
+on	activés
+off	désactivés
+Task labels & private results — project %s	Libellés & résultats privés — projet %s
+Keep today's task clarity with bounded local labels; prompts stay out of the journal.	Gardez la clarté actuelle avec des libellés locaux bornés ; aucun prompt dans le journal.
+Recommended labels: explicit-user, explicit-lead, claude-description,	Libellés recommandés : explicit-user, explicit-lead, claude-description,
+                    codex-path-slug, codex-nickname, codex-role	                      codex-path-slug, codex-nickname, codex-role
+Caps: 96 graphemes / 384 UTF-8 bytes; Codex 40 ASCII each; label store 1 MiB.	Limites : 96 graphèmes / 384 octets UTF-8 ; Codex 40 ASCII chacun ; stockage 1 Mio.
+Keep task labels? [Y/n]	Conserver les libellés de tâche ? [O/n]
+Private results save full tasks/results locally: 200 records, 1 MiB each,	Résultats privés : tâches/résultats complets locaux, 200 entrées, 1 Mio chacune,
+16 MiB total, 30 days; active/paused records pinned; capture fails if full.	16 Mio au total, 30 jours ; entrées actives/en pause protégées ; refus si plein.
+Also save private tasks/results? [Y/n]	Conserver aussi les tâches/résultats privés ? [O/n]
+Labels/results are excluded from sync/export; journal stays structural.	Libellés/résultats exclus des synchronisations/exports ; journal structurel.
+Allow these exact fields and limits for this project? [y/N]	Autoriser ces champs et limites exacts pour ce projet ? [o/N]
+Task labels off · run loomy privacy labels recommended	Libellés de tâche désactivés · lancer loomy privacy labels recommended
+display context full; label not saved	contexte d’affichage plein ; libellé non enregistré
+Journal: %s · task labels: %s · private results: %s · checkpoint/scratch repair pending	Journal : %s · libellés : %s · résultats privés : %s · correctif checkpoints/fichiers temporaires en attente
+Old copies may contain text · loomy privacy inventory	Les anciennes copies peuvent contenir du texte · loomy privacy inventory
+Existing results are unchanged; this command changes future capture only.	Les résultats existants sont conservés ; cette commande change uniquement les prochains enregistrements.
+First-use choices: completed for this project	Choix de première utilisation : effectués pour ce projet
+First-use choices: pending human confirmation	Choix de première utilisation : confirmation humaine en attente
+structure only	structure seule
+legacy excerpts (project scope)	extraits historiques (portée du projet)
+Project-local journal policy, task label grants and private result retention	Politique locale du journal, autorisations des libellés et conservation des résultats privés
+Role: %s	Rôle : %s
+original task required	tâche d’origine nécessaire
+original task required to resume	tâche d’origine nécessaire pour reprendre
+Paused until %s · original task held by lead	En pause jusqu’à %s · tâche d’origine conservée par le lead
+private result available	résultat privé disponible
+Paused · original task required to resume	En pause · tâche d’origine nécessaire pour reprendre
+result not saved / original task required	résultat non enregistré / tâche d’origine nécessaire
+result not retained; consult authorized task artifact	résultat non conservé ; consulter le document de tâche autorisé
+Private results: enabled · local only · 30 days / 200 records / 16 MiB	Résultats privés : activés · locaux uniquement · 30 jours / 200 entrées / 16 Mio
+Private results: off · receipts available; new summaries not retained	Résultats privés : désactivés · reçus disponibles ; nouveaux résumés non conservés
+older sensitive results	anciens résultats sensibles
+Full result unavailable: retention was off	Résultat complet indisponible : la conservation était désactivée
+Exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model.	Le code 75 indique une pause. Lire resume_at ; conserver le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options exacts. À la réinitialisation, reprendre la tâche et les options exactes depuis le contexte vivant ou une référence de tâche/résultat privé autorisée ; vérifier les modifications avant de relancer. Sinon signaler que la tâche d’origine est nécessaire, sans relancer ni poursuivre le travail dépendant. Ne jamais deviner ni choisir un modèle moins puissant.
+Selected label sources: %s	Sources de libellés sélectionnées : %s
+Policy source: %s · scope: project · generation: %s	Source de la politique : %s · portée : projet · génération : %s
+project defaults	valeurs par défaut du projet
+project policy file	fichier de politique du projet
+project-bound environment	environnement lié au projet
+environment request refused	demande par environnement refusée
+LOOMY_JOURNAL_TASKS=0 restriction	restriction LOOMY_JOURNAL_TASKS=0
+Invalid content policy: %s. Fix or remove this file before changing the policy.	Politique de contenu invalide : %s. Corrigez ou supprimez ce fichier avant de modifier la politique.
+Task labels disabled by LOOMY_JOURNAL_TASKS=0; project grants are unchanged.	Libellés désactivés par LOOMY_JOURNAL_TASKS=0 ; les autorisations du projet sont conservées.
+Content policy changed while awaiting confirmation; run the command again.	La politique de contenu a changé pendant la confirmation ; relancez la commande.
+Agent ancestor detected: %s. Run this command from a plain terminal.	Agent détecté dans les processus parents : %s. Lancez cette commande depuis un terminal ordinaire.

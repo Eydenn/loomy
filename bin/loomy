@@ -164,6 +164,7 @@ usage() {
   _h_cmd route "$(t "[command]")" "$(t "Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)")"
   _h_cmd delegate "$(t "<claude|codex> <role> [options] \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
   _h_cmd privacy "[mode|sync|restore]" "$(t "AI files visibility: versioned, local, or in a separate private repository")"
+  _h_cmd privacy "content|labels|results|label" "$(t "Project-local journal policy, task label grants and private result retention")"
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"
   _h_group "$(t "TRACKING")"
   _h_cmd status "" "$(t "Project status: phases, running delegations, activity, costs, Git")"
@@ -286,7 +287,26 @@ case "$cmd" in
 esac
 
 case "$cmd" in
-  init|install) exec bash "$S/loomy-install-project.sh" "$@" ;;
+  init|install)
+    # Existing projects may return without running the questionnaire. New or
+    # interactively chosen folders are handled by its one prompt call site.
+    content_root="$PWD"; content_prompt=1; content_answers=0
+    for content_arg in "$@"; do
+      if (( content_answers )); then content_answers=0; continue; fi
+      case "$content_arg" in
+        --yes|-y|--no-wizard|-h|--help) content_prompt=0 ;;
+        --answers) content_answers=1 ;;
+        --update|--reset|--no-branch|--no-clipboard) ;;
+        -*) content_prompt=0 ;;
+        *) content_root="$content_arg" ;;
+      esac
+    done
+    if (( content_prompt )) && [[ -d "$content_root/.loomy" ]]; then
+      # shellcheck source=../scripts/lib/content-policy.sh
+      source "$S/lib/content-policy.sh"
+      loomy_content_first_use "$content_root"
+    fi
+    exec bash "$S/loomy-install-project.sh" "$@" ;;
   brief|wizard)
     root="$(project_root)"
     case "${1:-}" in -h|--help) exec bash "$S/loomy-init-wizard.sh" --help ;; esac
@@ -432,6 +452,11 @@ case "$cmd" in
     fi
     ui_ok "$(t "Loomy up to date")" "$(command -v loomy >/dev/null 2>&1 && loomy version || echo "v$VERSION")"
     ui_info "$(t "your projects use this version right away; loomy init --update is only for new document templates")"
+    # Runs only when this installed entrypoint has the content-policy code.
+    # shellcheck source=../scripts/lib/content-policy.sh
+    if [[ -r "$S/lib/content-policy.sh" ]]; then
+      source "$S/lib/content-policy.sh" && loomy_content_first_use "$(project_root)" || true
+    fi
     if (( $(loomy_installs | wc -l) > 1 )); then ui_section "$(t "INSTALLS")"; show_installs; fi
     ;;
 

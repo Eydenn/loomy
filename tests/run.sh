@@ -2686,6 +2686,14 @@ fi
 release_defects_tests
 
 # ------------------------------------------------------------------ syntaxe
+section "Content policy"
+for content_test in "$HERE"/content-*.sh; do
+  [[ -f "$content_test" ]] || continue
+  run "${content_test##*/}" bash "$content_test"
+  # TAP failures are printed early; the failure tail alone does not name them.
+  grep -a '^not ok' "$OUT" | head -20 | sed 's/^/      │ /' || true
+done
+
 section "Syntax and static analysis"
 w47_static_tests
 SCRIPTS="$(cd "$REPO" && ls bin/loomy install.sh scripts/*.sh scripts/lib/*.sh tests/run.sh tests/stubs/*)"

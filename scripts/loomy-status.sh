@@ -32,6 +32,8 @@ source "$SCRIPT_DIR/lib/sessionlog.sh"
 source "$SCRIPT_DIR/lib/privacy.sh"
 # shellcheck source=lib/failover.sh
 source "$SCRIPT_DIR/lib/failover.sh"
+# shellcheck source=lib/content-policy.sh
+source "$SCRIPT_DIR/lib/content-policy.sh"
 
 PHASES="brief discover interview propose approve build verify document commit retire done"
 
@@ -341,6 +343,8 @@ loomy_watch_feed() {
     my $input=$tty; open $input,"<&",7 or die $! unless $input;
     my $select=IO::Select->new; $select->add($input) if $input;
     my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts session-only);
+    my @content_files=map { "$root/.loomy/logs/$_" } qw(content-policy.conf display-context-full);
+    my $content_sig=$ENV{LOOMY_CONTENT_HINT_SIGNATURE}//"";
     push @files,$ENV{LOOMY_SESSION_ONLY} if ($ENV{LOOMY_SESSION_ONLY}//"") =~ /^\Q$root\E\/\.loomy\/session-only-\d+-[A-Za-z0-9]+$/;
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
@@ -388,6 +392,10 @@ loomy_watch_feed() {
         $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
         $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native},$key =~ /^[ltLT]$/),$live->projections($now));
       });
+      # Bash 3.2 file comparisons lose subsecond mtimes. Reuse this persistent
+      # sampler instead of starting stat/Perl from each idle controller frame.
+      my $content_now=join("|",map {(stat($_))[9] // "-"} @content_files);
+      if ($content_now ne $content_sig) {push @deltas,"C|$content_now"; $content_sig=$content_now}
       if ($failed) {print "W|error\n"; $failed=0}
       my $sig="";
       for my $f (@files) { my @s=stat($f); $sig.=join(":",@s ? @s[0,1,7,9] : "-").";" }
@@ -414,6 +422,7 @@ loomy_watch_coalesce() {
     printf '%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "${watch_rows:-0}" "${watch_cols:-0}" >&9
     local feed_line
     while IFS= read -r feed_line <&10; do
+      if [[ "$feed_line" == C\|* ]]; then loomy_watch_content_hint_accept "${feed_line#C|}"; continue; fi
       if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
       if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
       if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
@@ -455,7 +464,7 @@ loomy_watch_coalesce() {
         while (($n=sysread($feed,my $char,1)) && $n==1) { $line.=$char; last if $char eq "\n" }
         last unless $line =~ /\n$/;
         chomp $line;
-        if ($line =~ /^(?:N|W|D|E|K)\|/) { push @deltas,$line; next }
+        if ($line =~ /^(?:N|W|D|E|K|C)\|/) { push @deltas,$line; next }
         my @row=split /\|/,$line,-1;
         next unless (@row==4 || @row==6) && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
         ($now,$key,$clock,$rows,$cols)=@row[0,2,3,4,5]; $dirty=($dirty || $row[1]) ? 1 : 0;
@@ -466,6 +475,12 @@ loomy_watch_coalesce() {
     last unless $server;
     }
   ' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${watch_rows:-0}" "${watch_cols:-0}" "$$" "${WATCH_PIPE:-}"
+}
+
+loomy_watch_content_hint_accept() {
+  local old="$LOOMY_CONTENT_HINT"
+  loomy_content_hint_refresh "$ROOT" "$1" || true
+  if [[ "$old" != "$LOOMY_CONTENT_HINT" ]]; then force_frame=1; legacy_stamp=""; fi
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
@@ -670,6 +685,7 @@ if (( JOURNAL_VIEW )); then
     ui_info "$(t "log empty for now")"
   fi
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "full log: loomy log")}"
+  [[ -z "${LOOMY_CONTENT_HINT:-}" ]] || printf '%s\n' "$LOOMY_CONTENT_HINT"
   return 0
 fi
 
@@ -1062,9 +1078,16 @@ else
   ui_info "$(t "no Git repository")"
 fi
 [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "start or resume: loomy start · live tracking: loomy watch")}"
+[[ -z "${LOOMY_CONTENT_HINT:-}" ]] || printf '%s\n' "$LOOMY_CONTENT_HINT"
 
 }
 
+# Shared renderers consume the same precomputed hint as the direct command.
+# No frame renderer launches the policy backend or reads the journal for it.
+LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""
+if (( ! WATCH )) || [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then
+  _loomy_content_hint_load "$ROOT" || true
+fi
 # Tests and the watch worker load renderers without running a command.
 if [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then return 0; fi
 
@@ -1073,6 +1096,8 @@ if (( ! WATCH )) && [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
   ai_claude_native_poll "$ROOT"
 fi
 if (( WATCH )); then
+  if (( ! IN_PANE )); then loomy_content_first_use "$ROOT" || true; fi
+  _loomy_content_hint_load "$ROOT" || true
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin
   KEY_READER=""; COALESCER=""; WATCH_PIPE=""; WATCH_STTY=""
@@ -1098,7 +1123,7 @@ if (( WATCH )); then
   # Process substitutions replace stdin with /dev/null; preserve the controller input explicitly.
   exec 7<&0
   ai_detect_env "$ROOT"
-  exec 8< <(loomy_watch_feed "$terminal")
+  exec 8< <(LOOMY_CONTENT_HINT_SIGNATURE="$LOOMY_CONTENT_HINT_SIGNATURE" loomy_watch_feed "$terminal")
   KEY_READER=$!
   WATCH_PIPE="$(mktemp -d "${TMPDIR:-/tmp}/loomy-watch-feed.XXXXXX")"
   mkfifo "$WATCH_PIPE/request"
@@ -1164,6 +1189,7 @@ if (( WATCH )); then
   # shellcheck disable=SC2034  # read through ${!pv} below
   p_ql_claude=0 p_ql_codex=0
   while IFS= read -r feed_line <&8; do
+    if [[ "$feed_line" == C\|* ]]; then loomy_watch_content_hint_accept "${feed_line#C|}"; continue; fi
     if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
     if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
     if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
@@ -1238,7 +1264,7 @@ if (( WATCH )); then
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Reserve the actual banner/footer before deciding how much hierarchy fits.
       loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
-      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="$watch_note"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
       watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
@@ -1267,7 +1293,7 @@ if (( WATCH )); then
         loomy_live_header
         loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
-        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="$watch_note"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
+        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
         _ui_term_size; _ui_chrome
         (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $scroll_word · $keys"
         UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop

@@ -1055,6 +1055,12 @@ if [[ -x "$SCRIPT_DIR/loomy-status.sh" ]]; then
 fi
 ui_step_done $st ok "$(t "Session ready")" "$(t "Discovery phase")"
 ui_steps_end
+# A separate per-project human choice, never supplied by --yes or an answers file.
+if [[ "$UI_ASSUME_DEFAULTS" != "1" ]]; then
+  # shellcheck source=lib/content-policy.sh
+  source "$SCRIPT_DIR/lib/content-policy.sh"
+  loomy_content_first_use "$TARGET"
+fi
 if [[ -n "$GH_FAIL" ]]; then
   if [[ "$GH_FAIL" == *"already exists"* ]]; then ui_rail "   ${C_DIM}$(t "a repository with that name already exists: run loomy init again to choose another name or link it")${C_RESET}"
   else ui_rail "   ${C_DIM}$(t "GitHub repository by hand:") gh repo create $REPO_NAME --private --source=. --remote=origin${C_RESET}"; fi

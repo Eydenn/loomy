@@ -6,6 +6,10 @@
 #   loomy privacy private [--name NAME | --remote URL]   excluded from the project, backed up in a separate private repository
 #   loomy privacy sync                     backs up the AI files to the private repository
 #   loomy privacy restore <URL|account/repo>   gets the AI files back on another machine
+#   loomy privacy content [structural|legacy-excerpts]
+#   loomy privacy labels [recommended|set SOURCE[,SOURCE...]|off]
+#   loomy privacy results [on|off]
+#   loomy privacy label --id ID [--attempt ID] [--kind agent|task|session|delegation] TEXT
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +20,7 @@ source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/privacy.sh
 source "$SCRIPT_DIR/lib/privacy.sh"
 
-ROOT=""; CMD="show"; REMOTE=""; ARG=""; QUIET=0; AI_REPO_OPT=""
+ROOT=""; CMD="show"; REMOTE=""; ARG=""; QUIET=0; AI_REPO_OPT=""; CONTENT_ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="${2:-}"; shift ;;
@@ -25,7 +29,8 @@ while [[ $# -gt 0 ]]; do
     --quiet) QUIET=1 ;;
     versioned|local|private|sync|apply|show) CMD="$1" ;;
     restore) CMD="restore"; ARG="${2:-}"; [[ $# -gt 1 ]] && shift ;;
-    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
+    content|labels|results|label) CMD="$1"; shift; CONTENT_ARGS=("$@"); break ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s (loomy privacy --help)" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
@@ -34,6 +39,14 @@ ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 # On a new machine, .loomy doesn't exist yet (outside the repository): only restore can do without it.
 if [[ "$CMD" == "restore" ]]; then mkdir -p "$ROOT/.loomy"
 elif [[ ! -d "$ROOT/.loomy" ]]; then t "No Loomy project in %s: loomy init first (or loomy privacy restore <account/repo> to recover its AI files)." "${ROOT/#$HOME/~}" >&2; echo >&2; exit 1; fi
+case "$CMD" in
+  content|labels|results|label)
+    # This path never repairs, inventories, syncs or scans older content stores.
+    # shellcheck source=lib/content-policy.sh
+    source "$SCRIPT_DIR/lib/content-policy.sh"
+    loomy_content_command "$CMD" "$ROOT" ${CONTENT_ARGS[@]+"${CONTENT_ARGS[@]}"}
+    exit $? ;;
+esac
 GIT_ROOT="$(privacy_git_root "$ROOT")"
 MODE="$(privacy_mode "$ROOT")"
 # Private repository name: the project's (brief slug), so that everything has the same name.

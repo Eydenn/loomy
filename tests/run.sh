@@ -15,6 +15,8 @@ VERBOSE=0; [[ "${1:-}" == "-v" || "${3:-}" == "-v" ]] && VERBOSE=1
 WORK="$(mktemp -d "/tmp/loomy-tests.XXXXXX")"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"
+# shellcheck source=lib/content-grant.sh
+source "$REPO/tests/lib/content-grant.sh"
 trap 'exit 143' TERM HUP
 trap 'exit 130' INT
 
@@ -283,6 +285,8 @@ delegation_options_tests() {
   run "delegation options: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
   git -C "$op" add -A && git -C "$op" commit -qm "initialize delegation options fixture"
   J="$op/.loomy/logs/events.jsonl"; mkdir -p "${J%/*}"; : >"$J"
+  (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
+    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
   delegation_pair_has() {
     local desc="$1" req="$2" off="$3" why="$4" effort="$5" sandbox="$6" files="$7" task="$8"
     if perl -MJSON::PP -e '
@@ -290,7 +294,7 @@ delegation_options_tests() {
       open my $f,"<",$path or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2;
       die unless $e[0]{type} eq "delegation_start" && $e[1]{type} eq "delegation";
       for my $e (@e) {
-        die "requested mismatch" unless (($e->{requested} ? "true" : "false") eq $want_req);
+        die "requested mismatch" unless exists($e->{requested}) && (($e->{requested} ? "true" : "false") eq $want_req);
         die "off-routing/why mismatch: ".($e->{off_routing}//"")."/".($e->{why}//"") unless (($e->{off_routing}//"") eq $want_off && ($e->{why}//"") eq $want_why);
         die "effort/sandbox: expected $want_effort/$want_sandbox, got ".($e->{effort}//"")."/".($e->{sandbox}//"") unless (($e->{effort}//"") eq $want_effort && ($e->{sandbox}//"") eq $want_sandbox);
         die "task mismatch: ".($e->{task}//"") unless (($e->{task}//"") eq $want_task);
@@ -397,7 +401,7 @@ STUB
     die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq $signal && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
     for my $k (qw(id role family model effort sandbox requested requested_model off_routing why task)) { die "$k mismatch" unless ($d->{$k}//"") eq ($s->{$k}//"") }
     die "nonzero usage" unless $d->{tokens_in}==0 && $d->{tokens_cached}==0 && $d->{tokens_out}==0 && $d->{cost_usd}==0;
-  ' "$J" "Interrupt codex" TERM codex
+  ' "$J" "Interrupt codex" 15 codex
   if [[ -s "$codex_pid_file" ]]; then child_pid="$(cat "$codex_pid_file")"; if kill -0 "$child_pid" 2>/dev/null; then ko "codex: stub child remains alive"; kill -KILL "$child_pid" 2>/dev/null || true; else ok "codex: stub child is gone"; fi; else ko "codex: stub child pid was not recorded"; fi
   run "codex: interrupted final event renders with duration in tree" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$op" --once
   has "codex: tree shows interrupted state and duration" '⊘ Architect.*0:[0-9][0-9].*· interrupted'
@@ -423,7 +427,7 @@ STUB
     die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq $signal && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
     for my $k (qw(id role family model effort sandbox requested requested_model off_routing why task)) { die "$k mismatch" unless ($d->{$k}//"") eq ($s->{$k}//"") }
     die "nonzero usage" unless $d->{tokens_in}==0 && $d->{tokens_cached}==0 && $d->{tokens_out}==0 && $d->{cost_usd}==0;
-  ' "$J" "Interrupt claude" INT claude
+  ' "$J" "Interrupt claude" 2 claude
   if [[ -s "$claude_pid_file" ]]; then child_pid="$(cat "$claude_pid_file")"; if kill -0 "$child_pid" 2>/dev/null; then ko "claude: stub child remains alive"; kill -KILL "$child_pid" 2>/dev/null || true; else ok "claude: stub child is gone"; fi; else ko "claude: stub child pid was not recorded"; fi
   run "claude: interrupted final event renders with duration in tree" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$op" --once
   has "claude: tree shows interrupted state and duration" '⊘ Architect.*0:[0-9][0-9].*· interrupted'
@@ -444,6 +448,9 @@ interrupted_delegation_tests() {
   run "interrupted: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
   git -C "$op" add -A && git -C "$op" commit -qm "initialize interrupted delegation fixture"
   local J="$op/.loomy/logs/events.jsonl"
+  mkdir -p "${J%/*}"
+  (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
+    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
   cat >"$cli_dir/stub" <<'STUB'
 #!/usr/bin/env bash
 case "${1:-}" in
@@ -515,7 +522,7 @@ STUB
         my ($s)=grep { ($_->{type}//"") eq "delegation_start" && ($_->{task}//"") eq $task } @e;
         die "start missing" unless $s; my @f=grep { ($_->{type}//"") eq "delegation" && ($_->{id}//"") eq $s->{id} } @e;
         die "expected one final event" unless @f==1; my $d=$f[0];
-        die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} eq "TERM" && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
+        die "interrupted fields missing" unless $d->{status} eq "interrupted" && $d->{outcome} eq "interrupted" && $d->{signal} == 15 && $d->{bridge} eq $bridge && $d->{duration_s}=~/^\d+$/;
       ' "$J" "$task" "$bridge"; then ok "$bridge: $mode writes one interrupted final event"; else ko "$bridge: $mode final event missing or duplicated"; fi
     done
   done
@@ -862,6 +869,7 @@ live_view_tests() {
   has "project relay: wrapper output is preserved" '^Loomy$'
   mkdir -p "$lv/.loomy/logs" "$lv/.claude/agents"
   printf -- '---\nname: Live demo\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$lv/.loomy/brief.md"
+  run "native memory: human first-use Yes" test_content_grant "$REPO" "$lv"
   printf 'phase=done\n' >"$lv/.loomy/state"
   printf -- '---\nname: developer\nmodel: claude-sonnet-5-5\neffort: high\n---\n' >"$lv/.claude/agents/developer.md"
   nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -888,7 +896,7 @@ live_view_tests() {
   file_has "native stop: closes the original id" "$lv/.loomy/logs/events.jsonl" '"type":"delegation","agent_id":"a1".*"duration_s":[0-9]+.*"id":"native-1".*"outcome":"done".*"tokens_in":0.*"tokens_out":0'
   file_has "native stop: cost belongs to usage" "$lv/.loomy/logs/events.jsonl" '"cost_in":"usage"'
   file_has "native stop: existing usage retained" "$lv/.loomy/logs/events.jsonl" '"type":"usage".*"scope":"subagent"'
-  [[ -n "$(find "$lv/.loomy/memory/delegations" -name '*.md' -print 2>/dev/null)" ]] && ok "native stop: memory retained" || ko "native stop: no memory"
+  [[ -n "$(find "$lv/.loomy/memory/private-results-v1" -name '[!.]*.json' -print 2>/dev/null)" ]] && ok "native stop: memory retained" || ko "native stop: no memory"
   printf '{"session_id":"live","agent_type":"developer","agent_id":"a1","agent_transcript_path":"%s"}' "$lv/transcript.jsonl" | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook subagent
   [[ "$(grep -c '"type":"delegation",' "$lv/.loomy/logs/events.jsonl")" == 1 ]] && ok "duplicate stop: no duplicate completion" || ko "duplicate completion"
   run "live completed frame" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
@@ -1952,6 +1960,7 @@ dead_ends_tests() {
           file_has "dead ends $lang/$setup: $doc requires a new reason" "$p/$doc" 'without stating (the|a) new reason'
         fi
       done
+      run "dead ends $lang/$setup: human first-use Yes" test_content_grant "$REPO" "$p"
       rm -f "$state"
       run "dead ends $lang/$setup: missing STATE result fixture" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" pending reviewer stub ok task "SUMMARY: unincorporated finding"; loomy_memory_digest "$2" 4 new >"$3"' _ "$REPO" "$p" "$base/new-before.txt"
       run "dead ends $lang/$setup: library reads missing STATE" bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_state "$2"; loomy_memory_digest "$2" 4 new' _ "$REPO" "$p"
@@ -2077,13 +2086,13 @@ dead_ends_tests() {
   run "dead ends: context respects memory off" bash "$p/.loomy/scripts/loomy-context.sh" --root "$p"
   hasnt "dead ends: no ledger when memory is off" 'Check Dead ends|approach-35'
   run "dead ends: restore memory" "$LOOMY" config set memory on
-  # The companion sync is local-only; memory/delegations must remain excluded even as both ledgers are backed up.
+  # The companion sync is local-only; private result bodies stay excluded as both ledgers are backed up.
   run "dead ends: local private remote fixture" git init --bare -q -b main "$base/private.git"
   run "dead ends: private backup includes the archive" "$LOOMY" privacy --root "$p" private --remote "$base/private.git"
   printf '.loomy/memory/DEAD-ENDS.md\n.loomy/memory/STATE.md\n' >"$base/private-paths.txt"
   run "dead ends: private repository tracks STATE and archive" bash -c 'git --git-dir="$1/.loomy/ai.git" ls-files -- .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md | LC_ALL=C sort | cmp - "$2"' _ "$p" "$base/private-paths.txt"
   run "dead ends: archive backed up in the local private remote" bash -c 'git --git-dir="$1" show main:.loomy/memory/DEAD-ENDS.md | cmp - "$2"' _ "$base/private.git" "$archive"
-  run "dead ends: private sync excludes full delegation findings" bash -c 'test -z "$(git --git-dir="$1/.loomy/ai.git" ls-files -- .loomy/memory/delegations/)"' _ "$p"
+  run "dead ends: private sync excludes full delegation findings" bash -c 'test -z "$(git --git-dir="$1/.loomy/ai.git" ls-files -- .loomy/memory/private-results-v1/)"' _ "$p"
   p="$base/long-entry"; mkdir -p "$p/.loomy/memory"; state="$p/.loomy/memory/STATE.md"
   perl -e 'print "# Work state\n\n## Done\n- Keep progress\n\n## Dead ends\n- ", "x" x 1000, " — rejected (evidence.log) · do not retry without a new reason\n"' >"$state"
   cp "$state" "$base/long-before.md"
@@ -2155,16 +2164,17 @@ shared_memory_tests() {
 SM="$WORK/memoire"
 run "memory: generated project" "$LOOMY" init "$SM" --yes --no-clipboard
 cp -R "$SM" "$tpl"
+run "memory: human first-use Yes" test_content_grant "$REPO" "$SM"
 printf '# Work state\n\n## Done\n- importer written\n\n## In progress\n\n## Decisions\n- DuckDB on Parquet\n' >"$SM/.loomy/memory/STATE.md.new"
 [[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md created at init" || ko "memory: STATE.md missing"
 grep -qxF '.loomy/memory/' "$SM/.gitignore" && ok "memory: shared state and delegation results kept out of Git" || ko "memory: .gitignore $(cat "$SM/.gitignore" | tr '\n' ' ')"
 (cd "$SM" && bash "$SM/.loomy/scripts/loomy-delegate-codex.sh" executor "Write the importer") >/dev/null 2>&1
-MF="$(ls "$SM"/.loomy/memory/delegations/*-executor-*.md 2>/dev/null | head -1)"
-[[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/delegations" 2>&1))"
+MF="$(ls "$SM"/.loomy/memory/private-results-v1/*.json 2>/dev/null | head -1)"
+[[ -n "$MF" ]] && grep -q 'Write the importer' "$MF" && grep -q 'SUMMARY: answer from the codex double' "$MF" && ok "memory: Codex bridge result saved with its task" || ko "memory: bridge result not saved ($(ls "$SM/.loomy/memory/private-results-v1" 2>&1))"
 printf '%s\n' '{"type":"user","message":{"role":"user","content":"Map the CSV schemas"}}' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"STATUS: done\nSUMMARY: three CSV files, one key\nNEXT: load them"}]}}' >"$WORK/sub.jsonl"
 printf '{"agent_id":"a1","agent_type":"explorer","agent_transcript_path":"%s","transcript_path":"%s"}' "$WORK/sub.jsonl" "$WORK/sub.jsonl" \
   | CLAUDE_PROJECT_DIR="$SM" bash "$SM/.loomy/scripts/loomy-context.sh" --hook subagent >/dev/null 2>&1
-MS="$(ls "$SM"/.loomy/memory/delegations/*-explorer-*.md 2>/dev/null | head -1)"
+MS="$SM/.loomy/memory/private-results-v1/a1.json"
 [[ -n "$MS" ]] && grep -q 'Map the CSV schemas' "$MS" && grep -q 'three CSV files, one key' "$MS" && ok "memory: native subagent result saved from its transcript" || ko "memory: subagent result not saved"
 [[ -f "$SM/.loomy/memory/STATE.md" ]] && ok "memory: STATE.md present" || ko "memory: STATE.md lost"
 mv "$SM/.loomy/memory/STATE.md.new" "$SM/.loomy/memory/STATE.md"; touch -t 202601010000 "$SM/.loomy/memory/STATE.md"
@@ -2172,7 +2182,7 @@ bash "$SM/.loomy/scripts/loomy-context.sh" --root "$SM" >"$OUT" 2>&1
 has "memory: work state given at session start" "Work state \(.loomy/memory/STATE.md"
 has "memory: decisions in the context" "DuckDB on Parquet"
 hasnt "memory: empty sections left out" "## In progress"
-has "memory: latest results in short" "explorer · subagent · ok · .*three CSV files, one key · next: load them"
+has "memory: latest results in short" "explorer · subagent · unknown · ok · .*three CSV files, one key · next: load them"
 has "memory: Codex result in short" "executor · .* · ok · .*answer from the codex double · next: finish it"
 # Cost: the block is bounded, absent when a session is resumed, and results already taken into STATE.md are not repeated.
 python3 - "$OUT" <<'PY2' && ok "memory: block bounded (under 3,000 characters)" || ko "memory: block too large"
@@ -2200,17 +2210,20 @@ has "loomy memory: work state and results" "SHARED MEMORY"
 has "loomy memory: result listed" "three CSV files"
 run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
 has "loomy memory show: full text of the latest" "Map the CSV schemas"
-for i in 1 2 3; do LOOMY_MEMORY_KEEP=2 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result; [ "$3" = 3 ] && sleep 1' _ "$REPO" "$SM" "$i"; done
-[[ "$(ls "$SM/.loomy/memory/delegations" | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest results pruned" || ko "memory: pruning ($(ls "$SM/.loomy/memory/delegations" | wc -l))"
+# The disclosed policy limits replace the unbounded historical Markdown pruning.
+perl -pi -e 's/results_max_records=200/results_max_records=2/' "$SM/.loomy/logs/content-policy.conf"
+for i in 1 2 3; do bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result' _ "$REPO" "$SM" "$i"; done
+[[ "$(find "$SM/.loomy/memory/private-results-v1" -name '[!.]*.json' | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest unpinned private results pruned" || ko "memory: private retention cap not applied"
 # Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.
 mem() { bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; shift; "$@"' _ "$REPO" "$@"; }
 LOOMY_MEMORY_KEEP=abc mem loomy_memory_save "$SM" i1 "my/role x" m ok "task" $'summary: lower case\nchecks: passed\nnext: go on'
 [[ $? -eq 0 ]] && ok "memory: invalid retention value does not stop the caller" || ko "memory: save failed"
 mem loomy_memory_digest "$SM" 1 >"$OUT" 2>&1
-has "memory: odd role saved under a clean name" "my-role-x"
+has "memory: unrecognized role stays structural" "unknown · m"
 has "memory: lowercase fields read, next one not swallowed" ": lower case · next: go on"
 mkdir -p "$WORK/ailleurs"; for i in 1 2 3; do echo x >"$WORK/ailleurs/$i.md"; done
-SL="$WORK/memlien"; mkdir -p "$SL/.loomy/memory"; ln -s "$WORK/ailleurs" "$SL/.loomy/memory/delegations"
+SL="$WORK/memlien"; mkdir -p "$SL/.loomy/memory"; ln -s "$WORK/ailleurs" "$SL/.loomy/memory/private-results-v1"
+run "memory: symlink fixture human first-use Yes" test_content_grant "$REPO" "$SL"
 LOOMY_MEMORY_KEEP=1 mem loomy_memory_save "$SL" i2 role m ok task result
 [[ "$(ls "$WORK/ailleurs" | wc -l | tr -d ' ')" == 3 ]] && ok "memory: never writes or prunes through a symbolic link" || ko "memory: files touched through the link"
 (cd "$SM" && "$LOOMY" memory show 999) >"$OUT" 2>&1
@@ -2483,6 +2496,7 @@ PERL
       for kind in tried empty legacy; do
         bp="$bt/bridge-$tool-$role-$kind"; mkdir -p "$bp/.loomy"
         cp "$bt/en-hybrid-codex/.loomy/brief.md" "$bp/.loomy/brief.md"
+        run "$tool/$role/$kind: human first-use Yes" test_content_grant "$REPO" "$bp"
         fixture="$bt/$kind.md"
         run "$tool/$role/$kind: bridge parses result" env STUB_RESULT_FILE="$fixture" STUB_LOG="$bt/prompt.log" bash -c 'cd "$1" && "$2" delegate "$3" "$4" "B01 review evidence"' _ "$bp" "$LOOMY" "$tool" "$role"
         file_has "$tool/$role/$kind: prompt contract" "$bt/prompt.log" '^TRIED:$'
@@ -2492,13 +2506,13 @@ PERL
         else
           run "$tool/$role/$kind: supplied evidence is complete" bash -c '! grep -q '\''"review":"incomplete"'\'' "$1"' _ "$bp/.loomy/logs/events.jsonl"
         fi
-        run "$tool/$role/$kind: archive preserves full result" bash -c 'for f in "$1"/.loomy/memory/delegations/*.md; do sed -n "/^STATUS:/,\$p" "$f" >"$3"; cmp "$2" "$3" || exit; done' _ "$bp" "$fixture" "$bt/archived.md"
+        run "$tool/$role/$kind: archive preserves full result" python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1])/".loomy/memory/private-results-v1"; fs=list(p.glob("[!.]*.json")); assert len(fs)==1; assert json.loads(fs[0].read_text())["result"]+"\n"==pathlib.Path(sys.argv[2]).read_text()' "$bp" "$fixture"
         run "$tool/$role/$kind: show result" "$LOOMY" memory --root "$bp" show
         if [[ "$kind" == legacy ]]; then hasnt "$tool/$role: legacy result accepted without TRIED" '^TRIED:$'
         else has "$tool/$role/$kind: TRIED visible" '^TRIED:$'; has "$tool/$role/$kind: eighth bullet retained" 'recap: next action → retained'; fi
         run "$tool/$role/$kind: recap" "$LOOMY" memory --root "$bp"
         has "$tool/$role/$kind: summary and next stay separate" 'no defects found after targeted checks · next: inspect the review evidence'
-        run "$tool/$role/$kind: field boundaries" bash -c 'source "$1/scripts/lib/memory.sh"; for f in "$2"/.loomy/memory/delegations/*.md; do [[ "$(_lm_field "$f" FILES)" == " none" || "$(_lm_field "$f" FILES)" == none ]] || exit 1; [[ "$(_lm_field "$f" NEXT)" == " inspect the review evidence" || "$(_lm_field "$f" NEXT)" == "inspect the review evidence" ]] || exit 1; done' _ "$REPO" "$bp"
+        run "$tool/$role/$kind: field boundaries" python3 -c 'import json,pathlib,re,sys; fs=list((pathlib.Path(sys.argv[1])/".loomy/memory/private-results-v1").glob("[!.]*.json")); assert len(fs)==1; text=json.loads(fs[0].read_text())["result"]; fields=dict((k,v.strip().lstrip("- ")) for k,v in re.findall(r"^([A-Z]+):[ \t]*(.*?)(?=^[A-Z]+:|\Z)",text,re.M|re.S)); assert fields["FILES"]=="none"; assert fields["NEXT"]=="inspect the review evidence"' "$bp"
         run "$tool/$role/$kind: watch frame" env COLUMNS=132 LINES=40 LOOMY_TREE=list bash "$REPO/scripts/loomy-tree.sh" --root "$bp" --once
         has "$tool/$role/$kind: watch row present" "$row_pattern"
         run "$tool/$role/$kind: log recap" "$LOOMY" log --root "$bp"

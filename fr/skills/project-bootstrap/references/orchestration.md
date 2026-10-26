@@ -55,7 +55,8 @@ N'utilise pas ces appels pour des tâches triviales, des confirmations de routin
 
 Options des ponts, avant le texte de la tâche : choisis le rôle d'après l'intention du travail ; quand l'utilisateur nomme un modèle ou un effort, passe `--model <id> --effort <niveau> --why "user request"`, et `--write` quand le rôle doit produire des fichiers.
 
-- Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
+- Disponibilité des fournisseurs : le code 75 signifie en pause. Lis `resume_at` ; garde exactement le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options. Après la réinitialisation, reprends la tâche et les options exactes depuis le contexte vivant ou une référence de tâche/résultat privé autorisée ; vérifie les modifications avant de relancer. Sinon, signale que la tâche d’origine est nécessaire et arrête le travail dépendant. Ne devine jamais et ne choisis pas un modèle moins puissant. En cas de nouvelle pause, utilise le nouveau `resume_at` ; ne relance jamais deux fois pour une même pause.
+- Libellés des bridges : passe explicitement `--task-label "Titre court de la tâche"` à chaque délégation. L’enregistrement nécessite l’autorisation humaine `explicit-lead` ; ne déduis jamais un libellé du corps de la tâche.
 
 ## Demandes en parallèle
 

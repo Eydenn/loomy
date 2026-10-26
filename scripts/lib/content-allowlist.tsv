@@ -14,6 +14,7 @@ advisor	tool	keep
 advisor	ts	keep
 advisor	type	keep
 agent_alias	agent_id	keep
+agent_alias	agent_type	keep
 agent_alias	alias_from	keep
 agent_alias	alias_id	keep
 agent_alias	bridge	keep
@@ -24,6 +25,7 @@ agent_alias	cost_usd	keep
 agent_alias	effort	keep
 agent_alias	family	keep
 agent_alias	id	keep
+agent_alias	label_refs	keep
 agent_alias	model	keep
 agent_alias	parent_agent_id	keep
 agent_alias	role	keep
@@ -39,6 +41,7 @@ agent_alias	ts	keep
 agent_alias	turn_id	keep
 agent_alias	type	keep
 agent_alias/checkpoint_value	agent_id	keep
+agent_alias/checkpoint_value	agent_type	keep
 agent_alias/checkpoint_value	alias_from	keep
 agent_alias/checkpoint_value	alias_id	keep
 agent_alias/checkpoint_value	cost_in	keep
@@ -61,6 +64,7 @@ agent_closed	event_key	keep
 agent_closed	evidence	keep
 agent_closed	family	keep
 agent_closed	id	keep
+agent_closed	label_refs	keep
 agent_closed	multi_agent_version	keep
 agent_closed	native_key	keep
 agent_closed	nickname	omit
@@ -86,6 +90,7 @@ agent_closed	ts	keep
 agent_closed	turn_id	keep
 agent_closed	type	keep
 agent_link	agent_id	keep
+agent_link	agent_type	keep
 agent_link	bridge	keep
 agent_link	cost_in	keep
 agent_link	effort	keep
@@ -93,6 +98,7 @@ agent_link	event_key	keep
 agent_link	evidence	keep
 agent_link	family	keep
 agent_link	id	keep
+agent_link	label_refs	keep
 agent_link	model	keep
 agent_link	multi_agent_version	keep
 agent_link	native_key	keep
@@ -136,6 +142,7 @@ bridge_link	tool	keep
 bridge_link	ts	keep
 bridge_link	type	keep
 delegation	agent_id	keep
+delegation	agent_type	keep
 delegation	attempt_id	keep
 delegation	bridge	keep
 delegation	changed_files	omit
@@ -153,6 +160,7 @@ delegation	family	keep
 delegation	files_changed	keep
 delegation	format	keep
 delegation	id	keep
+delegation	label_refs	keep
 delegation	model	keep
 delegation	multi_agent_version	keep
 delegation	native_key	keep
@@ -167,6 +175,8 @@ delegation	parent_id	keep
 delegation	parent_session	keep
 delegation	pid_role	keep
 delegation	profile	keep
+delegation	requested	keep
+delegation	requested_model	keep
 delegation	resume_at	keep
 delegation	review	keep
 delegation	role	keep
@@ -194,6 +204,7 @@ delegation	type	keep
 delegation	why	omit
 delegation_activity	activity	keep
 delegation_activity	agent_id	keep
+delegation_activity	agent_type	keep
 delegation_activity	bridge	keep
 delegation_activity	checkpoint_key	keep
 delegation_activity	checkpoint_value	project
@@ -204,6 +215,7 @@ delegation_activity	event_key	keep
 delegation_activity	evidence	keep
 delegation_activity	family	keep
 delegation_activity	id	keep
+delegation_activity	label_refs	keep
 delegation_activity	model	keep
 delegation_activity	multi_agent_version	keep
 delegation_activity	native_key	keep
@@ -231,6 +243,7 @@ delegation_activity	ts	keep
 delegation_activity	turn_id	keep
 delegation_activity	type	keep
 delegation_activity/checkpoint_value	agent_id	keep
+delegation_activity/checkpoint_value	agent_type	keep
 delegation_activity/checkpoint_value	cost_in	keep
 delegation_activity/checkpoint_value	cost_usd	keep
 delegation_activity/checkpoint_value	effort	keep
@@ -246,6 +259,7 @@ delegation_activity/checkpoint_value	surface	keep
 delegation_activity/checkpoint_value	task	omit
 delegation_activity/checkpoint_value	turn_id	keep
 delegation_start	agent_id	keep
+delegation_start	agent_type	keep
 delegation_start	attempt_id	keep
 delegation_start	background	keep
 delegation_start	bridge	keep
@@ -258,6 +272,7 @@ delegation_start	event_key	keep
 delegation_start	evidence	keep
 delegation_start	family	keep
 delegation_start	id	keep
+delegation_start	label_refs	keep
 delegation_start	model	keep
 delegation_start	multi_agent_version	keep
 delegation_start	native_key	keep
@@ -310,6 +325,7 @@ phase	ts	keep
 phase	type	keep
 request	excerpt	omit
 request	id	keep
+request	label_refs	keep
 request	session	keep
 request	ts	keep
 request	type	keep
@@ -375,6 +391,7 @@ session_observed	cwd_relative	omit
 session_observed	event_key	keep
 session_observed	evidence	keep
 session_observed	family	keep
+session_observed	label_refs	keep
 session_observed	native_key	keep
 session_observed	observed_at	keep
 session_observed	owner_pid	keep

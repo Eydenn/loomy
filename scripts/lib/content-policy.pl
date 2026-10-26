@@ -1,10 +1,9 @@
-# Project-local content grants and projections. No journal writer is wired here (T2).
+# Project-local content grants, scoped labels and structural projections.
 package Loomy::ContentPolicy;
 use strict;
 use warnings;
 use Cwd qw(abs_path);
 use Digest::SHA qw(sha256_hex);
-use Encode qw(encode decode FB_CROAK);
 use Fcntl qw(:DEFAULT :flock :mode O_NOFOLLOW O_NONBLOCK);
 use IO::Handle;
 use JSON::PP ();
@@ -28,6 +27,13 @@ my $LABELS = 'display-context-v1.jsonl';
 my $FULL = 'display-context-full';
 my $MAX_GENERATION = 9007199254740991;
 
+# Structural hooks usually handle ASCII identities and no display text. Load the
+# Unicode codec only for labels, legacy excerpts, UI or Unicode project names.
+sub _encode_utf8 { require Encode; return Encode::encode('UTF-8',$_[0]) }
+sub _decode_utf8 {
+    my ($bytes,$strict)=@_; require Encode;
+    return Encode::decode('UTF-8',$bytes,$strict ? Encode::FB_CROAK() : 0);
+}
 sub defaults {
     return {version=>1, journal_content=>'structural', policy_generation=>0, label_sources=>'none',
         %MAX, private_results=>'off', grant_prompt_version=>0};
@@ -123,7 +129,8 @@ sub _context {
     my ($loomy,$ls)=_dir("$root/.loomy");
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
     chdir $loomy or die "content directory unavailable\n";
-    my ($logs,$ds); my $ok=eval {
+    my ($logs,$ds,$project_id); my $ok=eval {
+        $project_id=_project_id($root);
         if (!lstat('logs') && $create) {
             my $mask=umask 0077; my $made=mkdir 'logs',0700; umask $mask;
             die "content directory unavailable\n" unless $made || -d 'logs';
@@ -131,8 +138,43 @@ sub _context {
         ($logs,$ds)=_dir('logs',"$root/.loomy/logs") if lstat('logs'); 1;
     }; my $err=$@;
     chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
-    return {root=>$root, project_id=>'p'.sha256_hex(utf8::is_utf8($root) ? encode('UTF-8',$root) : $root), loomy=>$loomy, ls=>$ls,
+    return {root=>$root, project_id=>$project_id, loomy=>$loomy, ls=>$ls,
         logs=>$logs, ds=>$ds};
+}
+# Pin the old namespace once, before any new references are made. Keeping that
+# namespace is the migration: historical journal/label/memory references need no
+# rewrite. The file lives in the shared .loomy, independently of its current path.
+sub _project_id {
+    my ($root)=@_; my $name='project-id';
+    unless (lstat($name)) {
+        my $id='p'.sha256_hex(utf8::is_utf8($root) ? _encode_utf8($root) : $root);
+        # A project may already have moved since the path-based writer ran.
+        # Only a private, schema-valid local label record can supply its old ID.
+        my $old=eval {(sub {
+            my ($raw)=_read('logs/display-context-v1.jsonl',1048576);
+            for (split /\n/,$raw//'') {
+                my $r=eval {$JSON->decode($_)};
+                return $r->{project_id} if ref($r) eq 'HASH'
+                    && ($r->{project_id}//'') =~ /\Ap[0-9a-f]{64}\z/ && _valid_label($r,$r->{project_id});
+            }
+            return;
+        })->()};
+        $id=$old if defined $old;
+        my $mask=umask 0077;
+        if (sysopen my $h,$name,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600) {
+            my $ok=eval {print {$h} "$id\n" or die; $h->flush && $h->sync or die; close $h or die; 1};
+            umask $mask; die "content identity unavailable\n" unless $ok;
+        } else {umask $mask; die "content identity unavailable\n" unless $!{EEXIST}}
+    }
+    # Another process can be between O_EXCL and its small, durable write.
+    for (1..10) {
+        my $raw; my $ok=eval {($raw)=_read($name,128); 1};
+        die $@ unless $ok || $@ eq "content file changed\n";
+        return $1 if defined($raw) && $raw =~ /\A(p[0-9a-f]{64})\n\z/;
+        die "content identity unavailable\n" if defined($raw) && length($raw);
+        sleep 0.01;
+    }
+    die "content identity unavailable\n";
 }
 sub _in_context {
     my ($ctx,$code)=@_; die "content directory unavailable\n" unless $ctx->{logs};
@@ -316,13 +358,14 @@ sub _save_policy {
 # All translations are supplied by content-policy.sh from the public i18n dictionary.
 sub _message {
     my ($key,@args)=@_; my $fmt=$ENV{"LOOMY_CONTENT_UI_$key"}//die "content translation unavailable\n";
-    $fmt=decode('UTF-8',$fmt,FB_CROAK) unless utf8::is_utf8($fmt);
-    @args=map {utf8::is_utf8($_) ? $_ : decode('UTF-8',$_,FB_CROAK)} @args;
-    return encode('UTF-8',sprintf($fmt,@args)."\n");
+    $fmt=_decode_utf8($fmt,1) unless utf8::is_utf8($fmt);
+    @args=map {utf8::is_utf8($_) ? $_ : _decode_utf8($_,1)} @args;
+    return _encode_utf8(sprintf($fmt,@args)."\n");
 }
 sub _say { print STDOUT _message(@_) }
 sub display_path {
-    my ($path)=@_; $path=decode('UTF-8',$path) unless utf8::is_utf8($path);
+    my ($path)=@_;
+    $path=_decode_utf8($path) if !utf8::is_utf8($path) && $path =~ /[^\x00-\x7f]/;
     $path =~ s/([\p{Cc}\p{Cf}\x{e0000}-\x{e007f}])/sprintf('\\u{%04X}',ord($1))/ge;
     return $path;
 }
@@ -422,7 +465,7 @@ sub first_use {
 
 sub sanitize_label {
     my ($text,$graphemes,$bytes)=@_; die "label unavailable\n" unless _scalar($text);
-    $text=decode('UTF-8',$text,FB_CROAK) unless utf8::is_utf8($text);
+    $text=_decode_utf8($text,1) unless utf8::is_utf8($text);
     # Remove complete terminal sequences before stripping the remaining controls.
     $text =~ s/(?:\e\]|\x{9d}).*?(?:\a|\e\\|\x{9c})//gs;
     $text =~ s/(?:\e[P^_X]|[\x{90}\x{98}\x{9e}\x{9f}]).*?(?:\e\\|\x{9c})//gs;
@@ -432,7 +475,7 @@ sub sanitize_label {
     $text =~ s/[\p{Cc}\p{Cf}\x{e0000}-\x{e007f}]//g;
     $text =~ s/\A\s+|\s+\z//g;
     my ($out,$n)=('',0); for my $cluster ($text =~ /\X/g) {
-        last if ++$n>$graphemes || length(encode('UTF-8',$out.$cluster))>$bytes; $out.=$cluster;
+        last if ++$n>$graphemes || length(_encode_utf8($out.$cluster))>$bytes; $out.=$cluster;
     }
     $out =~ s/\s+\z//;
     die "label unavailable\n" unless length($out); return $out;
@@ -465,8 +508,43 @@ sub _rows {
     }
     return \@rows;
 }
+# Search from the tail and validate only matching candidates. Hooks normally
+# need one scoped record, not a decode/sanitize pass over the entire history.
+sub _find_label {
+    my ($c,$match)=@_; my $before=_private_stat($LABELS); return unless @$before;
+    die "content file too large\n" if $before->[7]>1048576;
+    sysopen my $h,$LABELS,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die "content file unavailable\n";
+    die "content file changed\n" unless _same($before,[stat($h)]);
+    my $offset=$before->[7]; my $carry=''; my $found;
+    while ($offset>0 && !$found) {
+        my $size=$offset>8192 ? 8192 : $offset; $offset-=$size;
+        seek $h,$offset,0 or die "content read failed\n";
+        my $n=sysread($h,my $chunk,$size); die "content read failed\n" unless defined($n) && $n==$size;
+        my @lines=split /\n/,$chunk.$carry,-1;
+        $carry=$offset ? shift @lines : '';
+        for my $line (reverse @lines) {
+            next if !length($line) || length($line)>4096;
+            # Canonical local records allow a cheap exact-string prefilter.
+            # Whitespace in older/manual JSON still goes through the decoder.
+            next if index($line,$match->{needle})<0 && $line !~ /:\s+/;
+            my $r=eval {$JSON->decode($line)};
+            next unless _valid_label($r,$c->{project_id});
+            next if grep {($r->{$_}//'') ne $match->{$_}} grep {$_ ne 'needle'} keys %$match;
+            $found=$r; last;
+        }
+        # A corrupt huge line cannot grow an unbounded carry buffer.
+        $carry=substr($carry,0,4097) if length($carry)>4097;
+    }
+    die "content file changed\n" unless _same($before,[stat($h)]) && _same($before,_private_stat($LABELS));
+    return $found;
+}
+sub latest_label {
+    my ($c,$kind,$target,$attempt,$source)=@_;
+    return _find_label($c,{target_kind=>$kind,target_id=>$target,attempt_id=>$attempt,source=>$source,
+        needle=>'"target_id":'.substr($JSON->encode([$target]),1,-1)});
+}
 sub _save_label {
-    my ($c,$p,$input)=@_; die "invalid label scope\n" unless _scope($input,$c->{project_id});
+    my ($c,$p,$input,$last)=@_; die "invalid label scope\n" unless _scope($input,$c->{project_id});
     my %granted=map {$_=>1} @{_sources($p->{label_sources})};
     my $source=$input->{source}//''; die "label source not granted\n" unless $SOURCE{$source} && $granted{$source};
     die "human content confirmation required\n" if $source eq 'explicit-user' && !human_tty();
@@ -476,20 +554,30 @@ sub _save_label {
             && $text =~ /[A-Za-z0-9]/ && length($text)<=$p->{codex_component_max_chars}
             && length($text)<=$p->{label_max_graphemes} && length($text)<=$p->{label_max_bytes};
     } else {$text=sanitize_label($text,$p->{label_max_graphemes},$p->{label_max_bytes})}
-    my ($raw,$before)=_read($LABELS,1048576); $raw//='';
-    my $rows=_rows($raw,$c->{project_id}); my $previous='';
-    $raw.="\n" if length($raw) && $raw !~ /\n\z/;
-    for (@$rows) { $previous=$_->{label_id} if $_->{target_kind} eq $input->{target_kind}
-        && $_->{target_id} eq $input->{target_id} && $_->{attempt_id} eq $input->{attempt_id} && $_->{source} eq $source }
+    $last=latest_label($c,@$input{qw(target_kind target_id attempt_id source)}) if @_<4;
+    my $previous=$last ? $last->{label_id} : '';
     my $r={version=>1,project_id=>$c->{project_id},(map {$_=>$input->{$_}} qw(target_kind target_id attempt_id)),
         label_id=>'l'.unpack('H*',_random(16)),text=>$text,source=>$source,
         created_at=>strftime('%Y-%m-%dT%H:%M:%SZ',gmtime),supersedes=>$previous};
-    my $line=$JSON->encode($r)."\n";
-    if (length($raw)+length($line)>$p->{label_store_max_bytes}) {
+    my $line=$JSON->encode($r)."\n"; my $before=_private_stat($LABELS);
+    my $size=@$before ? $before->[7] : 0;
+    die "content file too large\n" if $size>1048576;
+    my $h;
+    if (@$before) {
+        sysopen $h,$LABELS,O_RDWR|O_APPEND|O_NOFOLLOW|O_NONBLOCK or die "content file unavailable\n";
+        die "content file changed\n" unless _same($before,[stat($h)]);
+        if ($size) {seek $h,-1,2 or die "content read failed\n"; sysread($h,my $tail,1)==1 or die "content read failed\n"; $line="\n$line" if $tail ne "\n"}
+    }
+    if ($size+length($line)>$p->{label_store_max_bytes}) {
         my ($fact,$s)=_read($FULL,128); _atomic($c,$FULL,"display context full; label not saved\n",$s) unless defined $fact;
         die "display context full; label not saved\n";
     }
-    _atomic($c,$LABELS,$raw.$line,$before); return label_ref($r);
+    _assert_context($c);
+    unless ($h) {sysopen $h,$LABELS,O_WRONLY|O_APPEND|O_CREAT|O_EXCL|O_NOFOLLOW,0600 or die "content write failed\n"}
+    die "content file changed\n" unless _same(_private_stat($LABELS),[stat($h)]);
+    print {$h} $line or die "content write failed\n";
+    $h->flush && $h->sync or die "content write failed\n";
+    close $h or die "content write failed\n"; return label_ref($r);
 }
 sub save_label {
     my ($root,$input)=@_;
@@ -498,16 +586,18 @@ sub save_label {
     die "label source not granted\n" unless $granted{$input->{source}//''};
     die "human content confirmation required\n" if ($input->{source}//'') eq 'explicit-user' && !human_tty();
     my $c=_context($root,1); return _in_context($c,sub {
-        my $lock=_lock($c); return _save_label($c,_effective($c,_stored($c)),$input);
+        my $labels=_lock($c,'display-context.lock');
+        my $lock=_lock($c); my $p=_effective($c,_stored($c));
+        undef $lock;
+        return _save_label($c,$p,$input);
     });
 }
 sub resolve_label {
     my ($root,$ref)=@_; my $c=eval {_context($root,0)}; return unless $c && $c->{logs};
     return unless _scope($ref,$c->{project_id}) && keys(%$ref)==6 && ($ref->{version}//'') eq '1' && _id($ref->{label_id});
     return eval {_in_context($c,sub {
-        my ($raw)=_read($LABELS,1048576); my $rows=_rows($raw,$c->{project_id});
-        for (@$rows) {return $_ if $_->{label_id} eq $ref->{label_id} && $_->{target_kind} eq $ref->{target_kind}
-            && $_->{target_id} eq $ref->{target_id} && $_->{attempt_id} eq $ref->{attempt_id}} return;
+        return _find_label($c,{(map {$_=>$ref->{$_}} qw(label_id target_kind target_id attempt_id)),
+            needle=>'"label_id":'.substr($JSON->encode([$ref->{label_id}]),1,-1)});
     })};
 }
 sub label_health {
@@ -521,7 +611,7 @@ sub check_allowlist {
     {local $/; $raw=<$h>} die "invalid content allowlist\n" if length($raw)>131072;
     my @lines=grep {length && !/^#/} split /\n/,$raw;
     die "content allowlist drift\n" unless sha256_hex(join("\n",@lines)."\n") eq
-        '7c8408bc6d4db31c842216b9a934a3d9c9d8d763a1cb671ef8e352b0f42f0144';
+        '03f1430fd6a0ba60748a6d12b861c86a005ab5a9a6e3979dfcadf6b875a07e50';
     shift @lines; my %types;
     for (@lines) {my ($t,$k,$d)=split /\t/; $types{$t}{$k}=$d} return \%types;
 }
@@ -531,27 +621,41 @@ my %ENUM = (
     tool=>[qw(claude codex local unknown)], family=>[qw(claude codex local unknown)],
     acting=>[qw(claude codex local unknown)], master=>[qw(claude codex local unknown)],
     failover_from=>[qw(claude codex local unknown)],
-    bridge=>[qw(claude codex local claude-native codex-native unknown)],
+    # CONTENT-CENSUS fixtures: bridge CLIs, both collectors and Claude tool hooks.
+    bridge=>[qw(claude codex local claude-native codex-native subagent unknown)],
     effort=>[qw(none minimal low medium high xhigh max unknown)],
     status=>[qw(ok error interrupted unknown done paused handed_over running cancelled)],
-    outcome=>[qw(done partial blocked failed error interrupted unknown ok paused handed_over cancelled)],
-    state=>[qw(running busy idle done closed unknown interrupted paused handed_over waiting catching_up)],
-    surface=>[qw(cli app unknown)], context_freshness=>[qw(current fresh catching_up unknown)],
-    cost_in=>[qw(usage unknown)], cost_source=>[qw(usage actual estimated estimate provider local unknown)],
+    # usage.sh pause and models.sh ai_result_json emit these outcome codes.
+    outcome=>[qw(done partial blocked failed error interrupted unknown ok paused handed_over cancelled waiting_for_reset unformatted)],
+    state=>[qw(running busy idle done failed closed unknown interrupted paused handed_over waiting catching_up)],
+    surface=>[qw(cli app exec unknown)], context_freshness=>[qw(current fresh catching_up unknown)],
+    cost_in=>[qw(usage unknown)], cost_source=>[qw(usage actual reported estimated estimate provider local unknown)],
     multi_agent_version=>[qw(v2)], pid_role=>[qw(owner launcher lead unknown)],
     scope=>[qw(lead agent subagent session project unknown)],
     sandbox=>[qw(read-only workspace-write danger-full-access text-only unknown)],
     format=>[qw(structured free unknown)], review=>[qw(complete incomplete unknown)],
     profile=>[qw(econome equilibre qualite unknown),'-'], launcher=>[qw(terminal app desktop unknown)],
-    activity=>[qw(start running busy idle tool thinking output unknown)],
-    source=>[qw(transcript hook cli app prompt startup resume clear compact native catalog official project user unknown)],
-    evidence=>['source lease','parent pending',qw(launcher launch-session-id exec-json transcript hook native journal unknown)],
-    event=>[qw(start stop end open close add remove install update unknown)],
+    activity=>[qw(start running busy idle waiting tool thinking output unknown)],
+    # skills.sh uses the two catalog/skills.conf repository IDs as sources.
+    source=>[qw(transcript hook cli app prompt startup resume clear compact native catalog official project user anthropic openai unknown)],
+    evidence=>['source lease','parent pending',qw(launcher launch-session-id exec-json transcript hook native journal rollout unknown)],
+    event=>[qw(start stop end open close add remove install update added restored removed unknown)],
     reason_code=>[qw(manual quota saturated reset available catalog selected installed removed updated unavailable unknown)],
     quota_window=>[qw(5h 7d daily weekly session unknown)],
-    phase=>[qw(brief discover interview propose approve build verify document commit retire done plan review audit report unknown)],
+    phase=>[qw(brief discover interview propose approve build verify document commit retire done plan review audit report scope analyze validate fix unknown)],
 );
-my %ROLE=map {$_=>1} qw(lead architect developer executor reviewer security explorer documenter advisor agent worker default unknown);
+my %ROLE=map {$_=>1} qw(lead architect debugger developer executor reviewer security explorer documenter advisor agent worker default unknown);
+# Native identity() accepts 100 ASCII characters. The collectors then assemble
+# session keys, call/turn IDs and aliases from those parts; the composed value
+# must not be rejected by the single-component limit (claude-native/codex-native).
+sub _journal_id {
+    my ($k,$v)=@_; return 0 unless _scalar($v);
+    my $part=qr/[A-Za-z0-9_.:-]{1,100}/;
+    return 1 if $v =~ /\A$part\z/ || $v =~ /\A(?:cl|cn):$part:$part\z/;
+    return 1 if $v =~ /\A(?:claude|codex):(?:pending:)?$part\z/;
+    return 1 if $k =~ /\A(?:session|parent_session)\z/ && $v =~ /\Apending:$part\z/;
+    return $k =~ /\A(?:agent_id|alias_from)\z/ && $v =~ /\A$part:$part\z/;
+}
 sub _timestamp {
     my ($v)=@_; return 0 unless _scalar($v) && $v =~ /\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?Z\z/;
     return defined(eval {timegm($6,$5,$4,$3,$2-1,$1)});
@@ -572,14 +676,25 @@ sub _value {
             && keys(%$v)==($k eq 'label_ref' ? 6 : 5) && ($k ne 'label_ref' || _id($v->{label_id}));
         return {%$v};
     }
+    if ($k eq 'label_refs') {
+        die "invalid structural reference\n" unless ref($v) eq 'HASH' && keys(%$v)<=3
+            && !grep {!/\A(?:slug|nickname|role)\z/} keys %$v;
+        return {map {$_=>_value('label_ref',$v->{$_},$project)} keys %$v};
+    }
     if ($k eq 'analysis_codes') {
         die "invalid structural value\n" unless ref($v) eq 'ARRAY' && @$v<=16;
         return [map {_value('reason_code',$_,$project)} @$v];
     }
     die "invalid structural value\n" unless _scalar($v);
-    # T2 must give usage.agent a typed ID/opaque digest for native agent_type
-    # (Explore/custom). Keep the reviewed T1 enum behavior until that port.
-    if ($k eq 'role' || $k eq 'agent') {return $ROLE{$v} ? $v : 'unknown'}
+    if ($k eq 'role') {return $ROLE{$v} ? $v : 'unknown'}
+    if ($k eq 'agent_type') {return $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,39}\z/ ? $v : 'unknown'}
+    if ($k eq 'agent') {
+        # Native agent_type is an identity, not a Loomy role enum. Keep validated
+        # tokens (including Explore) and opaque IDs stable on a second projection.
+        # Unvalidated custom names get a project-scoped identity, never prose.
+        return $v if _id($v) || $v =~ /\Asha256:[0-9a-f]{64}\z/;
+        return 'sha256:'.sha256_hex($project."\0".(utf8::is_utf8($v) ? _encode_utf8($v) : $v));
+    }
     if ($ENUM{$k}) {
         return $v if grep {$_ eq $v} @{$ENUM{$k}};
         die "invalid structural value\n" if $k eq 'multi_agent_version';
@@ -598,26 +713,36 @@ sub _value {
     }
     if ($k eq 'schema') {die "invalid structural value\n" unless $v =~ /\A[12]\z/; return 0+$v}
     if ($k eq 'source_inode') {die "invalid structural value\n" unless $v =~ /\A[0-9]+:[0-9]+\z/ && length($v)<=64; return $v}
-    if ($k eq 'model' || $k eq 'requested_model' || $k eq 'name') {
+    if ($k eq 'model' || $k eq 'requested_model') {
+        # Same token alphabet as loomy-local-writer.sh, with the design's 128
+        # character bound. Provider prefixes/local model IDs contain slashes.
+        die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.\/:-]{0,127}\z/; return $v;
+    }
+    if ($k eq 'name') {
         die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\z/; return $v;
     }
     if ($k =~ /\A(?:native_key|event_key|checkpoint_key)\z/) {
         die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9_.:-]{1,512}\z/; return $v;
     }
     if ($k =~ /\A(?:id|agent_id|alias_from|alias_id|attempt_id|session|session_key|turn_id|parent_agent_id|parent_id|parent_session|parent_delegation|acting|master|failover_from)\z/) {
-        die "invalid structural value\n" unless _id($v); return $v;
+        die "invalid structural value\n" unless _journal_id($k,$v); return $v;
     }
     die "unclassified structural field\n";
 }
 sub _signature {
     my ($type,$v,$project)=@_;
     return $v if _scalar($v) && ($v eq '1' || $v =~ /\Asha256:[0-9a-f]{64}\z/);
-    if (_scalar($v) && $v =~ /\A(.+Z):(ok|error|interrupted|unknown|done|paused|handed_over)\z/ && _timestamp($1)) {return $v}
+    if (_scalar($v) && $v =~ /\A(.+Z):([^:]*)\z/ && _timestamp($1)) {
+        return $v if grep {$_ eq $2} @{$ENUM{status}};
+    }
     my $body=ref($v) eq 'HASH' ? $v : eval {$JSON->decode($v)};
-    die "invalid structural signature\n" unless ref($body) eq 'HASH' && _allow()->{"$type/checkpoint_value"};
+    unless (ref($body) eq 'HASH' && _allow()->{"$type/checkpoint_value"}) {
+        my $bytes=eval {$JSON->encode([$v])} // '[null]';
+        return 'sha256:'.sha256_hex(($project//'')."\0".$bytes);
+    }
     my %out; for my $key (keys %$body) {
         next unless (_allow()->{"$type/checkpoint_value"}{$key}//'') eq 'keep';
-        $out{$key}=_value($key,$body->{$key},$project);
+        $out{$key}=eval {_value($key,$body->{$key},$project)};
     }
     return 'sha256:'.sha256_hex($JSON->encode(\%out));
 }
@@ -635,13 +760,15 @@ sub project_with_policy {
         my $d=$fields->{$k}//'';
         if ($d eq 'project') {$out{$k}=_signature($type,$e->{$k},$p->{project_id}); next}
         next unless $d eq 'keep' || $extra{$k};
-        $out{$k}=_value($k,$e->{$k},$p->{project_id});
+        # A malformed old/provider value must never poison this event, rotation,
+        # or the following write. Null retains the existing unknown semantics.
+        $out{$k}=eval {_value($k,$e->{$k},$p->{project_id})};
     }
     if ($p->{journal_content} eq 'legacy-excerpts' && ($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0') {
         my %caps=(task=>200,excerpt=>60,why=>200,nickname=>40,cwd_relative=>256);
         for my $k (keys %caps) {
             next unless exists($e->{$k}) && ($fields->{$k}//'') eq 'omit' && _scalar($e->{$k});
-            my $s=$e->{$k}; $s=decode('UTF-8',$s,FB_CROAK) unless utf8::is_utf8($s);
+            my $s=$e->{$k}; $s=_decode_utf8($s) unless utf8::is_utf8($s);
             if ($k eq 'cwd_relative') {next if $s =~ m{\A/|\\|(?:\A|/)\.\.(?:/|\z)|[\p{Cc}]}}
             $out{$k}=substr($s,0,$caps{$k});
         }
@@ -725,7 +852,7 @@ unless (caller) {
             : $err eq "human content confirmation required\n" ? ($agent ? 'AGENT_ANCESTOR' : 'HUMAN_REQUIRED')
             : $err =~ /\Acontent confirmation/ ? 'CONFIRMATION_ABORTED' : 'OPERATION_FAILED';
         if (defined $unsafe_dir) {
-            print STDERR encode('UTF-8',"unsafe directory: ".display_path($unsafe_dir)." (group/world writable)\n");
+            print STDERR _encode_utf8("unsafe directory: ".display_path($unsafe_dir)." (group/world writable)\n");
         } else {
             print STDERR exists($ENV{"LOOMY_CONTENT_UI_$key"})
                 ? _message($key,$key eq 'INVALID_POLICY' ? display_path("$ARGV[1]/.loomy/logs/$POLICY")

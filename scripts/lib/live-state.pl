@@ -12,6 +12,110 @@ use IO::Handle;
 use POSIX qw(strftime);
 # Direct CLI migration can load an adapter which requires this same module.
 $INC{abs_path(__FILE__)}=1;
+my $content_lib=abs_path(__FILE__); $content_lib =~ s{/[^/]+$}{/content-policy.pl};
+require $content_lib;
+my $journal_json=JSON::PP->new->utf8->canonical;
+
+# Locks protect only a policy snapshot or a label append, never source polling
+# or waiting for events.lock. A short retry absorbs normal concurrent hooks.
+sub content_writer {
+    my ($root)=@_;
+    my $c=eval {Loomy::ContentPolicy::_context($root,1)}; return unless $c;
+    return Loomy::ContentPolicy::_in_context($c,sub {
+        my $lock=eval {Loomy::ContentPolicy::_lock($c,'content-policy.lock',10)};
+        my $p=Loomy::ContentPolicy::_effective($c,Loomy::ContentPolicy::_stored($c));
+        $p={%$p,journal_content=>'structural',label_sources=>'none',private_results=>'off'} unless $lock;
+        content_lock_miss($c) unless $lock;
+        return {policy=>$p,context=>$c};
+    });
+}
+sub content_lock_miss {
+    my ($c,$key)=@_; $key//='policy_lock_misses';
+    eval {Loomy::ContentPolicy::_in_context($c,sub {
+        my $lock=Loomy::ContentPolicy::_lock($c,'content-health.lock',10);
+        my ($raw,$before)=Loomy::ContentPolicy::_read('content-health.json',1024);
+        my $health=eval {decode_json($raw//'{}')}; $health={} unless ref($health) eq 'HASH';
+        my %counts;
+        for my $name (qw(policy_lock_misses label_lock_misses)) {
+            my $n=$health->{$name}//0; $counts{$name}="$n" =~ /^\d{1,15}$/ ? 0+$n : 0;
+        }
+        ++$counts{$key};
+        Loomy::ContentPolicy::_atomic($c,'content-health.json',encode_json(\%counts)."\n",$before);
+    })};
+    warn $key eq 'label_lock_misses' ? "display context lock busy; structural event retained\n"
+        : "content policy lock busy; structural event retained\n";
+}
+sub content_root {
+    my $path=$_[0]; $path =~ s{/\.loomy/logs/events\.jsonl$}{}; return $path;
+}
+sub content_label {
+    my ($w,$kind,$target,$attempt,$source,$text)=@_; return unless $w;
+    return unless grep {$_ eq $source} split /,/,$w->{policy}{label_sources};
+    my $previous;
+    my $ref=eval {Loomy::ContentPolicy::_in_context($w->{context},sub {
+        my $labels=eval {Loomy::ContentPolicy::_lock($w->{context},'display-context.lock',10)};
+        unless ($labels) {content_lock_miss($w->{context},'label_lock_misses'); return}
+        my $lock=eval {Loomy::ContentPolicy::_lock($w->{context},'content-policy.lock',10)};
+        unless ($lock) {content_lock_miss($w->{context}); return}
+        my $p=Loomy::ContentPolicy::_effective($w->{context},Loomy::ContentPolicy::_stored($w->{context}));
+        undef $lock; # Store I/O never holds up a policy snapshot in another hook.
+        return unless grep {$_ eq $source} split /,/,$p->{label_sources};
+        my $last=Loomy::ContentPolicy::latest_label($w->{context},$kind,$target,$attempt,$source);
+        $previous=Loomy::ContentPolicy::label_ref($last) if $last;
+        return Loomy::ContentPolicy::label_ref($last) if $last && !defined($text);
+        return unless defined($text) && !ref($text) && length($text);
+        my $clean=$source =~ /^codex-/ ? $text : Loomy::ContentPolicy::sanitize_label($text,
+            $p->{label_max_graphemes},$p->{label_max_bytes});
+        return Loomy::ContentPolicy::label_ref($last) if $last && $last->{text} eq $clean;
+        my $input={project_id=>$w->{policy}{project_id},target_kind=>$kind,target_id=>$target,
+            attempt_id=>$attempt,source=>$source,text=>$text};
+        return Loomy::ContentPolicy::_save_label($w->{context},$p,$input,$last);
+    })};
+    warn "display context full; label not saved\n" if $@ eq "display context full; label not saved\n";
+    return $ref//$previous;
+}
+sub content_input {
+    my ($event)=@_; my %input=%$event;
+    # Existing constructors use empty optional IDs/models/times for unknown.
+    # Preserve that meaning as null, rather than inventing an identity or zero.
+    for my $key (qw(id agent agent_id alias_from alias_id attempt_id session session_key turn_id parent_id
+        parent_delegation parent_session parent_agent_id model requested_model resume_at)) {
+        $input{$key}=undef if exists($input{$key}) && defined($input{$key}) && !ref($input{$key}) && $input{$key} eq '';
+    }
+    # Bridge traps emit INT/TERM/HUP and the non-signal EXIT sentinel. T1's
+    # signal domain is numeric; retain the real signal number, null for EXIT.
+    if (exists($input{signal}) && defined($input{signal}) && !ref($input{signal})) {
+        my %signals=(INT=>POSIX::SIGINT(),TERM=>POSIX::SIGTERM(),HUP=>POSIX::SIGHUP(),EXIT=>undef);
+        $input{signal}=$signals{$input{signal}} if exists $signals{$input{signal}};
+    }
+    return \%input;
+}
+sub content_signature {
+    my ($w,$type,$value)=@_;
+    my $body=ref($value) eq 'HASH' ? $value : eval {decode_json($value)};
+    $value=content_input($body) if ref($body) eq 'HASH';
+    return Loomy::ContentPolicy::_signature($type,$value,$w->{policy}{project_id});
+}
+sub project_journal_event {
+    my ($w,$event)=@_; my $input=content_input($event);
+    $input->{checkpoint_value}=content_signature($w,$input->{type},$input->{checkpoint_value}) if exists $input->{checkpoint_value};
+    return Loomy::ContentPolicy::project_with_policy($w->{policy},$input);
+}
+sub journal_line {
+    my ($e)=@_; my %body=%$e; my ($ts,$type)=delete @body{qw(ts type)};
+    # Some shell readers require these compact literal pairs; canonical JSON
+    # also avoids accidental spaces, regardless of the available XS encoder.
+    my $scalar=sub {substr($journal_json->encode([$_[0]]),1,-1)};
+    my $prefix='{"ts":'.$scalar->($ts).',"type":'.$scalar->($type);
+    $prefix.=',"id":'.$scalar->(delete $body{id}) if exists $body{id};
+    return $prefix.(keys(%body) ? ','.substr($journal_json->encode(\%body),1) : '}')."\n";
+}
+# Contain each event at every append boundary; diagnostics never include content.
+sub journal_event_line {
+    my ($w,$e)=@_; my $line=eval {journal_line(project_journal_event($w,$e))};
+    if (!defined($line) || length($line)>65536) {warn "journal event skipped; invalid record\n"; return}
+    return $line;
+}
 
 sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
 sub epoch {
@@ -188,7 +292,8 @@ sub recover_rotation {
     atomic_file("$dir/month","$r->{month}\n"); unlink "$dir/rotation" or die 'rotation marker removal failed';
 }
 sub journal_rotate {
-    my ($path)=@_; return unless safe_path($path);
+    my ($path,$writer)=@_; return unless safe_path($path);
+    $writer//=content_writer(content_root($path)); return unless $writer;
     my $dir=$path; $dir =~ s{/[^/]+$}{};
     recover_rotation($path,$dir); return unless -s $path;
     my $now=strftime('%Y-%m',gmtime($ENV{LOOMY_NATIVE_NOW}//time));
@@ -220,9 +325,16 @@ sub journal_rotate {
         die 'journal rotation stalled on partial record' unless $reader->{read_bytes};
     }
     my @keep=(values %last,values %open,map {$activity{$_}} grep {exists $activity{$_}} keys %open);
-    $_->{snapshot}=JSON::PP::true for @keep;
+    # Rotation is never a fresh authorization to copy an old excerpt. Preserve
+    # references and facts even when the current append policy allows excerpts.
+    my $structural={%$writer,policy=>{%{$writer->{policy}},journal_content=>'structural'}};
+    @keep=map {
+        my $event=eval {project_journal_event($structural,{%$_,snapshot=>JSON::PP::true})};
+        warn "journal snapshot skipped; invalid record\n" unless $event;
+        $event ? ($event) : ();
+    } @keep;
     my $canonical=JSON::PP->new->canonical;
-    my $snapshot=join('',map {$canonical->encode($_)."\n"}
+    my $snapshot=join('',map {journal_line($_)}
         sort {epoch($a->{ts})<=>epoch($b->{ts}) || text($a->{type}) cmp text($b->{type}) || $canonical->encode($a) cmp $canonical->encode($b)} @keep);
     die 'journal active snapshot exceeds 8 MiB; rotation paused' if length($snapshot)>=8388608;
     my @st=stat($path); my $dest="$archive/events-$month-$st[0]-$st[1].jsonl";
@@ -234,15 +346,46 @@ sub journal_rotate {
     recover_rotation($path,$dir);
 }
 sub journal_append {
-    my ($path,$body,$ts)=@_; die 'journal record exceeds 64 KiB' if length($body)>65000;
+    my $ok=eval {_journal_append(@_)};
+    warn "journal event skipped; append unavailable\n" if $@;
+    return $ok;
+}
+sub _journal_append {
+    my ($path,$body,$ts,$label)=@_;
+    die 'journal record exceeds 64 KiB' if !ref($body) && length($body)>65000;
     my $dir=$path; $dir =~ s{/[^/]+$}{};
-    my $lock=journal_lock($dir,1) or return; journal_rotate($path);
+    # Bootstrap directories/identity without a policy lock. A first PreToolUse
+    # hook can arrive before a prompt/session hook has prepared the journal.
+    Loomy::ContentPolicy::_context(content_root($path),1) unless -d $dir;
+    my $lock=journal_lock($dir,1) or return;
+    my $writer=content_writer(content_root($path)); return unless $writer && $writer->{policy}{journal_enabled};
+    # Prompt hooks can build an authorized excerpt from stdin in this process,
+    # after the snapshot, without an extra policy interpreter or content argv.
+    $body=$body->($writer->{policy}) if ref($body) eq 'CODE';
+    journal_rotate($path,$writer);
     return unless safe_path($path);
     sysopen my $f,$path,O_WRONLY|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$f or return;
     $ts=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime) unless epoch($ts);
-    print $f '{"ts":'.encode_json($ts).",$body}\n" or die 'journal append failed'; $f->flush or die; $f->sync or die;
-    close $f; journal_rotate($path) if -s $path>=8388608;
+    my $event;
+    if (ref($body) eq 'HASH') {$event={%$body,ts=>$ts}}
+    else {
+        # Old byte-cut shell producers can end on half a UTF-8 character.
+        my $raw='{"ts":'.substr($journal_json->encode([$ts]),1,-1).",$body}";
+        $event=eval {decode_json($raw)};
+        $event=JSON::PP->new->decode(Loomy::ContentPolicy::_decode_utf8($raw)) unless $event;
+    }
+    if ($label) {
+        my $ref=content_label($writer,@$label);
+        $event->{label_ref}=$ref if $ref;
+        $event->{task}=$label->[4] if $writer->{policy}{journal_content} eq 'legacy-excerpts'
+            && $label->[3] eq 'claude-description' && defined($label->[4]);
+    }
+    my $line=journal_event_line($writer,$event); return unless defined $line;
+    print $f $line or die 'journal append failed'; $f->flush or die; $f->sync or die;
+    close $f or die 'journal close failed';
+    eval {journal_rotate($path,$writer)} if -s $path>=8388608;
+    return 1;
 }
 # After rotation replay the old inode's uncheckpointed suffix before the new snapshots.
 sub recovery_path {

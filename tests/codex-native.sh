@@ -16,6 +16,9 @@ export TMPDIR="$WORK/tmp"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
+# Existing title/rendering cases exercise explicit compatibility. Structural
+# writers and granted native labels are covered separately in content-writers.sh.
+export LOOMY_FIXTURE_CONTENT=legacy-excerpts
 unset LOOMY_DELEGATION LOOMY_PROJECT_ROOT CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_UI_LANG LOOMY_FIXTURE_NOW
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"
@@ -66,7 +69,7 @@ check 'live view explicitly marks unknown native usage' grep -q 'native usage un
 fixture finish; check 'finish/abort/partial poll' poll
 check 'terminal states do not confer review approval' json_check 'my @e=grep {$_->{type} eq "delegation"} @native; die unless @e==3; die unless (grep {$_->{outcome} eq "done"} @e)==1 && (grep {$_->{outcome} eq "interrupted"} @e)==1 && (grep {$_->{outcome} eq "partial"} @e)==1; die if grep {exists($_->{approved}) || exists($_->{review_approved})} @e;'
 fixture later; check 'later turn poll' poll
-check 'later turn uses new identity and observable waiting state' json_check 'die unless (grep {$_->{type} eq "delegation_start"} @native)==4; die unless grep {($_->{activity}//"") eq "waiting"} @native;'
+check 'later turn uses new identity and observable waiting state' json_check 'die unless (grep {$_->{type} eq "delegation_start"} @native)==4; die unless grep {($_->{activity}//"") eq "waiting" && ($_->{state}//"") eq "waiting"} @native;'
 fixture supersede; check 'missing terminal predecessor poll' poll
 check 'superseded turn is unknown, not successful' json_check 'die unless grep {$_->{type} eq "delegation" && ($_->{status}//"") eq "unknown" && $_->{outcome} eq "unknown"} @native;'
 fixture unknown; fixture blocked; check 'unknown and blocked poll' poll
@@ -126,7 +129,7 @@ fixture seed; poll; fixture finish; poll; fixture later; poll
 cp "$J" "$WORK/mixed-rotation-source"; fixture rotate; poll
 # The poll first replays the archived suffix it had not read yet (its own latest appends), then moves to the new journal.
 poll
-check 'rotation restores only active later turn and keeps waiting state' json_check 'my @s=grep {$_->{type} eq "delegation_start"} @native; my @a=grep {$_->{type} eq "delegation_activity"} @native; die unless @s==1 && @a==1 && $s[0]{turn_id} eq "00000000-0000-4000-8000-000000000022" && $a[0]{activity} eq "waiting"; die if grep {$_->{type} eq "delegation" || $_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @native;'
+check 'rotation restores only active later turn and keeps waiting state' json_check 'my @s=grep {$_->{type} eq "delegation_start"} @native; my @a=grep {$_->{type} eq "delegation_activity"} @native; die unless @s==1 && @a==1 && $s[0]{turn_id} eq "00000000-0000-4000-8000-000000000022" && $a[0]{activity} eq "waiting" && $a[0]{state} eq "waiting"; die if grep {$_->{type} eq "delegation" || $_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @native;'
 check 'archived historical completion keys remain deduplicated' perl -MJSON::PP -e 'my ($history,$index)=@ARGV; open my $f,"<",$history or die; my @e=map {decode_json($_)} <$f>; open my $h,"<",$index or die; my $s=decode_json(do{local $/;<$h>}); for(grep {$_->{type} eq "delegation" && ($_->{bridge}//"") eq "codex-native"} @e){die unless $s->{seen}{$_->{native_key}}}' "$WORK/mixed-rotation-source" "$ROOT/.loomy/logs/codex-native.idx"
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-stats.sh" --root "$ROOT" >"$WORK/rotation-stats" 2>&1
 check 'restored snapshots do not duplicate historical statistics' grep -q 'native usage unknown.*3 finished' "$WORK/rotation-stats"
@@ -239,7 +242,7 @@ check 'completed root append is retried' json_check 'my @c=grep {$_->{type} eq "
 fixture root-truncate; poll
 check 'same-inode root truncation discards higher cached context position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-truncated" && $c[-1]{effort} eq "low";'
 fixture root-truncate-empty; poll
-check 'truncation without valid context clears stale model evidence' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "" && $c[-1]{effort} eq "";'
+check 'truncation without valid context clears stale model evidence' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die if defined($c[-1]{model}); die unless $c[-1]{effort} eq "unknown";'
 fixture root-no-effort; poll
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-no-effort" 2>&1
 check 'missing observed root effort is named unknown, not configured routing effort' grep -q '6.1-sol unknown' "$WORK/root-no-effort"

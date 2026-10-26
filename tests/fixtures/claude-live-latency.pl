@@ -33,7 +33,7 @@ my $ok=eval {
     await_row(qr/developer[^\n]*running/,clock_gettime(CLOCK_MONOTONIC)+Loomy::TestTiming::budget(10));
     for my $trial (30..69) {
         sleep(rand(0.24)); $buf='';
-        my $hook=$trial>=50; my $role=($hook ? 'hook' : 'latency').$trial;
+        my $hook=$trial>=50; my @roles=qw(reviewer security architect debugger executor explorer documenter advisor worker default); my $role=$roles[($trial-30)%@roles];
         my ($elapsed,$visible);
         for my $attempt (1..2) {
             $buf='';

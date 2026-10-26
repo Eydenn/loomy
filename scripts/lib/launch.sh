@@ -108,7 +108,7 @@ loomy_cli_links() {
 loomy_cli_end() { ai_journal_write "$1" "$2$(loomy_cli_links)"; }
 loomy_cli_bridge_start() {
   local req=false; [[ "${10}" == "1" ]] && req=true
-  loomy_cli_end "$1" "\"type\":\"delegation_start\",\"id\":\"$2\",\"pid\":$$,\"bridge\":\"$3\",\"role\":\"$4\",\"family\":\"$5\",\"model\":\"$6\",\"effort\":\"$7\",\"sandbox\":\"$8\",\"requested\":$req,\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"off_routing\":\"${11}\",\"why\":$(ai_json_str "$(ai_task_excerpt "${12}")"),\"task\":$(ai_json_str "$(ai_task_excerpt "$9")")"
+  loomy_cli_end "$1" "\"type\":\"delegation_start\",\"id\":\"$2\",\"pid\":$$,\"bridge\":\"$3\",\"role\":\"$4\",\"family\":\"$5\",\"model\":\"$6\",\"effort\":\"$7\",\"sandbox\":\"$8\",\"requested\":$req,\"requested_model\":$(ai_json_str "${LOOMY_REQUESTED_MODEL:-}"),\"off_routing\":\"${11}\",\"why\":$(ai_json_str "$(ai_task_excerpt "${12}" "$1")"),\"task\":$(ai_json_str "$(ai_task_excerpt "$9" "$1")")"
 }
 # Explicit provider IDs only; never pair sessions by cwd, role or clock proximity.
 loomy_cli_link() {
@@ -118,17 +118,16 @@ loomy_cli_link() {
 }
 # Stream is relayed unchanged to the private bridge output; only structural IDs enter the journal.
 _loomy_cli_stream() {
-  exec perl -MJSON::PP -MPOSIX=strftime -MFcntl=O_RDWR,O_CREAT,O_WRONLY,O_APPEND,O_NOFOLLOW -e '
-    my ($file,$parent,$attempt)=splice @ARGV,0,3; my ($sid,%seen); $|=1;
+  [[ -n "${AI_LIVE_STATE_LIB:-}" ]] || source "${BASH_SOURCE[0]%/*}/journal.sh"
+  exec perl -MJSON::PP -e '
+    my ($module,$file,$parent,$attempt)=splice @ARGV,0,4; require $module; my ($sid,%seen); $|=1;
     setpgrp(0,0); my $pid=open my $provider,"-|"; defined($pid) or die $!;
     if (!$pid) {delete @ENV{qw(LOOMY_CLI_MANAGED LOOMY_CLI_BRIDGE_CHECKED LOOMY_CLI_ID LOOMY_CLI_SESSION_ID LOOMY_EVENT_PARENT_ID LOOMY_CLI_DETACHED)}; exec @ARGV or die $!}
     sub emit_link {
       my ($id,$ancestor)=@_; return unless defined($id) && !ref($id) && $id =~ /\A[A-Za-z0-9_.:-]{1,100}\z/;
       return if $seen{$id}++; return unless length($file);
-      (my $lockfile=$file)=~s{/[^/]+$}{/events.lock};
-      sysopen my $lock,$lockfile,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return; flock $lock,2 or return;
-      sysopen my $f,$file,O_WRONLY|O_APPEND|O_NOFOLLOW or return;
-      my $row=JSON::PP->new->canonical->encode({schema=>2,tool=>"codex",session=>$id,session_key=>"codex:$id",parent_delegation=>$parent,attempt_id=>$attempt,parent_session=>$ancestor//"",evidence=>"exec-json"}); print $f "{\"ts\":".encode_json(strftime("%Y-%m-%dT%H:%M:%SZ",gmtime)).",\"type\":\"bridge_link\",".substr($row,1)."\n";
+      eval {Loomy::LiveState::journal_append($file,{type=>"bridge_link",schema=>2,tool=>"codex",session=>$id,session_key=>"codex:$id",parent_delegation=>$parent,attempt_id=>$attempt,parent_session=>$ancestor//"",evidence=>"exec-json"})};
+      warn "journal link skipped; relay continues\n" if $@;
     }
     while (<$provider>) { print; my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH";
       if (($e->{type}//"") eq "thread.started") { $sid=$e->{thread_id}; emit_link($sid,"") }
@@ -137,7 +136,7 @@ _loomy_cli_stream() {
       emit_link($_,$item->{sender_thread_id}//$sid) for @{$item->{receiver_thread_ids}};
     }
     close $provider; exit (($? & 127) ? 128+($? & 127) : $? >> 8);
-  ' "$@"
+  ' "$AI_LIVE_STATE_LIB" "$@"
 }
 loomy_cli_run() (
   local tool="$1" role="$2" model="$3" rc=0 root id body started child="" stream_file=""

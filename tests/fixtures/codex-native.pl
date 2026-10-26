@@ -4,6 +4,9 @@ use warnings;
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use File::Path qw(make_path);
+use Cwd qw(abs_path);
+my $lib=abs_path(__FILE__); $lib =~ s{/tests/fixtures/[^/]+$}{/scripts/lib};
+require "$lib/live-state.pl";
 my ($action,$root,$sessions,$pid)=@ARGV;
 my $now=$ENV{LOOMY_FIXTURE_NOW}//time;
 # Every append belongs to the seed's UTC day, even when the test crosses midnight.
@@ -18,7 +21,12 @@ sub id { sprintf '00000000-0000-4000-8000-%012d',$_[0] }
 my $dir="$sessions/".strftime('%Y/%m/%d',gmtime($now));
 sub path { "$dir/rollout-fixture-".id($_[0]).'.jsonl' }
 sub write_json {
-    my ($p,$append,@rows)=@_; open my $f,($append ? '>>' : '>'),$p or die $!;
+    my ($p,$append,@rows)=@_;
+    if ($p eq "$root/.loomy/logs/events.jsonl") {
+        unless ($append) {open my $clear,'>',$p or die $!; close $clear}
+        Loomy::LiveState::journal_append($p,$_,$_->{ts}) for @rows; return;
+    }
+    open my $f,($append ? '>>' : '>'),$p or die $!;
     for my $d (@rows) { print $f encode_json($d),"\n" } close $f or die $!;
 }
 sub event { {timestamp=>ts($_[2]//-30),type=>'event_msg',payload=>{type=>$_[0],turn_id=>id($_[1]),@_[3..$#_]}} }
@@ -32,6 +40,12 @@ sub meta {
 }
 if ($action eq 'seed' || $action eq 'compact-seed') {
     make_path($dir,"$root/.loomy/logs");
+    if (($ENV{LOOMY_FIXTURE_CONTENT}//'') eq 'legacy-excerpts') {
+        my $p={%{Loomy::ContentPolicy::defaults()},journal_content=>'legacy-excerpts'};
+        open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die;
+        print $c "$_=$p->{$_}\n" for sort keys %$p; close $c;
+        chmod 0600,"$root/.loomy/logs/content-policy.conf" or die;
+    }
     open my $f,'>',$clock or die $!; print $f "$now\n"; close $f or die $!;
     my $owner={ts=>ts(-60),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid};
     $owner->{session}=id(1) if $action eq 'compact-seed';

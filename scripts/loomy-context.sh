@@ -45,16 +45,19 @@ if [[ "$fp_hook" == "prompt" ]]; then
   # shellcheck source=lib/journal.sh
   source "$SCRIPT_DIR/lib/journal.sh"
   if ai_journal_enabled "$P_ROOT" && ai_journal_prepare "$P_ROOT"; then
-    fp_event="$(printf '%s' "$fp_input" | perl -MJSON::PP -MPOSIX=strftime -e '
-      local $/; my $d = eval { decode_json(<STDIN>) }; exit unless ref($d) eq "HASH";
-      my $excerpt = defined($ENV{LOOMY_JOURNAL_TASKS}) && $ENV{LOOMY_JOURNAL_TASKS} eq "0" ? "" : substr($d->{prompt} // "", 0, 60);
-      $excerpt =~ s/[\x00-\x1f]/ /g;
-      print JSON::PP->new->utf8->canonical->encode({type=>"request", ts=>strftime("%Y-%m-%dT%H:%M:%SZ", gmtime), id=>"r".time."-".$$, session=>$d->{session_id}//"", excerpt=>$excerpt});
-    ' 2>/dev/null)"
-    if [[ -n "$fp_event" ]]; then
-      # Prompt writes share the rotation lock and cannot land in an archived inode.
-      ai_journal_write "$P_ROOT" "${fp_event:1:${#fp_event}-2}"
-    fi
+    printf '%s' "$fp_input" | perl -MJSON::PP -e '
+      my ($module,$file)=@ARGV; require $module;
+      local $/; my $d=eval {decode_json(<STDIN>)}; exit unless ref($d) eq "HASH";
+      Loomy::LiveState::journal_append($file,sub {
+        my ($policy)=@_;
+        my $e={type=>"request",id=>"r".time."-".$$,session=>$d->{session_id}//""};
+        if ($policy->{journal_content} eq "legacy-excerpts") {
+          my $excerpt=substr($d->{prompt}//"",0,60); $excerpt =~ s/[\x00-\x1f]/ /g;
+          $e->{excerpt}=$excerpt;
+        }
+        return $e;
+      });
+    ' "$AI_LIVE_STATE_LIB" "$P_ROOT/.loomy/logs/events.jsonl" 2>/dev/null || true
   fi
   # Front matter read line by line (ai_mode, ai_lead): no sed, no subshell.
   p_mode=""; p_lead=""; p_n=0

@@ -244,7 +244,7 @@ _sk_install() {
   rm -rf "$tmp"
   if [[ "$n" -ne "$(printf '%s\n' "$dirs" | grep -c .)" ]]; then SK_LAST="$name: not written in every skills folder (symbolic link?)"; return 1; fi
   _sk_with_lock "$r" _sk_lock_write "$r" "$name" "$name|$src|$path|$commit|$lic|$(date +%Y-%m-%d)|${reason//|/ }|$an" || { SK_LAST="$name: lock not written"; return 1; }
-  ai_journal_write "$r" "\"type\":\"skill\",\"event\":\"$( [[ -n "$fromlock" ]] && echo restored || echo added)\",\"name\":\"$name\",\"source\":\"$src\",\"reason\":$(ai_json_str "$reason"),\"analysis\":$(ai_json_str "$an")" 2>/dev/null || true
+  ai_journal_write "$r" "\"type\":\"skill\",\"event\":\"$( [[ -n "$fromlock" ]] && echo restored || echo added)\",\"name\":\"$name\",\"source\":\"$src\",\"reason_code\":\"installed\"" 2>/dev/null || true
   SK_LAST="$name ($src${lic:+, $lic}): $reason · $an"
   return 0
 }
@@ -260,7 +260,7 @@ skills_remove() {
     if [[ -d "$r/$d/$name" ]]; then rm -rf "${r:?}/$d/${name:?}"; fi
   done
   _sk_with_lock "$r" _sk_lock_write "$r" "$name" || true
-  ai_journal_write "$r" "\"type\":\"skill\",\"event\":\"removed\",\"name\":\"$name\",\"reason\":\"\"" 2>/dev/null || true
+  ai_journal_write "$r" "\"type\":\"skill\",\"event\":\"removed\",\"name\":\"$name\",\"reason_code\":\"removed\"" 2>/dev/null || true
   return 0
 }
 

@@ -128,7 +128,7 @@ check 'zero source/journal reads and no writes on warm idle, bounded signature C
  printf "100 idle probes %.3f ms (20s polling equivalent)\n",$elapsed*1000;
 ' "$REPO/scripts/lib/claude-native.pl" "$ROOT" "$CLAUDE_CONFIG_DIR/projects"
 ROOT="$WORK/detection-cost"; fixture seed; fixture return
-check 'forty transcript/hook detection paths stay below 80 ms CPU with one retry' perl "$REPO/tests/fixtures/claude-live-cost.pl" "$REPO" "$ROOT" "$CLAUDE_CONFIG_DIR/projects"
+check 'forty transcript/hook detection paths stay below 80 ms CPU with one retry' perl "$REPO/tests/fixtures/claude-native.pl" detection-cost "$ROOT" "$CLAUDE_CONFIG_DIR/projects" app 1
 ROOT="$WORK/latency"; fixture seed; fixture return
 check 'forty transcript/hook watch frames complete within five seconds with one retry' perl "$REPO/tests/fixtures/claude-live-latency.pl" "$REPO" "$ROOT" "$CLAUDE_CONFIG_DIR/projects"
 for finding in F1 F2 F3 F5 F6 F7 F8 F9 F10 F11 F12 F14; do

@@ -94,7 +94,7 @@ _ai_journal_rotate() {
     my ($module,$path)=@ARGV; require $module;
     my $dir=$path; $dir =~ s{/[^/]+$}{};
     my $lock=Loomy::LiveState::journal_lock($dir,1) or exit;
-    Loomy::LiveState::journal_rotate($path);
+    eval {Loomy::LiveState::journal_rotate($path); 1} or warn "journal rotation unavailable\n" if -s $path;
   ' "$AI_LIVE_STATE_LIB" "$1"
 }
 
@@ -106,15 +106,17 @@ ai_journal_all() {
   return 0
 }
 
-ai_journal_write() {
+ai_journal_write() { _ai_journal_write_checked "$@" || true; }
+_ai_journal_write_checked() {
   local root="$1" body="$2" file
   ai_journal_enabled "$root" || return 0
   file="$(ai_journal_file "$root")"
-  ai_journal_prepare "$root" || return 0
-  perl -e '
-    my ($module,$path,$body,$ts)=@ARGV; require $module;
-    Loomy::LiveState::journal_append($path,$body,$ts);
-  ' "$AI_LIVE_STATE_LIB" "$file" "$body" "${3:-}" 2>/dev/null || true
+  ai_journal_prepare "$root" || return 1
+  printf '%s' "$body" | perl -e '
+    my ($module,$path,$ts)=@ARGV; require $module;
+    local $/; my $body=<STDIN>;
+    exit(Loomy::LiveState::journal_append($path,$body,$ts) ? 0 : 1);
+  ' "$AI_LIVE_STATE_LIB" "$file" "${3:-}"
 }
 
 # Canonical hook/transcript lifecycle; snapshots preserve state without new usage.
@@ -159,9 +161,13 @@ ai_usage_record() {
   ai_journal_enabled "$root" || return 0
   ai_journal_prepare "$root" || return 0
   idx="$root/.loomy/logs/usage.idx"
-  done_n="$(awk -F '\t' -v p="$tr" '$1 == p { n = $2 } END { print n + 0 }' "$idx" 2>/dev/null || echo 0)"
+  done_n=0
+  [[ ! -f "$idx" ]] || done_n="$(awk -F '\t' -v p="$tr" '$1 == p { n = $2 } END { print n + 0 }' "$idx" 2>/dev/null || echo 0)"
   total="$(wc -l <"$tr" | tr -d ' ')"
   (( total > done_n )) || return 0
+  local usage_events
+  usage_events="$(
+    ai_journal_write() { printf '{%s}\n' "$2"; }
   tail -n +"$(( done_n + 1 ))" "$tr" | head -n "$(( total - done_n ))" | awk -v long="$(ai_price_long_list)" '
     BEGIN { nl = split(long, ll, " "); for (k = 1; k <= nl; k++) { lp[k] = ll[k]; sub(/=.*/, "", lp[k]); lt[k] = ll[k]; sub(/.*=/, "", lt[k]) } }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
@@ -201,7 +207,41 @@ ai_usage_record() {
       [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tin" -v f="$tw5" -v h="$tw1" -v r="$tcr" -v o="$tout" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + f * q[1] * 1.25 + h * q[1] * 2 + r * q[3] + o * q[2]) / 1000000 }')"
       ai_journal_write "$root" "\"type\":\"usage\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"agent\":$(ai_json_str "$agent"),\"model\":\"$model\",\"messages\":$n,\"tokens_in\":$(( tin + tcw )),\"tokens_cached\":$tcr,\"tokens_out\":$tout,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
     done
-  ( umask 077; { awk -F '\t' -v p="$tr" '$1 != p' "$idx" 2>/dev/null || true; printf '%s\t%s\n' "$tr" "$total"; } >"$idx.tmp" && mv "$idx.tmp" "$idx" )
+  )"
+  [[ -n "$usage_events" ]] || usage_events=''
+  printf '%s' "$usage_events" | perl -MJSON::PP -MFcntl=O_RDWR,O_APPEND,O_CREAT,O_NOFOLLOW -e '
+    my ($module,$file,$idx,$tr,$before,$total)=@ARGV; require $module;
+    my $dir=$file; $dir =~ s{/[^/]+$}{};
+    my $lock=Loomy::LiveState::journal_lock($dir,1) or exit 1;
+    my $writer=Loomy::LiveState::content_writer(Loomy::LiveState::content_root($file)); exit 1 unless $writer;
+    exit 1 unless Loomy::LiveState::safe_path($idx);
+    my (@index,$current); $current=0;
+    if (-f $idx) {open my $in,"<",$idx or exit 1; while (<$in>) {
+      my ($path,$n)=split /\t/; if ($path eq $tr) {$current=0+$n} else {push @index,$_}
+    }}
+    exit 0 if $current>=$total; exit 1 unless $current==$before;
+    my @lines; my $ts=POSIX::strftime("%Y-%m-%dT%H:%M:%SZ",gmtime);
+    while (<STDIN>) {
+      my $e=eval {decode_json($_)}; exit 1 unless ref($e) eq "HASH";
+      my $line=Loomy::LiveState::journal_event_line($writer,{%$e,ts=>$ts}); exit 1 unless defined $line;
+      push @lines,$line;
+    }
+    my $ok=eval {
+      Loomy::LiveState::journal_rotate($file,$writer);
+      sysopen my $out,$file,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or die;
+      chmod 0600,$out or die; my $offset=-s $out;
+      my $bytes=join("",@lines); my $written=0;
+      my $committed=eval {
+        while ($written<length($bytes)) {my $n=syswrite($out,$bytes,length($bytes)-$written,$written); die unless $n; $written+=$n}
+        $out->sync or die;
+        Loomy::LiveState::atomic_file($idx,join("",@index)."$tr\t$total\n"); 1;
+      };
+      unless ($committed) {truncate $out,$offset; $out->sync; die}
+      1;
+    };
+    warn "usage batch deferred; cursor unchanged\n" unless $ok;
+    exit($ok ? 0 : 1);
+  ' "$AI_LIVE_STATE_LIB" "$root/.loomy/logs/events.jsonl" "$idx" "$tr" "$done_n" "$total" || true
   return 0
 }
 
@@ -225,8 +265,14 @@ ai_json_num() {
 
 # ai_task_excerpt <text>: task excerpt for the log (200 characters), empty when LOOMY_JOURNAL_TASKS=0.
 ai_task_excerpt() {
-  if [[ "${LOOMY_JOURNAL_TASKS:-1}" == "0" ]]; then echo ""; return 0; fi
-  printf '%s' "$1" | tr '\n' ' ' | cut -c1-200
+  local excerpt_root="${2:-${ROOT:-${root:-}}}"
+  [[ "${LOOMY_JOURNAL_TASKS:-1}" != 0 && -n "$excerpt_root" ]] || return 0
+  printf '%s' "$1" | perl -e '
+    my ($module,$root)=@ARGV; require $module;
+    exit unless Loomy::ContentPolicy::effective_policy($root)->{journal_content} eq "legacy-excerpts";
+    local $/; my $text=Loomy::ContentPolicy::_decode_utf8(scalar(<STDIN>));
+    $text =~ s/\n/ /g; print Loomy::ContentPolicy::_encode_utf8(substr($text,0,200));
+  ' "${AI_LIVE_STATE_LIB%/*}/content-policy.pl" "$excerpt_root"
 }
 
 # Read-side titles shared by the live reducer and the session log; journal entries stay untouched.
@@ -430,14 +476,14 @@ ai_delegation_id() { printf 'd%s%05d' "$(date +%s)" "$$"; }
 
 # Native Claude agents share the lead's lifetime; Claude supplies no child pid at PreToolUse.
 ai_journal_agent_start() {
-  local root="$1" input="$2" pid="$3" role id sid task bg model effort explicit_model requested=false sandbox offroute p i comm line n
+  local root="$1" input="$2" pid="$3" role id sid bg model effort explicit_model requested=false sandbox offroute p i comm line n
   ai_journal_enabled "$root" || return 0
-  IFS='|' read -r role id sid bg task explicit_model < <(printf '%s' "$input" | perl -MJSON::PP -e '
+  IFS='|' read -r role id sid bg explicit_model < <(printf '%s' "$input" | perl -MJSON::PP -e '
     local $/; my $d=eval { decode_json(<STDIN>) }; exit unless ref($d) eq "HASH";
     my $t=$d->{tool_input} // {};
     my $m=$t->{model}; $m="" if !defined($m) || ref($m);
-    my @v=($t->{subagent_type}, $d->{tool_use_id}, $d->{session_id}, $t->{run_in_background}?"true":"false", $t->{description}, $m);
-    for (@v) { $_ //= ""; s/[\x00-\x1f|]/ /g } print join("|", @v), "\n";' 2>/dev/null)
+    my @v=($t->{subagent_type}, $d->{tool_use_id}, $d->{session_id}, $t->{run_in_background}?"true":"false", $m);
+    for (@v) { $_="" if !defined($_) || ref($_); s/[\x00-\x1f|]/ /g } print join("|", @v), "\n";' 2>/dev/null)
   [[ -n "$id" && -n "$role" ]] || return 0
   case " $AI_ROLES " in *" ${role#loomy-} "*) role="${role#loomy-}" ;; esac
   ai_detect_env "$root"; ai_resolve lead "$AI_ENV" "$AI_PROFILE"
@@ -462,7 +508,16 @@ ai_journal_agent_start() {
     case "${comm##*/}" in claude|claude\ *) pid="$p"; break ;; esac
     p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"; i=$(( i + 1 ))
   done
-  ai_journal_write "$root" "\"type\":\"delegation_start\",\"id\":$(ai_json_str "$id"),\"session\":$(ai_json_str "$sid"),\"pid\":$pid,\"bridge\":\"subagent\",\"role\":$(ai_json_str "$role"),\"family\":\"claude\",\"model\":$(ai_json_str "$model"),\"effort\":$(ai_json_str "$effort"),\"background\":$bg,\"requested\":$requested,\"off_routing\":$(ai_json_str "$offroute"),\"why\":\"\",\"task\":$(ai_json_str "$(ai_task_excerpt "$task")")"
+  printf '%s' "$input" | perl -MJSON::PP -e '
+    my ($module,$file,$body)=@ARGV; require $module;
+    local $/; my $d=eval {decode_json(<STDIN>)}; exit unless ref($d) eq "HASH";
+    my $e=decode_json("{$body}"); my $in=$d->{tool_input};
+    my $description=ref($in) eq "HASH" ? $in->{description} : undef;
+    $description=undef if ref($description);
+    $e->{agent_type}=$in->{subagent_type} if ref($in) eq "HASH";
+    Loomy::LiveState::journal_append($file,$e,undef,
+      ["delegation",$e->{id},$e->{session},"claude-description",$description]);
+  ' "$AI_LIVE_STATE_LIB" "$root/.loomy/logs/events.jsonl" "\"type\":\"delegation_start\",\"id\":$(ai_json_str "$id"),\"session\":$(ai_json_str "$sid"),\"pid\":$pid,\"bridge\":\"subagent\",\"role\":$(ai_json_str "$role"),\"family\":\"claude\",\"model\":$(ai_json_str "$model"),\"effort\":$(ai_json_str "$effort"),\"background\":$bg,\"requested\":$requested,\"off_routing\":$(ai_json_str "$offroute"),\"why\":\"\"" 2>/dev/null || true
 }
 
 # Tool returns give the stable tool-use/agent identity pair. A stop arriving first waits for that pair.
@@ -472,16 +527,19 @@ ai_journal_agent_return() { ai_journal_agent_finish "$1" "$2" "${3:-return}" 0 "
 ai_journal_agent_finish() {
   local root="$1" input="$2" mode="$3" offset="$4" result="$5"
   ai_journal_enabled "$root" || return 0
-  ai_journal_prepare "$root" || return 0
-  printf '%s' "$input" | perl -MJSON::PP -MFcntl=O_RDWR,O_APPEND,O_NOFOLLOW -MPOSIX=strftime -MTime::Local=timegm -e '
-    my ($file,$mode,$offset,$result)=@ARGV;
-    local $/; my $d=eval { decode_json(<STDIN>) }; exit unless ref($d) eq "HASH";
+  printf '%s\0%s' "$input" "$result" | perl -MJSON::PP -MFcntl=O_RDWR,O_APPEND,O_NOFOLLOW -MPOSIX=strftime -MTime::Local=timegm -MIO::Handle -e '
+    my ($module,$file,$mode,$offset)=@ARGV; require $module;
+    local $/; my ($input,$result)=split /\0/,scalar(<STDIN>),2;
+    my $d=eval { decode_json($input) }; exit unless ref($d) eq "HASH";
     my $sid=$d->{session_id}//""; my $id=$d->{tool_use_id}//"";
     my $r=ref($d->{tool_response}) eq "HASH" ? $d->{tool_response} : {};
     my $aid=$mode eq "stop" ? ($d->{agent_id}//"") : ($r->{agentId}//$r->{agent_id}//"");
     exit if ref($aid) || ref($sid) || ref($id);
     exit if $mode eq "stop" ? $aid eq "" : $id eq "";
-    sysopen my $f,$file,O_RDWR|O_APPEND|O_NOFOLLOW or exit; flock $f,2 or exit; seek $f,0,0 or exit;
+    my $dir=$file; $dir =~ s{/[^/]+$}{};
+    my $lock=Loomy::LiveState::journal_lock($dir,1) or exit;
+    my $writer=Loomy::LiveState::content_writer(Loomy::LiveState::content_root($file)); exit unless $writer;
+    sysopen my $f,$file,O_RDWR|O_APPEND|O_NOFOLLOW or exit; chmod 0600,$f or exit; seek $f,0,0 or exit;
     $/="\n"; my (%starts,%done,%links,%stops); my $actual_model;
     while (my $l=<$f>) {
       my $e=eval { decode_json($l) }; next unless ref($e) eq "HASH" && ($e->{session}//"") eq $sid;
@@ -494,16 +552,20 @@ ai_journal_agent_finish() {
     # Usage has no session field; read only the just-recorded usage for this stop.
     if ($mode eq "stop") {
       seek $f,$offset,0;
+      my $agent=eval {Loomy::ContentPolicy::_value("agent",$d->{agent_type},$writer->{policy}{project_id})};
       while (my $l=<$f>) { my $e=eval { decode_json($l) }; next unless ref($e) eq "HASH";
-        $actual_model=$e->{model} if ($e->{type}//"") eq "usage" && ($e->{scope}//"") eq "subagent" && ($e->{agent}//"") eq ($d->{agent_type}//"");
+        $actual_model=$e->{model} if ($e->{type}//"") eq "usage" && ($e->{scope}//"") eq "subagent" && ($e->{agent}//"") eq ($agent//"");
       }
     }
     my $now=time; my $ts=strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($now));
-    my $json=JSON::PP->new->utf8->canonical;
     sub emit {
-      my ($e)=@_; my %body=(session=>$sid,%$e); my $type=delete $body{type};
-      my $pairs=$json->encode(\%body); $pairs =~ s/^\{|\}$//g;
-      print $f "{\"ts\":\"$ts\",\"type\":".$json->encode($type).",$pairs}\n";
+      my ($e)=@_;
+      my $ok=eval {
+        my $line=Loomy::LiveState::journal_event_line($writer,{ts=>$ts,session=>$sid,%$e}); return unless defined $line;
+        print $f $line or die; $f->flush && $f->sync or die; 1;
+      };
+      warn "journal event skipped; hook append unavailable\n" unless $ok;
+      return $ok;
     }
     sub outcome { my ($s)=@_; return $s =~ /(?:^|\n|\x1f)STATUS:\s*(done|partial|blocked)\b/ ? $1 : "" }
     my $stop;
@@ -513,12 +575,12 @@ ai_journal_agent_finish() {
       $stop=$stops{$aid};
       unless ($stop) {
         $stop={type=>"subagent_stop",agent_id=>$aid,ended_at=>$now,outcome=>outcome($result || $d->{last_assistant_message}//""),model=>$actual_model};
-        emit($stop);
+        exit unless emit($stop);
       }
       exit if $id eq "";
     } else {
       exit unless $starts{$id};
-      if ($aid ne "" && !exists $links{$aid}) { emit({type=>"subagent_link",agent_id=>$aid,id=>$id}); $links{$aid}=$id }
+      if ($aid ne "" && !exists $links{$aid}) { exit unless emit({type=>"subagent_link",agent_id=>$aid,id=>$id}); $links{$aid}=$id }
       exit if $done{$id};
       $stop=$stops{$aid} if $aid ne "";
       # A background launch returns before its agent finishes, including when Claude chose async execution.
@@ -526,8 +588,9 @@ ai_journal_agent_finish() {
     }
     my $s=$starts{$id}; exit unless $s;
     my @t=($s->{ts}//"") =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
-    my $dur=@t ? ($stop ? $stop->{ended_at} : $now)-(timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0])+($t[6]//0)) : 0; $dur=0 if $dur<0;
+    my $started=@t ? eval {timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0])+($t[6]//0)} : undef;
+    my $dur=defined($started) ? ($stop ? $stop->{ended_at} : $now)-$started : 0; $dur=0 if $dur<0;
     my $text=ref($r->{content}) eq "ARRAY" ? join("\n",map { ref($_) eq "HASH" ? ($_->{text}//"") : "" } @{$r->{content}}) : ($r->{content}//"");
-    emit({type=>"delegation",id=>$id,agent_id=>$aid,bridge=>"subagent",family=>"claude",role=>$s->{role},model=>($stop && $stop->{model} ? $stop->{model} : $s->{model}),effort=>$s->{effort},status=>($mode eq "failure" ? "error" : "ok"),duration_s=>$dur,task=>$s->{task},tokens_in=>0,tokens_cached=>0,tokens_out=>0,cost_usd=>0,cost_in=>"usage",outcome=>($stop ? $stop->{outcome} : outcome($text))});
-  ' "$root/.loomy/logs/events.jsonl" "$mode" "$offset" "$result" 2>/dev/null || true
+    emit({type=>"delegation",id=>$id,agent_id=>$aid,bridge=>"subagent",family=>"claude",role=>$s->{role},agent_type=>$s->{agent_type},model=>($stop && $stop->{model} ? $stop->{model} : $s->{model}),effort=>$s->{effort},status=>($mode eq "failure" ? "error" : "ok"),duration_s=>$dur,task=>$s->{task},(exists($s->{label_ref}) ? (label_ref=>$s->{label_ref}) : ()),tokens_in=>0,tokens_cached=>0,tokens_out=>0,cost_usd=>0,cost_in=>"usage",outcome=>($stop ? $stop->{outcome} : outcome($text))});
+  ' "$AI_LIVE_STATE_LIB" "$root/.loomy/logs/events.jsonl" "$mode" "$offset" 2>/dev/null || true
 }

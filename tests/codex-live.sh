@@ -15,6 +15,9 @@ export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:$LOOMY_TEST_TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 export LOOMY_HOME="$REPO" LOOMY_LANG=en NO_COLOR=1 LOOMY_CATALOG_CHECK=0 LOOMY_NO_AUTOUPDATE=1
 export LOOMY_FIXTURE_NOW=1791853200 LOOMY_NATIVE_NOW=1791853200
+# Keep the existing display regressions under the explicit excerpt grant.
+# content-writers.sh exercises the structural default and native label references.
+export LOOMY_FIXTURE_CONTENT=legacy-excerpts
 unset LOOMY_DELEGATION LOOMY_PROJECT_ROOT LOOMY_UI_LANG AI_ROUTE_ENV LOOMY_WATCH_TOOL LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 ROOT="$WORK/project"; J="$ROOT/.loomy/logs/events.jsonl"; PASS=0

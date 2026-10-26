@@ -74,6 +74,9 @@ _lf_reason() {
     fi
   done < <(ai_quota "$1")
   LF_RESUME_AT="$reset"
+  LF_QUOTA_WINDOW=unknown; LF_USED_PERCENT=null
+  case "$bw" in 300) LF_QUOTA_WINDOW=5h ;; 10080) LF_QUOTA_WINDOW=7d ;; 1440) LF_QUOTA_WINDOW=daily ;; esac
+  [[ -z "$bw" ]] || LF_USED_PERCENT="$bp"
   if (( ! reached )) && [[ -n "$bw" ]]; then LF_REASON="$(_ai_window_label "$bw") $bp %"
   else
     LF_REASON="$(t "limit reached")"
@@ -84,11 +87,16 @@ _lf_reason() {
 
 # lf_start <root> <master> <acting> <reason> <resume_at> [manual]: records the relay and journals it.
 lf_start() {
-  local f manual="${6:-0}" extra="" manual_line=""; f="$(lf_file "$1")"
+  local f manual="${6:-0}" extra="" manual_line="" reason_code=quota resume=null quota_window=unknown used_percent=null; f="$(lf_file "$1")"
   [[ -d "$1/.loomy" ]] || return 0
   if [[ "$manual" == 1 ]]; then manual_line=$'manual=1\n'; extra=',"manual":true'; fi
-  printf 'master=%s\nacting=%s\nsince=%s\nreason=%s\nresume_at=%s\n%s' "$2" "$3" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$4" "${5:-}" "$manual_line" >"$f" 2>/dev/null || return 0
-  ai_journal_write "$1" "\"type\":\"lead_failover\",\"master\":\"$2\",\"acting\":\"$3\",\"reason\":$(ai_json_str "$4"),\"resume_at\":\"${5:-}\"$extra" || true
+  [[ "$manual" != 1 ]] || reason_code=manual
+  if [[ "$manual" != 1 ]]; then
+    quota_window="${LF_QUOTA_WINDOW:-unknown}"; used_percent="${LF_USED_PERCENT:-null}"
+  fi
+  [[ ! "${5:-}" =~ ^[0-9]+$ ]] || resume="$5"
+  printf 'master=%s\nacting=%s\nsince=%s\nreason=%s\nresume_at=%s\nquota_window=%s\nused_percent=%s\n%s' "$2" "$3" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$4" "${5:-}" "$quota_window" "$used_percent" "$manual_line" >"$f" 2>/dev/null || return 0
+  ai_journal_write "$1" "\"type\":\"lead_failover\",\"master\":\"$2\",\"acting\":\"$3\",\"reason_code\":\"$reason_code\",\"quota_window\":\"$quota_window\",\"used_percent\":$used_percent,\"resume_at\":$resume$extra" || true
   return 0
 }
 
@@ -109,12 +117,16 @@ lf_mark_manual() {
 
 # lf_end <root> [manual]: the master takes the lead back: journals lead_return with the duration, then clears the state.
 lf_end() {
-  local m a s since_ep dur=0 extra=""
+  local m a s since_ep dur=0 extra="" reason_code=available quota_window used_percent
   [[ "${2:-$(lf_get "$1" manual)}" != 1 ]] || extra=',"manual":true'
+  [[ -z "$extra" ]] || reason_code=manual
   m="$(lf_get "$1" master)"; a="$(lf_get "$1" acting)"; s="$(lf_get "$1" since)"
+  quota_window="$(lf_get "$1" quota_window)"; used_percent="$(lf_get "$1" used_percent)"
+  case "$quota_window" in 5h|7d|daily|weekly|session|unknown) ;; *) quota_window=unknown ;; esac
+  [[ "$used_percent" =~ ^[0-9]+$ ]] || used_percent=null
   since_ep="$(ai_ts_epoch "$s")"
   [[ -n "$since_ep" ]] && dur=$(( $(date +%s) - since_ep ))
-  ai_journal_write "$1" "\"type\":\"lead_return\",\"master\":\"$m\",\"acting\":\"$a\",\"duration_s\":$dur$extra" || true
+  ai_journal_write "$1" "\"type\":\"lead_return\",\"master\":\"$m\",\"acting\":\"$a\",\"duration_s\":$dur,\"reason_code\":\"$reason_code\",\"quota_window\":\"$quota_window\",\"used_percent\":$used_percent$extra" || true
   lf_clear "$1"
 }
 

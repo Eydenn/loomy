@@ -32,13 +32,13 @@ set result [catch {
             exec perl $fixture hooks $root $projects $surface $bg 2>@1
             spawn env HOME=$work/home XDG_CONFIG_HOME=$work/config-$surface-$bg CLAUDE_CONFIG_DIR=$work/claude CODEX_HOME=$work/codex LOOMY_NATIVE_NOW=1791853207 LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin NO_COLOR=1 COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
             set child [exp_pid]
-            visible {Implement fixture[^\r\n]*running}
+            visible {developer[^\r\n]*running}
             exec perl $fixture return $root $projects $surface $bg 2>@1
             exec perl $fixture hook-return $root $projects $surface $bg 2>@1
-            if {$bg} { visible {Implement fixture[^\r\n]*running} }
+            if {$bg} { visible {developer[^\r\n]*running} }
             exec perl $fixture stop $root $projects $surface $bg 2>@1
             exec perl $fixture hook-stop $root $projects $surface $bg 2>@1
-            visible {Implement fixture[^\r\n]*done}
+            visible {developer[^\r\n]*done}
             for {set trial 30} {$trial < 50} {incr trial} {
                 if {$trial == 40} { send "a" }
                 after [expr {int(rand()*240)}]
@@ -47,7 +47,8 @@ set result [catch {
                     set id [expr {$trial+$attempt*100}]
                     set started [clock clicks -microseconds]
                     exec perl $fixture live-child $root $projects $surface $bg $id 2>@1
-                    set pattern "latency$id\[^\\r\\n\]*running · \[0-9\]+:\[0-9\]\[0-9\]"
+                    set role [lindex {reviewer security architect debugger executor explorer documenter advisor worker default} [expr {($id-30)%10}]]
+                    set pattern "$role\[^\\r\\n\]*running · \[0-9\]+:\[0-9\]\[0-9\]"
                     visible $pattern
                     set elapsed [expr {([clock clicks -microseconds]-$started)/1000.0}]
                     if {$elapsed > $maximum} { set maximum $elapsed }

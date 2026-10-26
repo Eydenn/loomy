@@ -8,7 +8,7 @@ use Cwd qw(abs_path);
 use POSIX qw(strftime);
 use Time::Local qw(timegm);
 use Time::HiRes ();
-my (%inventory,%cached,%diagnosed,%watch);
+my (%inventory,%cached,%diagnosed,%watch,%label_metadata);
 my $live_lib=abs_path(__FILE__); $live_lib =~ s{/[^/]+$}{};
 require "$live_lib/live-state.pl";
 my $canonical=JSON::PP->new->canonical;
@@ -20,6 +20,10 @@ use Digest::SHA qw(sha256_hex);
 sub scalar_text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
 sub identity { scalar_text($_[0]) =~ /\A[A-Za-z0-9_.:-]{1,100}\z/ ? scalar_text($_[0]) : '' }
 sub label { my $s=scalar_text($_[0]); $s =~ s/[^A-Za-z0-9 _.-]/ /g; return substr($s,0,40) }
+sub strict_label {
+    my $s=scalar_text($_[0]); return $s if length($s)<=40 && $s =~ /\A[A-Za-z0-9_.-](?:[A-Za-z0-9_. -]*[A-Za-z0-9_.-])?\z/ && $s =~ /[A-Za-z0-9]/;
+    return '';
+}
 sub stamp { scalar_text($_[0]) }
 sub epoch {
     my @t=stamp($_[0]) =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
@@ -139,10 +143,10 @@ sub metadata {
     my $task=scalar_text($p->{agent_path}) || (ref($spawn) eq 'HASH' ? scalar_text($spawn->{agent_path}) : '');
     $task =~ s{.*/}{};
     my $names=($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0';
-    return {id=>identity($p->{id}),parent=>$parent,surface=>$surface,cwd=>scalar_text($p->{cwd}),task=>($names ? label($task) : ''),
+    return {id=>identity($p->{id}),parent=>$parent,surface=>$surface,cwd=>scalar_text($p->{cwd}),task=>($names ? strict_label($task) : ''),
         metadata_protocol=>2,v2=>($v2 ? 1 : 0),workspace_roots=>(ref($p->{runtime_workspace_roots}) eq 'ARRAY' ? $p->{runtime_workspace_roots} : []),
-        ts=>stamp($p->{timestamp}//$d->{timestamp}),role=>label($p->{agent_role}//(ref($spawn) eq 'HASH' ? $spawn->{agent_role} : '')),
-        nickname=>($names ? label($p->{agent_nickname}//(ref($spawn) eq 'HASH' ? $spawn->{agent_nickname} : '')) : '')};
+        ts=>stamp($p->{timestamp}//$d->{timestamp}),role=>strict_label($p->{agent_role}//(ref($spawn) eq 'HASH' ? $spawn->{agent_role} : '')),
+        nickname=>($names ? strict_label($p->{agent_nickname}//(ref($spawn) eq 'HASH' ? $spawn->{agent_nickname} : '')) : '')};
 }
 
 # Directory signatures detect new names; known files are retained for old-date resumes.
@@ -203,6 +207,7 @@ sub discover {
             if ($resolved eq $root || index($resolved,"$root/")==0) { $cwd=$resolved; last }
         }
         next unless $cwd;
+        $label_metadata{$path}={key=>$sig,meta=>{%$m}} if $m->{parent};
         $m->{cwd}=$cwd;
         my $old=$s->{files}{$path};
         $s->{files}{$path}={meta=>$m,offset=>0} unless $old && ($old->{key}//'') eq $sig;
@@ -562,6 +567,7 @@ sub poll {
     $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
     my $dirty=prune_checkpoint($s,$now);
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
+    my $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
     Loomy::LiveState::recover_rotation($journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$out or return;
@@ -697,6 +703,7 @@ sub poll {
     my $emitting_file;
     my $emit=sub {
         my ($key,$type,$ts,$body)=@_; $key=sha256_hex($key); return if $s->{seen}{$key};
+        my $ok=eval {(sub {
         if (($body->{schema}//0)==2) {
             if ($emitting_file && $emitting_file->{meta}{parent}) {
                 $body->{source_offset}=$emitting_file->{event_position}//$emitting_file->{offset}//0;
@@ -709,12 +716,17 @@ sub poll {
             $body->{state}//=$type eq 'delegation_start' ? 'running' : $type eq 'delegation_activity' ? ($body->{activity}//'unknown')
                 : $type eq 'delegation' ? ($body->{status} eq 'ok' ? 'done' : $body->{status} eq 'error' ? 'failed' : $body->{status}) : 'unknown';
         }
-        my $json=encode_json($body); $json =~ s/^\{//; $json =~ s/\}$//;
-        print $out '{"ts":'.encode_json(stamp($ts)).',"type":'.encode_json($type).',"native_key":'.encode_json($key).($json ne '' ? ",$json" : '')."}\n" or die 'native journal write failed';
+        my $line=Loomy::LiveState::journal_event_line($content_writer,{%$body,ts=>stamp($ts),type=>$type,native_key=>$key});
+        return unless defined $line;
+        print $out $line or die 'native journal write failed';
         $out->flush or die 'native journal flush failed';
         $s->{seen}{$key}=$now; $dirty=1;
         $jc->{active}{$body->{id}}=1 if $type eq 'delegation_start';
         delete $jc->{active}{$body->{id}} if $type eq 'delegation';
+        return 1;
+        })->()};
+        warn "Codex journal event skipped; append unavailable\n" if $@;
+        return $ok;
     };
     my @owners=sort { $b->{ts} cmp $a->{ts} } values %{$s->{owners}//{}};
     for my $o (@owners) {
@@ -821,7 +833,30 @@ sub poll {
         my ($owner)=grep { ($_->{lead}//'') eq $lead } @owners;
         $owner//={lead=>$lead,session=>$lead,ts=>$m->{ts},unbound=>1,pid=>0} if $lead =~ /^pending:/;
         next unless $owner;
-        my $base;
+        my ($base,$native_label_ref); my %native_label_refs;
+        # Re-read the approved metadata fields when granting labels, so an old
+        # checkpoint's sanitized/truncated strings are never treated as consent.
+        if ($content_writer->{policy}{label_sources} =~ /(?:^|,)codex-/) {
+            my @ls=stat($path); my $meta_key="$ls[0]:$ls[1]";
+            my $entry=$label_metadata{$path};
+            if (!$entry || $entry->{key} ne $meta_key) {
+                # On a cold restart charge the metadata read to the same budget
+                # as source lines. Warm polls reuse the validated file identity.
+                if ($budget>=262144) {
+                    my $raw=metadata($path); $budget-=$metadata_bytes;
+                    $entry=$label_metadata{$path}={key=>$meta_key,meta=>$raw};
+                }
+            }
+            unless ($entry && $entry->{key} eq $meta_key) {$f->{at_eof}=0; next}
+            my $raw=$entry->{meta};
+            if ($raw) {
+                for my $component ([task=>'codex-path-slug','slug'],[nickname=>'codex-nickname','nickname'],[role=>'codex-role','role']) {
+                    my $saved=Loomy::LiveState::content_label($content_writer,'agent',$m->{id},$m->{id},$component->[1],$raw->{$component->[0]});
+                    $native_label_ref//=$saved;
+                    $native_label_refs{$component->[2]}=$saved if $saved;
+                }
+            }
+        }
         my $bind=sub {
             $owner=owner_at(\@owners,$lead,$_[0],$m->{ts});
             $base={bridge=>'codex-native',family=>'codex',tool=>'codex',owner_pid=>$owner->{pid},pid_role=>'owner',
@@ -833,6 +868,8 @@ sub poll {
                 $base->{task}=join(' ',grep {$_ ne ''} ($m->{nickname},$m->{role},$m->{task})) if ($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0';
             }
             delete @$base{qw(owner_pid pid_role)} if $owner->{unbound};
+            $base->{label_ref}=$native_label_ref if $native_label_ref;
+            $base->{label_refs}={%native_label_refs} if keys %native_label_refs;
         };
         $bind->($f->{started}//$m->{ts});
         if ($lead =~ /^pending:/) {
@@ -1013,10 +1050,10 @@ sub poll {
         }
     }
     # The append and checkpoint share one lock; crash recovery replays only unseen native keys.
-    $out->flush or die 'native journal flush failed'; $out->sync or die 'native journal sync failed';
+    unless (eval {$out->flush && $out->sync or die; 1}) {warn "Codex journal event skipped; append unavailable\n"; return $s}
     # Do not skip external owner/hooks appended between the read and our writes.
     my @end=stat($out);
-    if ($end[7]>=8388608) {close $out; Loomy::LiveState::journal_rotate($journal)}
+    if ($end[7]>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer)} or warn "Codex journal rotation unavailable\n"}
     prune_checkpoint($s,$now) if $dirty;
     save($idx,$s) if $dirty;
     $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day};

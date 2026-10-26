@@ -12,6 +12,7 @@ require "$lib/codex-native.pl";
 my (%cache,%inventory,%watch,%diagnosed,%retry);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
+our $content_writer;
 sub text { Loomy::CodexNative::scalar_text($_[0]) }
 sub id { my $value=$_[0]; Loomy::CodexNative::identity($value) }
 sub epoch { Loomy::CodexNative::epoch($_[0]) }
@@ -122,7 +123,7 @@ sub hook {
     if ($type eq 'request' || $type eq 'session_activity') { lead_state($lead,$ts,$type eq 'request' ? 'running' : text($e->{state})); return }
     my $cid=id($e->{id}); my $aid=id($e->{agent_id});
     if ($type eq 'delegation_start') {
-        my $c=start($lead,$cid,$ts,{role=>label($e->{role}),model=>id($e->{model}),effort=>id($e->{effort}),background=>$e->{background},
+        my $c=start($lead,$cid,$ts,{role=>label($e->{agent_type}//$e->{role}),model=>id($e->{model}),effort=>id($e->{effort}),background=>$e->{background},
             task=>(($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : label($e->{task}))});
         $lead->{waits}{$cid}=1 if $c && !$c->{background} && !$c->{ended};
         lead_state($lead,$ts,keys %{$lead->{waits}//{}} ? 'waiting' : 'running');
@@ -244,7 +245,14 @@ sub transcript_record {
         next unless ref($b) eq 'HASH'; my $bt=text($b->{type});
         if ($bt eq 'tool_use' && text($b->{name}) =~ /^(Agent|Task)$/ && id($b->{id})) {
             my $in=ref($b->{input}) eq 'HASH' ? $b->{input} : {};
-            my $c=start($lead,id($b->{id}),$ts,{role=>label($in->{subagent_type})||'agent',model=>id($in->{model}),background=>$in->{run_in_background}});
+            my $c=start($lead,id($b->{id}),$ts,{role=>label($in->{subagent_type})||'agent',model=>id($in->{model}),background=>$in->{run_in_background},
+                ($content_writer && $content_writer->{policy}{journal_content} eq 'legacy-excerpts'
+                    ? (task=>label($in->{description})) : ())});
+            # The deliberate description is the only transcript title source.
+            # Structural capture keeps text only in the granted label store;
+            # explicit legacy mode retains its existing task excerpt semantics.
+            Loomy::LiveState::content_label($content_writer,'delegation',id($b->{id}),$lead->{id},
+                'claude-description',$in->{description}) if $content_writer;
             notify($lead,id($b->{id}));
             $lead->{waits}{id($b->{id})}=1 unless $c->{background} || $c->{ended} || $c->{returned};
         } elsif ($bt eq 'tool_result' && id($b->{tool_use_id})) {
@@ -395,15 +403,19 @@ sub poll_locked {
         }
     }
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
+    local $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
     Loomy::LiveState::recover_rotation($journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($out,LOCK_EX|LOCK_NB) or return; chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
     my $input=Loomy::LiveState::recovery_path($journal,$jc);
+    my %replayed_signatures; # R1 journal digests are transient, not a new sent format.
     for my $r (lines($input,$jc,2097152)) {
         my $e=eval {decode_json($r->[0])}; next unless Loomy::LiveState::valid_event($e);
         if (text($e->{bridge}) eq 'claude-native' && text($e->{checkpoint_key}) ne '') {
-            $s->{sent}{text($e->{checkpoint_key})}=text($e->{checkpoint_value});
+            my ($key,$value)=(text($e->{checkpoint_key}),text($e->{checkpoint_value}));
+            if ($value =~ /^sha256:[0-9a-f]{64}$/) {$replayed_signatures{$key}=$value}
+            else {$s->{sent}{$key}=$value}
         }
         if ($s->{reconstructing} && text($e->{bridge}) eq 'claude-native') {
             my $sid=id($e->{session}); my $cid=id($e->{turn_id});
@@ -442,11 +454,32 @@ sub poll_locked {
     prune($s,\$dirty);
     my $emit=sub {
         my ($key,$type,$ts,$body)=@_; return unless epoch($ts);
-        my $encoded=$key =~ /^start:/ ? "1" : $key =~ /^end:/ ? "$ts:$body->{status}" : $json->encode({%$body}); return if ($s->{sent}{$key}//'') eq $encoded;
+        my $ok=eval {(sub {
+        my $encoded=$key =~ /^start:/ ? "1" : $key =~ /^end:/ ? $ts.':'.text($body->{status}) : $json->encode({%$body});
+        # R1 compares projected signatures in RAM, keeping persisted sent values
+        # and their format unchanged. Replay may supply either old JSON or a digest.
+        my $signature=sub {Loomy::LiveState::content_signature($content_writer,$type,$_[0])};
+        my $event_signature=$signature->($encoded);
+        my $prior=$replayed_signatures{$key}//$s->{sent}{$key};
+        if (defined($prior) && $signature->($prior) eq $event_signature) {
+            # Reconstruct the original serialized-body representation only when
+            # missing, just as a first emit would; never persist the journal digest.
+            unless (exists $s->{sent}{$key}) {$s->{sent}{$key}=$encoded; $dirty=1}
+            return;
+        }
+        my %row=(%$body,($body->{turn_id} ? (agent_type=>$body->{role}) : ()),ts=>$ts,type=>$type,checkpoint_key=>$key,checkpoint_value=>$event_signature,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native');
+        if ($body->{turn_id}) {
+            my $ref=Loomy::LiveState::content_label($content_writer,'delegation',$body->{turn_id},$body->{session},'claude-description');
+            $row{label_ref}=$ref if $ref;
+        }
+        my $line=Loomy::LiveState::journal_event_line($content_writer,\%row); return 1 unless defined $line;
+        print $out $line or die 'Claude journal write failed';
+        $out->flush or die 'Claude journal flush failed';
         $s->{sent}{$key}=$encoded; $dirty=1;
-        my %row=(%$body,checkpoint_key=>$key,checkpoint_value=>$encoded,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native'); delete @row{qw(ts type)};
-        # Same line shape as every other writer ("ts" then "type" first): the shell readers match "type":"x", literally.
-        print $out '{"ts":'.encode_json($ts).',"type":'.encode_json($type).','.substr($json->encode(\%row),1),"\n" or die 'Claude journal write failed';
+        return 1;
+        })->()};
+        warn "Claude journal event skipped; append unavailable\n" if $@;
+        return $ok;
     };
     for my $sid (sort keys %{$s->{sessions}//{}}) {
         my $lead=$s->{sessions}{$sid}; next unless epoch($lead->{seen});
@@ -479,9 +512,9 @@ sub poll_locked {
             }
         }
     }
-    $out->flush or die 'Claude journal flush failed'; $out->sync or die 'Claude journal sync failed';
+    unless (eval {$out->flush && $out->sync or die; 1}) {warn "Claude journal event skipped; append unavailable\n"; return $s}
     # Keep the consumed offset: hooks appended during source collection must be replayed next poll.
-    if (-s $journal>=8388608) {close $out; Loomy::LiveState::journal_rotate($journal)}
+    if (-s $journal>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer)} or warn "Claude journal rotation unavailable\n"}
     prune($s,\$dirty);
     Loomy::LiveState::checkpoint_save($idx,$s) if $dirty;
     $cache{$idx}={sig=>signature($idx),state=>$s,pruned_day=>$day}; $cache{$idx}{poll_sig}=input_signature($root,$projects); $watch{$idx}=$cache{$idx}{poll_sig}; return $s;

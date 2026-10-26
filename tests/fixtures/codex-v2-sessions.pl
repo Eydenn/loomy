@@ -4,6 +4,9 @@ use warnings;
 use JSON::PP qw(encode_json decode_json);
 use POSIX qw(strftime);
 use File::Path qw(make_path);
+use Cwd qw(abs_path);
+my $lib=abs_path(__FILE__); $lib =~ s{/tests/fixtures/[^/]+$}{/scripts/lib};
+require "$lib/content-policy.pl";
 my ($action,$root,$sessions)=@ARGV;
 my $now=$ENV{LOOMY_FIXTURE_NOW}//time;
 sub ts { strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now+($_[0]//0))) }
@@ -29,6 +32,12 @@ sub padding {
 }
 if ($action eq 'seed') {
     make_path("$root/.loomy/logs","$root/src");
+    if (($ENV{LOOMY_FIXTURE_CONTENT}//'') eq 'legacy-excerpts') {
+        my $p={%{Loomy::ContentPolicy::defaults()},journal_content=>'legacy-excerpts'};
+        open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die;
+        print $c "$_=$p->{$_}\n" for sort keys %$p; close $c;
+        chmod 0600,"$root/.loomy/logs/content-policy.conf" or die;
+    }
     open my $brief,'>',"$root/.loomy/brief.md" or die $!;
     print $brief "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $brief;
     my @names=('','',qw(Lyra Orion Vega Iris Nova Excluded));
@@ -52,6 +61,9 @@ if ($action eq 'seed') {
         padding($n,$n==1 ? 36*1024*1024 : 2*1024*1024) if $n<7;
         append($n,item($n,-3),usage($n,-2),row('inter_agent_communication_metadata',{trigger_turn=>JSON::PP::true},-1));
     }
+} elsif ($action eq 'census-close') {
+    append(1,row('response_item',{type=>'function_call',name=>'close_agent',call_id=>'fixture-close',arguments=>encode_json({agent_id=>id(4)})},0),
+        row('response_item',{type=>'function_call_output',call_id=>'fixture-close',output=>'{"status":"closed"}'},0));
 } elsif ($action eq 'finish') {
     append(2,event('task_complete',2,1,started_at=>($now-50)*1000,completed_at=>($now+1)*1000,duration_ms=>51000));
     append(3,event('turn_aborted',3,2));

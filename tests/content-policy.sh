@@ -378,6 +378,38 @@ my $status=0; for (@pids) {waitpid($_,0); $status|=$?} is($status,0,'eight concu
 my @rows=split /\n/,bytes("$con/.loomy/logs/display-context-v1.jsonl"); is(scalar @rows,8,'concurrent appends lose no complete record');
 my %ids=map {$json->decode($_)->{target_id}=>1} @rows; is(scalar keys %ids,8,'concurrent scoped identities survive');
 
+# Stable namespace migration: both normal moves and pre-upgrade moved labels.
+for my $pre_move (0,1) {
+    my $a=project("stable-$pre_move"); seed($a,label_sources=>'claude-description');
+    my $ref=label($a,'Durable label'); my $id=policy($a)->{project_id};
+    unlink "$a/.loomy/project-id" if $pre_move; # simulate old path-hash deployment
+    my $moved="$a-renamed"; rename $a,$moved or die;
+    is(policy($moved)->{project_id},$id,'project identity survives rename including existing legacy refs');
+    is((stat("$moved/.loomy/project-id"))[2]&0777,0600,'persistent project identity is private');
+    is(Loomy::ContentPolicy::resolve_label($moved,$ref)->{text},'Durable label','legacy label reference resolves after moving');
+    my $again=label($moved,'New title');
+    is($again->{project_id},$id,'new writes use the migrated namespace');
+}
+for my $kind (qw(symlink hardlink mode)) {
+    my $a=project("identity-$kind"); my $target="$work/identity-target-$kind";
+    put($target,'p'.('a'x64)."\n");
+    if ($kind eq 'symlink') {symlink $target,"$a/.loomy/project-id" or die}
+    elsif ($kind eq 'hardlink') {link $target,"$a/.loomy/project-id" or die}
+    else {put("$a/.loomy/project-id",bytes($target)); chmod 0644,"$a/.loomy/project-id" or die}
+    ok(!policy($a)->{valid},"unsafe $kind project identity fails closed");
+    is(bytes($target),'p'.('a'x64)."\n",'foreign identity bytes untouched');
+    is((stat($target))[2]&0777,0600,'foreign identity permissions untouched');
+}
+for my $type (qw(delegation_start delegation agent_link)) {
+    my $p=policy($s);
+    for my $value ('Explore','Plan','general-purpose','loomy-developer','a'x40) {
+        is(Loomy::ContentPolicy::project_with_policy($p,{type=>$type,agent_type=>$value})->{agent_type},$value,'Claude configuration token retained');
+    }
+    for my $bad ('a'x41,'private role prose','../agent',"Explore\n",'日本語') {
+        is(Loomy::ContentPolicy::project_with_policy($p,{type=>$type,agent_type=>$bad})->{agent_type},'unknown','invalid Claude configuration token neutralized');
+    }
+}
+
 # P19 public manifest and four mutations go through precisely the runtime loader.
 my $manifest="$repo/scripts/lib/content-allowlist.tsv";
 my $allow=Loomy::ContentPolicy::check_allowlist($manifest);
@@ -399,6 +431,51 @@ is($out->{multi_agent_version},'v2','v2 protocol retained'); is($out->{status},'
 is($out->{policy_generation},$p->{policy_generation},'projector supplies actual policy generation');
 is($out->{content_policy},'structural-v1','default structural envelope');
 is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation',status=>'handed_over'})->{status},'handed_over','handed_over retained');
+# Producer domains: local-writer.sh's model token grammar, usage.sh's pause,
+# models.sh's result/role contract, native metadata/lifecycle, and skills.sh.
+for my $model ('user/local-model','user/model','provider/nested/model:tag','m'x128) {
+    for my $field (qw(model requested_model)) {
+        is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',$field=>$model})->{$field},$model,"bounded $field with provider/local prefix retained");
+    }
+}
+for my $bad ('m'x129,'provider/model with prose',"provider/model\n",'provider/model;echo','/absolute/path',"provider/\x{e9}") {
+    ok(!defined(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',model=>$bad})->{model}),'invalid model becomes null');
+}
+for my $case (
+    ['delegation','cost_source','reported'], # claude bridge: reported vs estimate
+    ['delegation','outcome','waiting_for_reset'], # usage.sh pause
+    ['delegation','outcome','unformatted'], # models.sh ai_result_json
+    ['session_observed','state','failed'], # native task_failed
+    ['session_observed','surface','exec'], # codex-native metadata
+    ['delegation_activity','activity','waiting'], # native wait/wait_agent
+    ['delegation_start','evidence','rollout'], # Codex native emit default
+    (map {['skill','event',$_]} qw(added restored removed)),
+    (map {['skill','source',$_]} qw(anthropic openai)),
+    (map {['audit_phase','phase',$_]} qw(scope analyze validate fix)),
+    ['delegation_start','role','debugger']
+) {
+    my ($type,$key,$value)=@$case;
+    is(Loomy::ContentPolicy::project_with_policy($p,{type=>$type,$key=>$value})->{$key},$value,"producer domain $key=$value retained");
+    is(Loomy::ContentPolicy::project_with_policy($p,{type=>$type,$key=>'PRIVATE prose'})->{$key},'unknown',"$key remains a closed enum");
+}
+# Providers/efforts need no widening; cover the domains already used by launch,
+# routing overrides and native turn_context alongside the repaired domains.
+for my $provider (qw(claude codex local)) {
+    is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',family=>$provider})->{family},$provider,'supported provider retained');
+}
+for my $effort (qw(none minimal low medium high xhigh max)) {
+    is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',effort=>$effort})->{effort},$effort,'supported effort retained');
+}
+my $part='a'x100;
+for my $case (['id',"cl:$part:$part"],['id',"cn:$part:$part"],['agent_id',"$part:$part"],
+    ['alias_from',"$part:$part"],['alias_id',"cl:$part:$part"],['session_key',"claude:$part"],
+    ['session_key',"codex:pending:$part"],['parent_agent_id',"codex:$part"],['session',"pending:$part"]) {
+    my ($key,$value)=@$case;
+    is(Loomy::ContentPolicy::project_with_policy($p,{type=>'agent_alias',$key=>$value})->{$key},$value,'composite of bounded native IDs retained');
+}
+for my $bad ('a'x101,'cl:'.('a'x101).':'.('b'x100),'cl:private prose:id','cl:../path:id') {
+    ok(!defined(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',id=>$bad})->{id}),'invalid composite identity becomes null');
+}
 for my $type (grep {!m{/}} keys %$allow) {
     is(Loomy::ContentPolicy::project_with_policy($p,{type=>$type,task=>'CANARY',extension=>{raw=>'CANARY'}})->{type},$type,"per-type $type projection");
 }
@@ -407,9 +484,35 @@ for my $bad ({type=>'surprise'},{type=>'delegation',id=>'../../secret'}, {type=>
     {type=>'delegation',model=>'model with prompt'},{type=>'delegation_start',requested=>'true'},
     {type=>'session',snapshot=>1},{type=>'delegation',model=>{prompt=>'CANARY'}},{type=>'delegation',multi_agent_version=>'v3'},
     {type=>'delegation',ts=>'2026-02-31T99:00:00Z'}, {type=>'delegation',off_routing=>'private prose'}) {
-    deny('invalid structural type/value fails closed',sub {Loomy::ContentPolicy::project_with_policy($p,$bad)});
+    if ($bad->{type} eq 'surprise') {deny('unknown structural type fails closed',sub {Loomy::ContentPolicy::project_with_policy($p,$bad)})}
+    else {my ($key)=grep {$_ ne 'type'} keys %$bad; my $out=Loomy::ContentPolicy::project_with_policy($p,$bad); ok(exists($out->{$key}) && !defined($out->{$key}),'invalid structural value becomes null without killing the event')}
+
 }
 is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation',role=>'custom private remit'})->{role},'unknown','custom roles never persist prose');
+{
+    # bridge values reproduced by content-census.py shell/hooks/native fixtures.
+    for my $bridge (qw(claude codex claude-native codex-native subagent)) {
+        is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',bridge=>$bridge})->{bridge},$bridge,"census bridge $bridge survives");
+    }
+    my $usage={type=>'usage',ts=>'2026-10-26T12:00:00Z',scope=>'subagent',agent=>'Explore',model=>'claude-sonnet-5-5',cost_usd=>0.25};
+    my $u=Loomy::ContentPolicy::project_with_policy($p,$usage);
+    is($u->{agent},'Explore','native agent_type is a bounded identity, not a role enum');
+    is(Loomy::ContentPolicy::project_with_policy($p,{%$usage,agent=>'reviewer'})->{agent},'reviewer','known Loomy role identity unchanged');
+    my $digest='sha256:'.('a'x64);
+    is(Loomy::ContentPolicy::project_with_policy($p,{%$usage,agent=>$digest})->{agent},$digest,'opaque agent identity survives projection');
+    my $custom=Loomy::ContentPolicy::project_with_policy($p,{%$usage,agent=>'custom private type'});
+    like($custom->{agent},qr/^sha256:[a-f0-9]{64}$/,'invalid agent token becomes an opaque identity');
+    is(Loomy::ContentPolicy::project_with_policy($p,$custom)->{agent},$custom->{agent},'agent identity projection is idempotent');
+    isnt(Loomy::ContentPolicy::project_with_policy({%$p,project_id=>'p'.('f'x64)},{%$usage,agent=>'custom private type'})->{agent},$custom->{agent},'opaque custom identity is project scoped');
+    require "$repo/scripts/lib/claude-native.pl";
+    my $start={type=>'delegation_start',ts=>'2026-10-26T12:00:00Z',session=>'fixture-session',id=>'fixture-call',bridge=>'subagent',role=>'developer'};
+    my ($old,$new)=({sessions=>{}},{sessions=>{}});
+    Loomy::ClaudeNative::hook($old,$start);
+    Loomy::ClaudeNative::hook($new,Loomy::ContentPolicy::project_with_policy($p,$start));
+    ok(exists($old->{sessions}{'fixture-session'}{calls}{'fixture-call'}),'original census hook reaches native consumer');
+    ok(exists($new->{sessions}{'fixture-session'}{calls}{'fixture-call'}),'projected hook reaches same native consumer');
+    is($u->{cost_usd},0.25,'native identity repair preserves cost');
+}
 is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation',status=>'SECRET'})->{status},'unknown','unknown enum becomes unknown');
 is(Loomy::ContentPolicy::project_with_policy($p,{type=>'delegation_start',requested=>JSON::PP::true})->{requested},JSON::PP::true,'real boolean retained');
 my $sig1=Loomy::ContentPolicy::project_with_policy($p,{type=>'session_observed',checkpoint_value=>$json->encode({session=>'session1',cwd_relative=>'CANARY',content=>'CANARY'})});

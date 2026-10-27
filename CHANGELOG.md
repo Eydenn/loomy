@@ -2,6 +2,29 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.17.7 — 2026-10-27
+
+### Changed defaults
+
+- Future journal writes and fresh rotation snapshots use an allowlisted structural schema, on existing installations too. Task excerpts, prompt text, results and changed-file paths are excluded from that schema; existing journals and archives are not rewritten. `loomy privacy content legacy-excerpts` is a separate, explicit project choice for bounded compatibility fields.
+- A one-time human terminal prompt per project offers task labels and private results, each with **Yes** as the default answer. Both stay off until the human answers; unattended or managed runs cannot grant them, and an explicit decline is remembered. When upgrading from 0.17.6, the old updater cannot show the new prompt: use the first interactive `loomy init` or `loomy watch` after updating; status shows the command hint meanwhile.
+- Display labels live separately from the journal. `loomy privacy labels recommended` grants the six supported sources; `loomy privacy label --id ID TEXT` sets a human label, and bridge `--task-label TEXT` consumes the previously granted `explicit-lead` source. Labels are bounded to 96 graphemes / 384 UTF-8 bytes, Codex components to 40 ASCII characters each, and the label store to 1 MiB.
+- Watch tree/list, diagram, status, session logs, pretty/follow logs and recap resolve authorized labels, then role missions, then an unavailable state. Existing journal titles remain readable. Labels can contain sensitive text even though their references in structural events do not contain the title.
+- Automatic delegation memory now writes structural receipts in `.loomy/memory/receipts-v1/`. Full tasks/results require the separate `loomy privacy results on` choice and live in `.loomy/memory/private-results-v1/`, with private creation permissions (0700 directories, 0600 files). Limits: 200 records, 1 MiB per record, 16 MiB total and 30 days, enforced when capturing a result with bounded active/paused pins; a capture that cannot fit is visibly refused. Historical `.loomy/memory/delegations/` files stay unchanged and are listed separately as older sensitive results.
+- `loomy memory show [N]` shows receipt facts and any authorized private result. Turning results off stops new capture and preserves earlier records. `memory=off` controls context injection; `LOOMY_JOURNAL_TASKS=0` vetoes automatic label, excerpt and full task/result capture even with prior grants. `LOOMY_JOURNAL=0` keeps its journal/collector-off meaning.
+- A validated structured resume descriptor replaces the stored executable `Resume:` command. Exit 75 remains a pause with `resume_at`: after the reset, the lead relaunches the same task/options from its live context or an authorized saved record. Without either, Loomy reports **original task required to resume**; a receipt alone cannot reconstruct the task. Review partial file changes before retrying.
+
+### Diagnostics and fixes
+
+- `loomy privacy inventory [--root DIR] [--json] [--paths] [--git-history] [--host]` inventories known storage using metadata only, with local Git history and host candidates requested separately. It does not inspect bodies, repair files, sync, delete or contact remotes; incomplete coverage is reported.
+- Feedback staging uses allowlisted context and the last 15 projected events instead of copying the brief or whole journal. Runtime journals, labels, receipts and private results are excluded from the project and companion indexes and filtered from companion restore; previous Git history is preserved. Doctor reports policy health and a full label store.
+- Fix: Claude native polling retries on the next watch tick when the journal lock is busy, instead of stalling behind the failed-poll delay.
+
+### Privacy boundaries in this release
+
+- Release 1 still has content sinks: native checkpoints/backups/shards and usage cursors; bridge temporary output spools and other execution/viewer temporary files; desktop-resume and skill-install logs; original journal bytes from `loomy log --raw`; task/project titles in explicit `loomy report --md` exports; and tasks passed in provider argv. Label/result stores, explicit task/review/audit documents, terminal output, legacy files and provider transcripts can also contain sensitive text. Raw/export and checkpoint/scratch changes belong to a later release.
+- No historical purge or Git history rewrite is performed. Private permissions and Git exclusions provide neither encryption nor secure erasure. The human terminal guard covers supported command/managed contexts; agents running as the same OS user can still edit files. It is not an OS security boundary.
+
 ## 0.17.6 — 2026-10-20
 - `loomy stats`, `loomy log` and `loomy status` now flag reviewer and security answers that report no findings without a `TRIED` section ("review without TRIED"); the answer's own status is never rewritten, and older journals still display as before. Empty findings are recognised in their common forms (`None.`, `No findings`, `aucun`, bold field names).
 - The Dead ends reminder is no longer repeated at every session start when `AGENTS.md` / `CLAUDE.md` already carry the rule; the latest dead ends themselves are still shown.

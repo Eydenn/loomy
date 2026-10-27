@@ -6,9 +6,9 @@
 </picture>
 
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
-Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, une mémoire partagée entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
+Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, un état durable et des résultats privés facultatifs partagés entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.17.6-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.7-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -40,7 +40,7 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 |---|---|
 | 🎯&nbsp;**Qualité** | Le meilleur raisonnement planifie, décide et relit ; chaque changement peut être relu par l'autre famille de modèles ; les caractéristiques du projet (comptes, paiements, données sensibles…) fixent les vérifications que les agents doivent faire. |
 | 💰&nbsp;**Coût** | Chaque travail va au rôle le moins cher qui le fait de façon fiable (GPT-6-Luna pour les tâches cadrées, Sonnet 5.5 ou GPT-6.1 Sol pour le quotidien, Opus 5.5 pour l'architecture et la sécurité). Tokens, coût et quotas d'abonnement sont mesurés ; le travail passe à l'autre outil avant qu'un quota s'épuise. |
-| 🧠&nbsp;**Continuité** | Mémoire partagée, documentation durable et un commit par demande terminée gardent le fil d'une session à l'autre, après un compactage, sur une autre machine, et entre Claude Code et Codex, pour quelques centaines de tokens par session. |
+| 🧠&nbsp;**Continuité** | L’état du travail, la documentation durable et un commit par demande terminée gardent le fil entre sessions, compactages et outils. Les résultats privés facultatifs ajoutent une continuité locale ; les documents de continuité rédigés peuvent passer par la sauvegarde privée. |
 | 🧩&nbsp;**Méthode** | Un type de projet et ses caractéristiques clés mettent en place la structure, les rôles et les skills officiels (Anthropic et OpenAI) dont les agents ont besoin, enrichis au fil du projet. |
 | 👀&nbsp;**Visibilité** | L'orchestrateur à gauche, le dispatch à droite : phases, délégations, arbre des agents et coûts en direct, dans le terminal ou à côté de l'app de bureau. |
 
@@ -66,7 +66,7 @@ loomy doctor --fix --live
 loomy init
 ```
 
-`loomy init` propose de créer un dossier nommé d'après le projet (nom modifiable), d'utiliser le dossier courant, ou un autre emplacement. `loomy init mon-projet` crée directement le dossier. À la fin, il propose d'ouvrir la session de l'orchestrateur.
+`loomy init` propose de créer un dossier au nom du projet (modifiable), d’utiliser le dossier courant ou un autre emplacement. `loomy init mon-projet` crée directement le dossier. La première utilisation interactive propose aussi deux choix distincts : les **libellés de tâche** et la conservation des **tâches/résultats privés**, avec **Oui** proposé pour chaque réponse ; rien ne s’active sans tes réponses. Voir les choix de confidentialité plus bas. À la fin, il propose d’ouvrir la session de l’orchestrateur.
 
 **4. Rouvrir la session de l'orchestrateur** plus tard, depuis le dossier du projet
 
@@ -179,7 +179,7 @@ flowchart LR
   A["🩺 Diagnostic<br/>loomy doctor"]:::check --> B["📝 Questionnaire<br/>loomy init"]:::step
   B --> C["🧭 Routage<br/>loomy route"]:::route
   C --> D["🎯 Orchestrateur<br/>route chaque demande"]:::lead
-  D --> E["🧠 Mémoire · 🧩 Skills<br/>résultats gardés, méthodes ajoutées"]:::step
+  D --> E["🧠 Mémoire · 🧩 Skills<br/>reçus, résultats facultatifs, méthodes"]:::step
   E --> F["📈 Suivi<br/>loomy watch"]:::check
   classDef step fill:#F1EFE8,stroke:#888780,color:#2C2C2A
   classDef check fill:#E1F5EE,stroke:#1D9E75,color:#085041
@@ -196,7 +196,7 @@ flowchart LR
 
    Elle délègue le travail aux rôles dédiés et n'avance jamais sans ta validation.
 5. **Au quotidien.** Chaque demande, tes retours compris, passe par l'orchestrateur : le rôle le moins cher capable la fait, l'autre famille de modèles la relit, la documentation durable est mise à jour et le travail commité.
-6. **Mémoire et suivi.** Chaque délégation est enregistrée (modèle, effort, durée, tokens, coût) et son résultat gardé dans la mémoire partagée, redonnée à la session suivante, Claude Code comme Codex. Tu suis tout en direct.
+6. **Mémoire et suivi.** Les faits des délégations sont enregistrés dans le journal et les reçus mémoire. Si tu actives les résultats privés, les tâches/résultats complets restent dans un stockage local séparé et borné, et leurs résumés peuvent être redonnés à une nouvelle session Claude Code ou Codex. L’état du travail et les documents rédigés conservent les décisions du projet. Tu suis tout en direct.
 
 ---
 
@@ -289,7 +289,9 @@ Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jam
 
 ---
 
-## 🔒 Fichiers IA : versionnés, locaux ou privés
+## 🔒 Confidentialité : fichiers IA et stockage de l’activité
+
+### Où vivent les fichiers IA
 
 Les fichiers qui guident les agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) sont tes règles de travail. GitHub règle la visibilité **par dépôt**, pas par fichier : un dépôt public montre tout ce qu'il contient. Le questionnaire te demande où les garder, avec une valeur par défaut qui dépend de ton dépôt. Quel que soit le mode, l'historique et les fichiers de travail de Loomy (journaux, mémoire, tâches, audits, revues…) n'entrent jamais dans le dépôt du projet.
 
@@ -336,6 +338,49 @@ loomy privacy restore <ton-compte>/<projet>-ai
 > [!WARNING]
 > Un fichier déjà envoyé sur un dépôt public reste dans son historique. Quand tu passes en mode local ou privé, `loomy privacy` liste les fichiers encore suivis et donne la commande pour arrêter de les suivre sans les supprimer de ton disque. `--remote <URL>` permet d'utiliser un autre hébergeur que GitHub pour le dépôt privé.
 
+### Journal et libellés de tâche
+
+**Depuis la 0.17.7, les nouvelles entrées du journal et les instantanés de rotation sont structurels par défaut :** identifiants, rôles, modèles, effort, cycle de vie, durées, compteurs et coûts. Ils omettent les prompts, le corps des tâches, les résultats et les chemins des fichiers modifiés. Les journaux et archives existants restent intacts.
+
+Les libellés de tâche utilisent un **stockage local séparé**, `.loomy/logs/display-context-v1.jsonl`, avec une autorisation par source : `explicit-user`, `explicit-lead`, `claude-description`, `codex-path-slug`, `codex-nickname`, `codex-role`. Claude utilise la **description** Agent/Task, jamais son prompt ; Codex utilise le dernier composant du chemin d’agent, le surnom et le rôle. Les libellés explicites viennent de ta commande `privacy label` ou de l’option `--task-label` d’un bridge.
+
+Les libellés sont assainis et coupés entre graphèmes : au plus **96 graphèmes / 384 octets UTF-8**, **40 caractères ASCII par composant Codex**, et **1 Mio** pour le stockage des libellés. S’il est plein, Loomy indique que le libellé n’a pas été enregistré. Les vues locales arbre/liste, diagramme, statut, journal de session, journal lisible et récapitulatif résolvent un libellé autorisé, puis la mission d’un rôle connu (`Rôle : …`), sinon un contexte indisponible. L’ancien texte du journal reste lisible.
+
+| Commande | Ce qu’elle change |
+|---|---|
+| `loomy privacy content [structural\|legacy-excerpts]` | Afficher la politique, ou choisir les écritures structurelles / les extraits de compatibilité bornés |
+| `loomy privacy labels [recommended\|off]` | Afficher les choix de libellés ; activer les six sources recommandées, ou les désactiver |
+| `loomy privacy labels set explicit-lead,claude-description` | Remplacer les sources par l’ensemble choisi |
+| `loomy privacy label --id <id> "Titre court"` | Libeller explicitement un agent identifié ; `--kind` et `--attempt` sélectionnent un autre type de cible ou une tentative |
+| `loomy privacy results [on\|off]` | Afficher ou changer la capture future des tâches/résultats complets ; les résultats existants restent en place |
+
+`legacy-excerpts` n’autorise que les champs de compatibilité bornés `task`, `excerpt`, `why`, `nickname` et `cwd_relative` ; il n’active ni les sources de libellés ni les résultats privés. Ajouter des sources, activer les résultats privés ou élargir la conservation exige **ta confirmation directe dans un terminal ordinaire**, pour ce projet et les limites affichées. Les agents, hooks, bridges, terminaux gérés et réponses par pipe ne peuvent pas donner cet accord par les commandes Loomy prévues. Un agent sous ton utilisateur système peut toujours modifier les fichiers locaux ou changer son environnement de lancement ; cette protection n’est pas une isolation système. Restreindre ou désactiver reste possible sans interaction. Les worktrees partageant le stockage d’activité enregistré du projet partagent ces choix ; un autre clone ne les reçoit pas par synchronisation.
+
+`LOOMY_JOURNAL=0` désactive les écritures du journal et la collecte native, pas tous les documents de Loomy. `LOOMY_JOURNAL_TASKS=0` interdit les nouvelles captures automatiques de tâches/extraits/libellés et de tâches/résultats complets, même avec une autorisation existante. `loomy config set memory off` arrête l’injection de contexte ; utilise `loomy privacy results off` pour arrêter la capture future des résultats.
+
+### Choix à la première utilisation
+
+Le premier `loomy init` ou `loomy watch` interactif pose une seule fois par projet :
+
+- **Conserver les libellés de tâche ? [O/n]** — **Oui** par défaut, avec les six sources et les limites des libellés affichées.
+- **Conserver aussi les tâches/résultats privés ? [O/n]** — un **Oui** distinct par défaut, avec les limites des résultats privés affichées.
+
+Entrée sur chaque question affichée accepte sa valeur par défaut. Les choix ne sont enregistrés qu’une fois les deux réponses complètes. Un refus est mémorisé ; désactiver un choix ensuite ne le réactive jamais silencieusement. Un écran interrompu ou une utilisation non interactive n’accorde rien et laisse la question en attente ; les autorisations valides existantes restent utilisables. Avant tes réponses, le défaut est un journal structurel avec libellés et résultats privés désactivés, et le statut affiche `Libellés de tâche désactivés · lancer loomy privacy labels recommended`.
+
+Après une mise à jour depuis la **0.17.6**, ouvre `loomy init` ou `loomy watch` dans ton terminal pour faire ces choix : `loomy update` seul ne les autorise pas.
+
+### Inventorier les copies stockées
+
+```bash
+loomy privacy inventory
+```
+
+Cet inventaire en lecture seule donne les catégories de stockage connues, le nombre et la taille des fichiers depuis leurs métadonnées, sans lire leur contenu, copier, modifier ni supprimer de fichier. `--root DIR` choisit un projet, `--json` renvoie les métadonnées en JSON, `--paths` inclut les chemins locaux échappés, `--git-history` vérifie les métadonnées de l’index et de l’historique Git local, et `--host` ajoute les emplacements hôte et temporaires connus. Il ne contacte aucun dépôt distant et ne parcourt pas les conversations des fournisseurs ; une couverture incomplète est signalée, sans conclure que tout est sûr.
+
+Les nouveaux libellés, reçus mémoire et résultats privés sont exclus du dépôt du projet, du dépôt IA privé, de la synchronisation, de la restauration et des exports automatiques. Les documents rédigés `STATE.md`, `DEAD-ENDS.md` et `HANDOFF.md` gardent leur rôle explicite de continuité dans la sauvegarde privée. Les retours construisent leur contexte automatique depuis les informations d’environnement/configuration autorisées et les 15 derniers événements projetés structurellement, sans copier le brief ni le journal brut ; ton message rédigé fait toujours partie de l’issue prévisualisée.
+
+**Expositions restantes en 0.17.7 :** checkpoints natifs/sauvegardes/fragments et curseurs d’usage, fichiers temporaires d’exécution/diagnostic/affichage, `loomy log --raw`, exports explicites `loomy report --md` et arguments de tâche des fournisseurs peuvent encore contenir du texte ou des chemins identifiants. Les conversations des fournisseurs et les documents de tâche/revue/audit explicitement demandés gardent leur propre conservation. Changer la politique ou lancer l’inventaire ne purge ni anciens fichiers, ni historique Git, ni clones distants, ni sauvegardes système.
+
 ---
 
 ## 📈 Suivi en direct
@@ -353,13 +398,13 @@ Tout se passe dans le terminal, sans dépendance. `loomy start` ouvre le suivi e
 Chaque commande en détail : [docs/COMMANDS.fr.md](docs/COMMANDS.fr.md).
 
 **Ce qui est en direct.** Les lancements sont détectés toutes les 250 ms ; les chronos en cours avancent chaque seconde :
-- les **délégations**, via les bridges et les agents natifs Claude ou Codex, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et la tâche ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec et ⊘ interruption. L'usage des sous-agents Claude natifs n'est compté qu'une fois ; l'usage et le coût des agents Codex natifs restent inconnus sans mesure distincte. Chaque session de l'orchestrateur forme un seul groupe, intitulé par sa surface, son identifiant et `en direct` ou `inactive` ; une session inactive sans rien en cours n'apparaît que dans le récapitulatif (sous la ligne de défilement, l'intitulé du groupe est répété avec la mention `récapitulatif`), et une délégation dont le lanceur a disparu se termine en ⊘ interrompu, jamais en cours ;
-- le **regroupement** par demande ou modèle se change avec `v` et se mémorise dans `watch_group` (`request` par défaut ; `loomy config set watch_group model` le change). Les extraits des demandes viennent du hook de message Claude et respectent `LOOMY_JOURNAL_TASKS=0` ; ⚑ signale une demande explicite et ⇢ un écart au routage ;
+- les **délégations**, via les bridges et les agents natifs Claude ou Codex, s'affichent pendant leur exécution sous **EN COURS**, avec le modèle enregistré (actualisé depuis l'usage réel quand il est disponible), l'effort, la durée et le libellé autorisé ou le contexte du rôle ; **SESSION** récapitule uniquement les rôles terminés de la session courante de l'orchestrateur, avec ✓ terminé, △ partiel, ■ bloqué et ✗ échec et ⊘ interruption. L'usage des sous-agents Claude natifs n'est compté qu'une fois ; l'usage et le coût des agents Codex natifs restent inconnus sans mesure distincte. Chaque session de l'orchestrateur forme un seul groupe, intitulé par sa surface, son identifiant et `en direct` ou `inactive` ; une session inactive sans rien en cours n'apparaît que dans le récapitulatif (sous la ligne de défilement, l'intitulé du groupe est répété avec la mention `récapitulatif`), et une délégation dont le lanceur a disparu se termine en ⊘ interrompu, jamais en cours ;
+- le **regroupement** par demande ou modèle se change avec `v` et se mémorise dans `watch_group` (`request` par défaut ; `loomy config set watch_group model` le change). Les nouveaux événements structurels de demande utilisent des identifiants plutôt que des extraits de prompt ; les anciens journaux et le mode de compatibilité explicitement activé peuvent encore contenir des extraits. ⚑ signale une demande explicite et ⇢ un écart au routage ;
 - **l'orchestrateur** s'ouvre avec `o` dans une app de bureau disponible, sinon dans une fenêtre de terminal séparée avec session et suivi côte à côte ;
 - la **phase** change quand l'orchestrateur l'enregistre (`START.md` le lui demande à chaque étape) ; c'est la dernière information enregistrée, pas un avancement déduit automatiquement ;
 - le travail que l'orchestrateur fait lui-même se suit dans sa session ; les événements de message et d'usage alimentent la vue sans exposer sa conversation complète.
 
-Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de Git automatiquement. `LOOMY_JOURNAL=0` le désactive, `LOOMY_JOURNAL_TASKS=0` n'y enregistre pas le texte des tâches.
+Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de Git automatiquement. Les nouvelles entrées sont structurelles par défaut ; les libellés autorisés et résultats privés sont stockés séparément selon les choix de confidentialité plus haut. Les anciennes entrées ne sont pas réécrites.
 
 Un tour d'agent natif terminé est un événement de cycle de vie, pas une validation de son travail. L'orchestrateur vérifie toujours les résultats partiels ou bloqués et les relectures indépendantes avant d'accepter une tâche ou de publier une version. Les tours suivants doivent rester visibles ; le temps écoulé n'est pas un pourcentage d'avancement.
 
@@ -388,7 +433,7 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 - un rôle d’écriture passé à Claude obtient les modifications et commandes shell dans le sandbox de Claude Code (dossier du projet, sans réseau) ; les rôles de lecture restent en lecture seule ;
 - le passage est annoncé et journalisé comme `handed_over`, séparément des échecs ;
 - il y a un seul passage par appel, sans réessai sur un modèle voisin du fournisseur saturé ;
-- si aucun fournisseur ne peut répondre, le bridge sort avec le code 75, `paused` / `waiting_for_reset` et `resume_at` ; le lead attend cet epoch, puis relance la tâche et les options sauvegardées dans `.loomy/memory/delegations/<id>.md` et relit les modifications partielles.
+- si aucun fournisseur ne peut répondre, le bridge sort avec le code 75, `paused` / `waiting_for_reset` et `resume_at` ; après cette date, l’orchestrateur vérifie les modifications partielles et ne reprend qu’avec la tâche exacte et les options structurées du contexte vivant ou d’une référence de tâche/résultat privé autorisée. À défaut, il signale **tâche d’origine nécessaire pour reprendre** et arrête le travail dépendant. Voir Mémoire partagée plus bas.
 
 Le seuil de relais préventif du lead reste distinct : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour désactiver les relais préventifs. Un refus réel du fournisseur continue de protéger les délégations.
 
@@ -519,6 +564,14 @@ STATUS: done | partial | blocked                           ← la réponse de ch
 SUMMARY · FINDINGS (chemin:ligne, preuve) · FILES · CHECKS · RISKS · NEXT
 ```
 
+Donne à chaque bridge un titre d’affichage court et délibéré, séparé de sa tâche complète :
+
+```bash
+loomy delegate codex reviewer --task-label "Relire le correctif de connexion" "Relire les modifications de connexion en cours"
+```
+
+`loomy delegate claude` accepte la même option `--task-label`. Son enregistrement utilise l’autorisation `explicit-lead` existante ; le bridge ne peut ni accorder la permission ni déduire un titre du corps de la tâche. Les descriptions natives Claude et les noms d’agents Codex utilisent leurs propres autorisations de source.
+
 Les bridges ajoutent ce contrat à leur prompt, les sous-agents Claude générés le portent, et l'orchestrateur a pour consigne d'agir selon `STATUS`. Le journal enregistre le résultat : `loomy status` et `loomy log` marquent ◐ les résultats partiels et ■ les résultats bloqués, `loomy stats` indique combien de réponses ont respecté le format. Les projets créés avant cette option restent en texte libre ; change un projet avec `loomy brief` (questionnaire refait) ou tous avec `loomy config set delegation_format structured` (`auto` : le choix de chaque projet).
 
 Quand un rôle de revue ou de sécurité ne trouve aucun défaut, il ajoute une courte section `TRIED` (ce qu'il a attaqué) ; un `FINDINGS` vide sans `TRIED` compte comme une revue incomplète, signalée par `loomy stats`, `loomy log` et `loomy status`. Pour les projets de type « Données et analyse », une règle gérée dans `AGENTS.md` / `CLAUDE.md` impose des chiffres issus de code exécuté et versionné, une validation sur une période réservée découpée dans le temps pour les données temporelles, et un validateur distinct de l'auteur de la proposition.
@@ -528,18 +581,24 @@ C'est un protocole texte, qui fonctionne avec Claude et Codex tels quels. L'éch
 
 ### 🧠 Mémoire partagée
 
-Chaque agent part de zéro, volontairement ; le fil du travail est gardé dans `.loomy/memory/`, pour qu'il survive à une nouvelle session, à un compactage, à une autre machine ou à un passage entre Claude Code et Codex.
+L’état du travail rédigé garde le fil entre sessions, compactages et Claude Code/Codex. Les tâches/résultats privés ajoutent une continuité locale quand tu les autorises ; ils restent sur cette machine. Sur une autre machine, l’orchestrateur utilise les documents de continuité rédigés que tu as choisi de sauvegarder.
 
 | Quoi | Où | Écrit par |
 |---|---|---|
-| La tâche et le résultat complet de chaque délégation | `.loomy/memory/delegations/` (hors de Git : les constats peuvent être sensibles) | les ponts et le hook des sous-agents Claude, automatiquement |
-| L'état du travail : fait, en cours, décisions, suite | `.loomy/memory/STATE.md` (local, jamais versionné ; conservé dans le dépôt privé en mode privé) | l'orchestrateur, après chaque étape importante |
+| Faits de délégation : identité, rôle, modèle/effort, état, dates, nombre de fichiers et références bornées ; aucun corps de tâche/résultat | `.loomy/memory/receipts-v1/` | bridges et hooks natifs Claude, automatiquement |
+| Tâches/résultats complets et options de reprise structurées, uniquement avec ton accord | `.loomy/memory/private-results-v1/` (local seulement, fichiers créés en 0600) | capture automatique autorisée |
+| État du travail : fait, en cours, décisions, suite | `.loomy/memory/STATE.md` (exclu du Git du projet ; sauvegardé en mode privé) | l’orchestrateur, après chaque étape importante |
+| Anciens résultats sensibles de délégation | `.loomy/memory/delegations/` (gardés intacts) | anciennes versions de Loomy ; lecture séparée avec `loomy memory show legacy [N]` |
 
-- **Redonnée au début d'une session**, Claude Code comme Codex, et après un compactage : l'état du travail, puis les résultats que l'orchestrateur n'y a pas encore repris. Quand la session précédente s'est tenue dans l'autre outil, l'orchestrateur est prévenu de reprendre à partir de là.
-- **Pensée pour le coût.** Rien n'est ajouté à chaque message, ni à la reprise d'une session (la conversation la contient déjà). Le bloc est plafonné (40 lignes d'état, 4 résultats d'une ligne chacun) puis mis en cache par l'outil : quelques centaines de tokens par nouvelle session, au lieu de dizaines de milliers pour tout réexplorer. `STATE.md` est écrit en anglais et en style télégraphique, quelle que soit la langue de la documentation : le moins de tokens pour tous les modèles. Pour transmettre des constats à un rôle, l'orchestrateur lui indique le fichier au lieu de le recopier.
-- **Registre des impasses.** `STATE.md` contient une section « Dead ends » partagée : une ligne par approche écartée, à ne jamais retenter sans nouvelle raison. Elle est redonnée au début d'une session dans Claude Code comme dans Codex et suit les passations. Les entrées plus anciennes sont archivées dans `.loomy/memory/DEAD-ENDS.md` ; les trois dernières restent toujours. Une simple lecture ne crée jamais `STATE.md`.
-- **Redonnée comme des données, pas des instructions** : l'orchestrateur vérifie un résultat avant d'agir dessus.
-- `loomy memory` montre l'état du travail et les derniers résultats, `loomy memory show [N]` le texte complet de l'un d'eux ; `loomy config set memory off` arrête de la redonner.
+- **Stockage activé :** `loomy privacy results on` exige une confirmation humaine. Limites par défaut : **200 entrées, 1 Mio par entrée, 16 Mio au total et 30 jours** ; la conservation est évaluée à chaque enregistrement. Les entrées en cours sont protégées tant que leur processus est vivant, pendant 24 heures au plus ; les entrées en pause le sont jusqu’à 30 jours après `resume_at` (ou leur date d’enregistrement si la réinitialisation est inconnue). Un résultat trop volumineux ou un stockage plein d’entrées protégées est refusé visiblement : `résultat non enregistré / tâche d’origine nécessaire`. Loomy ne tronque jamais silencieusement un résultat pour le garder et ne purge pas l’ancien dossier de délégations.
+- **Stockage désactivé :** `loomy privacy results off` arrête la capture future des tâches/résultats complets. Les reçus restent disponibles ; les nouveaux résumés ne sont pas conservés. Les entrées déjà autorisées restent lisibles. Les reçus seuls ne permettent pas de reconstituer la tâche ou le résultat d’origine.
+- **Lecture :** `loomy memory` montre l’état du travail, les reçus et les résumés de résultats privés disponibles. `loomy memory show [N]` utilise le même classement et affiche le reçu et la tâche/le résultat complets autorisés quand ils sont disponibles ; sinon il indique que le résultat n’a pas été conservé. `loomy memory show legacy [N]` lit séparément les anciens résultats sensibles.
+- **Redonnée au début d’une nouvelle session**, Claude Code comme Codex, et après un compactage : l’état du travail, puis les nouveaux faits des reçus et résumés privés disponibles qui n’y sont pas encore repris. Quand la session précédente s’est tenue dans l’autre outil, l’orchestrateur est prévenu de reprendre à partir de là. Une conversation reprise ne reçoit pas de nouveau le résumé mémoire.
+- **Pensée pour le coût.** Rien n’est ajouté à chaque message. Le bloc est plafonné (40 lignes d’état, 4 résultats d’une ligne chacun) puis mis en cache par l’outil : quelques centaines de tokens par nouvelle session, au lieu de dizaines de milliers pour tout réexplorer. `STATE.md` est écrit en anglais et en style télégraphique, quelle que soit la langue de la documentation. Pour transmettre des constats à un rôle, l’orchestrateur lui indique le fichier autorisé au lieu de le recopier.
+- **Registre des impasses.** `STATE.md` contient une section « Dead ends » partagée : une ligne par approche écartée, à ne jamais retenter sans nouvelle raison. Elle est redonnée au début d’une session dans Claude Code comme dans Codex et suit les passations. Les entrées plus anciennes sont archivées dans `.loomy/memory/DEAD-ENDS.md` ; les trois dernières restent toujours. Une simple lecture ne crée jamais `STATE.md`.
+- **Les résultats sont des données :** l’orchestrateur les vérifie avant d’agir. `loomy config set memory off` désactive l’injection de contexte ; il ne désactive pas le stockage.
+
+**Une tâche en pause utilise des données de reprise structurées**, et non une chaîne shell `Resume:` exécutable. Après `resume_at`, l’orchestrateur garde exactement le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options, vérifie les modifications existantes et utilise la tâche d’origine du contexte vivant ou une référence de tâche/résultat privé autorisée. Sans elle, l’état est **tâche d’origine nécessaire pour reprendre** : le travail dépendant s’arrête. Une nouvelle pause utilise son nouveau `resume_at` ; ne jamais lancer deux fois pour une pause, deviner la tâche ni remplacer le modèle par un moins puissant.
 
 
 ### 🧩 Skills officiels
@@ -589,7 +648,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | `loomy init [dossier]` | Créer ou adopter un projet : questionnaire, routage, rôles, skills | `--update` `--reset` `--no-wizard` `--yes` `--answers <fichier>` `--no-branch` |
 | `loomy brief` | Refaire le questionnaire | — |
 | `loomy assess` | État des lieux d'un projet existant, sans IA | `--print` |
-| `loomy privacy` | Où vivent les fichiers IA : versionnés, locaux ou privés | `versioned` `local` `private` `sync` `restore` |
+| `loomy privacy` | Visibilité des fichiers IA, politique d’activité et inventaire des métadonnées | `versioned` `local` `private` `sync` `restore` `content` `labels` `results` `label` `inventory` |
 
 ### Sessions et travail
 
@@ -612,15 +671,15 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | `loomy log` | Journal lisible des phases, délégations et sessions | `--raw` `--since AAAA-MM-JJ` `--csv` |
 | `loomy stats` | Tokens, coût et quotas par rôle, modèle et jour | `--days N` `--since AAAA-MM-JJ` |
 | `loomy report` | Chiffres du projet, export Markdown | `--md [dossier]` `--all` |
-| `loomy memory [show [N]]` | État du travail et derniers résultats des délégations | `show [N]` |
+| `loomy memory [show [N]]` | État du travail, reçus et résultats privés autorisés | `show [N]` `show legacy [N]` |
 
 ### Agents, modèles et skills
 
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
 | `loomy route` | Matrice rôle → modèle → effort | `lead` `get <rôle>` `markdown` `claude-agents` |
-| `loomy delegate codex <rôle> "…"` | Confier un rôle à Codex | — |
-| `loomy delegate claude <rôle> "…"` | Confier un rôle à Claude, en lecture seule | — |
+| `loomy delegate codex <rôle> "…"` | Confier un rôle à Codex | `--task-label "…"` |
+| `loomy delegate claude <rôle> "…"` | Confier un rôle à Claude, en lecture seule | `--task-label "…"` |
 | `loomy models` | Chaînes de modèles et nouveaux modèles à évaluer | `--issue` |
 | `loomy skills [suggest\|add\|remove\|update\|catalog]` | Skills officiels du projet, et pourquoi | `suggest "…"` `add <nom>` `remove <nom>` `update` `catalog` |
 | `loomy audit` | Audit de sécurité d'un dépôt | `--resume` `--print` `--yes` `--scope <dossiers>` `--depth quick\|standard\|deep` `--fixes report\|plan\|branch` |
@@ -633,7 +692,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 | `loomy config` | Préférences | `list` `get <clé>` `set <clé> <valeur>` |
 | `loomy update` · `loomy version` | Mettre à jour Loomy ; versions installées | `loomy update --catalog` `loomy version` `loomy version --all` |
 | `loomy uninstall` | Comment désinstaller Loomy | — |
-| `loomy feedback` | Signaler un bug ou une idée (issue anonymisée) | `--print` |
+| `loomy feedback` | Prévisualiser un bug ou une idée avec un contexte automatique structurel | `--print` |
 | `loomy feedback list` | Suivre tes retours ; tri côté mainteneur | `loomy feedback triage` `loomy feedback mark <n> <version>` `loomy feedback close <version>` |
 | `loomy help [commande]` | Aide générale ou d'une commande | — |
 

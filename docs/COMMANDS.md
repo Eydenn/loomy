@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-Every command with its variants and what it does in detail. In the terminal: `loomy help <command>`.
+Every command with its variants and what it does in detail. Reference for Loomy **0.17.7**. In the terminal: `loomy help <command>`.
 
 ## Project
 
@@ -53,10 +53,70 @@ loomy privacy versioned
 loomy privacy local
 loomy privacy private
 loomy privacy sync
-loomy privacy restore
+loomy privacy restore <account/repo>
 ```
 
-AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository
+AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository. These modes do not grant permission to retain task text. The content controls below apply to the current project; worktrees sharing its registered logs also share its policy.
+
+#### `loomy privacy content`
+
+```bash
+loomy privacy content
+loomy privacy content structural
+loomy privacy content legacy-excerpts
+```
+
+Shows the effective policy, source and project scope, or changes future journal writes. In 0.17.7, new journal entries and fresh rotation snapshots contain allowlisted structure by default, on new and upgraded projects. Existing files and archives are unchanged.
+
+`legacy-excerpts` is a separate, explicit project grant. It permits only bounded top-level `task` (200 Unicode characters), `excerpt` (60), `why` (200), `nickname` (40) and `cwd_relative` (256, inside the project). It does not enable full task/result retention.
+
+Widening a grant requires a human to run the command directly in an interactive terminal and confirm the project, fields and limits. Pipes, `--yes`, hooks and managed agent terminals cannot grant permission. Restricting the policy or turning capture off also works noninteractively.
+
+`LOOMY_JOURNAL_CONTENT=structural` is a temporary restriction. Selecting `legacy-excerpts` through the environment also requires an existing human grant and `LOOMY_CONTENT_PROJECT` bound to the registered project; environment variables cannot create permission. `LOOMY_JOURNAL_TASKS=0` vetoes automatic excerpts, labels and full task/result capture, even with grants. `LOOMY_JOURNAL=0` disables journaling/collection, not every other work artifact.
+
+#### `loomy privacy labels` · `loomy privacy label`
+
+```bash
+loomy privacy labels
+loomy privacy labels recommended
+loomy privacy labels set explicit-user,explicit-lead
+loomy privacy labels off
+loomy privacy label --id <id> [--attempt <id>] [--kind agent|task|session|delegation] "Short title"
+```
+
+`labels` shows the selected sources, limits and first-use choices. `recommended` grants all six sources: `explicit-user`, `explicit-lead`, `claude-description`, `codex-path-slug`, `codex-nickname`, `codex-role`. `set` replaces the exact source set; additions require human confirmation. `off` stops future label capture without deleting earlier labels.
+
+Labels are stored separately from the journal: at most 96 graphemes / 384 UTF-8 bytes per label, with each Codex component limited to 40 ASCII characters, in a store capped at 1 MiB. Claude uses the bounded Agent/Task `description`, never its `prompt`. A full label store refuses the new save visibly and preserves the previous label.
+
+The singular `label` command saves a deliberate human title for an exact ID, attempt and kind. It always requires a direct human terminal; it offers the `explicit-user` grant if missing. Kind defaults to `agent`, attempt to the supplied ID. Bridges use `--task-label` under the separate `explicit-lead` grant.
+
+After upgrade, a project with pending choices gets a one-time screen at its first interactive `loomy init` or standalone `loomy watch`: recommended labels **Yes** by default, then private results as a separate **Yes** default. The screen saves no new grant until both human answers are complete; EOF or an aborted screen grants nothing. Declines are remembered. An explicit human `privacy labels` decision also completes the first-use acknowledgement; turning capture off does not reopen the prompt. Managed/noninteractive use grants nothing and leaves the choices pending; status shows `Task labels off · run loomy privacy labels recommended` when needed.
+
+Tree/list, diagram, status, session log, readable `loomy log` and recap resolve authorized labels. Without a usable label, a known role shows its mission prefixed `Role:`; unknown roles show unavailable context. A role mission describes its remit, not work completed. Older journal rows may still display their existing text.
+
+#### `loomy privacy results`
+
+```bash
+loomy privacy results
+loomy privacy results on
+loomy privacy results off
+```
+
+Shows or changes the separate grant for full private tasks/results. Capture is off until the first-use result answer or an explicit human `results on` confirmation; accepting labels or compatibility excerpts does not enable it. `off` stops future capture and preserves previously authorized records.
+
+New records use private directories (0700) and files (0600), with limits of 200 records, 1 MiB per record, 16 MiB total and 30 days. Retention runs on saves. A running pin requires a live owner and an age under 24 hours; a paused pin lasts until 30 days after its reset/recheck time (or last save if unset). Oversized records or a store filled by pins cause a visible capture refusal. These limits do not purge historical Markdown results. Labels, receipts and private results are excluded from project/companion Git, sync and automatic feedback. Permissions do not encrypt them. See [`loomy memory`](#loomy-memory) for receipts and available results.
+
+#### `loomy privacy inventory`
+
+```bash
+loomy privacy inventory [--root DIR] [--json] [--paths] [--git-history] [--host]
+```
+
+Read-only metadata inventory of known storage locations: counts, bytes, retention/exposure categories and incomplete coverage. It does not inspect file bodies, follow arbitrary links, repair stores, run collectors, copy, send or remove files. Default output omits filenames; `--json` uses the same metadata fields, while `--paths` explicitly adds escaped local paths and file metadata.
+
+`--git-history` checks local project/companion index and history path metadata, without fetching or rewriting history. `--host` adds known Loomy host and temporary-file locations; a matching name does not prove a file is abandoned. Provider transcripts, remote clones, backups and arbitrary export locations remain outside proven coverage. An inventory is not proof that files contain no sensitive text.
+
+The 0.17.7 repair covers new journal writes/rotation snapshots, receipts and automatic feedback staging. Native checkpoints/cursors, execution/display temporary files and diagnostics can still retain text or paths. `log --raw` and explicit `report --md` exports retain their existing behavior. Older files, Git history and provider-managed transcripts are not purged or sanitized by these controls.
 
 ## Sessions and work
 
@@ -151,7 +211,7 @@ Snapshot: phases, running delegations, activity, cost per model, subscriptions, 
 loomy watch [N]
 ```
 
-🖥️ Live project agents: the orchestrator, then **IN PROGRESS** (native Claude subagents and bridges), then **SESSION**, containing only finished roles from the current lead session. Starts are polled every 250 ms; timers tick every second, including when an older refresh interval `N` is supplied. In the live list, `v` switches grouping by request/model and saves `watch_group` (`request` by default). Prompt excerpts obey `LOOMY_JOURNAL_TASKS=0`. Keys shown in the footer depend on the view: `q` quits; `o` opens the acting orchestrator in its desktop app, or a separate terminal with tracking (failure is shown in the footer and tracking continues); `l` opens the journal, then returns to status; `t` switches tree/status; `a` opens the live list, then returns to status. In the tree, `v` switches diagram/list; in the live list, it groups by request/model and saves `watch_group`. In status, `c` switches compact/full. `s` opens the session outside a tracking pane and without `--until-exit`; arrows scroll when the body exceeds the screen. `watch_view` (`tree` by default; `list` selects the live list) remembers the view chosen with `t` or `a`. The tree uses boxes from 124 columns, with scrolling in a shorter terminal, and its own compact list below that width. The compact side pane opened by `loomy start` starts in the live list. Rows show the translated role, tool, actual model, effort word and four-cell bar, elapsed time, task and completion outcome; explicit requests and routing overrides are flagged. Narrow panes drop task, model and bar in that order, keeping the tool and effort word; routing annotations move to an indented continuation when needed. The banner shows the lead state once setup is done; active means a live lead process with a prompt or usage event in the last two minutes. The view redraws on journal/state changes, or every second for running timers; at rest the clock holds at the last refresh. Native subagent costs come from usage events only, while bridges retain their own costs.
+🖥️ Live project agents: the orchestrator, then **IN PROGRESS** (native Claude subagents and bridges), then **SESSION**, containing only finished roles from the current lead session. Starts are polled every 250 ms; timers tick every second, including when an older refresh interval `N` is supplied. In the live list, `v` switches grouping by request/model and saves `watch_group` (`request` by default). Task context follows the [privacy grants](#loomy-privacy). Keys shown in the footer depend on the view: `q` quits; `o` opens the acting orchestrator in its desktop app, or a separate terminal with tracking (failure is shown in the footer and tracking continues); `l` opens the journal, then returns to status; `t` switches tree/status; `a` opens the live list, then returns to status. In the tree, `v` switches diagram/list; in the live list, it groups by request/model and saves `watch_group`. In status, `c` switches compact/full. `s` opens the session outside a tracking pane and without `--until-exit`; arrows scroll when the body exceeds the screen. `watch_view` (`tree` by default; `list` selects the live list) remembers the view chosen with `t` or `a`. The tree uses boxes from 124 columns, with scrolling in a shorter terminal, and its own compact list below that width. The compact side pane opened by `loomy start` starts in the live list. Rows show the translated role, tool, actual model, effort word and four-cell bar, elapsed time, task context and recorded outcome; explicit requests and routing overrides are flagged. Narrow panes drop task context, model and bar in that order, keeping the tool and effort word; routing annotations move to an indented continuation when needed. The banner shows the lead state once setup is done; active means a live lead process with a prompt or usage event in the last two minutes. The view redraws on journal/state changes, or every second for running timers; at rest the clock holds at the last refresh. Native subagent costs come from usage events only, while bridges retain their own costs.
 
 Native Codex agents are also observed from the local rollout files under
 `CODEX_HOME` (default `~/.codex`). File discovery is bounded; lifecycle tailing
@@ -177,7 +237,7 @@ fall back to the current lead; `o` clears the filter when opening that lead.
 loomy tree
 ```
 
-🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then done, duration, tokens); the session log; a status line. `loomy tree --once` prints a single frame of the live watch view. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes), otherwise as a list; `loomy config set tree_view auto|diagram|list` chooses
+🌳 Agent tree: the lead agent with its model, effort, session and phase; its advisor and its consultations; every role with its model, effort and live state (a pulse travels along the branch of a running role, then its recorded completion state, duration and token counts when available); the session log; a status line. `loomy tree --once` prints a single frame of the live watch view. In a large window (124 × 57) it is drawn as a diagram (boxes and animated links; up to four role boxes), otherwise as a list; `loomy config set tree_view auto|diagram|list` chooses. Completion does not establish that tests passed; paused or missing results do not mean success.
 
 ### `loomy log`
 
@@ -188,7 +248,7 @@ loomy log --since YYYY-MM-DD
 loomy log --csv
 ```
 
-Readable journal in local time, optionally streamed (`--raw`: raw JSON); `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs
+Readable journal in local time, optionally streamed, with authorized labels resolved for new entries. `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs. In 0.17.7, `--raw` still emits original JSON, including any text in older or compatibility records; it is not a sanitized export.
 
 ### `loomy stats`
 
@@ -208,16 +268,22 @@ loomy report --md [dir]
 loomy report --all
 ```
 
-Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` Markdown in `docs/reports/`; `--all` every project
+Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` writes Markdown in `docs/reports/` or the chosen directory; `--all` every project. Plain `report` creates no Markdown file. In 0.17.7, an explicit Markdown report can still contain the project name and task titles; review it before sharing.
 
-### `loomy memory [show [N]]`
+### `loomy memory`
 
 ```bash
-loomy memory [show [N]]
+loomy memory
+loomy memory -n N
 loomy memory show [N]
+loomy memory show legacy [N]
 ```
 
-Shared memory: the work state kept by the lead agent and the latest delegation results in short; `show [N]` the full text of one
+Shared memory keeps authored work state and Dead ends alongside automatic delegation receipts. Receipts in `.loomy/memory/receipts-v1/` contain structural facts such as ID, role/model/effort, state, times, file count and authorized references. They contain no full task or result.
+
+With the separate [private-results grant](#loomy-privacy-results), full tasks/results and structured bridge resume options are saved in `.loomy/memory/private-results-v1/` within its retention limits. The digest resolves SUMMARY/NEXT from available private bodies; `show [N]` prints the same ranked receipt and any available authorized task/result and resume descriptor. Without a retained body, it says the result was not retained; without the original paused task, it says `original task required to resume`.
+
+Older sensitive Markdown results remain separate and readable with `show legacy [N]`; they are not migrated, pruned or permission-changed by the new capture policy. `loomy config set memory off` disables context injection, not retention; use `loomy privacy results off` to stop future private capture. Neither command deletes existing records.
 
 ## Agents, models and skills
 
@@ -251,9 +317,11 @@ loomy delegate claude <role> [options] "…"
 
 Hands a role to Claude, read-only (architect, debugger, security, reviewer, explorer)
 
-Options before the task text (they win over `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`): `--model <id>` (letters, digits, `. _ -`; for Claude a `claude-*` id or `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (override the role's sandbox; on Claude, `--write` is refused outside a quota failover), `--why "reason"` (for example `user request`). Any option or variable used marks the delegation `requested` in the journal; what differs from the project's routing (tool, model, effort, sandbox) is listed in `off_routing`, and `why` keeps the reason (hidden by `LOOMY_JOURNAL_TASKS=0`). Example: `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
+Options before the task text (they win over `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`): `--model <id>` (letters, digits, `. _ -`; for Claude a `claude-*` id or `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (override the role's sandbox; on Claude, `--write` is refused outside a quota failover), `--why "reason"` (for example `user request`), `--task-label "Short title"`.
 
-Provider availability: exit 75 means paused, not done. Read `resume_at` (Unix epoch) in the final delegation event, wait until that time, then automatically relaunch the same role/task/options from `.loomy/memory/delegations/<id>.md`. Do not continue dependent work or select a weaker model while waiting; if it pauses again, repeat at the new reset. Review any files already changed before relaunching.
+A model, effort, sandbox or reason override marks the delegation `requested` in the journal; differences from project routing (tool, model, effort, sandbox) are listed in `off_routing`. The reason text is omitted from structural journal entries; only a `legacy-excerpts` grant permits its bounded `why`. `--task-label` supplies a deliberate display title under the human-approved `explicit-lead` source, within the label limits; it does not itself mark a routing override or grant permission. Never derive it automatically from the full task. Example: `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" --task-label "Architecture review" "…"`.
+
+Provider availability: exit 75 means paused. The final delegation event records `status: "paused"`, `outcome: "waiting_for_reset"` and `resume_at` (Unix epoch). Reaching that time does not mean the work resumed or succeeded. Retain the exact role/provider/model/effort/sandbox/options; after reset, relaunch once using the original live task or an authorized task/private-result reference. `loomy memory show N` exposes a retained bridge’s structured resume descriptor, not an executable command. Review existing edits before relaunching. If the original task/options are unavailable, report `original task required to resume` and stop dependent work; never guess or choose a weaker model. If another pause occurs, use its new `resume_at`.
 
 Delegations pause only after a real refusal or at 100 % / reached; the lead session’s configurable early relay threshold stays separate.
 
@@ -305,7 +373,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Checks prerequisites and reports Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model)
+Checks prerequisites, content-policy health, a full label store, and Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model). These health facts do not certify older files as free of sensitive text.
 
 ### `loomy config`
 
@@ -329,6 +397,8 @@ loomy version --all
 
 Updates Loomy, for every project at once; `update --catalog`: only the model and price catalog; `version --all` lists every install
 
+An update running the old 0.17.6 code cannot show the new content-grant screen. After upgrading, the first interactive `loomy init` or standalone `loomy watch` offers any pending per-project choices; noninteractive use creates no grant.
+
 ### `loomy uninstall`
 
 ```bash
@@ -344,7 +414,7 @@ loomy feedback
 loomy feedback --print
 ```
 
-Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state, no name, goal or task text), sent only after your approval; `--print` shows the text
+Reports a bug or an idea: prefilled GitHub issue with versions, allowlisted project-state facts and the last 15 projected journal events. Automatic context omits project name/goal, task text, labels, private results and project paths; it stages no whole brief or raw journal copy. Your own message remains part of the preview. Sent only after your approval; `--print` shows the text without posting or network access.
 
 ### `loomy feedback list`
 

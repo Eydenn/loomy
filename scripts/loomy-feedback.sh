@@ -10,19 +10,21 @@
 #   loomy-feedback.sh close <v>     maintainer: comments and closes the feedback fixed in v, after your approval
 # Attached: versions (Loomy, system, bash, git, Claude Code, Codex, gh), and for a project: type, stage, AI mode,
 # profile, phase and latest log events WITHOUT the task text. Never: name, goal, paths, code.
+# shellcheck disable=SC2034  # UI_* variables are consumed by ui.sh.
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/ui.sh
 source "$SCRIPT_DIR/lib/ui.sh"
 # shellcheck source=lib/models.sh
 source "$SCRIPT_DIR/lib/models.sh"
-# shellcheck source=lib/journal.sh
-source "$SCRIPT_DIR/lib/journal.sh"
 
 REPO="${LOOMY_FEEDBACK_REPO:-Eydenn/loomy}"
 ROOT=""; MSG=""; PRINT=0; SUB=""
 SUB_ARGS=()
+# --print is offline even when combined with a follow-up subcommand by mistake.
+for arg in "$@"; do [[ "$arg" != --print ]] || PRINT=1; done
 case "${1:-}" in list|triage|mark|close|--check-fixed) SUB="$1"; shift; SUB_ARGS=("$@"); set -- ;; esac
 LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
 while [[ $# -gt 0 ]]; do
@@ -46,6 +48,10 @@ need_gh() {
 fixed_of() { printf '%s' "$1" | tr ',' '\n' | sed -n 's/^fixed-in://p' | head -1; }
 is_maintainer() { [[ "$(gh api "repos/$REPO" --jq .permissions.push 2>/dev/null)" == "true" ]]; }
 if [[ -n "$SUB" ]]; then
+  if (( PRINT )); then
+    ui_err "$(t "--print is only available when preparing feedback")" "loomy feedback --print"
+    exit 2
+  fi
   case "$SUB" in
     list)
       need_gh
@@ -116,12 +122,116 @@ fi
 IN_PROJECT=0; [[ -f "$ROOT/.loomy/brief.md" ]] && IN_PROJECT=1
 
 ver() {
-  case "$1" in
-    claude|codex) _loomy_launch_load; loomy_cli_meta "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true ;;
-    *) "$@" 2>/dev/null | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true ;;
-  esac
+  {
+    case "$1" in
+      claude|codex) _loomy_launch_load; loomy_cli_meta "$@" ;;
+      *) "$@" ;;
+    esac
+  } 2>/dev/null | perl -e '
+    sysread STDIN,my $raw,4096;
+    $raw //= ""; $raw =~ s/\r?\n.*\z//s;
+    print $1 if $raw =~ /(?<![A-Za-z0-9.])([0-9]{1,6}(?:\.[0-9]{1,6}){1,3})(?![A-Za-z0-9.])/;
+  ' || true
 }
-LOOMY_V="$(cat "$SCRIPT_DIR/../VERSION" 2>/dev/null || echo "?")"
+
+# Reads only bounded metadata and projects historical events in RAM. In particular,
+# project_event/effective_policy are not read-only (they can create project-id), so
+# feedback uses project_with_policy with an explicitly structural policy instead.
+context() {
+  perl -MFcntl=O_RDONLY,O_NOFOLLOW,O_NONBLOCK,S_ISREG -MJSON::PP -MDigest::SHA=sha256_hex -e '
+    use strict; use warnings;
+    my ($lib,$version_file,$root,$bash,$git,$claude,$codex,$gh,$os,$release,$arch,$project,
+        $system_label,$project_label,$version_label,$profile_label,$files_label,$journal_label,$events_label)=@ARGV;
+    require $lib;
+    binmode STDOUT, ":raw";
+    my $json=JSON::PP->new->utf8->canonical->max_depth(32);
+    sub regular {
+      my ($path)=@_;
+      sysopen my $fh,$path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or return;
+      my @st=stat($fh); return unless @st && S_ISREG($st[2]);
+      return $fh;
+    }
+    sub prefix {
+      my ($path,$cap)=@_; my $fh=regular($path) or return "";
+      my $n=sysread($fh,my $raw,$cap); return defined($n) ? $raw : "";
+    }
+    sub version {
+      my ($v)=@_; $v //= ""; $v =~ s/\r?\n\z//;
+      return $v =~ /\A[0-9]{1,6}(?:\.[0-9]{1,6}){1,3}(?:[-+][A-Za-z0-9][A-Za-z0-9.-]{0,31})?\z/
+        && length($v)<=64 ? $v : "?";
+    }
+    sub token {
+      my ($v)=@_; return defined($v) && $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.+-]{0,99}\z/ ? $v : "?";
+    }
+    sub choice {
+      my ($v,@allowed)=@_; return "unknown" unless defined($v) && !ref($v);
+      return (grep {$_ eq $v} @allowed) ? $v : "unknown";
+    }
+    print "| Loomy | ",version(prefix($version_file,65))," |\n";
+    print "| $system_label | ",join(" ",map {token($_)} ($os,$release,$arch))," |\n";
+    print "| bash | ",version($bash)," |\n";
+    print "| git | ",version($git)," |\n";
+    print "| Claude Code | ",version($claude)," |\n";
+    print "| Codex | ",version($codex)," |\n";
+    print "| gh | ",version($gh)," |\n";
+    print "| Terminal | ",token($ENV{TERM_PROGRAM})," · TERM=",token($ENV{TERM}),
+      (length($ENV{TMUX}//"") ? " · tmux" : "")," |\n";
+    exit unless $project;
+
+    # Parse only the closed front-matter fields, never the authored brief body.
+    my %brief; my $raw=prefix("$root/.loomy/brief.md",65536);
+    if ($raw =~ /\A---\r?\n(.*?)\r?\n---(?:\r?\n|\z)/s) {
+      for (split /\r?\n/,$1) {
+        next unless /\A(type|stage|ai_mode|ai_lead|budget|ai_files):[ \t]*(.{0,128})\z/;
+        my ($k,$v)=($1,$2); next if exists $brief{$k};
+        $v =~ s/[ \t]+\z//; $v =~ s/\A"(.*)"\z/$1/; $v =~ s/\A\x27(.*)\x27\z/$1/;
+        $brief{$k}=$v;
+      }
+    }
+    my $type=choice($brief{type},qw(web site api data ai mobile desktop cli emails custom other));
+    my $stage=choice($brief{stage},qw(prototype mvp production));
+    my $mode=choice($brief{ai_mode},qw(SOLO HYBRID ORCHESTRATED PARALLEL));
+    my $lead=choice($brief{ai_lead},qw(claude codex));
+    my $profile=choice($brief{budget},qw(econome equilibre qualite));
+    my $files=choice($brief{ai_files},qw(versioned local private));
+    my ($phase)=prefix("$root/.loomy/state",4096) =~ /^phase=([^\r\n]{0,128})\r?$/m;
+    $phase=choice($phase,qw(brief discover interview propose approve build verify document commit retire done plan review audit report scope analyze validate fix));
+    print "| $project_label | $type · $stage · $mode · lead $lead · $profile_label $profile · $files_label $files |\n";
+    print "| $version_label | ",version(prefix("$root/.loomy/VERSION",65))," · phase $phase |\n";
+
+    # The attachment is structural regardless of project grants or environment.
+    my $policy=Loomy::ContentPolicy::defaults();
+    my $id=prefix("$root/.loomy/project-id",67); $id =~ s/\n\z//;
+    $policy->{project_id}=$id =~ /\Ap[0-9a-f]{64}\z/ ? $id : "p".sha256_hex($root);
+    print "| $journal_label | $policy->{journal_content} |\n";
+
+    # Last complete, valid events, not the raw log reader or its legacy display.
+    # Bound total input to 8 MiB and each JSON line to 64 KiB before decoding.
+    my $fh=regular("$root/.loomy/logs/events.jsonl") or exit;
+    my $size=-s $fh; my $start=$size>8388608 ? $size-8388608 : 0;
+    seek($fh,$start,0) or exit;
+    my $n=sysread($fh,$raw,8388608); exit unless defined($n) && $n;
+    $raw =~ s/\A[^\n]*\n// if $start;
+    my $end=rindex($raw,"\n"); exit if $end<0;
+    my @events;
+    for my $line (reverse split /\n/,substr($raw,0,$end+1)) {
+      next if length($line)>65536;
+      my $event=eval {$json->decode($line)}; next unless ref($event) eq "HASH";
+      my $safe=eval {Loomy::ContentPolicy::project_with_policy($policy,$event)};
+      next unless $safe;
+      push @events,$json->encode($safe); last if @events==15;
+    }
+    exit unless @events;
+    print "\n<details><summary>$events_label</summary>\n\n```json\n";
+    print "$_\n" for reverse @events;
+    print "```\n\n</details>\n";
+  ' "$SCRIPT_DIR/lib/content-policy.pl" "$SCRIPT_DIR/../VERSION" "$ROOT" \
+    "${BASH_VERSION%%(*}" "$(ver git --version)" "$(ver claude --version)" \
+    "$(ver codex --version)" "$(ver gh --version)" "$(uname -s 2>/dev/null || true)" \
+    "$(uname -r 2>/dev/null || true)" "$(uname -m 2>/dev/null || true)" "$IN_PROJECT" \
+    "$(t "System")" "$(t "Project")" "$(t "Project's Loomy")" "$(t "profile")" "$(t "ai_files")" \
+    "$(t "Journal content attached")" "$(t "Latest log events (structure only)")"
+}
 
 body() {
   echo "## $(t "Feedback")"
@@ -132,47 +242,30 @@ body() {
   echo
   echo "| | |"
   echo "|---|---|"
-  echo "| Loomy | $LOOMY_V |"
-  echo "| $(t "System") | $(uname -s) $(uname -r) $(uname -m) |"
-  echo "| bash | ${BASH_VERSION%%(*} |"
-  echo "| git | $(ver git --version) |"
-  echo "| Claude Code | $(ver claude --version || true) |"
-  echo "| Codex | $(ver codex --version || true) |"
-  echo "| gh | $(ver gh --version) |"
-  echo "| Terminal | ${TERM_PROGRAM:-?} · TERM=${TERM:-?}$( [[ -n "${TMUX:-}" ]] && echo " · tmux") |"
-  if (( IN_PROJECT )); then
-    local b="$ROOT/.loomy/brief.md" phase
-    phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
-    echo "| $(t "Project") | $(_ai_brief_get "$b" type) · $(_ai_brief_get "$b" stage) · $(_ai_brief_get "$b" ai_mode) · lead $(_ai_brief_get "$b" ai_lead) · $(t "profile") $(_ai_brief_get "$b" budget) · $(t "ai_files") $(_ai_brief_get "$b" ai_files) |"
-    echo "| $(t "Project's Loomy") | $(cat "$ROOT/.loomy/VERSION" 2>/dev/null || echo "?") · phase ${phase:-?} |"
-    local j; j="$(ai_journal_file "$ROOT")"
-    if [[ -s "$j" ]]; then
-      echo
-      echo "<details><summary>$(t "Latest log events (without task text)")</summary>"
-      echo
-      echo '```'
-      # ROOT points here to a copy of the log whose task text was emptied (see below).
-      NO_COLOR=1 bash "$SCRIPT_DIR/loomy-log.sh" --root "$ROOT" -n 15 2>/dev/null || true
-      echo '```'
-      echo
-      echo "</details>"
-    fi
-  fi
+  context
 }
-
-# Log: ai-log reads the file itself; we give it a copy without the task text.
-if (( IN_PROJECT )) && [[ -s "$(ai_journal_file "$ROOT")" ]]; then
-  SAFE="$(mktemp -d)"; mkdir -p "$SAFE/.loomy/logs"
-  cp "$ROOT/.loomy/brief.md" "$SAFE/.loomy/brief.md"
-  sed -E 's/"task":"([^"\\]|\\.)*"/"task":""/' "$(ai_journal_file "$ROOT")" >"$SAFE/.loomy/logs/events.jsonl"
-  cp "$ROOT/.loomy/state" "$SAFE/.loomy/state" 2>/dev/null || true
-  cp "$ROOT/.loomy/VERSION" "$SAFE/.loomy/VERSION" 2>/dev/null || true
-  trap 'rm -rf "$SAFE"' EXIT
-  ROOT="$SAFE"
-fi
 
 if (( PRINT )) || ! ui_is_interactive; then body; exit 0; fi
 
+# The parent owns cleanup: ui.sh installs its own EXIT/signal traps while prompting.
+# Keep those inside a subshell so an interrupted prompt cannot discard this trap.
+FEEDBACK_TMP=""
+FEEDBACK_CHILD=""
+# shellcheck disable=SC2329  # Invoked by the EXIT trap, including signal exits.
+feedback_cleanup() {
+  if [[ -n "$FEEDBACK_CHILD" ]]; then
+    kill -TERM "$FEEDBACK_CHILD" 2>/dev/null || true
+    wait "$FEEDBACK_CHILD" 2>/dev/null || true
+  fi
+  [[ -z "$FEEDBACK_TMP" ]] || rm -rf -- "$FEEDBACK_TMP"
+}
+trap feedback_cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+FEEDBACK_TMP="$(mktemp -d)"
+BODY_FILE="$FEEDBACK_TMP/issue.md"
+(
 ui_clear
 ui_banner "$(t "Feedback on Loomy")" "$(t "GitHub issue on %s · nothing is sent without your approval" "$REPO")"
 if [[ -z "$MSG" ]]; then
@@ -183,7 +276,7 @@ if [[ -z "$MSG" ]]; then
   [[ -n "$MSG" ]] || { ui_end "$(t "nothing to send")"; exit 0; }
 fi
 TITLE="$(t "Feedback:") $(printf '%s' "$MSG" | cut -c1-70)"
-BODY_FILE="$(mktemp)"; body >"$BODY_FILE"
+body >"$BODY_FILE"
 ui_section "$(t "PREVIEW")" "$(t "issue text")"
 while IFS= read -r l; do ui_rail "${C_DIM}${l}${C_RESET}"; done <"$BODY_FILE"
 ui_print "${C_RAIL}│${C_RESET}"
@@ -207,3 +300,9 @@ case "${codes[$UI_INDEX]}" in
 esac
 rm -f "$BODY_FILE"
 ui_end "$(t "thanks! feedback tracking: %s" "https://github.com/$REPO/issues")"
+) <&0 &
+FEEDBACK_CHILD=$!
+feedback_status=0
+wait "$FEEDBACK_CHILD" || feedback_status=$?
+FEEDBACK_CHILD=""
+exit "$feedback_status"

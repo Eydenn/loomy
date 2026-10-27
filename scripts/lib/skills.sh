@@ -42,24 +42,43 @@ skills_installed() { [[ -n "$(skills_lock_line "$1" "$2")" ]]; }
 # _sk_brief <root> <key>: a value of the project's brief.
 _sk_brief() { sed -n "s/^$2: *//p" "$1/.loomy/brief.md" 2>/dev/null | head -1 | tr -d '"'; }
 
-# skills_auto_for <root>: names whose "auto" condition matches the brief (type, traits, detail1), one per line.
+# skills_auto_for_values <type> <traits CSV> <detail1 CSV>: matching names in catalog order, without a brief.
+# NUL-framed stdin preserves literal newlines/backslashes and keeps arbitrary values out of external argv/scratch.
+skills_auto_for_values() {
+  builtin printf '%s\0' "${1:-}" "${2:-}" "${3:-}" | perl -e '
+    my @input;
+    { local $/="\0";
+      @input=map { my $v=<STDIN>; exit unless defined($v) && $v =~ s/\0\z//; $v } 1..3;
+    }
+    my ($type,$traits,$detail1)=@input;
+    my %traits=map {$_=>1} split /,/,$traits;
+    my %detail1=map {$_=>1} split /,/,$detail1;
+    open my $catalog,"<",$ARGV[0] or exit;
+    while (my $row=<$catalog>) {
+      next if $row =~ /\A(?:#|date=)/;
+      chomp $row; my @fields=split /\|/,$row,-1;
+      next if !length($fields[5]//"") || $fields[5] eq "no" || ($fields[4]//"") eq "proprietary";
+      my $ok=1;
+      for my $clause (split /;/,$fields[5],-1) {
+        my ($key,$values)=split /=/,$clause,-1; my $hit=0;
+        for my $value (split /,/,$values//"") {
+          $hit=1 if $key eq "type" && $value eq $type;
+          $hit=1 if $key eq "trait" && $traits{$value};
+          $hit=1 if $key eq "detail1" && $detail1{$value};
+        }
+        $ok=0 unless $hit;
+      }
+      print "$fields[0]\n" if $ok;
+    }' "$(skills_catalog)"
+  return 0
+}
+
+# skills_auto_for <root>: compatibility wrapper for an existing brief, including the legacy traits fallback.
 skills_auto_for() {
   local r="$1" type traits d1
   type="$(_sk_brief "$r" type)"; traits="$(_sk_brief "$r" traits)"; [[ -n "$traits" ]] || traits="$(_sk_brief "$r" sensitive)"
   d1="$(_sk_brief "$r" detail1)"
-  grep -v '^#' "$(skills_catalog)" | grep -v '^date=' | awk -F'|' -v ty="$type" -v tr=",$traits," -v d1=",$d1," '
-    $6 == "no" || $6 == "" || $5 == "proprietary" { next }
-    { n = split($6, cl, ";"); ok = 1
-      for (i = 1; i <= n; i++) {
-        split(cl[i], kv, "="); m = split(kv[2], vals, ","); hit = 0
-        for (j = 1; j <= m; j++) {
-          if (kv[1] == "type" && vals[j] == ty) hit = 1
-          if (kv[1] == "trait" && index(tr, "," vals[j] ",")) hit = 1
-          if (kv[1] == "detail1" && index(d1, "," vals[j] ",")) hit = 1
-        }
-        if (!hit) ok = 0
-      }
-      if (ok) print $1 }'
+  skills_auto_for_values "$type" "$traits" "$d1"
   return 0
 }
 
@@ -68,11 +87,20 @@ skills_auto_for() {
 skills_suggest() {
   local r="$1" txt max="${3:-2}"
   # Lower case; every character that isn't a letter, a digit or . + # becomes a space: keywords match whole words.
-  txt="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]àâäçéèêëîïôöùûüÿœ.+#]/ /g')"
-  grep -v '^#' "$(skills_catalog)" | grep -v '^date=' | awk -F'|' -v t=" $txt " '
-    { n = split($7, kw, ","); s = 0
-      for (i = 1; i <= n; i++) { k = kw[i]; gsub(/^ +| +$/, "", k); if (length(k) >= 2 && index(t, " " k " ")) s += (index(k, " ") ? 2 : 1) }
-      if (s > 0) print s "|" $1 }' | sort -t'|' -k1,1nr | cut -d'|' -f2 | while IFS= read -r n; do
+  txt="$(builtin printf '%s' "$2" | tr '[:upper:]' '[:lower:]' | sed 's/[^[:alnum:]àâäçéèêëîïôöùûüÿœ.+#]/ /g')"
+  builtin printf '%s\0' " $txt " | perl -e '
+    my $text;
+    { local $/="\0"; $text=<STDIN>; exit unless defined($text) && $text =~ s/\0\z// }
+    open my $catalog,"<",$ARGV[0] or exit;
+    while (my $row=<$catalog>) {
+      next if $row =~ /\A(?:#|date=)/;
+      chomp $row; my @fields=split /\|/,$row,-1; my $score=0;
+      for my $keyword (split /,/,$fields[6]//"") {
+        $keyword =~ s/^ +| +$//g;
+        $score+=(index($keyword," ")>=0 ? 2 : 1) if length($keyword)>=2 && index($text," $keyword ")>=0;
+      }
+      print "$score|$fields[0]\n" if $score>0;
+    }' "$(skills_catalog)" | sort -t'|' -k1,1nr | cut -d'|' -f2 | while IFS= read -r n; do
         skills_installed "$r" "$n" || echo "$n"
       done | head -n "$max"
   return 0

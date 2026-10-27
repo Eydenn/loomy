@@ -334,6 +334,92 @@ sub effective_policy {
     return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0} unless $c;
     return $c->{logs} ? _in_context($c,sub {_effective($c,_stored($c))}) : _effective($c,_stored($c));
 }
+
+# Export/read-only callers must not use _context: even its create=0 branch pins
+# an absent project-id. This reader only opens existing, pinned directories.
+# File checks are shared with the writer, but there is no lock, retrying identity
+# initialization, migration, permission repair or fallback to a path-derived ID.
+sub _snapshot_context {
+    my ($root)=@_;
+    $root=abs_path($root//'') // die "content project unavailable\n";
+    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
+    my @entry=lstat("$root/.loomy");
+    return {root=>$root} unless @entry;
+    if (S_ISLNK($entry[2])) {$root=_shared_owner($root,'.loomy')}
+    elsif (-l "$root/.loomy/logs") {
+        _dir("$root/.loomy");
+        $root=_shared_owner($root,'.loomy/logs');
+    }
+    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
+    my ($loomy,$ls)=_dir("$root/.loomy");
+    my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
+    chdir $loomy or die "content directory unavailable\n";
+    my ($logs,$ds,$raw,$identity_stat); my $ok=eval {
+        ($raw,$identity_stat)=_read('project-id',128);
+        ($logs,$ds)=_dir('logs',"$root/.loomy/logs") if lstat('logs');
+        1;
+    }; my $err=$@;
+    chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
+    return {root=>$root,loomy=>$loomy,ls=>$ls,logs=>$logs,ds=>$ds,
+        identity_raw=>$raw,identity_stat=>$identity_stat,
+        (defined($raw) && $raw =~ /\A(p[0-9a-f]{64})\n\z/ ? (project_id=>$1) : ())};
+}
+sub _assert_snapshot_context {
+    my ($c)=@_; my @l=lstat("$c->{root}/.loomy");
+    if (!$c->{loomy}) {die "content directory changed\n" if @l; return}
+    die "content directory changed\n" unless @l && S_ISDIR($l[2]) && $l[4]==$<
+        && !($l[2]&002) && $l[0]==$c->{ls}[0] && $l[1]==$c->{ls}[1];
+    my @d=lstat("$c->{root}/.loomy/logs");
+    if (!$c->{logs}) {die "content directory changed\n" if @d}
+    else {
+        die "content directory changed\n" unless @d && S_ISDIR($d[2]) && $d[4]==$<
+            && !($d[2]&022) && $d[0]==$c->{ds}[0] && $d[1]==$c->{ds}[1];
+    }
+    my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
+    chdir $c->{loomy} or die "content directory unavailable\n";
+    my $ok=eval {
+        die "content identity changed\n" unless _same_or_absent($c->{identity_stat},_private_stat('project-id'));
+        1;
+    }; my $err=$@;
+    chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
+}
+sub policy_snapshot {
+    my ($root)=@_; my $c=eval {_snapshot_context($root)};
+    return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0,
+        identity_state=>'invalid',policy_state=>'invalid'} unless $c;
+    my $identity=$c->{project_id} ? 'present' : $c->{loomy} && defined($c->{identity_raw}) ? 'invalid' : 'missing';
+    my ($p,$stored); my $ok=eval {
+        $stored=$c->{logs} ? _in_context($c,sub {_stored($c)}) : _stored($c);
+        _assert_snapshot_context($c);
+        $p=_effective($c,$stored);
+        1;
+    };
+    return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0,
+        identity_state=>'invalid',policy_state=>'invalid'} unless $ok;
+    $p->{identity_state}=$identity; $p->{policy_state}=$stored->{source};
+    if ($identity ne 'present' || !$stored->{valid}) {
+        # Keep origin diagnostics, not a usable grant or invented identity.
+        $p={%{defaults()},project=>$p->{project},source=>'invalid',valid=>0,journal_enabled=>0,
+            identity_state=>$identity,policy_state=>$stored->{source},
+            ($identity eq 'present' ? (project_id=>$c->{project_id}) : ())};
+        $p->{source}='tasks-veto' if ($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0';
+    }
+    return $p;
+}
+
+# Explicit output selection is narrower than journal compatibility. Consume an
+# existing same-project grant only; a flag/environment never persists consent.
+# Exporters pass this result to project_with_policy, never project_event.
+sub export_policy_snapshot {
+    my ($root,$mode)=@_; $mode//='structural';
+    die "invalid content export mode\n" unless _scalar($mode) && $mode =~ /\A(?:structural|legacy-excerpts)\z/;
+    my $p=policy_snapshot($root);
+    if ($mode eq 'legacy-excerpts' && ($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0') {
+        die "content export grant unavailable\n" unless $p->{valid} && $p->{identity_state} eq 'present'
+            && $p->{policy_state} eq 'project' && $p->{journal_content} eq 'legacy-excerpts';
+    } else {$p->{journal_content}='structural'}
+    return $p;
+}
 # Writers can hold this same lock across resolution and their protected commit (T2/T3).
 sub with_policy {
     my ($root,$code)=@_; my $c=_context($root,1);
@@ -481,7 +567,8 @@ sub sanitize_label {
     die "label unavailable\n" unless length($out); return $out;
 }
 sub _scope {
-    my ($s,$project)=@_; return ref($s) eq 'HASH' && ($s->{project_id}//'') eq $project
+    my ($s,$project)=@_; return _scalar($project) && $project =~ /\Ap[0-9a-f]{64}\z/
+        && ref($s) eq 'HASH' && ($s->{project_id}//'') eq $project
         && _scalar($s->{target_kind}) && $s->{target_kind} =~ /\A(?:task|session|agent|delegation)\z/
         && _id($s->{target_id}) && _id($s->{attempt_id});
 }
@@ -777,6 +864,359 @@ sub project_with_policy {
     $out{policy_generation}=0+$p->{policy_generation}; return \%out;
 }
 sub project_event {my ($root,$event)=@_; return project_with_policy(effective_policy($root),$event)}
+
+# R2 contracts only. Native writers do not call these APIs until T1 adopts the
+# new store/transaction boundary. The descriptor is also the validator's closed
+# field registry, rather than a second permissive checkpoint allowlist.
+my $CHECKPOINT;
+sub _checkpoint_contract {
+    return $CHECKPOINT if $CHECKPOINT;
+    my %objects=(
+        checkpoint=>{fields=>{
+            version=>'container_version',content_policy=>'content_marker',policy_generation=>'uint',
+            files=>'source_map',source_shards=>'shard_names',journal=>'journal_cursor',seen=>'seen_map',sent=>'sent_map',
+            sessions=>'session_map',owners=>'owner_map',owner_leads=>'owner_lead_map',root_revisions=>'counter_map',
+            root_snapshots=>'root_snapshot_map',fences=>'epoch_map',rotation=>'uint',read_rotation=>'uint',
+            reconstructing=>'flag',discovering=>'uint',recovery_sources=>'recovery_map',repair=>'repair_map',unknown_repair_v1=>'flag'},
+            required=>[qw(version content_policy policy_generation)]},
+        source_state=>{fields=>{
+            meta=>'source_meta',key=>'inode',offset=>'uint',skipping=>'flag',read_sig=>'stat_signature',at_eof=>'flag',
+            replay_fence=>'epoch',source_mtime=>'epoch',last_observed_ts=>'timestamp',last_evidence_ts=>'timestamp',
+            last_model=>'model',last_effort=>'effort',id=>'journal_id',turn=>'native_id',started=>'timestamp',finished=>'flag',
+            model=>'model',effort=>'effort',activity=>'activity',activity_ts=>'timestamp',activity_position=>'uint',event_position=>'uint',
+            lead_state=>'state',lead_turn=>'native_id',lead_position=>'uint',lead_waits=>'flag_map',wait_calls=>'flag_map',
+            close_calls=>'identity_map',closed_agents=>'timestamp_map',context=>'source_context',context_invalidated=>'flag',
+            context_revision=>'uint',emitted_activity=>'activity_signature',projected_lead=>'lead_id',projected_metadata=>'protocol_two',
+            journal_generation=>'uint',complete_sig=>'stat_signature',tail_sig=>'stat_signature',tail_start=>'uint',tail_end=>'uint',
+            tail_at=>'epoch',back_chunk=>'uint',gap_start=>'uint',gap_end=>'uint',v2_position=>'uint',v2_tail_sig=>'stat_signature',
+            v2_window=>'uint',model_probe=>'codex_turn_id',probe_sig=>'stat_signature',starts=>'start_epochs',oversized=>'flag',oversized_at=>'uint'},
+            required=>['meta'],omit=>[qw(buffer read_bytes read_start)]},
+        source_meta=>{fields=>{
+            id=>'native_id',parent=>'native_id',agent=>'native_id',role=>'role',surface=>'surface',ts=>'timestamp',
+            v2=>'flag',metadata_protocol=>'protocol_two',workspace_id=>'native_id',cwd=>'workspace_locator',workspace_roots=>'workspace_locators'},
+            required=>['id'],omit=>[qw(task nickname)]},
+        source_context=>{fields=>{turn=>'native_id',ts=>'timestamp',position=>'uint',model=>'model',effort=>'effort'}},
+        journal_cursor=>{fields=>{key=>'inode',offset=>'uint',read_sig=>'stat_signature',skipping=>'flag',at_eof=>'flag',generation=>'uint',active=>'active_map'},
+            omit=>[qw(read_bytes read_start oversized oversized_at)]},
+        claude_session=>{fields=>{
+            id=>'native_id',surface=>'surface',state=>'state',state_ts=>'timestamp',seen=>'timestamp',model=>'model',effort=>'effort',
+            calls=>'call_map',aliases=>'alias_map',stops=>'stop_map',waits=>'flag_map',pending_notify=>'notify_map'},omit=>['cwd_relative']},
+        # This role is the constructor's legacy agent-type alias. Other role
+        # fields remain the closed Loomy enum; T1 pairs any later field adoption.
+        claude_call=>{fields=>{
+            call=>'call_id',agent=>'native_id',alias_from=>'call_id',role=>'agent_type',agent_type=>'agent_type',model=>'model',effort=>'effort',
+            state=>'state',status=>'status',outcome=>'outcome',started=>'timestamp',ended=>'timestamp',seen=>'timestamp',background=>'flag',
+            returned=>'flag',reopened=>'flag',terminal_evidence=>'flag',source_mtime=>'epoch'},omit=>['task']},
+        terminal=>{fields=>{ts=>'timestamp',status=>'status',outcome=>'outcome'}},
+        owner=>{fields=>{pid=>'uint',session=>'native_id',ts=>'timestamp',lead=>'lead_id',ended=>'timestamp',dead_at=>'timestamp',unbound=>'flag'}},
+        owner_lead=>{fields=>{lead=>'lead_id',session=>'native_id'},required=>[qw(lead session)]},
+        root_snapshot=>{fields=>{known=>'flag',ts=>'timestamp',owner_pid=>'uint',context_freshness=>'context_freshness',context_revision=>'uint'}},
+        repair_entry=>{fields=>{agent=>'native_id',turn=>'native_id',model=>'model',effort=>'effort',ts=>'timestamp'}},
+        label_ref=>{fields=>{version=>'reference_version',project_id=>'project_id',target_kind=>'target_kind',target_id=>'scope_id',attempt_id=>'scope_id',label_id=>'scope_id'},
+            required=>[qw(version project_id target_kind target_id attempt_id label_id)],nullable=>1},
+        task_ref=>{fields=>{version=>'reference_version',project_id=>'project_id',target_kind=>'target_kind',target_id=>'scope_id',attempt_id=>'scope_id'},
+            required=>[qw(version project_id target_kind target_id attempt_id)],nullable=>1},
+        label_refs=>{fields=>{slug=>'label_ref',nickname=>'label_ref',role=>'label_ref'},nullable=>1},
+    );
+    my %maps=(
+        source_map=>['source_locator','source_state'],seen_map=>['digest','epoch'],sent_map=>['sent_key','sent_signature'],
+        session_map=>['native_id','claude_session'],call_map=>['call_id','claude_call'],alias_map=>['native_id','call_id'],
+        stop_map=>['native_id','terminal'],notify_map=>['call_id','terminal'],flag_map=>['native_id','flag'],
+        identity_map=>['native_id','native_id'],timestamp_map=>['native_id','timestamp'],active_map=>['journal_id','flag'],
+        owner_map=>['owner_key','owner'],owner_lead_map=>['owner_key','owner_lead'],counter_map=>['native_id','uint'],
+        epoch_map=>['native_id','epoch'],root_snapshot_map=>['native_id','root_snapshot'],repair_map=>['codex_turn_id','repair_entry'],
+        recovery_map=>['native_id','lifecycle_event'],
+    );
+    $CHECKPOINT={schema_revision=>1,container_version=>2,content_policy=>'structural-v1',
+        api=>{project=>'project_checkpoint(state, context)',validate=>'validate_checkpoint(state, context)',
+            signature=>'checkpoint_signature(key, value, context)'},
+        context=>{required=>[qw(project_id source_roots workspace_roots)],optional=>['policy_generation'],
+            locators=>'Explicit lexical roots; T1 separately enforces filesystem owner/type/no-follow/race checks.'},
+        objects=>\%objects,maps=>{map {$_=>{key=>$maps{$_}[0],value=>$maps{$_}[1]}} keys %maps},
+        arrays=>{shard_names=>{item=>'shard_name',max=>64},workspace_locators=>{item=>'workspace_locator',max=>64},start_epochs=>{item=>'epoch',max=>4096}},
+        domains=>{
+            uint=>'Canonical nonnegative integer <=9007199254740991; null is unknown.',epoch=>'Finite nonnegative number; null/empty is unknown.',
+            native_id=>'1..100 ASCII [A-Za-z0-9_.:-]; empty/null is unknown only in values.',
+            scope_id=>'1..100 ASCII [A-Za-z0-9][A-Za-z0-9_.:-]*; required in scoped references.',
+            call_id=>'native_id or agent:<native_id>',journal_id=>'native_id or typed cl/cn/provider composite of native parts',
+            lead_id=>'native_id or pending:<native_id>',codex_turn_id=>'cn:<native_id>:<native_id>',
+            sent_key=>'session:<id>, context:<id>, or start/end/context/alias:cl:<session>:<call>',
+            sent_signature=>'start 1; end UTC:status; sha256:<64 lowercase hex>; projection alone accepts reviewed serialized bodies.',
+            activity_signature=>'cn:<agent>:<turn>:<model>:<effort>:<activity>:a2',
+            timestamp=>'Validated UTC timestamp, optional fraction 1..9 digits; null/empty is unknown.',
+            inode=>'device:inode, each 1..20 decimal digits',stat_signature=>'device:inode:size:mtime; size safe integer, mtime nonnegative finite; empty/- is unknown.',
+            owner_key=>'PID >=2 plus validated UTC timestamp, separated by colon',digest=>'64 lowercase SHA-256 hex',shard_name=>'files-<64 lowercase hex>',
+            flag=>'Existing checkpoint protocol: integer 0/1 or JSON boolean; null is unknown.',
+            model=>'1..128 ASCII [A-Za-z0-9][A-Za-z0-9_./:-]*; empty/null is unknown.',
+            agent_type=>'1..40 ASCII [A-Za-z0-9][A-Za-z0-9_.-]*; empty/null is unknown.',
+            role=>[sort keys %ROLE],(map {$_=>[@{$ENUM{$_}}]} qw(effort activity state status outcome surface context_freshness)),
+            project_id=>'Existing p<64 lowercase hex>, exactly equal to context.project_id',target_kind=>[qw(task session agent delegation)],
+            source_locator=>'Absolute location <=4096 UTF-8 bytes under an explicit source root; no controls, empty/dot/dotdot path components.',
+            workspace_locator=>'Same location grammar under an explicit workspace root; never an export permission.',
+            content_marker=>'structural-v1',container_version=>2,reference_version=>1,protocol_two=>2,
+            lifecycle_event=>'Closed per-type journal fields plus existing scoped references and structural envelope; no compatibility content.',
+            nullable_references=>'Lifecycle task_ref/label_ref/label_refs and label_refs components may be null as R1 unknown/no authority; non-null references require every exact scoped field.',
+        },
+        limits=>{core_bytes=>2097152,shards=>64,shard_bytes=>262144,shards_total_bytes=>16777216,legacy_read_bytes=>33554432,
+            locator_bytes=>4096,roots=>64,start_epochs=>4096,max_depth=>16},
+        separate_cursors=>{usage=>{current_format=>'TSV',row=>{source_locator=>'source_locator',line_offset=>'uint'},owner=>'T1 serializer/adoption'},
+            smooth=>{row=>{shown=>'uint'},owner=>'T1 serializer/adoption'}},
+        required_checks=>'Projection/validation are pure. T1 owns sharding, protected writes, cursor durability and historical read manifests.'};
+    return $CHECKPOINT;
+}
+sub checkpoint_schema {return $JSON->decode($JSON->encode(_checkpoint_contract()))}
+sub _checkpoint_fail {die "invalid structural checkpoint\n"}
+sub _checkpoint_decode_path {
+    my ($p)=@_; return 0 unless _scalar($p);
+    my $decoded=utf8::is_utf8($p) ? $p : eval {_decode_utf8($p,1)}; return 0 unless defined $decoded;
+    return 0 unless $decoded =~ m{\A/} && $decoded ne '/' && $decoded !~ /[\p{Cc}\p{Cf}]/
+        && length(_encode_utf8($decoded))<=4096;
+    return 0 if grep {$_ eq '' || $_ eq '.' || $_ eq '..'} split m{/},substr($decoded,1),-1;
+    return $decoded;
+}
+sub _checkpoint_path {return _checkpoint_decode_path($_[0]) ? 1 : 0}
+sub _checkpoint_context {
+    my ($c)=@_; _checkpoint_fail() unless ref($c) eq 'HASH'
+        && !grep {!/\A(?:project_id|source_roots|workspace_roots|policy_generation)\z/} keys %$c;
+    _checkpoint_fail() unless _scalar($c->{project_id}) && $c->{project_id} =~ /\Ap[0-9a-f]{64}\z/;
+    my %out=(project_id=>$c->{project_id},policy_generation=>0);
+    for my $key (qw(source_roots workspace_roots)) {
+        _checkpoint_fail() unless ref($c->{$key}) eq 'ARRAY' && @{$c->{$key}}<=64;
+        _checkpoint_fail() if grep {!_checkpoint_path($_)} @{$c->{$key}};
+        $out{$key}=[map {_checkpoint_decode_path($_)} @{$c->{$key}}];
+    }
+    if (exists $c->{policy_generation}) {
+        _checkpoint_fail() unless _scalar($c->{policy_generation}) && $c->{policy_generation} =~ /\A(?:0|[1-9][0-9]{0,15})\z/
+            && $c->{policy_generation}<=$MAX_GENERATION;
+        $out{policy_generation}=0+$c->{policy_generation};
+    }
+    return \%out;
+}
+sub _checkpoint_primitive {
+    my ($type,$v,$c,$key)=@_;
+    _checkpoint_fail() if $key && (!defined($v) || ref($v) || $v eq '');
+    return undef if !defined($v) && !$key && $type !~ /\A(?:project_id|scope_id|target_kind|reference_version|content_marker|container_version|protocol_two)\z/;
+    if ($type eq 'flag') {
+        return $v ? JSON::PP::true : JSON::PP::false if JSON::PP::is_bool($v);
+        _checkpoint_fail() unless _scalar($v) && $v =~ /\A[01]\z/; return 0+$v;
+    }
+    _checkpoint_fail() unless _scalar($v);
+    my $part=qr/[A-Za-z0-9_.:-]{1,100}/;
+    return '' if !$key && $v eq '' && $type =~ /\A(?:native_id|call_id|journal_id|lead_id|codex_turn_id|timestamp|model|agent_type|effort|epoch|context_freshness|stat_signature)\z/;
+    if ($type eq 'uint') {_checkpoint_fail() unless $v =~ /\A(?:0|[1-9][0-9]{0,15})\z/ && $v<=$MAX_GENERATION; return 0+$v}
+    if ($type eq 'epoch') {_checkpoint_fail() unless _number($v); return 0+$v}
+    if ($type eq 'timestamp') {_checkpoint_fail() unless _timestamp($v); return $v}
+    if ($type eq 'native_id') {_checkpoint_fail() unless $v =~ /\A$part\z/; return $v}
+    if ($type eq 'scope_id') {_checkpoint_fail() unless _id($v); return $v}
+    if ($type eq 'call_id') {_checkpoint_fail() unless $v =~ /\A(?:$part|agent:$part)\z/; return $v}
+    if ($type eq 'lead_id') {_checkpoint_fail() unless $v =~ /\A(?:$part|pending:$part)\z/; return $v}
+    if ($type eq 'codex_turn_id') {_checkpoint_fail() unless $v =~ /\Acn:$part:$part\z/; return $v}
+    if ($type eq 'journal_id') {
+        _checkpoint_fail() unless _journal_id('agent_id',$v) || $v =~ /\Acl:$part:agent:$part\z/; return $v;
+    }
+    if ($type eq 'project_id') {_checkpoint_fail() unless $v eq $c->{project_id}; return $v}
+    if ($type eq 'target_kind') {_checkpoint_fail() unless $v =~ /\A(?:task|session|agent|delegation)\z/; return $v}
+    if ($type eq 'role') {_checkpoint_fail() unless $ROLE{$v}; return $v}
+    if ($ENUM{$type}) {_checkpoint_fail() unless grep {$_ eq $v} @{$ENUM{$type}}; return $v}
+    if ($type eq 'model') {_checkpoint_fail() unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.\/:-]{0,127}\z/; return $v}
+    if ($type eq 'agent_type') {_checkpoint_fail() unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,39}\z/; return $v}
+    if ($type eq 'inode') {_checkpoint_fail() unless $v =~ /\A[0-9]{1,20}:[0-9]{1,20}\z/; return $v}
+    if ($type eq 'stat_signature') {
+        return $v if $v eq '-';
+        _checkpoint_fail() unless $v =~ /\A([0-9]{1,20}):([0-9]{1,20}):([^:]+):([^:]+)\z/;
+        my ($size,$mtime)=($3,$4);
+        _checkpoint_primitive('uint',$size,$c); _checkpoint_primitive('epoch',$mtime,$c); return $v;
+    }
+    if ($type eq 'owner_key') {_checkpoint_fail() unless $v =~ /\A([1-9][0-9]{0,15}):(.+)\z/ && $1>=2 && _timestamp($2); return $v}
+    if ($type eq 'digest') {_checkpoint_fail() unless $v =~ /\A[0-9a-f]{64}\z/; return $v}
+    if ($type eq 'shard_name') {_checkpoint_fail() unless $v =~ /\Afiles-[0-9a-f]{64}\z/; return $v}
+    if ($type eq 'sent_key') {
+        _checkpoint_fail() unless length($v)<=512 && ($v =~ /\A(?:session|context):$part\z/
+            || $v =~ /\A(?:start|end|context|alias):cl:$part:(?:$part|agent:$part)\z/); return $v;
+    }
+    if ($type eq 'activity_signature') {
+        my $model_part=qr/(?:[A-Za-z0-9][A-Za-z0-9_.\/:-]{0,127})?/;
+        _checkpoint_fail() unless length($v)<=512 && $v =~ /\A(cn:$part:$part):($model_part):([^:]*):([^:]*):a2\z/;
+        my ($model,$effort,$activity)=($2,$3,$4);
+        _checkpoint_primitive('model',$model,$c); _checkpoint_primitive('effort',$effort,$c);
+        _checkpoint_primitive('activity',$activity,$c); return $v;
+    }
+    if ($type eq 'source_locator' || $type eq 'workspace_locator') {
+        $v=_checkpoint_decode_path($v); _checkpoint_fail() unless $v;
+        my $roots=$c->{$type eq 'source_locator' ? 'source_roots' : 'workspace_roots'};
+        _checkpoint_fail() unless grep {$v eq $_ || index($v,"$_/")==0} @$roots; return $v;
+    }
+    if ($type eq 'content_marker') {_checkpoint_fail() unless $v eq 'structural-v1'; return $v}
+    if ($type eq 'container_version' || $type eq 'protocol_two' || $type eq 'reference_version') {
+        my $want=$type eq 'reference_version' ? 1 : 2; _checkpoint_fail() unless $v eq "$want"; return $want;
+    }
+    _checkpoint_fail();
+}
+sub _checkpoint_event_value {
+    my ($key,$v,$c,$strict,$depth,$claude)=@_; return undef unless defined $v;
+    return _checkpoint_node($key,$v,$c,$strict,$depth+1) if $key =~ /\A(?:task_ref|label_ref|label_refs)\z/;
+    return _checkpoint_primitive('agent_type',$v,$c) if $claude && $key eq 'role';
+    return _checkpoint_primitive($key,$v,$c) if $key eq 'agent_type' || $key eq 'role' || $ENUM{$key};
+    if ($key eq 'agent') {_checkpoint_fail() unless _id($v) || _scalar($v) && $v =~ /\Asha256:[0-9a-f]{64}\z/}
+    my $out=eval {_value($key,$v,$c->{project_id})}; _checkpoint_fail() if $@ || !defined($out);
+    return $out;
+}
+sub _checkpoint_structural_signature {
+    my ($type,$v,$c,$strict,$depth)=@_;
+    if (_scalar($v)) {
+        return $v if $v =~ /\Asha256:[0-9a-f]{64}\z/;
+        return '1' if $type eq 'delegation_start' && $v eq '1';
+        if ($type eq 'delegation' && $v =~ /\A(.+Z):([^:]*)\z/) {
+            my ($ts,$status)=($1,$2); _checkpoint_primitive('timestamp',$ts,$c);
+            _checkpoint_primitive('status',$status,$c); return $v;
+        }
+    }
+    _checkpoint_fail() if $strict || $depth>16;
+    my $body=$v;
+    if (_scalar($v)) {
+        _checkpoint_fail() if length(utf8::is_utf8($v) ? _encode_utf8($v) : $v)>65536;
+        $body=eval {$JSON->decode($v)}; _checkpoint_fail() if $@;
+    }
+    my $fields=_allow()->{"$type/checkpoint_value"};
+    _checkpoint_fail() unless ref($body) eq 'HASH' && $fields;
+    my %out;
+    for my $key (keys %$body) {
+        my $disposition=$fields->{$key}//''; _checkpoint_fail() unless $disposition eq 'keep' || $disposition eq 'omit';
+        next if $disposition eq 'omit';
+        my $value=$body->{$key};
+        # Match R1 content_input + _signature exactly for replay. The Claude
+        # call retains its agent type above; old journal signature bodies used
+        # the generic role enum and null for empty optional identities/models.
+        $value=undef if _scalar($value) && $value eq '' && $key =~ /\A(?:id|agent|agent_id|alias_from|alias_id|attempt_id|session|session_key|turn_id|parent_id|parent_delegation|parent_session|parent_agent_id|model|requested_model|resume_at)\z/;
+        $out{$key}=_checkpoint_event_value($key,$value,$c,0,$depth+1,1);
+    }
+    # Only this closed, value-validated object reaches the existing projector;
+    # its generic fallback cannot hash an unknown/original source object here.
+    return _signature($type,\%out,$c->{project_id});
+}
+sub _checkpoint_sent_signature {
+    my ($key,$v,$c,$strict,$depth)=@_;
+    _checkpoint_primitive('sent_key',$key,$c,1);
+    my $type=$key =~ /\Astart:/ ? 'delegation_start' : $key =~ /\Aend:/ ? 'delegation'
+        : $key =~ /\Aalias:/ ? 'agent_alias' : $key =~ /\Acontext:cl:/ ? 'delegation_activity'
+        : $key =~ /\Acontext:/ ? 'session_context' : 'session_observed';
+    return _checkpoint_structural_signature($type,$v,$c,$strict,$depth);
+}
+sub checkpoint_signature {
+    my ($key,$v,$context)=@_; my ($out,$ok);
+    $ok=eval {$out=_checkpoint_sent_signature($key,$v,_checkpoint_context($context),0,0); 1};
+    _checkpoint_fail() unless $ok; return $out;
+}
+sub _checkpoint_lifecycle {
+    my ($v,$c,$strict,$depth)=@_;
+    _checkpoint_fail() unless ref($v) eq 'HASH' && _scalar($v->{type})
+        && $v->{type} =~ /\A(?:session_observed|session_context|delegation_start|delegation_activity|delegation|agent_link|agent_alias|agent_closed)\z/;
+    my $type=$v->{type}; my $fields=_allow()->{$type}; my %out=(type=>$type);
+    for my $key (keys %$v) {
+        next if $key eq 'type';
+        if ($key eq 'content_policy') {_checkpoint_primitive('content_marker',$v->{$key},$c) if $strict; next}
+        if ($key eq 'policy_generation') {$out{$key}=_checkpoint_primitive('uint',$v->{$key},$c); next}
+        my $disposition=$fields->{$key}//'';
+        $disposition='keep' if $key eq 'task_ref' || $key eq 'label_ref';
+        _checkpoint_fail() unless $disposition eq 'keep' || $disposition eq 'omit' || $disposition eq 'project';
+        if ($disposition eq 'omit') {_checkpoint_fail() if $strict; next}
+        $out{$key}=$disposition eq 'project'
+            ? _checkpoint_structural_signature($type,$v->{$key},$c,$strict,$depth+1)
+            : _checkpoint_event_value($key,$v->{$key},$c,$strict,$depth+1,0);
+    }
+    _checkpoint_fail() if $strict && (!exists($v->{content_policy}) || !exists($v->{policy_generation}));
+    $out{content_policy}='structural-v1'; $out{policy_generation}//=$c->{policy_generation}; return \%out;
+}
+sub _checkpoint_node {
+    my ($type,$v,$c,$strict,$depth)=@_; _checkpoint_fail() if $depth>16;
+    my $schema=_checkpoint_contract();
+    if (my $object=$schema->{objects}{$type}) {
+        return undef if !defined($v) && $object->{nullable};
+        _checkpoint_fail() unless ref($v) eq 'HASH'; my %out; my %omit=map {$_=>1} @{$object->{omit}//[]};
+        for my $key (keys %$v) {
+            if ($omit{$key}) {_checkpoint_fail() if $strict; next}
+            my $domain=$object->{fields}{$key}; _checkpoint_fail() unless defined $domain;
+            # Old container/envelope values are replaced only during projection.
+            if (!$strict && $type eq 'checkpoint' && $key eq 'version') {
+                _checkpoint_fail() unless _scalar($v->{$key}) && $v->{$key} =~ /\A[12]\z/; next;
+            }
+            if (!$strict && $type eq 'checkpoint' && $key eq 'content_policy') {
+                _checkpoint_fail() unless _scalar($v->{$key}) && $v->{$key} =~ /\A(?:structural|legacy-excerpts)-v1\z/; next;
+            }
+            $out{$key}=_checkpoint_node($domain,$v->{$key},$c,$strict,$depth+1);
+        }
+        my @required=@{$object->{required}//[]}; @required=() if !$strict && $type eq 'checkpoint';
+        _checkpoint_fail() if grep {!exists $v->{$_}} @required;
+        _checkpoint_fail() if $type eq 'source_meta' && (!defined($v->{id}) || ref($v->{id}) || $v->{id} eq '');
+        if ($type eq 'checkpoint' && !$strict) {@out{qw(version content_policy policy_generation)}=(2,'structural-v1',$c->{policy_generation})}
+        if ($type eq 'claude_call' && defined($out{role}) && defined($out{agent_type}) && $out{role} ne $out{agent_type}) {_checkpoint_fail()}
+        return \%out;
+    }
+    if (my $map=$schema->{maps}{$type}) {
+        _checkpoint_fail() unless ref($v) eq 'HASH'; my %out;
+        for my $key (keys %$v) {
+            my $projected_key=_checkpoint_primitive($map->{key},$key,$c,1);
+            _checkpoint_fail() if exists $out{$projected_key};
+            $out{$projected_key}=$type eq 'sent_map' ? _checkpoint_sent_signature($key,$v->{$key},$c,$strict,$depth+1)
+                : _checkpoint_node($map->{value},$v->{$key},$c,$strict,$depth+1);
+        }
+        return \%out;
+    }
+    if (my $array=$schema->{arrays}{$type}) {
+        _checkpoint_fail() unless ref($v) eq 'ARRAY' && @$v<=$array->{max};
+        _checkpoint_fail() if grep {!defined($_) || ref($_) || $_ eq ''} @$v;
+        my @out=map {_checkpoint_node($array->{item},$_,$c,$strict,$depth+1)} @$v;
+        if ($type eq 'shard_names') {my %seen; _checkpoint_fail() if grep {$seen{$_}++} @out}
+        return \@out;
+    }
+    return _checkpoint_lifecycle($v,$c,$strict,$depth+1) if $type eq 'lifecycle_event';
+    # Old Codex role labels are not new Loomy role identifiers. Their known
+    # fallback is safe during adoption; strict new generations require the enum.
+    return 'unknown' if !$strict && $type eq 'role' && _scalar($v) && !$ROLE{$v};
+    return _checkpoint_primitive($type,$v,$c);
+}
+sub project_checkpoint {
+    my ($state,$context)=@_; my ($out,$ok);
+    $ok=eval {
+        my $c=_checkpoint_context($context);
+        _checkpoint_fail() if length($JSON->encode($state))>33554432;
+        $out=_checkpoint_node('checkpoint',$state,$c,0,0); 1;
+    };
+    _checkpoint_fail() unless $ok; return $out;
+}
+sub validate_checkpoint {
+    my ($state,$context)=@_; my $ok=eval {
+        my $c=_checkpoint_context($context);
+        _checkpoint_fail() if length($JSON->encode($state))>33554432;
+        _checkpoint_node('checkpoint',$state,$c,1,0); 1;
+    };
+    _checkpoint_fail() unless $ok; return 1;
+}
+
+# T1 implements this callable; T6 binds it before effects. This descriptor is
+# neither admission nor a replacement for MAINFIRST-LOCK verification.
+sub collector_admission_contract {
+    return {protocol_version=>1,callable=>'Loomy::CollectorContent::admit(request, lock_attestation)',implemented_by=>'T1',bound_by=>'T6',
+        request=>{required=>[qw(protocol_version project_id requester_pid requester_birth policy_generation journal_enabled tasks_restricted)],
+            fields=>{protocol_version=>1,project_id=>'existing project ID',requester_pid=>'integer >=2',requester_birth=>'validated OS process-birth identity',
+                policy_generation=>'uint',journal_enabled=>'boolean',tasks_restricted=>'boolean'}},
+        lock_attestation=>{required=>[qw(protocol_version project_id requester_pid requester_birth collector_pid collector_birth state owner_scope journal_enabled tasks_restricted)],
+            fields=>{protocol_version=>1,project_id=>'existing project ID',requester_pid=>'integer >=2',requester_birth=>'validated OS process-birth identity',
+                collector_pid=>'integer >=2 or null for a verified new/quiescent slot',collector_birth=>'validated OS process-birth identity or matching null',
+                state=>[qw(new live quiescent unknown)],owner_scope=>[qw(requester owned-descendant other unknown)],journal_enabled=>'boolean',tasks_restricted=>'boolean'},
+            origin=>'Verified MAINFIRST-LOCK ownership/quiescence API; caller hashes, env flags, names and PID liveness alone are not attestations.'},
+        result=>{required=>[qw(protocol_version decision reason request collector_pid collector_birth)],
+            fields=>{protocol_version=>1,decision=>[qw(admitted refused hold)],reason=>[qw(compatible-owned verified-quiescent new-owned invalid-request identity-unavailable
+                attestation-missing attestation-unverified unsupported-collector project-mismatch process-mismatch ownership-mismatch incompatible-live-writer)],
+                request=>'Exact closed validated request tuple above',collector_pid=>'admitted collector identity or null',collector_birth=>'matching process birth or null'}},
+        rules=>{default=>'hold; no effects without verified supported LOCK evidence',
+            admitted=>'Only compatible owned live collection, verified new owned collection, or verified LOCK quiescence followed by owned claim.',
+            refused=>'Invalid/mismatched project or process identity, foreign ownership, or incompatible live content writer; before provider/append/cursor effects.',
+            hold=>'Missing/unverified LOCK attestation or unknown/preprotocol collector; obtain supported ownership or verified quiescence first.',
+            lifetime=>'Requesting process and its owned descendants; descendants inherit restrictions and writers recheck current policy before effects.',
+            journal_disabled=>'A disabled journal admits no collector writes; callers may skip collection without widening this request.',
+            durable_policy=>'No grant/policy-generation mutation, global veto, silent watch termination or promise about later independently granted readers.'}};
+}
 
 sub _cli {
     STDOUT->autoflush(1); binmode STDOUT,':raw';

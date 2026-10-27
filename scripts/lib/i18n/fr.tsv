@@ -2405,3 +2405,25 @@ paused until %s · resumable: loomy memory show %s	en pause jusqu’à %s · rep
 label not recorded (explicit-lead not granted)	libellé non enregistré (explicit-lead non autorisé)
 --task-label "..." (explicit-lead)	--task-label "..." (source explicit-lead)
 Older sensitive results are available: loomy memory show legacy [N]	Des résultats sensibles antérieurs sont disponibles : loomy memory show legacy [N]
+
+# R2-T0
+Read-only policy unavailable: missing or invalid project identity.	Politique en lecture seule indisponible : identité du projet absente ou invalide.
+Export refused: legacy excerpts require an existing grant for this project or direct human confirmation.	Export refusé : les extraits historiques nécessitent une autorisation existante pour ce projet ou une confirmation humaine directe.
+Structural export: task labels and private results are excluded.	Export structurel : les libellés de tâche et les résultats privés sont exclus.
+Content collection refused: incompatible live collector; stop it from its owning terminal and retry.	Collecte refusée : collecteur actif incompatible ; arrêtez-le depuis son terminal propriétaire puis réessayez.
+Content collection unavailable: collector ownership could not be verified.	Collecte indisponible : l’identité du propriétaire du collecteur n’a pas pu être vérifiée.
+Content collection unavailable: legacy collector requires verified quiescence.	Collecte indisponible : l’arrêt du collecteur historique doit être vérifié.
+Content collection refused: live collector does not satisfy LOOMY_JOURNAL_TASKS=0.	Collecte refusée : le collecteur actif ne respecte pas LOOMY_JOURNAL_TASKS=0.
+Private result unavailable: capture was not authorized.	Résultat privé indisponible : l’enregistrement n’était pas autorisé.
+Private result unavailable: result exceeds the capture limit; complete output was delivered.	Résultat privé indisponible : la limite d’enregistrement est dépassée ; la sortie complète a été remise.
+Private result unavailable: capture failed; complete output was delivered.	Résultat privé indisponible : échec de l’enregistrement ; la sortie complète a été remise.
+Execution scratch could not be created safely; delegation not started.	Impossible de créer les fichiers temporaires d’exécution de façon sûre ; délégation non démarrée.
+Execution scratch write failed; complete output unavailable.	Échec d’écriture des fichiers temporaires d’exécution ; sortie complète indisponible.
+Execution scratch cleanup incomplete; retry cleanup on the next bridge start.	Nettoyage incomplet des fichiers temporaires d’exécution ; nouvelle tentative au prochain démarrage du bridge.
+Execution scratch: private temporary files, removed after each delegation; stale files reaped on the next bridge start.	Exécution : fichiers temporaires privés, supprimés après chaque délégation ; fichiers abandonnés nettoyés au prochain démarrage du bridge.
+Execution scratch is not a private result; it is never synced or exported.	Les fichiers temporaires d’exécution sont distincts des résultats privés ; ils ne sont jamais synchronisés ni exportés.
+Journal: %s · task labels: %s · private results: %s · execution scratch: private temporary files	Journal : %s · libellés : %s · résultats privés : %s · exécution : fichiers temporaires privés
+Content boundary: structural storage; local checkpoint locators and private execution scratch remain.	Périmètre de contenu : stockage structurel ; les chemins locaux des checkpoints et les fichiers temporaires privés d’exécution subsistent.
+Unsupported provider output framing; execution boundary remains unverified.	Format de sortie du fournisseur non pris en charge ; le périmètre d’exécution reste non vérifié.
+Provider-created files: not verified; release gate pending.	Fichiers créés par le fournisseur : non vérifiés ; validation avant publication en attente.
+- Execution scratch may contain raw provider output until delegation cleanup.	- Les fichiers temporaires d’exécution peuvent contenir la sortie brute du fournisseur jusqu’au nettoyage de la délégation.

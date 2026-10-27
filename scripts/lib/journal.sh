@@ -288,6 +288,289 @@ AI_TITLE_PERL='use utf8;
   }
 '
 
+# JSON labels are already sanitized and clipped in Perl. Decode only this new
+# field for awk consumers, preserving the historical parser for legacy tasks.
+AI_DISPLAY_FIELD_AWK='
+function display_task(   v,i,c,out) {
+  if (!match($0, /"display_task":"([^"\\]|\\.)*"/)) return ""
+  v=substr($0,RSTART+16,RLENGTH-17); out=""
+  for (i=1;i<=length(v);i++) {
+    c=substr(v,i,1)
+    if (c=="\\") {i++; c=substr(v,i,1); if (c ~ /^[nrtbf]$/) c=" "}
+    out=out c
+  }
+  return out
+}
+'
+
+# Display-only context. Never pass prepared rows to a journal/checkpoint writer.
+# Keeping the resolver here lets one-shot commands and the persistent sampler use
+# the same policy API without loading another interpreter on timer-only frames.
+ai_display_context_init() {
+  declare -F tv >/dev/null || source "${AI_LIVE_STATE_LIB%/*}/i18n.sh"
+  export LOOMY_DISPLAY_ROOT="$1" LOOMY_DISPLAY_POLICY_LIB="${AI_LIVE_STATE_LIB%/*}/content-policy.pl"
+  tv LOOMY_DISPLAY_ROLE "Role: %s"
+  tv LOOMY_DISPLAY_UNAVAILABLE "context unavailable"
+  tv LOOMY_DISPLAY_architect "designs the plan"
+  tv LOOMY_DISPLAY_debugger "finds the cause"
+  tv LOOMY_DISPLAY_security "checks the risks"
+  tv LOOMY_DISPLAY_reviewer "reviews the diff"
+  tv LOOMY_DISPLAY_developer "edits + runs tests"
+  tv LOOMY_DISPLAY_executor "runs bounded tasks"
+  tv LOOMY_DISPLAY_explorer "reads the code"
+  tv LOOMY_DISPLAY_documenter "writes the docs"
+  tv LOOMY_DISPLAY_installed "Skill installed"
+  tv LOOMY_DISPLAY_removed "Skill removed"
+  tv LOOMY_DISPLAY_updated "Skill updated"
+  tv LOOMY_DISPLAY_selected "Skill added"
+  tv LOOMY_DISPLAY_manual "added by the user"
+  tv LOOMY_DISPLAY_relay_manual "manual"
+  tv LOOMY_DISPLAY_returned "returned"
+  tv LOOMY_DISPLAY_reset "quota back"
+  tv LOOMY_DISPLAY_unknown "unknown"
+  export LOOMY_DISPLAY_ROLE LOOMY_DISPLAY_UNAVAILABLE LOOMY_DISPLAY_architect LOOMY_DISPLAY_debugger
+  export LOOMY_DISPLAY_security LOOMY_DISPLAY_reviewer LOOMY_DISPLAY_developer LOOMY_DISPLAY_executor
+  export LOOMY_DISPLAY_explorer LOOMY_DISPLAY_documenter LOOMY_DISPLAY_installed LOOMY_DISPLAY_removed
+  export LOOMY_DISPLAY_updated LOOMY_DISPLAY_selected LOOMY_DISPLAY_manual LOOMY_DISPLAY_reset LOOMY_DISPLAY_unknown
+  export LOOMY_DISPLAY_relay_manual LOOMY_DISPLAY_returned
+}
+
+read -r -d '' AI_DISPLAY_CONTEXT_PERL <<'PERL' || true
+use utf8;
+package Loomy::DisplayContext;
+use Encode ();
+my (%labels,%users,%starts,@start_order,$loaded,$label_signature);
+sub text { defined($_[0]) && !ref($_[0]) ? "$_[0]" : "" }
+sub structural { text($_[0]{content_policy}) eq "structural-v1" }
+sub managed { structural($_[0]) || ref($_[0]{label_ref}) eq "HASH" || ref($_[0]{label_refs}) eq "HASH" }
+sub refresh { %labels=(); %users=(); $loaded=0; $label_signature=undef }
+sub ui {
+  my ($key,$fallback)=@_; my $v=$ENV{"LOOMY_DISPLAY_$key"}; return $fallback unless defined($v);
+  return Encode::is_utf8($v) ? $v : Encode::decode("UTF-8",$v,Encode::FB_DEFAULT());
+}
+sub key {
+  my ($e)=@_; return join("|",map {text($_)} ($e->{tool}//$e->{family}//"",$e->{session}//"",$e->{id}//""));
+}
+sub clean {
+  my $s=text($_[0]); $s =~ s/[\x00-\x1f\x7f|]/ /g; return $s;
+}
+sub scope_key { join("|",map {text($_[0]{$_})} qw(project_id target_kind target_id attempt_id)) }
+sub load_labels {
+  # A bounded validated index is shared by all rows in one frame/sampler. Only
+  # new input checks the signature; idle frames do no store work.
+  my @s=stat(($ENV{LOOMY_DISPLAY_ROOT}//"")."/.loomy/logs/display-context-v1.jsonl");
+  my $sig=join(":",@s ? @s[0,1,7,9,10] : ("-"));
+  return if $loaded && defined($label_signature) && $sig eq $label_signature;
+  %labels=(); %users=(); $loaded=1; $label_signature=$sig;
+  return unless @s;
+  eval {
+    require $ENV{LOOMY_DISPLAY_POLICY_LIB};
+    my $ctx=Loomy::ContentPolicy::_context($ENV{LOOMY_DISPLAY_ROOT},0); return unless $ctx && $ctx->{logs};
+    my $rows=Loomy::ContentPolicy::_in_context($ctx,sub {
+      my ($raw)=Loomy::ContentPolicy::_read("display-context-v1.jsonl",1048576);
+      Loomy::ContentPolicy::_rows($raw,$ctx->{project_id});
+    });
+    for my $r (@$rows) {
+      $labels{$r->{label_id}}=$r;
+      $users{scope_key($r)}=$r if $r->{source} eq "explicit-user";
+    }
+    1;
+  } or do { %labels=(); %users=() };
+}
+sub label {
+  my ($ref)=@_; return unless ref($ref) eq "HASH" && keys(%$ref)==6 && text($ref->{version}) eq "1";
+  load_labels(); my $r=$labels{text($ref->{label_id})}; return unless $r;
+  return if grep {text($ref->{$_}) ne text($r->{$_})} qw(version project_id target_kind target_id attempt_id label_id);
+  return $r;
+}
+sub role {
+  my ($e,$start)=@_; $start//={};
+  my $role=text($e->{role}) || text($start->{role});
+  return $role unless managed($e) || managed($start);
+  my $agent_type=text($e->{agent_type}) || text($start->{agent_type});
+  return $role if $agent_type eq "loomy-$role";
+  return $agent_type if $agent_type =~ /\A[A-Za-z0-9_.-]{1,40}\z/;
+  return $role;
+}
+sub scoped_label {
+  my ($e,$ref)=@_; return unless ref($ref) eq "HASH";
+  my $kind=text($ref->{target_kind}); my $target=text($ref->{target_id});
+  my @ids=$kind eq "agent" ? ($e->{agent_id},$e->{id})
+    : $kind eq "delegation" ? ($e->{id},$e->{turn_id})
+    : $kind eq "session" ? ($e->{session})
+    : $kind eq "task" && ref($e->{task_ref}) eq "HASH" ? ($e->{task_ref}{target_id}) : ();
+  return unless grep {length(text($_)) && text($_) eq $target} @ids;
+  my @attempts;
+  if (length(text($e->{attempt_id}))) { @attempts=($e->{attempt_id}) }
+  elsif ($kind eq "agent") { @attempts=($target) }
+  elsif ($kind eq "session") { @attempts=($e->{session}) }
+  elsif ($kind eq "task") { @attempts=($e->{task_ref}{attempt_id}) }
+  else { @attempts=($e->{session},$e->{id},$e->{turn_id}) }
+  return unless grep {length(text($_)) && text($_) eq text($ref->{attempt_id})} @attempts;
+  return label($ref);
+}
+sub user_label {
+  my ($e,$start)=@_; load_labels(); return unless keys %users;
+  my $scope={%$start,%$e};
+  for my $row ($e,$start) {
+    for my $ref ($row->{label_ref},ref($row->{label_refs}) eq "HASH" ? values %{$row->{label_refs}} : ()) {
+      my $r=scoped_label($scope,$ref); next unless $r;
+      return $users{scope_key($r)} if $users{scope_key($r)};
+    }
+    my $agent=text($row->{agent_id}); my $id=text($row->{id});
+    for my $r (values %users) {
+      next unless ($r->{target_kind} eq "agent" && $r->{target_id} eq ($agent||$id) && $r->{attempt_id} eq ($agent||$id))
+        || ($r->{target_kind} eq "delegation" && $r->{target_id} eq $id && $r->{attempt_id} eq (text($row->{attempt_id})||text($row->{session})||$id));
+      my %ref=map {$_=>$r->{$_}} qw(version project_id target_kind target_id attempt_id label_id);
+      return $r if scoped_label($scope,\%ref);
+    }
+  }
+  return;
+}
+sub label_title {
+  my ($e,$start)=@_; $start//=$starts{key($e)}//{};
+  return unless managed($e) || managed($start);
+  my $scope={%$start,%$e};
+  my $user=user_label($e,$start); return clean($user->{text}) if $user;
+  # A deliberately supplied title wins over automatic native identity parts.
+  for my $row ($e,$start) {
+    my $r=scoped_label($scope,$row->{label_ref});
+    return clean($r->{text}) if $r && $r->{source} =~ /\A(?:explicit-user|explicit-lead|claude-description)\z/;
+  }
+  my @parts;
+  for my $part (qw(nickname role slug)) {
+    my $source=$part eq "slug" ? "codex-path-slug" : "codex-$part";
+    for my $row ($e,$start) {
+      my $refs=$row->{label_refs}; next unless ref($refs) eq "HASH";
+      my $r=scoped_label($scope,$refs->{$part}); next unless $r && $r->{source} eq $source;
+      push @parts,clean($r->{text}); last;
+    }
+  }
+  return join(" ",@parts) if @parts;
+  for my $row ($e,$start) { my $r=scoped_label($scope,$row->{label_ref}); return clean($r->{text}) if $r }
+  return;
+}
+sub has_label { my $title=label_title(@_); return defined($title) && length($title) ? 1 : 0 }
+sub fallback { (managed($_[0]) || managed($_[1]//{})) && !has_label(@_) ? 1 : 0 }
+sub title {
+  my ($e,$start)=@_; $start//=$starts{key($e)}//{};
+  return text(defined($e->{task}) && !ref($e->{task}) ? $e->{task} : $start->{task})
+    unless managed($e) || managed($start);
+  my $label=label_title($e,$start); return $label if defined($label) && length($label);
+  # Legacy excerpts remain readable; a structural event never trusts a stray task.
+  return text($e->{task}//$start->{task}) unless structural($e) || structural($start);
+  my $role=text($e->{role}) || text($start->{role});
+  my $mission=$role =~ /\A(?:architect|debugger|security|reviewer|developer|executor|explorer|documenter)\z/
+    ? ui($role,undef) : undef;
+  return sprintf(ui("ROLE","Role: %s"),$mission) if defined($mission) && length($mission);
+  return ui("UNAVAILABLE","context unavailable");
+}
+sub reason {
+  my ($e)=@_; return text($e->{reason}) unless managed($e);
+  my $code=text($e->{reason_code});
+  if (text($e->{type}) =~ /\Alead_(?:failover|return)\z/) {
+    my ($w,$p)=(text($e->{quota_window}),text($e->{used_percent}));
+    return "$w $p %" if $w =~ /\A(?:5h|7d|daily|weekly|session)\z/
+      && $p =~ /\A\d+(?:\.\d+)?\z/ && $p<=100;
+    return ui("reset","quota back") if $code =~ /\A(?:reset|available)\z/;
+    return $code eq "manual" ? ui("relay_manual","manual") : (ui("UNAVAILABLE","context unavailable"));
+  }
+  $code="selected" if $code eq "catalog";
+  $code="unknown" unless $code =~ /\A(?:installed|removed|updated|selected|manual)\z/;
+  return ui($code,ui("unknown","unknown"));
+}
+sub clip {
+  my ($s,$width,$ellipsis)=@_; my @g=text($s)=~/\X/g;
+  return text($s) if @g<=$width;
+  return join("",@g[0..($width-($ellipsis ? 2 : 1))]).($ellipsis ? "…" : "");
+}
+sub prepare {
+  my ($e)=@_; return $e unless ref($e) eq "HASH";
+  my $key=key($e); my $type=text($e->{type});
+  if ($type eq "delegation_start") {
+    push @start_order,$key unless exists $starts{$key}; $starts{$key}=$e;
+    delete $starts{shift @start_order} while @start_order>4096;
+  }
+  return $e unless managed($e);
+  my %v=%$e;
+  if ($type =~ /\A(?:delegation(?:_start|_activity)?|agent_(?:link|alias|closed)|session_observed)\z/) {
+    $v{task}=title($e); $v{role}=role($e,$starts{$key});
+    if (($ENV{LOOMY_DISPLAY_FORMAT}//"") =~ /\A(?:pretty|status)\z/) {
+      my $width=$ENV{LOOMY_DISPLAY_FORMAT} eq "pretty" ? ($type eq "delegation_start" ? 48 : 36) : ($type eq "delegation_start" ? 60 : 40);
+      $v{display_task}=clip($v{task},$width,1);
+    }
+  }
+  if ($type eq "request") {
+    $v{excerpt}=title($e);
+    $v{excerpt}=clean($e->{id})." · ".$v{excerpt} if $v{excerpt} eq (ui("UNAVAILABLE","context unavailable"));
+  }
+  $v{reason}=reason($e) if $type =~ /\A(?:skill|lead_failover|lead_return)\z/;
+  return \%v;
+}
+# The old session-log path and the persistent sampler share this formatter.
+# Enhanced native log coalescing stays in ai_journal_display_events below.
+sub session_row {
+  my ($raw)=@_; my $e=prepare($raw); my $ty=text($e->{type});
+  my ($who,$what,$extra)=("","","");
+  my $model=text($e->{model}); my $task=text($e->{task});
+  my $duration=text($e->{duration_s}); $duration=0 unless $duration =~ /\A\d+(?:\.\d+)?\z/;
+  if ($ty eq "delegation_start") {($who,$what,$extra)=(text($e->{role}),"start","$model · ".(managed($raw) ? clip($task,52,0) : substr($task,0,52)))}
+  elsif ($ty eq "delegation") {
+    my $oc=text($e->{outcome}); my $status=text($e->{status});
+    $what=$status eq "ok" ? ($oc =~ /\A(?:partial|blocked)\z/ ? $oc : "done") : "failed";
+    $what=$status if managed($raw) && $status =~ /\A(?:paused|handed_over|interrupted)\z/;
+    $what="handed over" if $what eq "handed_over";
+    $extra=($duration>=60 ? int($duration/60)." min ".($duration%60)." s" : "$duration s")." · $model";
+    $extra.=" · ⇄ ".text($e->{failover_from}) if text($e->{failover_from}) ne "";
+    $extra.=" · $task" if managed($raw) && length($task);
+    $who=text($e->{role});
+  }
+  elsif ($ty eq "request" && managed($raw)) {($who,$what,$extra)=("lead","request",text($e->{excerpt}))}
+  elsif ($ty eq "advisor") {($who,$what,$extra)=("advisor","consulted",(text($e->{calls})||0)." × $model · ".int((text($e->{tokens_in})||0)/1000)."k")}
+  elsif ($ty =~ /\A(?:phase|task_phase|audit_phase)\z/) {my $mode=$ty; $mode =~ s/_?phase$//; ($who,$what,$extra)=("phase",text($e->{phase}),$mode)}
+  elsif ($ty eq "session") {($who,$what,$extra)=("session",text($e->{event}),text($e->{tool}))}
+  elsif ($ty eq "skill") {($who,$what,$extra)=("skills",text($e->{event}),text($e->{name})." · ".substr(text($e->{reason}),0,52))}
+  elsif ($ty eq "usage" && text($e->{scope}) eq "lead") {($who,$what,$extra)=("lead","replied",(text($e->{messages})||0)." msg · $model")}
+  elsif ($ty =~ /\Alead_(failover|return)\z/ && managed($raw)) {($who,$what,$extra)=("lead",$1 eq "failover" ? "handed over" : ui("returned","returned"),text($e->{master})." → ".text($e->{acting})." · ".reason($raw))}
+  return unless length($who); return [map {clean($_)} (text($e->{ts}),$who,$what,$extra)];
+}
+# Preserve the historical awk parser byte-for-byte for unmarked journals,
+# including its escaped-string cuts. New structural rows use decoded JSON above.
+sub legacy_session_row {
+  my ($raw)=@_; my $field=sub {my $k=shift; return $raw =~ /"\Q$k\E":"([^"]*)"/ ? $1 : ""};
+  my $num=sub {my $k=shift; return $raw =~ /"\Q$k\E":([0-9.]+)/ ? $1 : "0"};
+  my ($who,$what,$extra)=("","",""); my $dot=Encode::encode("UTF-8"," · ");
+  if ($raw =~ /"type":"delegation_start"/) {($who,$what,$extra)=($field->("role"),"start",$field->("model").$dot.substr($field->("task"),0,52))}
+  elsif ($raw =~ /"type":"delegation",/) {
+    my ($st,$oc)=($field->("status"),$field->("outcome")); my $d=0+$num->("duration_s");
+    ($who,$what)=($field->("role"),$st eq "ok" ? ($oc =~ /\A(?:partial|blocked)\z/ ? $oc : "done") : "failed");
+    $extra=($d>=60 ? int($d/60)." min ".($d%60)." s" : "$d s").$dot.$field->("model");
+    $extra.=$dot.Encode::encode("UTF-8","⇄ ").$field->("failover_from") if length($field->("failover_from"));
+  }
+  elsif ($raw =~ /"type":"advisor"/) {($who,$what,$extra)=("advisor","consulted",$num->("calls").Encode::encode("UTF-8"," × ").$field->("model").$dot.int($num->("tokens_in")/1000)."k")}
+  elsif ($raw =~ /"type":"(?:phase|task_phase|audit_phase)"/) {my $ty=$field->("type"); $ty =~ s/_?phase$//; ($who,$what,$extra)=("phase",$field->("phase"),$ty)}
+  elsif ($raw =~ /"type":"session"/) {($who,$what,$extra)=("session",$field->("event"),$field->("tool"))}
+  elsif ($raw =~ /"type":"skill"/) {($who,$what,$extra)=("skills",$field->("event"),$field->("name").$dot.substr($field->("reason"),0,52))}
+  elsif ($raw =~ /"type":"usage"/ && $field->("scope") eq "lead") {($who,$what,$extra)=("lead","replied",$num->("messages")." msg".$dot.$field->("model"))}
+  else { return }
+  return [$field->("ts"),$who,$what,$extra];
+}
+package main;
+PERL
+
+ai_display_context_events() {
+  ai_display_context_init "$1"
+  LOOMY_DISPLAY_FORMAT="${2:-}" perl -MJSON::PP -e "$AI_DISPLAY_CONTEXT_PERL"'
+    $|=1; my $json=JSON::PP->new->canonical->utf8;
+    while (<STDIN>) {
+      my $raw=$_; my $e=eval {decode_json($raw)};
+      next unless ref($e) eq "HASH";
+      my $v=Loomy::DisplayContext::prepare($e);
+      print $v==$e ? $raw : $json->encode($v)."\n";
+    }
+  '
+}
+
 # ai_task_title <normalized title> <columns>: truncate only at a word boundary.
 ai_task_title() {
   local title="$1" width="$2" cut
@@ -317,12 +600,24 @@ ai_native_end_label() {
 
 # Tree/watch opt into this formatter; ai_session_log_rows keeps its existing reveal cursor.
 ai_journal_display_events() {
-  ai_journal_tail "$1" 4000 | ai_journal_canonical | tail -n 400 | perl -MJSON::PP -MErrno=EPERM -MPOSIX=strftime -e "$AI_TITLE_PERL"'
+  local display_root="${2:-${LOOMY_DISPLAY_ROOT:-}}"
+  [[ "$1" != */.loomy/logs/* ]] || display_root="${1%/.loomy/logs/*}"
+  ai_display_context_init "$display_root"
+  ai_journal_tail "$1" 4000 | ai_journal_canonical | tail -n 400 | perl -MJSON::PP -MErrno=EPERM -MPOSIX=strftime -e "$AI_TITLE_PERL$AI_DISPLAY_CONTEXT_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
+    my %display_suffix;
     sub duration { my $d=text($_[0]); return "—" unless $d =~ /^\d+(?:\.\d+)?$/; $d=int($d); return $d>=3600 ? sprintf("%d h %02d",$d/3600,$d%3600/60) : sprintf("%d:%02d",$d/60,$d%60) }
     sub alive { my $p=$_[0]//0; return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
     sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : "" }
-    sub task_title { my ($e,$start)=@_; return ai_title(defined $e->{task} && !ref($e->{task}) ? $e->{task} : $start->{task}) }
+    sub task_title {
+      my ($e,$start)=@_; $start//={}; my $title=Loomy::DisplayContext::title($e,$start);
+      return ai_title($title) unless Loomy::DisplayContext::managed($e) || Loomy::DisplayContext::managed($start);
+      if ((native($e) || native($start)) && Loomy::DisplayContext::fallback($e,$start)) {
+        my $identity=text($e->{agent_id}) || text($start->{agent_id}) || text($e->{id});
+        $title.=" · ".($display_suffix{$identity}//$identity) if length($identity);
+      }
+      return $title;
+    }
     sub session_key { my $e=$_[0]; return text($e->{tool}//$e->{family})."|".(text($e->{session}) || "pid".text($e->{owner_pid}//$e->{pid}//0)) }
     sub agent_key { my $e=$_[0]; return session_key($e)."|".text($e->{parent_session})."|".(text($e->{agent_id}) || text($e->{id})) }
     sub native { text($_[0]{bridge}) =~ /^(codex|claude)-native$/ }
@@ -351,6 +646,13 @@ ai_journal_display_events() {
       $aliased{text($e->{alias_id})}=1 if text($e->{type}) eq "agent_alias";
     }
     @events=grep { !(text($_->{bridge}) eq "subagent" && $normalized{text($_->{session})."|".text($_->{id})}) && !$aliased{text($_->{id})} } @events;
+    my %identities=map {(text($_->{agent_id}) || text($_->{id}))=>1} @events;
+    delete $identities{""}; my @identities=keys %identities;
+    for my $id (@identities) {
+      my $n=8;
+      ++$n while $n<length($id) && grep {$_ ne $id && substr($_,-$n) eq substr($id,-$n)} @identities;
+      $display_suffix{$id}=substr($id,-$n);
+    }
     for my $i (0..$#events) {
       my $e=$events[$i]; my $id=text($e->{id}); my $ts=text($e->{ts});
       if (($e->{type}//"") eq "session") {
@@ -384,7 +686,7 @@ ai_journal_display_events() {
       next unless ref($e) eq "HASH";
       my ($ty,$who,$what,$extra)=(text($e->{type}),"","","");
       my $id=text($e->{id}); my $start=$starts{$id}//{};
-      my $model=text($e->{model}); my $role=text($e->{role});
+      my $model=text($e->{model}); my $role=Loomy::DisplayContext::role($e,$start);
       if ($ty eq "delegation_start") {
         next if native($e) && ($done{$id} || exists $activity{$id});
         my $bridge=$e->{bridge}//""; my $interrupted=0;
@@ -392,7 +694,7 @@ ai_journal_display_events() {
           if ($bridge eq "subagent") { my $session=$sessions{session_key($e)}; $interrupted=($session && $session->{ended}) || !alive($e->{pid}) }
           else { $interrupted=(native($e) && ($e->{schema}//0)==2 && !text($e->{owner_pid})) ? 0 : !alive(native($e) ? $e->{owner_pid} : $e->{pid}) }
         }
-        $who=$role; $what=$interrupted ? "interrupted" : (native($e) ? "running" : "start"); $extra="$model · ".ai_title($e->{task})
+        $who=$role; $what=$interrupted ? "interrupted" : (native($e) ? "running" : "start"); $extra="$model · ".task_title($e,$start)
       }
       elsif ($ty eq "delegation") {
         $who=$role || text($start->{role}); $model ||= text($start->{model}); my $oc=text($e->{outcome});
@@ -422,11 +724,12 @@ ai_journal_display_events() {
         $who=$role || "agent"; $what="done"; $extra=task_title($e,$start);
       }
       elsif ($ty eq "session_observed") { $who="session"; $what=text($e->{state}) || "unknown"; $extra=text($e->{tool})." ".text($e->{surface})." ".substr(text($e->{session}),-8) }
-      elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=ai_title($e->{excerpt}) }
+      elsif ($ty eq "request") { $who="lead"; $what="request"; $extra=Loomy::DisplayContext::managed($e) ? Loomy::DisplayContext::prepare($e)->{excerpt} : ai_title($e->{excerpt}) }
       elsif ($ty eq "advisor") { $who="advisor"; $what="consulted"; $extra=($e->{calls}//0)." × $model · ".int(($e->{tokens_in}//0)/1000)."k" }
       elsif ($ty =~ /^(task_|audit_)?phase$/) { $who="phase"; $what=$e->{phase}//""; ($extra=$ty)=~s/_?phase$// }
       elsif ($ty eq "session") { $who="session"; $what=$e->{event}//""; $extra=$e->{tool}//"" }
-      elsif ($ty eq "skill") { $who="skills"; $what=$e->{event}//""; $extra=($e->{name}//"")." · ".substr($e->{reason}//"",0,52) }
+      elsif ($ty eq "skill") { $who="skills"; $what=$e->{event}//""; $extra=($e->{name}//"")." · ".substr(Loomy::DisplayContext::reason($e),0,52) }
+      elsif ($ty =~ /^lead_(failover|return)$/ && Loomy::DisplayContext::managed($e)) { $who="lead"; $what=$1 eq "failover" ? "handed over" : Loomy::DisplayContext::ui("returned","returned"); $extra=text($e->{master})." → ".text($e->{acting})." · ".Loomy::DisplayContext::reason($e) }
       elsif ($ty eq "usage" && ($e->{scope}//"") eq "lead") { $who="lead"; $what="replied"; $extra=($e->{messages}//0)." msg · $model" }
       else { next }
       my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g } print join("|",@row),"\n";

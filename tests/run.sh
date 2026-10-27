@@ -82,6 +82,18 @@ fails() {
 has() { if grep -qE -- "$2" "$OUT"; then ok "$1"; else ko "$1 (pattern missing: $2)"; fi; }
 hasnt() { if grep -qE -- "$2" "$OUT"; then ko "$1 (pattern present: $2)"; else ok "$1"; fi; }
 file_has() { if grep -qE -- "$3" "$2" 2>/dev/null; then ok "$1"; else ko "$1 (pattern missing from ${2##*/}: $3)"; fi; }
+event_has() {
+  local label="$1" path="$2" predicate="$3"
+  if perl -MJSON::PP -e '
+    my $predicate=shift; my $found=0;
+    while (<>) {
+      my $row=eval {decode_json($_)}; next unless ref($row) eq "HASH";
+      local $_=$row; my $match=eval $predicate; die $@ if $@;
+      $found=1 if $match;
+    }
+    die "matching event absent\n" unless $found;
+  ' "$predicate" "$path"; then ok "$label"; else ko "$label"; fi
+}
 
 # wait_for <timeout_s> <command…>: poll a state needed by a later assertion.
 wait_for() {
@@ -285,8 +297,6 @@ delegation_options_tests() {
   run "delegation options: project initialized" "$LOOMY" init "$op" --yes --no-clipboard
   git -C "$op" add -A && git -C "$op" commit -qm "initialize delegation options fixture"
   J="$op/.loomy/logs/events.jsonl"; mkdir -p "${J%/*}"; : >"$J"
-  (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
-    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
   delegation_pair_has() {
     local desc="$1" req="$2" off="$3" why="$4" effort="$5" sandbox="$6" files="$7" task="$8"
     if perl -MJSON::PP -e '
@@ -295,9 +305,9 @@ delegation_options_tests() {
       die unless $e[0]{type} eq "delegation_start" && $e[1]{type} eq "delegation";
       for my $e (@e) {
         die "requested mismatch" unless exists($e->{requested}) && (($e->{requested} ? "true" : "false") eq $want_req);
-        die "off-routing/why mismatch: ".($e->{off_routing}//"")."/".($e->{why}//"") unless (($e->{off_routing}//"") eq $want_off && ($e->{why}//"") eq $want_why);
+        die "off-routing mismatch" unless ($e->{off_routing}//"") eq $want_off;
         die "effort/sandbox: expected $want_effort/$want_sandbox, got ".($e->{effort}//"")."/".($e->{sandbox}//"") unless (($e->{effort}//"") eq $want_effort && ($e->{sandbox}//"") eq $want_sandbox);
-        die "task mismatch: ".($e->{task}//"") unless (($e->{task}//"") eq $want_task);
+        die "private excerpt leaked" unless ($e->{why}//"") eq "" && ($e->{task}//"") eq "";
       }
       die if $want_files ne "skip" && ($e[1]{files_changed}//-1) != $want_files;
     ' "$J" "$req" "$off" "$why" "$effort" "$sandbox" "$files" "$task"; then ok "$desc"; else ko "$desc"; fi
@@ -339,7 +349,7 @@ delegation_options_tests() {
 
   : >"$J"
   run "delegation: task and why privacy" bash -c 'cd "$1" && LOOMY_JOURNAL_TASKS=0 "$2" delegate codex architect --why SECRET-WHY SECRET-TASK' _ "$op" "$LOOMY"
-  if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"x") eq "" && ($e->{task}//"x") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
+  if perl -MJSON::PP -e 'my $p=shift; open my $f,"<",$p or die; my @e=grep { ($_->{type}//"") ne "bridge_link" } map { decode_json($_) } grep { /\S/ } <$f>; die unless @e==2; for my $e (@e) { die unless ($e->{why}//"") eq "" && ($e->{task}//"") eq "" }' "$J"; then ok "delegation: journal omits why and task text"; else ko "delegation: why or task leaked into journal"; fi
 
   local cap_tmp="$WORK/capture-watch-tmp" cap_bin="$WORK/capture-watch-bin"
   local cap_native="$WORK/capture-watch-native" cap_output language view heading
@@ -377,6 +387,9 @@ STUB
     done
   done
 
+  # These legacy signal fixtures select by task text; the structural pairs above must keep prose absent.
+  (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
+    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
   local bridge_pid child_pid attempts codex_pid_file="$WORK/codex-child.pid" claude_pid_file="$WORK/claude-child.pid"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"interrupted-bridge-test","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$J"
   # `command` skips the watchdog wrappers (perl/bash functions): the signal must reach the bridge itself, not a wrapper subshell.
@@ -880,11 +893,11 @@ live_view_tests() {
   printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"ignored"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
   [[ "$(wc -c <"$lv/.loomy/logs/events.jsonl")" == "$before" ]] && ok "ordinary tools: no event" || ko "ordinary tools: event written"
   printf '%s' '{"session_id":"live","tool_use_id":"native-1","tool_name":"Agent","tool_input":{"subagent_type":"loomy-developer","description":"Add native live tracking","run_in_background":true}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
-  file_has "native start: role, model and effort from front matter" "$lv/.loomy/logs/events.jsonl" '"bridge":"subagent","role":"developer","family":"claude","model":"claude-sonnet-5-5","effort":"high"'
-  file_has "native start: default is unrequested and routing differences are computed" "$lv/.loomy/logs/events.jsonl" '"id":"native-1".*"requested":false,"off_routing":"effort"'
-  file_has "native start: id and session" "$lv/.loomy/logs/events.jsonl" '"id":"native-1","session":"live","pid":[0-9]+'
+  event_has "native start: role, model and effort from front matter" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-1" && ($_->{bridge}//"") eq "subagent" && ($_->{role}//"") eq "developer" && ($_->{family}//"") eq "claude" && ($_->{model}//"") eq "claude-sonnet-5-5" && ($_->{effort}//"") eq "high"'
+  event_has "native start: default is unrequested and routing differences are computed" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-1" && exists($_->{requested}) && !$_->{requested} && ($_->{off_routing}//"") eq "effort"'
+  event_has "native start: id and session" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-1" && ($_->{session}//"") eq "live" && defined($_->{pid}) && $_->{pid} =~ /^\d+$/'
   run "live frame by request" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
-  has "live: request group and task" 'Make the agents visible|Add native live tracking'
+  has "live: request group and structural role" '([Dd]eveloper|request [0-9]+)'
   has "live: in-progress header" 'IN PROGRESS'
   awk '/IN PROGRESS/{a=1} /^SESSION/{a=0} a' "$OUT" >"$lv/running.txt"
   grep -q Developer "$lv/running.txt" && ok "native running in progress" || ko "native missing from progress"
@@ -893,7 +906,7 @@ live_view_tests() {
   printf '%s' '{"session_id":"live","tool_use_id":"native-1","tool_name":"Agent","tool_response":{"agentId":"a1","isAsync":true}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-return
   printf '%s\n' '{"type":"user","message":{"content":"Add native live tracking"}}' '{"type":"assistant","message":{"id":"msg_native","model":"claude-sonnet-5-5","usage":{"input_tokens":100,"output_tokens":20},"content":[{"type":"text","text":"STATUS: done\nSUMMARY: live tracking works"}]}}' >"$lv/transcript.jsonl"
   printf '{"session_id":"live","agent_type":"developer","agent_id":"a1","agent_transcript_path":"%s"}' "$lv/transcript.jsonl" | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook subagent
-  file_has "native stop: closes the original id" "$lv/.loomy/logs/events.jsonl" '"type":"delegation","agent_id":"a1".*"duration_s":[0-9]+.*"id":"native-1".*"outcome":"done".*"tokens_in":0.*"tokens_out":0'
+  event_has "native stop: closes the original id" "$lv/.loomy/logs/events.jsonl" '$_->{type} eq "delegation" && ($_->{agent_id}//"") eq "a1" && ($_->{id}//"") eq "native-1" && defined($_->{duration_s}) && $_->{duration_s}=~/^\d+$/ && ($_->{outcome}//"") eq "done" && ($_->{tokens_in}//-1)==0 && ($_->{tokens_out}//-1)==0'
   file_has "native stop: cost belongs to usage" "$lv/.loomy/logs/events.jsonl" '"cost_in":"usage"'
   file_has "native stop: existing usage retained" "$lv/.loomy/logs/events.jsonl" '"type":"usage".*"scope":"subagent"'
   [[ -n "$(find "$lv/.loomy/memory/private-results-v1" -name '[!.]*.json' -print 2>/dev/null)" ]] && ok "native stop: memory retained" || ko "native stop: no memory"
@@ -987,15 +1000,15 @@ live_view_tests() {
   run "invalid native timeout uses the default" env LOOMY_SUBAGENT_MAX_S=invalid bash -c 'source "$1/scripts/loomy-tree.sh" --library; test "$LOOMY_SUBAGENT_MAX_S" = 7200' _ "$REPO"
   # Legacy Task, unknown role, escaped payload, and session fallback.
   printf '%s' '{"session_id":"live","tool_use_id":"native-2","tool_name":"Task","tool_input":{"subagent_type":"Explore","description":"Inspect \"hooks\"\ncarefully"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
-  file_has "legacy Task: unknown role preserved" "$lv/.loomy/logs/events.jsonl" '"role":"Explore".*"model":"claude-opus'
+  event_has "legacy Task: validated agent type preserved" "$lv/.loomy/logs/events.jsonl" '($_->{agent_type}//"") eq "Explore" && ($_->{role}//"") eq "unknown" && ($_->{model}//"") =~ /^claude-opus/'
   printf '%s' '{"session_id":"live","prompt":"Second request"}' | env LOOMY_JOURNAL_TASKS=0 bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook prompt >/dev/null
-  file_has "prompt privacy: empty excerpt" "$lv/.loomy/logs/events.jsonl" '"excerpt":"".*"type":"request"'
+  event_has "prompt privacy: absent or empty excerpt" "$lv/.loomy/logs/events.jsonl" '$_->{type} eq "request" && ($_->{excerpt}//"") eq ""'
   printf '%s' '{"session_id":"live","tool_use_id":"native-3","tool_name":"Agent","tool_input":{"subagent_type":"developer","description":"Second role"}}' | env LOOMY_JOURNAL_TASKS=0 bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
-  file_has "delegation privacy: empty task" "$lv/.loomy/logs/events.jsonl" '"id":"native-3".*"task":""'
+  event_has "delegation privacy: absent or empty task" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-3" && ($_->{task}//"") eq ""'
   printf '%s' '{"session_id":"live","tool_use_id":"native-4","tool_name":"Agent","tool_input":{"subagent_type":"developer","model":"claude-opus-5-5","description":"Lead-selected model"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
-  file_has "native explicit model: real model and requested mark" "$lv/.loomy/logs/events.jsonl" '"id":"native-4".*"model":"claude-opus-5-5".*"requested":true,"off_routing":"model,effort"'
+  event_has "native explicit model: real model and requested mark" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-4" && ($_->{model}//"") eq "claude-opus-5-5" && $_->{requested} && ($_->{off_routing}//"") eq "model,effort"'
   printf '%s' '{"session_id":"live","tool_use_id":"native-5","tool_name":"Agent","tool_input":{"subagent_type":"architect","model":"claude-opus-5-5","description":"Explicitly requested routed model"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
-  file_has "native explicit routed model: requested with empty off routing" "$lv/.loomy/logs/events.jsonl" '"id":"native-5".*"model":"claude-opus-5-5".*"requested":true,"off_routing":""'
+  event_has "native explicit routed model: requested with empty off routing" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-5" && ($_->{model}//"") eq "claude-opus-5-5" && $_->{requested} && ($_->{off_routing}//"") eq ""'
   run "group by request: private request numbered" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
   has "request grouping: numbered second prompt" 'request 2'
   cp "$OUT" "$lv/request-frame.txt"
@@ -1138,7 +1151,7 @@ live_view_tests() {
   printf '{"ts":"%s","type":"delegation","id":"doc","session":"polish","role":"documenter","family":"codex","model":"gpt-6.1-sol","effort":"low","duration_s":1,"status":"ok","task":"OBJECTIF : Write the docs\\nSCOPE: hidden detail"}\n' "$nowz" >>"$pj"
   printf '{"ts":"%s","type":"delegation_start","id":"dev-run","session":"polish","pid":%s,"role":"developer","family":"codex","model":"gpt-6-astra","effort":"high","task":"GOAL: Polish every visible label with complete words and truthful delegation metadata for every request in this journal. SCOPE: invisible"}\n' "$nowz" "$$" >>"$pj"
   run "polish: live request groups" env LOOMY_WATCH_GROUP=request COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
-  has "prompt hook: recorded request is read as its title" '^┌─ Clean the labels\.'
+  has "prompt hook: structural request names its id and unavailable context" '^┌─ r[0-9]+-[0-9]+ · context unavailable'
   has "legacy delegation: Earlier work group" '^┌─ Earlier work'
   has "lead: recorded tool, model and effort" '^Orchestrator · Claude opus-5-5 max'
   has "duration: role above an hour" 'Explorer.*1 h 03'
@@ -1255,7 +1268,7 @@ release_defects_tests() {
   run "fast prompt tightens existing journal permissions" bash -c '
     umask 022; printf "%s" "{\"session_id\":\"private\",\"prompt\":\"secret excerpt\"}" | bash "$1/scripts/loomy-context.sh" --root "$2" --hook prompt
     perl -e '\''die unless ((stat($ARGV[0]))[2]&0777)==0700 && ((stat($ARGV[1]))[2]&0777)==0600'\'' "$2/.loomy/logs" "$2/.loomy/logs/events.jsonl"
-    grep -q "secret excerpt" "$2/.loomy/logs/events.jsonl"
+    perl -MJSON::PP -e '\''my @e=map {decode_json($_)} <>; die unless grep {$_->{type} eq "request" && ($_->{session}//"") eq "private" && !exists($_->{excerpt})} @e'\'' "$2/.loomy/logs/events.jsonl"
   ' _ "$REPO" "$perm"
   run "fast prompt creates private journal" bash -c '
     umask 022; printf "%s" "{\"prompt\":\"first request\"}" | bash "$1/scripts/loomy-context.sh" --root "$2" --hook prompt
@@ -1296,7 +1309,7 @@ release_defects_tests() {
     wait
     for n in 2 1 2; do ai_journal_agent_stop "$2" "{\"session_id\":\"reverse\",\"agent_type\":\"developer\",\"agent_id\":\"a$n\"}" 0 "STATUS: done"; done
     ai_journal_agent_return "$2" '\''{"session_id":"reverse","tool_use_id":"t2","tool_response":{"agentId":"a2"}}'\''
-    perl -MJSON::PP -e '\''my @e=grep { $_->{type} eq "delegation" && ($_->{session}//"") eq "reverse" } map { decode_json($_) } <>; die unless @e==2 && $e[0]{id} eq "t2" && $e[0]{task} eq "second task" && $e[1]{id} eq "t1" && $e[1]{task} eq "first task"; for (@e) { my $want=$_->{id} eq "t1" ? 100 : 30; die unless $_->{duration_s}>=$want && $_->{duration_s}<$want+10 && $_->{outcome} eq "done" }'\'' "$2/.loomy/logs/events.jsonl"
+    perl -MJSON::PP -e '\''my @e=grep { $_->{type} eq "delegation" && ($_->{session}//"") eq "reverse" } map { decode_json($_) } <>; die unless @e==2 && $e[0]{id} eq "t2" && ($e[0]{task}//"") eq "" && $e[1]{id} eq "t1" && ($e[1]{task}//"") eq ""; for (@e) { my $want=$_->{id} eq "t1" ? 100 : 30; die unless $_->{duration_s}>=$want && $_->{duration_s}<$want+10 && $_->{outcome} eq "done" }'\'' "$2/.loomy/logs/events.jsonl"
   ' _ "$REPO" "$rd"
   run "stop before return waits for identity, foreground fallback and background launch stay distinct" bash -c '
     source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"
@@ -1400,19 +1413,19 @@ native_lifecycle_tests() {
     my @e=grep {$_->{type} eq "delegation"} map {decode_json($_)} <$f>; die unless @e==1 && $e[0]{ts} eq $ts && $e[0]{duration_s}==200;
   ' "$np"
   for lang in en fr; do
-    run "native: $lang idle agent retains last turn duration" env CODEX_HOME="$nc" LOOMY_LANG="$lang" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
+    run "native: $lang idle agent retains last turn duration" env CODEX_HOME="$nc" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
     if [[ "$lang" == en ]]; then has "idle state" '✓ idle'; has "idle wait duration" 'waiting since [0-9]+:[0-9]{2}'; has "last duration" 'last turn 3:20'
     else has "état au repos" '✓ au repos'; has "attente traduite" 'en attente depuis [0-9]+:[0-9]{2}'; has "durée traduite" 'dernier tour 3:20'; fi
   done
   run "native: status includes idle persistent agent" env CODEX_HOME="$nc" COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-status.sh" --root "$np"
-  has "status idle state" 'persistent.*✓ idle.*waiting since'
+  has "status idle state" '[Ww]orker.*✓ idle.*waiting since'
   run "native: second turn then abort source" perl -MJSON::PP -e '
     my ($r,$h)=@ARGV; open my $t,"<","$r/times" or die; my @ts=<$t>; chomp @ts;
     my ($p)=glob "$h/sessions/*/*/*/rollout-child.jsonl"; open my $f,">>",$p or die;
     for my $d ({type=>"event_msg",timestamp=>$ts[2],payload=>{type=>"task_started",turn_id=>"turn2"}}, {type=>"turn_context",timestamp=>$ts[2],payload=>{turn_id=>"turn2",model=>"gpt-6-luna",effort=>"max"}}) {print $f encode_json($d),"\n"}
   ' "$np" "$nc"
   run "native: second turn running agent" env CODEX_HOME="$nc" LOOMY_TREE=list COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$np"
-  has "native: latest turn runs" 'persistent.*running'
+  has "native: latest turn runs" '[Ww]orker.*running'
   cp "$np/.loomy/logs/events.jsonl" "$np/before-repeat"
   run "native: replay appends no duplicate events" bash -c 'perl "$1/scripts/lib/codex-native.pl" "$2" "$3/sessions" && cmp "$2/before-repeat" "$2/.loomy/logs/events.jsonl"' _ "$REPO" "$np" "$nc"
   run "native: finish second turn" perl -MJSON::PP -e '
@@ -1544,10 +1557,10 @@ has "failover: plain answer, as from Codex" "^answer from the claude double$"
 grep -q $'^claude\t-p' "$FL" && ! grep -q '^codex' "$FL" && ok "failover: Codex role run by Claude" || ko "failover: calls $(cut -c1-60 "$FL" | tr '\n' ' ')"
 grep -q 'acceptEdits' "$FL" && grep -q '"sandbox":{"enabled":true' "$FL" && ok "failover: writing role with accepted edits inside Claude's sandbox" || ko "failover: write mode missing"
 grep -q -- '--model	claude-haiku-5-5' "$FL" && ok "failover: model routed for that role on the Claude side" || ko "failover: model $(grep -o -- '--model	[^	]*' "$FL")"
-file_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '"role":"executor","family":"claude".*"sandbox":"workspace-write".*"failover_from":"codex"'
+event_has "failover: logged" "$QD/.loomy/logs/events.jsonl" '$_->{type} eq "delegation" && ($_->{role}//"") eq "executor" && ($_->{family}//"") eq "claude" && ($_->{sandbox}//"") eq "workspace-write" && ($_->{failover_from}//"") eq "codex"'
 run "status after a failover" qenv "$LOOMY" status --root "$QD"
 has "status: Codex roles go to Claude" "Codex's roles go to Claude until it resets"
-has "status: switched delegation marked" "⇄ Add a test"
+has "status: switched delegation marked" '[Ee]xecutor.*⇄ Role: runs bounded tasks'
 run "stats after a failover" qenv "$LOOMY" stats --root "$QD"
 has "stats: switched delegations counted" "1 delegation\(s\) moved to the other tool"
 : >"$FL"; printf 'quota_switch=off\nplan_claude=pro\nplan_codex=business\n' >"$QC/loomy/config"
@@ -1652,8 +1665,9 @@ HKP="$WORK/haiku-proj"; mkdir -p "$HKP/.loomy/logs"; HKT="$WORK/haiku.jsonl"
 printf '{"type":"assistant","message":{"id":"msg_h1","model":"claude-haiku-5-5","usage":{"input_tokens":50000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000000}}}\n' >"$HKT"
 printf '{"type":"assistant","message":{"id":"msg_h2","model":"claude-haiku-5-5","usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >>"$HKT"
 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$3" lead' _ "$REPO" "$HKP" "$HKT"
-got="$(grep -o '"cost_usd":[0-9.]*' "$HKP/.loomy/logs/events.jsonl" | sed 's/.*://' | sort | tr '\n' ' ')"
-[[ "$got" == "0.500000 0.505000 " ]] && ok "haiku: long prompts priced at the long rate, the rest at the base rate" || ko "haiku long rate: $got"
+if perl -MJSON::PP -e 'my @v=sort {$a<=>$b} map {$_->{cost_usd}} grep {$_->{type} eq "usage"} map {decode_json($_)} <>; die unless @v==2 && abs($v[0]-.5)<1e-9 && abs($v[1]-.505)<1e-9' "$HKP/.loomy/logs/events.jsonl"; then
+  ok "haiku: long prompts priced at the long rate, the rest at the base rate"
+else ko "haiku: long-prompt costs differ from 0.5 and 0.505"; fi
 file_has "haiku: model logged without the internal marker" "$HKP/.loomy/logs/events.jsonl" '"model":"claude-haiku-5-5"'
 grep -q '@long' "$HKP/.loomy/logs/events.jsonl" && ko "haiku: internal marker leaked into the log" || ok "haiku: no internal marker in the log"
 CL="$WORK/haiku-catalog"; mkdir -p "$CL/loomy"
@@ -2261,8 +2275,8 @@ structured_delegation_tests() {
   has "structured: fields returned" "^STATUS: partial$"
   (cd "$SD" && STUB_LOG="$SL" "$LOOMY" delegate claude explorer "Map the code") >"$OUT" 2>&1
   J2="$SD/.loomy/logs/events.jsonl"
-  file_has "structured: Codex outcome logged" "$J2" '"bridge":"codex".*"format":"structured","outcome":"partial"'
-  file_has "structured: Claude outcome logged" "$J2" '"bridge":"claude".*"format":"structured","outcome":"blocked"'
+  event_has "structured: Codex outcome logged" "$J2" '$_->{type} eq "delegation" && ($_->{bridge}//"") eq "codex" && ($_->{format}//"") eq "structured" && ($_->{outcome}//"") eq "partial"'
+  event_has "structured: Claude outcome logged" "$J2" '$_->{type} eq "delegation" && ($_->{bridge}//"") eq "claude" && ($_->{format}//"") eq "structured" && ($_->{outcome}//"") eq "blocked"'
   run "status with structured outcomes" "$LOOMY" status --root "$SD"
   has "status: partial result marked" "◐ .*reviewer"
   has "status: blocked result marked" "■ .*explorer"
@@ -2500,7 +2514,7 @@ PERL
         fixture="$bt/$kind.md"
         run "$tool/$role/$kind: bridge parses result" env STUB_RESULT_FILE="$fixture" STUB_LOG="$bt/prompt.log" bash -c 'cd "$1" && "$2" delegate "$3" "$4" "B01 review evidence"' _ "$bp" "$LOOMY" "$tool" "$role"
         file_has "$tool/$role/$kind: prompt contract" "$bt/prompt.log" '^TRIED:$'
-        file_has "$tool/$role/$kind: reported outcome retained" "$bp/.loomy/logs/events.jsonl" '"format":"structured","outcome":"done"'
+        event_has "$tool/$role/$kind: reported outcome retained" "$bp/.loomy/logs/events.jsonl" '$_->{type} eq "delegation" && ($_->{format}//"") eq "structured" && ($_->{outcome}//"") eq "done"'
         if [[ "$kind" == legacy ]]; then
           file_has "$tool/$role/$kind: missing evidence marked" "$bp/.loomy/logs/events.jsonl" '"review":"incomplete"'
         else
@@ -3108,7 +3122,7 @@ printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" ba
 printf '{"session_id":"s","transcript_path":"%s"}' "$TR" | LOOMY_HOME="$REPO" bash "$REPO/scripts/loomy-context.sh" --root "$US" --hook stop
 n_usage="$(grep -c '"type":"usage"' "$US/.loomy/logs/events.jsonl" 2>/dev/null || echo 0)"
 [[ "$n_usage" == "1" ]] && ok "usage: one event, transcript not reread" || ko "usage: $n_usage event(s)"
-grep -q '"messages":2,.*"cost_usd":2.000000' "$US/.loomy/logs/events.jsonl" && ok "usage: duplicates discarded, cost at public price" || ko "usage: $(cat "$US/.loomy/logs/events.jsonl")"
+event_has "usage: duplicates discarded, cost at public price" "$US/.loomy/logs/events.jsonl" '$_->{type} eq "usage" && ($_->{messages}//0)==2 && ($_->{tokens_in}//0)==2000000 && ($_->{cost_usd}//-1)==2'
 printf '{"session_id":"s2","transcript_path":"%s"}' "$TR" | LOOMY_DELEGATION=1 bash "$REPO/scripts/loomy-context.sh" --root "$US" --hook start
 grep -q '"session":"s2"' "$US/.loomy/logs/events.jsonl" && ko "Loomy delegation counted as a session" || ok "Loomy delegations ignored by the hooks"
 run "status: lead agent cost" env LOOMY_NO_CLEAR=1 bash "$REPO/scripts/loomy-status.sh" --root "$US"
@@ -3568,7 +3582,7 @@ if command -v python3 >/dev/null 2>&1; then
   mkdir -p "$PC2/src/deep"
   (cd "$PC2/src/deep" && echo '{"session_id":"cx-test","source":"startup"}' | eval "$CX_CMD") >"$OUT" 2>&1
   has "Codex hook from a subfolder: context returned" "Resume context"
-  file_has "Codex hook: session recorded with the codex tool" "$PC2/.loomy/logs/events.jsonl" '"tool":"codex","session":"cx-test"'
+  event_has "Codex hook: session recorded with the codex tool" "$PC2/.loomy/logs/events.jsonl" '$_->{type} eq "session" && ($_->{tool}//"") eq "codex" && ($_->{session}//"") eq "cx-test"'
   echo '{"session_id":"cx-test"}' | (cd "$PC2" && bash .loomy/scripts/loomy-context.sh --hook end --tool codex) >/dev/null 2>&1
 fi
 bash "$PC2/.loomy/scripts/loomy-context.sh" >"$OUT" 2>&1
@@ -3582,7 +3596,7 @@ mkdir -p "$WORK/agent-ps"
 printf '#!/bin/sh\n[ "$1 $2 $3" = "-o comm= -p" ] && [ "$4" = "$LOOMY_TEST_AGENT_PID" ] && { echo claude; exit 0; }\nexec /bin/ps "$@"\n' >"$WORK/agent-ps/ps"; chmod +x "$WORK/agent-ps/ps"
 echo '{"session_id":"s-test","source":"startup"}' | env PATH="$WORK/agent-ps:$PATH" LOOMY_TEST_AGENT_PID=$$ bash "$PC2/.loomy/scripts/loomy-context.sh" --hook start >"$OUT" 2>&1
 has "start hook: context returned to Claude" "Resume context"
-file_has "start hook: session recorded" "$PC2/.loomy/logs/events.jsonl" '"type":"session","event":"start"'
+event_has "start hook: session recorded" "$PC2/.loomy/logs/events.jsonl" '$_->{type} eq "session" && ($_->{event}//"") eq "start"'
 "$LOOMY" status --root "$PC2" >"$OUT" 2>&1
 has "status: session open" "Lead agent session open since"
 echo '{"session_id":"s-test"}' | bash "$PC2/.loomy/scripts/loomy-context.sh" --hook end >/dev/null 2>&1
@@ -3807,7 +3821,7 @@ run "status set build" "$LOOMY" status set build
 file_has "state: build phase" "$PROJ/.loomy/state" "^phase=build$"
 if [[ "$(grep -c '^log=' "$PROJ/.loomy/state")" -ge 2 ]]; then ok "state: history kept"; else ko "state: history lost"; fi
 fails "unknown phase refused" 2 "$LOOMY" status set nimporte
-file_has "log: phase event" "$J" '"type":"phase","phase":"build"'
+event_has "log: phase event" "$J" '$_->{type} eq "phase" && ($_->{phase}//"") eq "build"'
 
 # ------------------------------------------------------------------ diagnostic
 section "loomy doctor"
@@ -4767,7 +4781,7 @@ fails "advisor: invalid setting refused" 2 "$LOOMY" config set advisor maybe
 AJ="$WORK/adv-proj"; mkdir -p "$AJ/.loomy/logs"
 printf '%s\n' '{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-5-5","usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":50,"iterations":[{"input_tokens":2,"output_tokens":26,"type":"message"},{"input_tokens":35648,"output_tokens":476,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"type":"advisor_message","model":"claude-opus-5-5"}]}}}' >"$AJ/t.jsonl"
 bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_usage_record "$2" "$2/t.jsonl" lead' _ "$REPO" "$AJ"
-grep -q '"type":"advisor".*"model":"claude-opus-5-5","calls":1,"tokens_in":35648' "$AJ/.loomy/logs/events.jsonl" && ok "advisor: consultation logged with its model and tokens" || ko "advisor log: $(cat "$AJ/.loomy/logs/events.jsonl")"
+event_has "advisor: consultation logged with its model and tokens" "$AJ/.loomy/logs/events.jsonl" '$_->{type} eq "advisor" && ($_->{model}//"") eq "claude-opus-5-5" && ($_->{calls}//0)==1 && ($_->{tokens_in}//0)==35648 && ($_->{tokens_out}//0)==476'
 # Agent tree
 (cd "$DW" && "$LOOMY" tree) >"$OUT" 2>&1
 has "tree: lead agent" "LEAD AGENT"
@@ -5082,7 +5096,7 @@ has "init: official skills step" "Official skills"
 grep -q '^webapp-testing|anthropic|skills/webapp-testing|[0-9a-f]\{40\}|Apache-2.0|' "$SKP/.loomy/skills.lock" && ok "skills: lock with source, commit and licence" || ko "skills lock: $(cat "$SKP/.loomy/skills.lock" 2>&1)"
 grep -q 'webapp-testing|.*1 script(s) · network no · deletes files no · runs commands yes' "$SKP/.loomy/skills.lock" && ok "skills: analysed before installation" || ko "skills: analysis missing"
 grep -qxF '/.claude/skills/webapp-testing/' "$SKP/.gitignore" && ok "skills: folders kept out of Git (licences)" || ko "skills: not in .gitignore"
-grep -q '"type":"skill","event":"added","name":"webapp-testing"' "$SKP/.loomy/logs/events.jsonl" && ok "skills: each installation logged (watch, tree)" || ko "skills: not logged"
+event_has "skills: each installation logged" "$SKP/.loomy/logs/events.jsonl" '$_->{type} eq "skill" && ($_->{event}//"") eq "added" && ($_->{name}//"") eq "webapp-testing"'
 bash "$SKP/.loomy/scripts/loomy-context.sh" --root "$SKP" >"$OUT" 2>&1
 has "skills: named in the session context" "Official skills installed .*webapp-testing"
 (cd "$SKP" && "$LOOMY" skills) >"$OUT" 2>&1

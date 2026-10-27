@@ -16,11 +16,12 @@ fi
 # Live reducer: kept in the watch process, updated only from complete new JSON lines.
 loomy_live_init() {
   LV_SELECTION=""; LV_SELECTED_SEQ=0; LV_ROLE_WIDTH=12; LV_OFFSET=0; LV_FILE_KEY=""; LV_SEQ=0; LV_SESSION_SEQ=0; LV_SESSION=""; LV_SESSION_PID=0; LV_SESSION_TOOL=""; LV_SESSION_OPEN=0; LV_ACTIVITY=0; LV_USAGE=0; LV_SESSION_MODEL=""; LV_SESSION_EFFORT=""; LV_META_READY=0
-  LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=()
+  LV_TOOL=(); LV_BRIDGE=(); LV_REQUESTED=(); LV_OFF=(); LV_LABEL=(); LV_BAR=(); LV_WORD=(); LV_MODELSHORT=(); LV_FLAGS=(); LV_ID=(); LV_ROLE=(); LV_DISPLAY_ROLE=(); LV_DISPLAY_FALLBACK=(); LV_MODEL=(); LV_EFFORT=(); LV_TASK=(); LV_PID=(); LV_TS=(); LV_REQ=(); LV_START_SEQ=(); LV_SID=(); LV_SHORT_SEQ=-1; LV_AGENT_SHORT=()
   LV_FIN=(); LV_DURATION=(); LV_COST=(); LV_OUTCOME=(); LV_STATUS=(); LV_RESUME=(); LV_END_SEQ=(); LV_EVENT_TS=(); LV_AGENT_ID=(); LV_HAS_START=(); LV_OBSERVED=(); LV_TURN_END=(); LV_CLOSED=()
   LV_REQ_ID=(); LV_REQ_TEXT=(); LV_REQ_TS=(); LV_REQ_SID=(); LV_REQUEST=-1
   NS_ORDER_SEQ=0; NS_SORT_ROOT_KEY=(); NS_SORT_ROOTS=(); NS_DRAW_TYPE=(); NS_DRAW_AGENT=(); NS_INDEX_A=(); NS_INDEX_T=(); NS_TI_KEY=(); NS_TI_GROUP=(); NS_TI_PARENT=(); NS_TI_STATE=(); NS_TI_OUTCOME=(); NS_TI_DURATION=(); NS_ENABLED=0; NS_G=(); NS_A=(); NS_T=(); NS_LAYOUT_KEY=""; NS_INDEX_SEQ=-1; NS_DRAW_KEY=""; NS_STATE_SEQ=-1
   LV_DONE=0; LV_ERRORS=0; LV_ACTIVE=0; LV_RUNNING=(); LV_FINISHED=(); LV_SESSION_CONTEXT_FRESHNESS=""; LV_CONTEXT_NOTE=""
+  NS_CELL_TEXT=(); NS_CELL_META=(); NS_CELL_NEXT=0
 }
 
 # Sanitized reducer deltas; row identities survive session ordering and timer frames.
@@ -48,7 +49,12 @@ loomy_native_accept() {
            title_only=1; next_seq=$(( LV_SEQ + 1 )); loomy_native_title "$new_task"; new_task="$AI_TASK_TITLE"
            patched=0
            for (( j=0; j<${#NS_DRAW_TYPE[@]}; j++ )); do
-             [[ "${NS_DRAW_AGENT[j]:-}" != "$key" ]] || { NS_DRAW_TASK[j]="${new_task:-${NS_AI_ROLE[found]:-agent} ${key: -8}}"; patched=1; }
+             if [[ "${NS_DRAW_AGENT[j]:-}" == "$key" ]]; then
+               NS_DRAW_TASK[j]="${new_task:-${NS_AI_ROLE[found]:-agent} ${NS_AI_SHORT[found]}}"
+               [[ "${NS_AI_FALLBACK[found]:-0}" != 1 ]] || NS_DRAW_TASK[j]="${NS_AI_ROLE[found]:-agent} ${NS_AI_SHORT[found]} · $new_task"
+               NS_DRAW_CELL_META[j]=""
+               patched=1
+             fi
            done
            NS_AI_TASK[found]="$new_task"; NS_INDEX_A[found]="$line"; NS_INDEX_SEQ=$next_seq
            # A static row nobody patched keeps its old title: leave the draw key stale so the frame is rebuilt.
@@ -88,6 +94,37 @@ loomy_native_read() {
   done
 }
 
+# Keep the usual last eight characters, extending only ambiguous suffixes.
+# Buckets avoid comparing every identity on large trees; full keys stay in state.
+loomy_compact_ids() {
+  local keys=("$@") i j key tail slot width offset other collision members LC_ALL=C
+  LC_SHORT=()
+  for key in ${keys[@]+"${keys[@]}"}; do
+    tail="${key: -8}"; (( ${#key} >= 8 )) || tail="$key"
+    slot="LC_ID_${tail//[^a-zA-Z0-9]/_}"; local "$slot="
+  done
+  for (( i=0; i<${#keys[@]}; i++ )); do
+    key="${keys[i]}"; tail="${key: -8}"; (( ${#key} >= 8 )) || tail="$key"
+    slot="LC_ID_${tail//[^a-zA-Z0-9]/_}"; printf -v "$slot" '%s' "${!slot} $i"
+  done
+  for (( i=0; i<${#keys[@]}; i++ )); do
+    key="${keys[i]}"; tail="${key: -8}"; (( ${#key} >= 8 )) || tail="$key"
+    slot="LC_ID_${tail//[^a-zA-Z0-9]/_}"; members="${!slot}"; width=8
+    while :; do
+      offset=$(( ${#key} - width )); (( offset >= 0 )) || offset=0
+      tail="${key:offset}"; collision=0
+      for j in $members; do
+        other="${keys[j]}"; [[ "$other" != "$key" ]] || continue
+        offset=$(( ${#other} - width )); (( offset >= 0 )) || offset=0
+        [[ "${other:offset}" != "$tail" ]] || { collision=1; break; }
+      done
+      (( collision && width < ${#key} )) || break
+      width=$(( width + 1 ))
+    done
+    LC_SHORT[i]="$tail"
+  done
+}
+
 # Titles are normalized once on deltas; keep complete UTF-8 words and the first sentence.
 loomy_native_title() {
   local title="$1" punct LC_ALL=
@@ -99,19 +136,65 @@ loomy_native_title() {
   ai_task_title "$title" 60
 }
 
+# Managed labels may contain wide characters or combining/emoji clusters. Cache
+# grapheme byte boundaries and terminal cells once per Unicode title. Current
+# draw rows retain their metadata; a 64-title ring serves uncaptured first fits.
+# Another timer width uses only this in-memory table, never a new interpreter.
+# Legacy rows retain their previous shortening, and ASCII needs no interpreter.
+loomy_native_cell_title() {
+  local text="$1" width="$2" i found=-1 meta="${3:-}" token cells bytes space total rest cut=0 boundary=0 previous=0 LC_ALL=C
+  NS_CELL_LAST_META=""
+  case "$text" in *[!\ -\~]*) ;; *) ai_task_title "$text" "$width"; return 0 ;; esac
+  AI_TASK_TITLE=""; (( width > 0 )) || return 0
+  if [[ -z "$meta" ]]; then
+    for (( i=0; i<${#NS_CELL_TEXT[@]}; i++ )); do [[ "${NS_CELL_TEXT[i]}" != "$text" ]] || { found=$i; break; }; done
+    (( found < 0 )) || meta="${NS_CELL_META[found]}"
+  fi
+  if [[ -z "$meta" ]]; then
+    meta="$(printf '%s' "$text" | perl -MEncode=decode,encode,FB_CROAK -e '
+      local $/; my $s=decode("UTF-8",scalar(<STDIN>),FB_CROAK); my ($cells,$bytes)=(0,0); my @out;
+      for my $g ($s =~ /\X/g) {
+        my $w=0;
+        for my $c (split //,$g) {
+          next if $c =~ /[\p{M}\p{Cf}\p{Emoji_Modifier}]/;
+          $w+=$c =~ /[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/ ? 2 : 1;
+        }
+        $w=2 if $w && $g =~ /[\p{Emoji_Presentation}\p{Regional_Indicator}\x{fe0f}\x{20e3}]/;
+        $cells+=$w; $bytes+=length(encode("UTF-8",$g));
+        push @out,"$cells:$bytes:".($g =~ /^ / ? 1 : 0);
+      }
+      print "$cells|",join(" ",@out);
+    ' 2>/dev/null)" || { AI_TASK_TITLE="…"; return 0; }
+    found=${NS_CELL_NEXT:-0}; NS_CELL_TEXT[found]="$text"; NS_CELL_META[found]="$meta"; NS_CELL_NEXT=$(( (found + 1) % 64 ))
+  fi
+  NS_CELL_LAST_META="$meta"; total="${meta%%|*}"
+  if (( total <= width )); then AI_TASK_TITLE="$text"; return 0; fi
+  for token in ${meta#*|}; do
+    cells="${token%%:*}"; rest="${token#*:}"; bytes="${rest%%:*}"; space="${rest#*:}"
+    if (( cells > width - 1 )); then [[ "$space" != 1 ]] || boundary=$previous; break; fi
+    [[ "$space" != 1 ]] || boundary=$previous
+    cut=$bytes; previous=$bytes
+  done
+  (( boundary == 0 )) || cut=$boundary
+  AI_TASK_TITLE="${text:0:cut}"
+  while [[ "$AI_TASK_TITLE" == *' ' ]]; do AI_TASK_TITLE="${AI_TASK_TITLE% }"; done
+  AI_TASK_TITLE="$AI_TASK_TITLE…"
+}
+
 # Index ownership only on deltas; timer frames never scan unrelated agents or recap turns.
 loomy_native_index() {
   [[ "${NS_INDEX_SEQ:--1}" != "$LV_SEQ" ]] || return 0
   local i j key sid parent slot owners i_owner LC_ALL=C
-  local state role task model effort start end duration outcome turn seen turnstate turns
+  local state role task model effort start end duration outcome turn seen turnstate turns fallback ids=()
   NS_CHILDREN=(); NS_AGENT_TURNS=(); NS_GROUP_AGENTS=(); NS_GROUP_ROOTS=()
   for (( i=0; i<${#NS_A[@]}; i++ )); do
     if [[ "${NS_INDEX_A[i]:-}" != "${NS_A[i]}" ]]; then
-    loomy_native_read "${NS_A[i]}" _ _ key sid parent state role task model effort start end duration outcome turn seen turnstate turns
+    loomy_native_read "${NS_A[i]}" _ _ key sid parent state role task model effort start end duration outcome turn seen turnstate turns fallback
     NS_AI_KEY[i]="$key"; NS_AI_GROUP[i]="$sid"; NS_AI_PARENT[i]="$parent"
     NS_AI_STATE[i]="$state"; NS_AI_ROLE[i]="$role"; NS_AI_TASK[i]="$task"; NS_AI_MODEL[i]="$model"; NS_AI_EFFORT[i]="$effort"
     NS_AI_START[i]="$start"; NS_AI_END[i]="$end"; NS_AI_DURATION[i]="$duration"; NS_AI_OUTCOME[i]="$outcome"
     NS_AI_TURN[i]="$turn"; NS_AI_TURNSTATE[i]="$turnstate"; NS_AI_TURNS[i]="$turns"; NS_AI_SEEN[i]="$seen"
+    NS_AI_FALLBACK[i]="$fallback"
     # Bridge prompts are already normalized by the feed; keep their title to one short sentence.
     loomy_native_title "$task"; NS_AI_TASK[i]="$AI_TASK_TITLE"
     NS_INDEX_A[i]="${NS_A[i]}"
@@ -149,6 +232,7 @@ loomy_native_index() {
   done
   for (( j=0; j<${#NS_G[@]}; j++ )); do
     loomy_native_read "${NS_G[j]}" _ _ key _
+    NS_G_KEY[j]="$key"
     NS_GROUP_AGENTS[j]=""; NS_GROUP_ROOTS[j]=""
     for (( i=0; i<${#NS_A[@]}; i++ )); do
       [[ "${NS_AI_GROUP[i]}" == "$key" ]] || continue
@@ -165,6 +249,13 @@ loomy_native_index() {
       NS_GROUP_ROOTS[j]="${NS_GROUP_ROOTS[j]} $i"
     done
   done
+  loomy_compact_ids ${NS_AI_KEY[@]+"${NS_AI_KEY[@]:0:${#NS_A[@]}}"}; NS_AI_SHORT=(${LC_SHORT[@]+"${LC_SHORT[@]}"})
+  for (( i=0; i<${#NS_A[@]}; i++ )); do ids+=("${NS_AI_TURN[i]}"); done
+  for (( j=0; j<${#NS_T[@]}; j++ )); do ids+=("${NS_TI_KEY[j]}"); done
+  loomy_compact_ids ${ids[@]+"${ids[@]}"}
+  for (( i=0; i<${#NS_A[@]}; i++ )); do NS_AI_TURNSHORT[i]="${LC_SHORT[i]}"; done
+  for (( j=0; j<${#NS_T[@]}; j++ )); do NS_TI_SHORT[j]="${LC_SHORT[j+${#NS_A[@]}]}"; done
+  loomy_compact_ids ${NS_G_KEY[@]+"${NS_G_KEY[@]:0:${#NS_G[@]}}"}; NS_G_SHORT=(${LC_SHORT[@]+"${LC_SHORT[@]}"})
   NS_INDEX_SEQ=$LV_SEQ
 }
 
@@ -277,7 +368,7 @@ loomy_native_draw() {
       loomy_live_time "$age"; tv state 'waiting since %s' "$LV_TIME"
       state="${NS_DRAW_STATE[i]} · $state"
     fi
-    NS_STATE_KIND="${NS_DRAW_KIND[i]:-}" loomy_native_line "${NS_DRAW_PREFIX[i]}" "${NS_DRAW_TASK[i]}" "${NS_DRAW_MODEL[i]}" "$state" "$elapsed"
+    NS_STATE_KIND="${NS_DRAW_KIND[i]:-}" NS_CELL_FIT="${NS_DRAW_CELL[i]:-0}" NS_CELL_ROW="$i" NS_CELL_HINT="${NS_DRAW_CELL_META[i]:-}" loomy_native_line "${NS_DRAW_PREFIX[i]}" "${NS_DRAW_TASK[i]}" "${NS_DRAW_MODEL[i]}" "$state" "$elapsed"
   done
 }
 
@@ -294,7 +385,7 @@ loomy_native_paint() {
 
 # State and elapsed are reserved before fitting task, model or other optional detail.
 loomy_native_line() {
-  local prefix="$1" task="$2" model="$3" state="$4" elapsed="$5" suffix room text part
+  local prefix="$1" task="$2" model="$3" state="$4" elapsed="$5" suffix room text part cell_row="${NS_CELL_ROW:--1}"
   local NS_RECORD_NATIVE="${NS_RECORD_NATIVE:-0}"
   if [[ "${NS_RECORD:-0}" == 1 && "$NS_RECORD_NATIVE" == 0 && -n "${NS_TIMER_KIND:-}" ]]; then
     NS_RECORD_NATIVE=1
@@ -302,6 +393,7 @@ loomy_native_line() {
     NS_DRAW_TYPE[n]=D; NS_DRAW_PREFIX[n]="$prefix"; NS_DRAW_TASK[n]="$task"; NS_DRAW_MODEL[n]="$model"
     NS_DRAW_AGENT[n]="${NS_ROW_AGENT:-}"; NS_DRAW_STATE[n]="${NS_TIMER_STATE:-$state}"; NS_DRAW_TIME[n]="$elapsed"; NS_DRAW_KIND[n]="${NS_STATE_KIND:-}"
     NS_DRAW_CLOCK[n]="${NS_TIMER_KIND:-}"; NS_DRAW_AT[n]="${NS_TIMER_AT:-0}"
+    NS_DRAW_CELL[n]="${NS_CELL_FIT:-0}"; cell_row=$n
   fi
   # Compound evidence labels can wrap on very narrow terminals; each state word stays whole.
   if (( ${#state} + ${#elapsed} + 4 > LV_WIDTH )) && [[ "$state" == *" · "* ]]; then
@@ -319,7 +411,12 @@ loomy_native_line() {
   fi
   if (( room < 0 )); then prefix=""; room=$(( LV_WIDTH - ${#suffix} )); fi
   (( room >= 0 )) || room=0
-  ai_task_title "$task" "$room"; task="$AI_TASK_TITLE"
+  if [[ "${NS_CELL_FIT:-0}" == 0 ]]; then ai_task_title "$task" "$room"
+  else
+    loomy_native_cell_title "$task" "$room" "${NS_CELL_HINT:-}"
+    (( cell_row < 0 )) || NS_DRAW_CELL_META[cell_row]="$NS_CELL_LAST_META"
+  fi
+  task="$AI_TASK_TITLE"
   # Colour after layout: widths above count visible characters only (loomy_live_clip skips colour sequences).
   loomy_native_paint "$state"; [[ -z "${NS_PAINT_FORCE:-}" ]] || NS_PAINT="$NS_PAINT_FORCE"
   [[ -z "$prefix" ]] || prefix="${C_RAIL}${prefix}${C_RESET}"
@@ -331,6 +428,7 @@ loomy_native_line() {
 loomy_native_agent() {
   local wanted="$1" depth="$2" group="$3" row kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns indent="" i label age d tkey ta tstate tout tduration active=0 word idle_word ai="${4:-0}" child_index turn_index
   local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE="" was_idle=0
+  local NS_CELL_FIT="${NS_AI_FALLBACK[ai]:-0}"
   (( depth < 32 )) || return 0
   [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
   NS_VISITED_IDX[ai]=1
@@ -360,7 +458,8 @@ loomy_native_agent() {
     for (( i=0; i<depth; i++ )); do indent="$indent  "; done
     active=0; [[ "$state" != running && "$state" != waiting ]] || active=1
     local NS_STATE_KIND="$state"
-    label="${task:-${role:-agent} ${key: -8}}"
+    label="${task:-${role:-agent} ${NS_AI_SHORT[ai]}}"
+    [[ "${NS_AI_FALLBACK[ai]:-0}" != 1 ]] || label="${role:-agent} ${NS_AI_SHORT[ai]} · $task"
     NS_TIMER_KIND=elapsed; NS_TIMER_AT=${start:-0}; NS_TIMER_STATE=""
     age=$(( LV_NOW - ${start:-LV_NOW} )); (( age >= 0 )) || age=0
     loomy_live_time "$age"; d="$LV_TIME"
@@ -397,7 +496,7 @@ loomy_native_agent() {
       loomy_native_outcome "${turnstate:-unknown}" "$outcome"; tstate="$NS_OUT"; NS_STATE_KIND="${turnstate:-unknown}"
       [[ "$duration" != "—" ]] || { d="—"; NS_TIMER_KIND=""; }
       if [[ "$duration" =~ ^[0-9]+([.][0-9]+)?$ && -n "$end" ]]; then loomy_live_time "$duration"; d="$LV_TIME"; NS_TIMER_KIND=""; fi
-      local turnlabel="turn ${turn: -8}"
+      local turnlabel="turn ${NS_AI_TURNSHORT[ai]}"
       [[ -z "$end" ]] || { tv word 'last turn %s' "$d"; turnlabel="$turnlabel · $word"; }
       loomy_native_line "${indent}┃  ┗━ " "$turnlabel" "" "$tstate" "$d"
     fi
@@ -412,7 +511,7 @@ loomy_native_agent() {
       [[ "$ta" == "$wanted" && "$tkey" != "$turn" ]] || continue
       NS_STATE_KIND="$tstate"; loomy_native_outcome "$tstate" "$tout"; tstate="$NS_OUT"
       if [[ "$tduration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then loomy_live_time "$tduration"; d="$LV_TIME"; else d="—"; fi
-      loomy_native_line "${indent}┃  ┗━ " "turn ${tkey: -8}" "" "$tstate" "$d"
+      loomy_native_line "${indent}┃  ┗━ " "turn ${NS_TI_SHORT[turn_index]}" "" "$tstate" "$d"
     done
   fi
   loomy_native_sorted ${NS_CHILDREN[ai]}
@@ -456,7 +555,7 @@ loomy_native_group() {
   local row="$1" kind key tool surface cwd presence state model effort seen freshness label aid word fold_lost ai gi="$2" id age
   local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE=""
   loomy_native_read "$row" kind kind key tool surface cwd presence state model effort seen _ freshness
-  id="${key: -8}"; [[ "$key" != unassigned:* ]] || id=""
+  id="${NS_G_SHORT[gi]}"; [[ "$key" != unassigned:* ]] || id=""
   [[ "$surface" != unknown ]] || surface=""
   label="$tool${surface:+ $surface}${id:+ $id}${cwd:+ · $cwd}"
   [[ "$key" != unassigned:* ]] || { tv word 'earlier bridge runs'; label="$tool · $word"; }
@@ -530,7 +629,7 @@ loomy_native_render() {
   fi
   if [[ -n "${LOOMY_NO_HEADER:-}" ]]; then
     NS_RECORD=1; NS_DRAW_AGENT=(); NS_DRAW_TYPE=(); NS_DRAW_TEXT=(); NS_DRAW_PREFIX=(); NS_DRAW_TASK=(); NS_DRAW_MODEL=()
-    NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=(); NS_DRAW_KIND=()
+    NS_DRAW_STATE=(); NS_DRAW_TIME=(); NS_DRAW_CLOCK=(); NS_DRAW_AT=(); NS_DRAW_KIND=(); NS_DRAW_CELL_META=()
   fi
   loomy_live_header
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || { loomy_live_line "$LV_HEADER"; overhead=$(( overhead + 2 )); }
@@ -742,8 +841,8 @@ loomy_live_viewport() {
 }
 
 loomy_live_accept() {
-  local kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
-  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at; do
+  local kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at display_role display_fallback key off i found selection selected attributed
+  while IFS='|' read -r kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at display_role display_fallback; do
     case "$kind" in
       RESET) loomy_live_init; continue ;;
       OFFSET) LV_FILE_KEY="$ts"; LV_OFFSET="$id"; continue ;;
@@ -802,7 +901,7 @@ loomy_live_accept() {
         (( found < 0 )) || continue
         LV_ID+=("$id"); LV_ROLE+=("$role"); LV_MODEL+=("$model"); LV_EFFORT+=("$effort"); LV_TASK+=("$task"); LV_PID+=("$pid"); LV_TS+=("$ts"); LV_SID+=("$sid")
         LV_REQ+=("$LV_REQUEST"); LV_START_SEQ+=("$LV_SEQ"); LV_FIN+=(0); LV_DURATION+=(0); LV_COST+=(0); LV_STATUS+=(""); LV_OUTCOME+=(""); LV_END_SEQ+=(0); LV_EVENT_TS+=(""); LV_AGENT_ID+=(""); LV_HAS_START+=(1)
-        found=$(( ${#LV_ID[@]} - 1 )); LV_TOOL[found]="$tool"; LV_BRIDGE[found]="$bridge"; LV_REQUESTED[found]="$requested"; LV_OFF[found]="$offroute"; LV_AGENT_ID[found]="$agentid"; loomy_live_cache_row "$found" ;;
+        found=$(( ${#LV_ID[@]} - 1 )); LV_TOOL[found]="$tool"; LV_BRIDGE[found]="$bridge"; LV_REQUESTED[found]="$requested"; LV_OFF[found]="$offroute"; LV_AGENT_ID[found]="$agentid"; LV_DISPLAY_ROLE[found]="${display_role:-$role}"; LV_DISPLAY_FALLBACK[found]="${display_fallback:-0}"; loomy_live_cache_row "$found" ;;
       delegation:*)
         [[ -z "$sid" || -z "$LV_SESSION" || "$sid" == "$LV_SESSION" ]] || continue
         LV_DONE=$(( LV_DONE + 1 )); case "$status" in ok|paused|handed_over) ;; *) LV_ERRORS=$(( LV_ERRORS + 1 )) ;; esac
@@ -820,6 +919,8 @@ loomy_live_accept() {
         [[ -z "$bridge" ]] || LV_BRIDGE[found]="$bridge"
         [[ -z "$requested" ]] || LV_REQUESTED[found]="$requested"
         [[ -z "$offroute" ]] || LV_OFF[found]="$offroute"
+        [[ -z "$display_role" ]] || LV_DISPLAY_ROLE[found]="$display_role"
+        [[ -z "$display_fallback" ]] || LV_DISPLAY_FALLBACK[found]="$display_fallback"
         [[ "$costin" != usage && "${LV_BRIDGE[found]:-}" != subagent ]] || cost=0
         loomy_live_cache_row "$found"
         [[ -z "$agentid" ]] || LV_AGENT_ID[found]="$agentid"
@@ -832,12 +933,41 @@ loomy_live_accept() {
 # loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
 loomy_live_poll() {
   local native_line native_root="${ROOT:-${1%/.loomy/logs/events.jsonl}}"
+  ai_display_context_init "$native_root"
   # Like ai_codex_native_poll, keep adapter diagnostics out of the fitted frame.
-  while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
+  # Resolve only for this ephemeral reducer. Provider checkpoints and writers keep
+  # their original events, including during the source-evidence refresh below.
+  while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl -MJSON::PP -e "$AI_DISPLAY_CONTEXT_PERL"'
+    my ($module,$root,$sessions)=@ARGV; require $module;
+    $root=Cwd::abs_path($root)//exit 1;
+    my $dir=$module; $dir =~ s{/[^/]+$}{};
+    require "$dir/codex-native.pl"; require "$dir/claude-native.pl";
+    my $native=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::CodexNative::poll($root,$sessions);
+    my $claude=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::ClaudeNative::poll($root,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude")."/projects");
+    my $state=Loomy::LiveState->new;
+    for my $raw ($state->journal_records("$root/.loomy/logs/events.jsonl")) {
+      my $d=Loomy::DisplayContext::prepare($raw); $state->consume($d);
+      my $aid=$d->{agent_id}//$d->{id}//""; my $tool=$d->{tool}//$d->{family}//"";
+      my $agent=$state->{agents}{"$tool:$aid"};
+      if ($agent && (($agent->{latest}//"") eq ($d->{id}//"") || ($d->{type}//"") eq "agent_link")) {
+        $agent->{display_fallback}=Loomy::DisplayContext::managed($raw) ? (Loomy::DisplayContext::fallback($raw) ? 1 : 2) : 0;
+        $agent->{display_managed}=Loomy::DisplayContext::managed($raw);
+      }
+    }
+    $state->prune_projection;
+    $state->source_evidence($native); $state->claude_evidence($claude);
+    for my $row ($state->projections($ENV{LOOMY_NATIVE_NOW}//time)) {
+      if ($row =~ /^N\|A\|([^|]*)\|/) {
+        my $agent=$state->{agents}{$1}; $row.="|".($agent->{display_fallback}//0);
+        $row=Loomy::ContentPolicy::_encode_utf8($row) if $agent->{display_managed};
+      }
+      print "$row\n";
+    }
+  ' "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
   (( ! NS_ENABLED )) || return 0
   local legacy_line file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
   while IFS= read -r legacy_line; do loomy_live_accept "$legacy_line";
-  done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL"'
+  done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL$AI_DISPLAY_CONTEXT_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
 
     my ($file,$key,$off,$selection,$preferred)=@ARGV; open my $f,"<",$file or exit;
@@ -847,6 +977,8 @@ loomy_live_poll() {
     while (my $l=<$f>) {
       last unless $l =~ /\n$/;
       my $d=eval { decode_json($l) }; next unless ref($d) eq "HASH";
+      my $raw=$d; $d=Loomy::DisplayContext::prepare($raw);
+      $d={%$d,display_role=>$d->{role},display_fallback=>Loomy::DisplayContext::fallback($raw),role=>$raw->{role}};
       my $type=$d->{type}//""; next if ref($type) || $type eq "";
       # Hook-only normalized records serve the shared projection, not a second legacy row.
       next if ($d->{bridge}//"") eq "claude-native" && ($d->{source}//"") eq "hook";
@@ -891,7 +1023,7 @@ loomy_live_poll() {
       $d->{pid}=$d->{owner_pid}//0 if ($d->{bridge}//"") eq "codex-native";
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
-      my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at));
+      my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at display_role display_fallback));
       for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
@@ -1022,10 +1154,10 @@ loomy_live_lead_context() {
 # Cache static columns once per event, never fork per role on timer ticks.
 loomy_live_cache_row() {
   local i="$1" label n=0 j flags="" word="${LV_EFFORT[$1]:-?}" tool="${LV_TOOL[$1]:-}" bars=""
-  case "${LV_ROLE[i]}" in
+  case "${LV_DISPLAY_ROLE[i]:-${LV_ROLE[i]}}" in
     lead) label="Lead agent" ;; architect) label=Architect ;; developer) label=Developer ;;
     debugger) label=Debugger ;; reviewer) label=Reviewer ;; security) label=Security ;;
-    executor) label=Executor ;; explorer) label=Explorer ;; documenter) label=Documenter ;; *) label="${LV_ROLE[i]}" ;;
+    executor) label=Executor ;; explorer) label=Explorer ;; documenter) label=Documenter ;; *) label="${LV_DISPLAY_ROLE[i]:-${LV_ROLE[i]}}" ;;
   esac
   tv label "$label"; LV_LABEL[i]="$label"
   loomy_native_title "${LV_TASK[i]}"; LV_TASK[i]="$AI_TASK_TITLE"
@@ -1275,8 +1407,8 @@ loomy_tree_log_enable() {
 loomy_tree_role() {
   local i best=-1
   RS_K=idle; RS_I=-1
-  if [[ "$1" == native:* ]]; then
-    RS_I="${1#native:}"; RS_K=run
+  if [[ "$1" == native:* || "$1" == observed:* ]]; then
+    RS_I="${1#*:}"; RS_K=run
     [[ "${LV_FIN[RS_I]}" == 0 ]] || RS_K=last
     R_TIER=MID
   else
@@ -1332,8 +1464,12 @@ loomy_tree_native_state() {
 loomy_tree_native_title() {
   local i="${1#native:}" aid
   LV_NATIVE_TITLE="${LV_TASK[i]#Codex agent }"
-  if [[ -z "$LV_NATIVE_TITLE" ]]; then
-    aid="${LV_AGENT_ID[i]:-}"; LV_NATIVE_TITLE="${LV_ROLE[i]} ${aid: -8}"
+  if [[ -z "$LV_NATIVE_TITLE" || "${LV_DISPLAY_FALLBACK[i]:-0}" == 1 ]]; then
+    if [[ "${LV_SHORT_SEQ:--1}" != "$LV_SEQ" ]]; then
+      loomy_compact_ids ${LV_AGENT_ID[@]+"${LV_AGENT_ID[@]}"}; LV_AGENT_SHORT=(${LC_SHORT[@]+"${LC_SHORT[@]}"}); LV_SHORT_SEQ=$LV_SEQ
+    fi
+    aid="${LV_AGENT_SHORT[i]:-}"
+    LV_NATIVE_TITLE="${LV_DISPLAY_ROLE[i]:-${LV_ROLE[i]}} $aid${LV_NATIVE_TITLE:+ · $LV_NATIVE_TITLE}"
   fi
 }
 
@@ -1404,9 +1540,16 @@ if (( ${#LV_RUNNING[@]} > 0 )) && [[ "$phase" == "done" ]]; then phase=""; fi
 a_n=0; a_last=""; a_tok=0
 
 # Native identities are distinct tree nodes even when Codex gave them the same role.
-TREE_NATIVE=()
+TREE_NATIVE=(); TREE_OBSERVED=(); LV_CLASSIC_ROLE=()
 for (( i=0; i<${#LV_ID[@]}; i++ )); do
+  LV_CLASSIC_ROLE[i]="${LV_ROLE[i]}"
+  if [[ "${LV_BRIDGE[i]:-}" != codex-native && "${LV_DISPLAY_ROLE[i]:-${LV_ROLE[i]}}" != "${LV_ROLE[i]}" ]]; then
+    case " $AI_ROLES " in *" ${LV_ROLE[i]} "*) ;; *)
+      LV_CLASSIC_ROLE[i]="observed:$i"; TREE_OBSERVED+=("observed:$i") ;;
+    esac
+  fi
   [[ "${LV_BRIDGE[i]:-}" == codex-native ]] || continue
+  LV_CLASSIC_ROLE[i]="native:$i"
   replaced=0
   for (( j=0; j<${#TREE_NATIVE[@]}; j++ )); do
     ni="${TREE_NATIVE[j]#native:}"
@@ -1414,7 +1557,7 @@ for (( i=0; i<${#LV_ID[@]}; i++ )); do
   done
   (( replaced )) || TREE_NATIVE+=("native:$i")
 done
-TREE_ROLES="$AI_ROLES ${TREE_NATIVE[*]+${TREE_NATIVE[*]}}"
+TREE_ROLES="$AI_ROLES ${TREE_NATIVE[*]+${TREE_NATIVE[*]}} ${TREE_OBSERVED[*]+${TREE_OBSERVED[*]}}"
 
 # ---------------------------------------------------------------- diagram (wide terminals)
 _ui_term_size
@@ -1503,21 +1646,22 @@ if (( DIAGRAM )); then
     case "$1" in
       architect) tv ACT "designs the plan" ;; debugger) tv ACT "finds the cause" ;; security) tv ACT "checks the risks" ;;
       reviewer) tv ACT "reviews the diff" ;; developer) tv ACT "edits + runs tests" ;; executor) tv ACT "runs bounded tasks" ;;
-      explorer) tv ACT "reads the code" ;; documenter) tv ACT "writes the docs" ;; native:*) ACT="${LV_ROLE[${1#native:}]}" ;; *) ACT="$1" ;;
+      explorer) tv ACT "reads the code" ;; documenter) tv ACT "writes the docs" ;; native:*) ACT="${LV_DISPLAY_ROLE[${1#native:}]:-${LV_ROLE[${1#native:}]}}" ;; observed:*) ACT="${LV_TASK[${1#observed:}]}" ;; *) ACT="$1" ;;
     esac
   }
   # The same in a word or two, for the short list of the roles without a box.
   action_short() {
     case "$1" in
       architect) tv ACT "plan" ;; debugger) tv ACT "root cause" ;; security) tv ACT "risks" ;; reviewer) tv ACT "review" ;;
-      developer) tv ACT "code + tests" ;; executor) tv ACT "bounded tasks" ;; explorer) tv ACT "reading" ;; documenter) tv ACT "docs" ;; *) ACT="$1" ;;
+      developer) tv ACT "code + tests" ;; executor) tv ACT "bounded tasks" ;; explorer) tv ACT "reading" ;; documenter) tv ACT "docs" ;; observed:*) ACT="${LV_DISPLAY_ROLE[${1#observed:}]}" ;; *) ACT="$1" ;;
     esac
   }
   role_lbl() {
     case "$1" in
       architect) tv RL "Architect" ;; debugger) tv RL "Debugger" ;; security) tv RL "Security" ;; reviewer) tv RL "Reviewer" ;;
-      developer) tv RL "Developer" ;; executor) tv RL "Executor" ;; explorer) tv RL "Explorer" ;; documenter) tv RL "Documenter" ;; native:*) loomy_tree_native_title "$1"; RL="$LV_NATIVE_TITLE" ;; *) RL="$1" ;;
+      developer) tv RL "Developer" ;; executor) tv RL "Executor" ;; explorer) tv RL "Explorer" ;; documenter) tv RL "Documenter" ;; native:*) loomy_tree_native_title "$1"; RL="$LV_NATIVE_TITLE" ;; observed:*) RL="${LV_LABEL[${1#observed:}]}" ;; *) RL="$1" ;;
     esac
+    if (( RS_I >= 0 )) && [[ "$1" != native:* && "${LV_DISPLAY_ROLE[RS_I]:-${LV_ROLE[RS_I]}}" != "${LV_ROLE[RS_I]}" ]]; then RL="${LV_LABEL[RS_I]}"; fi
     # First letter in lower case, as in the boxes.
     local f="${RL:0:1}" up="ABCDEFGHIJKLMNOPQRSTUVWXYZ" lo="abcdefghijklmnopqrstuvwxyz" i
     case "$f" in [A-Z]) i="${up%%"$f"*}"; RL="${lo:${#i}:1}${RL:1}" ;; É) RL="é${RL:1}" ;; esac
@@ -1527,11 +1671,11 @@ if (( DIAGRAM )); then
   pick=""
   run_roles=""; last_roles=""; n_run=0
   for i in ${LV_RUNNING[@]+"${LV_RUNNING[@]}"}; do
-    if [[ "${LV_BRIDGE[i]:-}" == codex-native ]]; then r="native:$i"; else r="${LV_ROLE[i]}"; fi
+    r="${LV_CLASSIC_ROLE[i]}"
     run_roles="$run_roles $r"; n_run=$(( n_run + 1 ))
   done
   for i in ${LV_FINISHED[@]+"${LV_FINISHED[@]}"}; do
-    if [[ "${LV_BRIDGE[i]:-}" == codex-native ]]; then r="native:$i"; else r="${LV_ROLE[i]}"; fi
+    r="${LV_CLASSIC_ROLE[i]}"
     last_roles="$last_roles ${LV_END_SEQ[i]}|$r"
   done
   [[ -n "$last_roles" ]] && last_roles="$(printf '%s\n' $last_roles | sort -rn | cut -d'|' -f2)"
@@ -1823,7 +1967,10 @@ for r in "${roles[@]}"; do
   else state="${C_DIM}$(t "planned")${C_RESET}"; fi
   if [[ "$r" == native:* ]]; then
     loomy_tree_native_state "$RS_I"; state="$NS_COLOR$NS_TEXT${NS_DETAIL:+ · $NS_DETAIL}$C_RESET"; mark=""
-    loomy_tree_native_title "$r"; rl="$LV_NATIVE_TITLE"; else rl="$(ai_role_label "$r")"; fi
+    loomy_tree_native_title "$r"; rl="$LV_NATIVE_TITLE"
+  elif [[ "$r" == observed:* ]]; then rl="${LV_LABEL[RS_I]}"
+  elif (( RS_I >= 0 )); then rl="${LV_LABEL[RS_I]}"
+  else rl="$(ai_role_label "$r")"; fi
   _ui_pad "$rl" 16; rl="$UI_PADDED"
   _ui_pad "$R_MODEL" 18; ml="$UI_PADDED"
   _ui_pad "$R_EFFORT" 7; el_="$UI_PADDED"

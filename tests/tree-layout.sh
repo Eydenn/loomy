@@ -7,7 +7,7 @@ WORK="$(mktemp -d "/tmp/loomy-tree-layout.XXXXXX")"
 source "$REPO/tests/lib/guard.sh"
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" CODEX_HOME="$WORK/codex"
 export PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin"
-export NO_COLOR=1 LOOMY_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
+export NO_COLOR=1 LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_HOME="$REPO"
 unset CODEX_THREAD_ID LOOMY_JOURNAL LOOMY_JOURNAL_TASKS LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT AI_ROUTE_ENV LOOMY_WATCH_TOOL
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"
 printf 'advisor=opus\n' >"$XDG_CONFIG_HOME/loomy-config-tmp"
@@ -21,7 +21,7 @@ for mode in codex advisor unknown catchup; do
   for width in 124 140 170 200; do
     for lang in en fr; do
       output="$WORK/$mode-$width-$lang.ansi"
-      LOOMY_LANG="$lang" LOOMY_TREE=diagram COLUMNS="$width" LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$output" 2>&1
+      LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" LOOMY_TREE=diagram COLUMNS="$width" LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$output" 2>&1
       check "$mode $width $lang borders, padding, wrapped labels and no false DONE" perl "$REPO/tests/fixtures/tree-layout-check.pl" "$output" "$width" "$([[ "$mode" == advisor ]] && echo 1 || echo 0)"
       if [[ -n "${LOOMY_TREE_LAYOUT_OUT:-}" ]]; then mkdir -p "$LOOMY_TREE_LAYOUT_OUT"; cp "$output" "$LOOMY_TREE_LAYOUT_OUT/"; fi
       if [[ "$mode" == unknown ]]; then
@@ -33,6 +33,22 @@ for mode in codex advisor unknown catchup; do
       fi
     done
   done
+done
+for mode in codex advisor; do
+  ROOT="$WORK/structural-$mode"
+  perl "$REPO/tests/fixtures/tree-layout.pl" "$ROOT" "$$" "$mode" structural
+  cp "$ROOT/.loomy/logs/events.jsonl" "$WORK/structural-$mode.original"
+  for width in 124 140 170 200; do
+    for lang in en fr; do
+      output="$WORK/structural-$mode-$width-$lang.ansi"
+      LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" LOOMY_WATCH_ID=layout-content LOOMY_TREE=diagram COLUMNS="$width" LINES=65 \
+        bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$output" 2>&1
+      check "structural $mode $width $lang keeps authorized titles, model, effort and geometry" \
+        perl "$REPO/tests/fixtures/tree-layout-check.pl" "$output" "$width" "$([[ "$mode" == advisor ]] && echo 1 || echo 0)"
+      if [[ -n "${LOOMY_TREE_LAYOUT_OUT:-}" ]]; then mkdir -p "$LOOMY_TREE_LAYOUT_OUT"; cp "$output" "$LOOMY_TREE_LAYOUT_OUT/"; fi
+    done
+  done
+  check "structural $mode diagrams never rewrite journal bytes" cmp "$WORK/structural-$mode.original" "$ROOT/.loomy/logs/events.jsonl"
 done
 for width in 80 123; do
   LOOMY_TREE=diagram COLUMNS="$width" LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$WORK/narrow" 2>&1

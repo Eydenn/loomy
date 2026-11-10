@@ -115,6 +115,88 @@ loomy_doctor_tracking() {
 }
 loomy_doctor_tracking
 
+# Read policy/health without _context: that resolver initializes project-id even
+# for reads. Reuse its directory/file checks and closed parser, but never create
+# identities, locks or stores, and never read label/result bodies for diagnostics.
+loomy_doctor_content() {
+  local facts state path journal labels results generation health
+  ui_section "$(t 'CONTENT POLICY')" "$(t 'stored project grants')"
+  if ! facts="$(perl -e '
+    use strict; use warnings;
+    require $ARGV[0];
+    my $root=Cwd::abs_path($ARGV[1]) // die "content project unavailable\n";
+    my $path="$root/.loomy/logs/content-policy.conf";
+    my ($state,$policy,$health)=("default",Loomy::ContentPolicy::defaults(),"ok");
+    my $ok=eval {
+      die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
+      if (-l "$root/.loomy") {
+        $root=Loomy::ContentPolicy::_shared_owner($root,".loomy");
+      } elsif (-l "$root/.loomy/logs") {
+        Loomy::ContentPolicy::_dir("$root/.loomy");
+        $root=Loomy::ContentPolicy::_shared_owner($root,".loomy/logs");
+      }
+      die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
+      $path="$root/.loomy/logs/content-policy.conf";
+      if (lstat("$root/.loomy")) {
+        my ($loomy,$ls)=Loomy::ContentPolicy::_dir("$root/.loomy");
+        chdir $loomy or die "content directory unavailable\n";
+        if (lstat("logs")) {
+          my ($logs,$ds)=Loomy::ContentPolicy::_dir("logs","$root/.loomy/logs");
+          chdir $logs or die "content directory unavailable\n";
+          my $stored=Loomy::ContentPolicy::_stored({logs=>$logs});
+          ($state,$policy)=@{$stored}{qw(source policy)};
+          $health=eval {
+            my ($raw)=Loomy::ContentPolicy::_read("display-context-full",128);
+            defined($raw) ? "full" : "ok";
+          } // "unavailable";
+          Loomy::ContentPolicy::_assert_context({root=>$root,ls=>$ls,ds=>$ds});
+        }
+      }
+      1;
+    };
+    ($state,$policy,$health)=("invalid",Loomy::ContentPolicy::defaults(),"unavailable") unless $ok;
+    my $display=Loomy::ContentPolicy::display_path($path);
+    $display=Loomy::ContentPolicy::_encode_utf8($display) if utf8::is_utf8($display);
+    print join("\t",$state,$display,@{$policy}{qw(journal_content label_sources private_results policy_generation)},$health),"\n";
+  ' "$SCRIPT_DIR/lib/content-policy.pl" "$ROOT" 2>/dev/null)"; then
+    ui_warn "$(t 'Content policy health unavailable')"
+    missing_ideal "$(t 'Content policy health')"
+    return 0
+  fi
+  IFS=$'\t' read -r state path journal labels results generation health <<<"$facts"
+  case "$state" in
+    project) ui_ok "$(t 'Content policy valid')" "$path" ;;
+    default) ui_info "$(t 'No content policy file; structural defaults apply: %s' "$path")" ;;
+    invalid)
+      ui_warn "$(t 'Invalid content policy')" "$path"
+      missing_ideal "$(t 'Content policy health')"
+      ;;
+  esac
+  case "$journal" in
+    structural) journal="$(t 'structure only')" ;;
+    legacy-excerpts) journal="$(t 'legacy excerpts (project scope)')" ;;
+  esac
+  [[ "$labels" != none ]] || labels="$(t 'none')"
+  if [[ "$state" == invalid ]]; then
+    ui_info "$(t 'Safe defaults — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
+  else
+    ui_info "$(t 'Stored grants — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
+    [[ "$state" != project ]] || ui_info "$(t 'Policy source: %s · scope: project · generation: %s' "$(t 'project policy file')" "$generation")"
+  fi
+  case "$health" in
+    full)
+      ui_warn "$(t 'Label store full')" "$(t 'display context full; label not saved')"
+      missing_ideal "$(t 'Label store full')"
+      ;;
+    unavailable)
+      ui_warn "$(t 'Label store health unavailable')" "${path%/*}/display-context-full"
+      missing_ideal "$(t 'Label store health')"
+      ;;
+  esac
+}
+# Only inside a Loomy project: elsewhere the section would show a policy path that does not exist.
+if [[ -d "$ROOT/.loomy" ]]; then loomy_doctor_content; fi
+
 # ---------------------------------------------------------------- CLI IA
 ui_section "$(t "AI CLIS")" "$(t "at least one required; ideal: both, for hybrid mode")"
 HAS_C=0; HAS_X=0

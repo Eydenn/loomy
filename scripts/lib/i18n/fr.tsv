@@ -2405,3 +2405,55 @@ paused until %s · resumable: loomy memory show %s	en pause jusqu’à %s · rep
 label not recorded (explicit-lead not granted)	libellé non enregistré (explicit-lead non autorisé)
 --task-label "..." (explicit-lead)	--task-label "..." (source explicit-lead)
 Older sensitive results are available: loomy memory show legacy [N]	Des résultats sensibles antérieurs sont disponibles : loomy memory show legacy [N]
+
+Activity storage — metadata only	Stockage de l’activité — métadonnées uniquement
+%s: %s file(s), %s bytes, %s symlink(s), %s unreadable — %s	%s : %s fichier(s), %s octets, %s lien(s) symbolique(s), %s illisible(s) — %s
+Partial coverage: skipped, changed or unavailable metadata.	Couverture partielle : métadonnées ignorées, modifiées ou indisponibles.
+Known locations scanned; other copies remain unknown.	Emplacements connus inventoriés ; les autres copies restent inconnues.
+Content not inspected; no files copied, changed, sent or removed.	Contenu non inspecté ; aucun fichier copié, modifié, envoyé ou supprimé.
+legacy content possible	ancien contenu possible
+%s: %s runtime index path(s), %s local history commit(s)	%s : %s chemin(s) d’exécution dans l’index, %s commit(s) dans l’historique local
+Host candidates are not proof of abandoned files or safe deletion.	Les fichiers candidats de l’hôte ne prouvent ni leur abandon ni la sûreté d’une suppression.
+Inventory options require: loomy privacy inventory	Les options d’inventaire nécessitent : loomy privacy inventory
+loomy privacy inventory [--root DIR] [--json] [--paths] [--git-history] [--host]	loomy privacy inventory [--root DIR] [--json] [--paths] [--git-history] [--host]
+CONTENT POLICY	POLITIQUE DE CONTENU
+stored project grants	autorisations enregistrées du projet
+Content policy health unavailable	État de la politique de contenu indisponible
+Content policy health	État de la politique de contenu
+Content policy valid	Politique de contenu valide
+No content policy file; structural defaults apply: %s	Aucun fichier de politique de contenu ; valeurs structurelles par défaut : %s
+Invalid content policy	Politique de contenu invalide
+Safe defaults — journal: %s · label sources: %s · private results: %s	Valeurs sûres par défaut — journal : %s · sources de libellés : %s · résultats privés : %s
+Stored grants — journal: %s · label sources: %s · private results: %s	Autorisations enregistrées — journal : %s · sources de libellés : %s · résultats privés : %s
+Label store full	Stockage des libellés plein
+Label store health unavailable	État du stockage des libellés indisponible
+Label store health	État du stockage des libellés
+--print is only available when preparing feedback	--print est disponible uniquement pour préparer un retour
+Journal content attached	Contenu du journal joint
+Latest log events (structure only)	Derniers événements du journal (structure seule)
+--root requires a directory	--root nécessite un répertoire
+Provider stores, arbitrary exports, remote clones and OS backups: unknown; not scanned.	Stockages des fournisseurs, exports libres, clones distants et sauvegardes du système : inconnus ; non inspectés.
+The remote private repository cannot be rebased safely	Le dépôt privé distant ne peut pas être rebasé en toute sécurité
+Runtime files or an unreadable tree were found. Sync stopped before checkout; inspect the remote repository manually.	Des fichiers d’exécution ou une arborescence illisible ont été détectés. Synchronisation arrêtée avant toute extraction ; inspecte le dépôt distant manuellement.
+Journal	Journal
+Journal archives	Archives du journal
+Checkpoints and scratch files	Checkpoints et fichiers temporaires
+Task labels and policy	Libellés de tâche et politique
+Legacy delegation results	Anciens résultats de délégation
+Private results	Résultats privés
+Receipts	Reçus
+Tasks, audits and reviews	Tâches, audits et revues
+Authored continuity and configuration	Notes de continuité et configuration
+Work state and prompts	État de travail et prompts
+Restore backups	Sauvegardes de restauration
+Host repair, reports and cache	Réparation, rapports et cache de l’hôte
+Host temporary candidates	Fichiers temporaires candidats de l’hôte
+Project Git metadata	Métadonnées Git du projet
+Companion Git metadata	Métadonnées Git du dépôt compagnon
+%s: runtime index paths and local history unknown	%s : chemins d’exécution de l’index et historique local inconnus
+%s: none found	%s : aucun trouvé
+Directory not found: %s	Dossier introuvable : %s
+Can't build the runtime exclusion list	Impossible de construire la liste d’exclusion d’exécution
+Sync stopped before staging.	Synchronisation arrêtée avant l’indexation.
+A symlinked or foreign directory is in the way: %s. Nothing was moved or written.	Un dossier lié par symlink ou appartenant à un autre utilisateur bloque : %s. Rien n’a été déplacé ni écrit.
+Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed	Inventaire des métadonnées des emplacements de l’activité locale : aucun contenu lu, rien modifié ni supprimé

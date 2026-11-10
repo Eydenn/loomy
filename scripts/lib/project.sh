@@ -18,9 +18,11 @@ LOOMY_HISTORY_BEGIN="# >>> Loomy: local history and work files, never versioned"
 LOOMY_HISTORY_END="# <<< Loomy"
 LP_GI_CHANGED=0
 
-# loomy_history_paths: .gitignore patterns of the history / work / local state files, one per line.
-loomy_history_paths() {
-  cat <<'LIST'
+# The list lives in a variable, set without any pipe or subshell: callers build their Git pathspecs from it in-process
+# (bash 3.2 can fail a pipe write with "Interrupted system call", which must never silently shorten a fail-closed list).
+# Every pattern is anchored to a runtime root under .loomy/ or names a file that only Loomy writes; authored documents
+# (.loomy/docs/**, .loomy/custom/**) are never matched by a generic basename.
+IFS= read -r -d '' LOOMY_HISTORY_LIST <<'LIST' || true
 .loomy/logs/
 .loomy/memory/
 .loomy/docs/HANDOFF.md
@@ -43,20 +45,64 @@ loomy_history_paths() {
 .loomy/restore-backup-*/
 .loomy/skills.lock.d/
 .loomy/.skills.lock.*
+.loomy/prompts/
+.loomy/tmp/
+.loomy/temp/
+.loomy/logs
+.loomy/memory
+.loomy/tasks
+.loomy/audits
+.loomy/reviews
+.loomy/prompts
+.loomy/tmp
+.loomy/temp
+.loomy/inventory*
+.loomy/inventory*/
+.loomy/project-id
+.loomy/**/ai.git
+.loomy/**/ai.git/
+.loomy/**/restore-backup-*
+.loomy/**/restore-backup-*/
+.loomy/**/private-results-v1
+.loomy/**/private-results-v1/
+.loomy/**/receipts-v1
+.loomy/**/receipts-v1/
+.loomy/**/display-context-v1.jsonl
+.loomy/**/display-context-full
+.loomy/**/display-context.lock
+.loomy/**/display-context.lock/
+.loomy/**/content-policy.conf
+.loomy/**/content-policy.lock
+.loomy/**/content-policy.lock/
+.loomy/**/content-prompt.lock
+.loomy/**/content-prompt.lock/
+.loomy/**/*.tmp/
+.loomy/**/*.tmp.*/
 LIST
-}
+
+# loomy_history_paths: .gitignore patterns of the history / work / local state files, one per line.
+loomy_history_paths() { printf '%s' "$LOOMY_HISTORY_LIST"; }
 
 # loomy_history_block: the managed .gitignore block.
 loomy_history_block() { echo "$LOOMY_HISTORY_BEGIN"; loomy_history_paths; echo "$LOOMY_HISTORY_END"; }
 
-# loomy_history_pathspecs: the same list as Git :(glob) pathspecs (a directory pattern becomes dir/**; a plain pathspec
-# would recurse: scripts/*.sh matches scripts/lib/x.sh), for git ls-files and git rm --cached.
-loomy_history_pathspecs() {
-  local p
+# loomy_history_specs_load: fills LOOMY_HISTORY_SPECS with the same list as Git pathspecs (:(glob), case-insensitive
+# because a case-folding filesystem makes .loomy/Logs the same directory as .loomy/logs; a directory pattern becomes
+# dir/** since a plain pathspec would recurse: scripts/*.sh matches scripts/lib/x.sh). Built in-process, no pipe.
+# Fails (status 1) unless every pattern produced exactly one spec: callers on a fail-closed path stop on it.
+loomy_history_specs_load() {
+  local p n=0
+  LOOMY_HISTORY_SPECS=()
   while IFS= read -r p; do
-    if [[ "$p" == */ ]]; then printf ':(glob)%s**\n' "$p"; else printf ':(glob)%s\n' "$p"; fi
-  done < <(loomy_history_paths)
+    [[ -n "$p" ]] || continue
+    n=$(( n + 1 ))
+    if [[ "$p" == */ ]]; then LOOMY_HISTORY_SPECS+=(":(glob,icase)${p}**"); else LOOMY_HISTORY_SPECS+=(":(glob,icase)$p"); fi
+  done <<<"$LOOMY_HISTORY_LIST"
+  (( n >= 30 && ${#LOOMY_HISTORY_SPECS[@]} == n ))
 }
+
+# loomy_history_pathspecs: the same specs, one per line (display and tests; code paths use loomy_history_specs_load).
+loomy_history_pathspecs() { loomy_history_specs_load || return 1; printf '%s\n' "${LOOMY_HISTORY_SPECS[@]}"; }
 
 # loomy_gitignore_sync <root>: writes the managed block at the END of the project's .gitignore (only in a Git
 # repository or when a .gitignore exists), so that it wins over the user's earlier lines (a negation placed before it
@@ -107,10 +153,9 @@ loomy_gitignore_sync() {
 
 # loomy_history_tracked <root>: history / work files tracked by the project repository (one path per line).
 loomy_history_tracked() {
-  local specs=() p
   git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  while IFS= read -r p; do specs+=("$p"); done < <(loomy_history_pathspecs)
-  git -C "$1" ls-files -- "${specs[@]}" 2>/dev/null || true
+  loomy_history_specs_load || return 0
+  git -C "$1" ls-files -- "${LOOMY_HISTORY_SPECS[@]}" 2>/dev/null || true
   return 0
 }
 

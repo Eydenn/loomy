@@ -11,7 +11,7 @@ Short records of the decisions that shape Loomy. Each one states the context, th
 | [0005](0005-versions-stay-0x-until-joint-validation.md) | Versions stay 0.x until joint validation | Accepted (2026-09-24) |
 | [0006](0006-temporary-lead-relay.md) | Temporary lead relay when a subscription runs out | Accepted (2026-10-09) |
 | [0007](0007-native-codex-observability.md) | Observe native Codex agents locally | Accepted (2026-10-12) |
-
 | [0008](0008-terminal-only-routing-ownership.md) | Terminal-only routing ownership | Accepted (2026-10-14) |
+| [0009](0009-structural-journal-content-policy.md) | Structural journal and per-store content policy | Accepted (2026-10-26) |
 
 A new decision gets the next number; a superseded one keeps its file and changes its status.

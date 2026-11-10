@@ -2,7 +2,7 @@
 
 [← README](../README.fr.md)
 
-Chaque commande avec ses variantes et ce qu'elle fait en détail. Dans le terminal : `loomy help <commande>`.
+Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.7**. Dans le terminal : `loomy help <commande>`.
 
 ## Projet
 
@@ -53,10 +53,70 @@ loomy privacy versioned
 loomy privacy local
 loomy privacy private
 loomy privacy sync
-loomy privacy restore
+loomy privacy restore <compte/dépôt>
 ```
 
-Visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé
+Visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé. Ces modes n'autorisent pas la conservation du texte des tâches. Les contrôles de contenu ci-dessous concernent le projet courant ; les worktrees partageant ses logs enregistrés partagent aussi sa politique.
+
+#### `loomy privacy content`
+
+```bash
+loomy privacy content
+loomy privacy content structural
+loomy privacy content legacy-excerpts
+```
+
+Affiche la politique effective, sa source et son périmètre projet, ou modifie les futures écritures du journal. En 0.17.7, les nouvelles entrées et les nouveaux instantanés de rotation ne contiennent par défaut que la structure autorisée, sur les projets nouveaux comme mis à jour. Les fichiers et archives existants restent inchangés.
+
+`legacy-excerpts` est une autorisation explicite distincte pour le projet. Elle permet uniquement les champs de premier niveau bornés `task` (200 caractères Unicode), `excerpt` (60), `why` (200), `nickname` (40) et `cwd_relative` (256, à l'intérieur du projet). Elle n'active pas la conservation des tâches/résultats complets.
+
+Élargir une autorisation exige qu'un humain lance directement la commande dans un terminal interactif et confirme le projet, les champs et les limites. Les pipes, `--yes`, hooks et terminaux d'agents gérés ne peuvent pas autoriser cette conservation. Restreindre la politique ou désactiver la capture reste possible sans interaction.
+
+`LOOMY_JOURNAL_CONTENT=structural` impose une restriction temporaire. Sélectionner `legacy-excerpts` par l'environnement exige aussi une autorisation humaine existante et `LOOMY_CONTENT_PROJECT` lié au projet enregistré ; les variables d'environnement ne créent aucune autorisation. `LOOMY_JOURNAL_TASKS=0` interdit la capture automatique des extraits, libellés et tâches/résultats complets, même autorisés. `LOOMY_JOURNAL=0` désactive le journal et la collecte, pas tous les autres documents de travail.
+
+#### `loomy privacy labels` · `loomy privacy label`
+
+```bash
+loomy privacy labels
+loomy privacy labels recommended
+loomy privacy labels set explicit-user,explicit-lead
+loomy privacy labels off
+loomy privacy label --id <id> [--attempt <id>] [--kind agent|task|session|delegation] "Titre court"
+```
+
+`labels` affiche les sources choisies, les limites et les choix de première utilisation. `recommended` autorise les six sources : `explicit-user`, `explicit-lead`, `claude-description`, `codex-path-slug`, `codex-nickname`, `codex-role`. `set` remplace exactement l'ensemble des sources ; tout ajout exige une confirmation humaine. `off` arrête les futures captures sans supprimer les anciens libellés.
+
+Les libellés sont stockés à part du journal : au plus 96 graphèmes / 384 octets UTF-8 par libellé, chaque composant Codex étant limité à 40 caractères ASCII, dans un stockage plafonné à 1 Mio. Claude utilise la `description` bornée d'Agent/Task, jamais son `prompt`. Si le stockage est plein, l'enregistrement est refusé visiblement et le libellé précédent est conservé.
+
+La commande au singulier `label` enregistre un titre délibérément saisi par un humain pour un ID, une tentative et un type précis. Elle exige toujours un terminal humain direct ; elle propose l'autorisation `explicit-user` si elle manque. Le type vaut `agent` par défaut, la tentative vaut l'ID fourni. Les bridges utilisent `--task-label` avec l'autorisation distincte `explicit-lead`.
+
+Après la mise à jour, un projet dont les choix sont en attente reçoit un écran unique à son premier `loomy init` interactif ou `loomy watch` autonome : libellés recommandés à **Oui** par défaut, puis résultats privés avec un **Oui** distinct par défaut. L'écran n'enregistre aucune nouvelle autorisation avant les deux réponses humaines ; une fin d'entrée ou un écran interrompu n'accorde rien. Les refus sont mémorisés. Une décision humaine explicite `privacy labels` acquitte aussi la première utilisation ; désactiver la capture ne rouvre pas le prompt. Un contexte géré/non interactif n'accorde rien et laisse les choix en attente ; le statut affiche au besoin `Libellés de tâche désactivés · lancer loomy privacy labels recommended`.
+
+Arbre/liste, diagramme, statut, journal de session, `loomy log` lisible et récapitulatif résolvent les libellés autorisés. Sans libellé utilisable, un rôle connu affiche sa mission précédée de `Rôle :` ; un rôle inconnu affiche un contexte indisponible. La mission décrit les attributions du rôle, pas un travail terminé. Les anciennes lignes du journal peuvent encore afficher leur texte existant.
+
+#### `loomy privacy results`
+
+```bash
+loomy privacy results
+loomy privacy results on
+loomy privacy results off
+```
+
+Affiche ou modifie l'autorisation distincte des tâches/résultats privés complets. La capture reste désactivée jusqu'à la réponse dédiée de première utilisation ou une confirmation humaine explicite `results on` ; accepter les libellés ou les extraits compatibles ne l'active pas. `off` arrête la future capture et conserve les entrées déjà autorisées.
+
+Les nouvelles entrées utilisent des dossiers privés (0700) et des fichiers privés (0600), avec des limites de 200 entrées, 1 Mio par entrée, 16 Mio au total et 30 jours. La rétention s'applique lors des enregistrements. La protection d'une entrée active exige un processus propriétaire vivant et un âge inférieur à 24 heures ; celle d'une entrée en pause dure jusqu'à 30 jours après son heure de réinitialisation/revérification (ou le dernier enregistrement si elle manque). Une entrée trop volumineuse ou un stockage rempli d'entrées protégées entraîne un refus visible. Ces limites ne purgent pas les anciens résultats Markdown. Libellés, reçus et résultats privés sont exclus des dépôts Git du projet et de son compagnon, des synchronisations et du contexte automatique des retours. Les permissions ne les chiffrent pas. Voir [`loomy memory`](#loomy-memory) pour les reçus et résultats disponibles.
+
+#### `loomy privacy inventory`
+
+```bash
+loomy privacy inventory [--root DIR] [--json] [--paths] [--git-history] [--host]
+```
+
+Inventaire en lecture seule des métadonnées des emplacements connus : nombres de fichiers, octets, catégories de rétention/exposition et couverture incomplète. Il ne lit pas les contenus, ne suit pas les liens arbitraires, ne répare pas les stockages, ne lance pas de collecte, ne copie, n'envoie ni ne supprime de fichiers. La sortie par défaut omet les noms ; `--json` conserve les mêmes champs de métadonnées, tandis que `--paths` ajoute explicitement les chemins locaux échappés et les métadonnées des fichiers.
+
+`--git-history` vérifie les métadonnées de chemins dans l'index et l'historique locaux du projet/compagnon, sans récupération distante ni réécriture. `--host` ajoute les emplacements connus de Loomy sur l'hôte et les fichiers temporaires ; un nom correspondant ne prouve pas qu'un fichier est abandonné. Les transcriptions des fournisseurs, clones distants, sauvegardes et exports à d'autres emplacements restent hors de la couverture démontrée. Un inventaire ne prouve pas l'absence de texte sensible.
+
+Le correctif 0.17.7 couvre les nouvelles écritures et instantanés de rotation du journal, les reçus et la préparation automatique des retours. Les checkpoints/curseurs natifs, fichiers temporaires d'exécution/affichage et diagnostics peuvent encore conserver du texte ou des chemins. `log --raw` et les exports explicites `report --md` gardent leur comportement existant. Ces contrôles ne purgent ni n'assainissent les anciens fichiers, l'historique Git ou les transcriptions gérées par les fournisseurs.
 
 ## Sessions et travail
 
@@ -151,7 +211,7 @@ Instantané : phases, délégations en cours, activité, coûts par modèle, for
 loomy watch [N]
 ```
 
-🖥️ Agents du projet en direct : l'orchestrateur, puis **EN COURS** (sous-agents Claude natifs et passerelles), puis **SESSION**, avec uniquement les rôles terminés de la session courante. Les démarrages sont détectés toutes les 250 ms ; les chronos avancent chaque seconde, même avec un ancien intervalle `N`. Dans la liste live, `v` bascule le regroupement par demande/modèle et mémorise `watch_group` (`request` par défaut). Les extraits respectent `LOOMY_JOURNAL_TASKS=0`. Les touches du pied de page dépendent de la vue : `q` quitte ; `o` ouvre l’orchestrateur actif dans son application, ou un terminal séparé avec suivi (un échec apparaît en bas et le suivi continue) ; `l` ouvre le journal puis revient au statut ; `t` bascule arbre/statut ; `a` ouvre la liste live puis revient au statut. Dans l’arbre, `v` bascule diagramme/liste ; dans la liste live, il regroupe par demande/modèle et mémorise `watch_group`. Dans le statut, `c` bascule compact/complet. `s` ouvre la session hors du panneau de suivi et sans `--until-exit` ; les flèches défilent lorsque le contenu dépasse l’écran. `watch_view` (`tree` par défaut ; `list` choisit la liste live) mémorise la vue choisie avec `t` ou `a`. L’arbre affiche ses boîtes dès 124 colonnes, avec défilement si le terminal est moins haut, et sa propre liste compacte en dessous. Le panneau compact ouvert par `loomy start` démarre dans la liste live. Chaque ligne montre le rôle traduit, l'outil, le modèle réel, le mot et la barre d'effort, le chrono, la tâche et le résultat ; les demandes explicites et écarts au routage sont signalés. Une fenêtre étroite retire dans l'ordre la tâche, le modèle et la barre, en conservant l'outil et le mot d'effort ; les annotations de routage passent sur une ligne indentée si nécessaire. Après la configuration, le bandeau affiche l'état de l'orchestrateur : actif si son processus vit et qu'une demande ou un événement d'usage date de moins de deux minutes. Le rendu change avec le journal ou les fichiers d'état, ou chaque seconde pour les chronos en cours ; au repos, l'horloge reste à l'heure du dernier rendu. Le coût d'un sous-agent natif provient uniquement de son usage, celui d'une passerelle reste dans sa délégation.
+🖥️ Agents du projet en direct : l'orchestrateur, puis **EN COURS** (sous-agents Claude natifs et passerelles), puis **SESSION**, avec uniquement les rôles terminés de la session courante. Les démarrages sont détectés toutes les 250 ms ; les chronos avancent chaque seconde, même avec un ancien intervalle `N`. Dans la liste live, `v` bascule le regroupement par demande/modèle et mémorise `watch_group` (`request` par défaut). Le contexte des tâches suit les [autorisations de confidentialité](#loomy-privacy). Les touches du pied de page dépendent de la vue : `q` quitte ; `o` ouvre l’orchestrateur actif dans son application, ou un terminal séparé avec suivi (un échec apparaît en bas et le suivi continue) ; `l` ouvre le journal puis revient au statut ; `t` bascule arbre/statut ; `a` ouvre la liste live puis revient au statut. Dans l’arbre, `v` bascule diagramme/liste ; dans la liste live, il regroupe par demande/modèle et mémorise `watch_group`. Dans le statut, `c` bascule compact/complet. `s` ouvre la session hors du panneau de suivi et sans `--until-exit` ; les flèches défilent lorsque le contenu dépasse l’écran. `watch_view` (`tree` par défaut ; `list` choisit la liste live) mémorise la vue choisie avec `t` ou `a`. L’arbre affiche ses boîtes dès 124 colonnes, avec défilement si le terminal est moins haut, et sa propre liste compacte en dessous. Le panneau compact ouvert par `loomy start` démarre dans la liste live. Chaque ligne montre le rôle traduit, l'outil, le modèle réel, le mot et la barre d'effort, le chrono, le contexte de tâche et le résultat enregistré ; les demandes explicites et écarts au routage sont signalés. Une fenêtre étroite retire dans l'ordre le contexte de tâche, le modèle et la barre, en conservant l'outil et le mot d'effort ; les annotations de routage passent sur une ligne indentée si nécessaire. Après la configuration, le bandeau affiche l'état de l'orchestrateur : actif si son processus vit et qu'une demande ou un événement d'usage date de moins de deux minutes. Le rendu change avec le journal ou les fichiers d'état, ou chaque seconde pour les chronos en cours ; au repos, l'horloge reste à l'heure du dernier rendu. Le coût d'un sous-agent natif provient uniquement de son usage, celui d'une passerelle reste dans sa délégation.
 
 Les agents Codex natifs sont aussi suivis depuis les fichiers de session locaux
 dans `CODEX_HOME` (`~/.codex` par défaut). La découverte est bornée ; la lecture
@@ -177,7 +237,7 @@ l'orchestrateur actuel ; `o` efface le filtre lorsqu'il ouvre celui-ci.
 loomy tree
 ```
 
-🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis terminé, durée, tokens) ; le journal de session ; une ligne d'état. `loomy tree --once` affiche une frame de la vue live. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées ; jusqu'à quatre boîtes de rôles), sinon en liste ; `loomy config set tree_view auto|diagram|list` choisit
+🌳 Arbre des agents : l'orchestrateur avec son modèle, son effort, sa session et sa phase ; son conseiller et ses consultations ; chaque rôle avec son modèle, son effort et son état en direct (une impulsion parcourt la branche d'un rôle en cours, puis son état de fin enregistré, sa durée et ses tokens lorsqu'ils sont disponibles) ; le journal de session ; une ligne d'état. `loomy tree --once` affiche une frame de la vue live. Dans une grande fenêtre (124 × 57), il est dessiné en diagramme (boîtes et liaisons animées ; jusqu'à quatre boîtes de rôles), sinon en liste ; `loomy config set tree_view auto|diagram|list` choisit. La fin d'une exécution ne prouve pas que les tests ont réussi ; une pause ou un résultat absent ne signifie pas une réussite.
 
 ### `loomy log`
 
@@ -188,7 +248,7 @@ loomy log --since AAAA-MM-JJ
 loomy log --csv
 ```
 
-Journal lisible, à l'heure locale, éventuellement en continu (`--raw` : JSON brut) ; `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts
+Journal lisible, à l'heure locale, éventuellement en continu, avec résolution des libellés autorisés pour les nouvelles entrées. `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts. En 0.17.7, `--raw` émet toujours le JSON original, y compris le texte des anciennes entrées ou du mode compatible ; ce n'est pas un export assaini.
 
 ### `loomy stats`
 
@@ -208,16 +268,22 @@ loomy report --md [dossier]
 loomy report --all
 ```
 
-Chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` en Markdown dans `docs/reports/` ; `--all` tous les projets
+Chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` écrit du Markdown dans `docs/reports/` ou le dossier choisi ; `--all` tous les projets. Sans option, `report` ne crée aucun fichier Markdown. En 0.17.7, un rapport Markdown explicite peut encore contenir le nom du projet et les titres des tâches ; relis-le avant de le partager.
 
-### `loomy memory [show [N]]`
+### `loomy memory`
 
 ```bash
-loomy memory [show [N]]
+loomy memory
+loomy memory -n N
 loomy memory show [N]
+loomy memory show legacy [N]
 ```
 
-Mémoire partagée : l'état du travail tenu par l'orchestrateur et les derniers résultats des délégations en bref ; `show [N]` le texte complet de l'un d'eux
+La mémoire partagée conserve l'état du travail et les impasses rédigés par l'orchestrateur, à côté des reçus automatiques des délégations. Les reçus de `.loomy/memory/receipts-v1/` contiennent des faits structurels : ID, rôle/modèle/effort, état, horaires, nombre de fichiers et références autorisées. Ils ne contiennent ni tâche ni résultat complet.
+
+Avec l'[autorisation distincte des résultats privés](#loomy-privacy-results), les tâches/résultats complets et les options structurées de reprise des bridges sont enregistrés dans `.loomy/memory/private-results-v1/`, selon ses limites de rétention. Le résumé résout SUMMARY/NEXT depuis les contenus privés disponibles ; `show [N]` affiche le reçu de même rang et toute tâche/résultat autorisé disponible, avec son descripteur de reprise. Sans contenu conservé, il indique que le résultat n'a pas été conservé ; sans tâche d'origine pour une pause, il indique `tâche d’origine nécessaire pour reprendre`.
+
+Les anciens résultats Markdown sensibles restent séparés, lisibles avec `show legacy [N]` ; la nouvelle politique de capture ne les migre pas, ne les purge pas et ne modifie pas leurs permissions. `loomy config set memory off` désactive l'injection de contexte, pas la rétention ; utilise `loomy privacy results off` pour arrêter les futures captures privées. Aucune de ces commandes ne supprime les fichiers existants.
 
 ## Agents, modèles et skills
 
@@ -251,9 +317,11 @@ loomy delegate claude <rôle> [options] "…"
 
 Confie un rôle à Claude en lecture seule (architecte, débogueur, sécurité, relecteur, explorateur)
 
-Options avant le texte de la tâche (elles l'emportent sur `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`) : `--model <id>` (lettres, chiffres, `. _ -` ; pour Claude un id `claude-*` ou `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (remplace le sandbox du rôle ; sur Claude, `--write` est refusé hors basculement de quota), `--why "raison"` (par exemple `user request`). Une option ou une variable utilisée marque la délégation `requested` dans le journal ; ce qui s'écarte du routage du projet (outil, modèle, effort, sandbox) est listé dans `off_routing`, et `why` garde la raison (masquée par `LOOMY_JOURNAL_TASKS=0`). Exemple : `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "…"`.
+Options avant le texte de la tâche (elles l'emportent sur `DELEGATE_*_MODEL` / `DELEGATE_*_EFFORT`) : `--model <id>` (lettres, chiffres, `. _ -` ; pour Claude un id `claude-*` ou `opus`, `sonnet`, `haiku`), `--effort <low|medium|high|xhigh|max>`, `--write` / `--read-only` (remplace la sandbox du rôle ; sur Claude, `--write` est refusé hors basculement de quota), `--why "raison"` (par exemple `user request`), `--task-label "Titre court"`.
 
-Disponibilité des fournisseurs : le code 75 signifie en pause, pas terminé. Lis `resume_at` (epoch Unix) dans l’événement final, attends cette heure, puis relance automatiquement le même rôle, la même tâche et les mêmes options depuis `.loomy/memory/delegations/<id>.md`. Ne continue pas le travail dépendant et ne choisis pas un modèle plus faible pendant l’attente ; si une nouvelle pause survient, recommence au nouveau reset. Relis les fichiers déjà modifiés avant la relance.
+Une surcharge de modèle, effort, sandbox ou raison marque la délégation `requested` dans le journal ; les écarts au routage du projet (outil, modèle, effort, sandbox) sont listés dans `off_routing`. La raison est omise des entrées structurelles ; seule une autorisation `legacy-excerpts` permet son champ `why` borné. `--task-label` fournit un titre d'affichage délibéré avec la source `explicit-lead` autorisée par l'humain, dans les limites des libellés ; il ne marque pas à lui seul un écart de routage et n'accorde aucune permission. Ne le déduis jamais automatiquement du corps de la tâche. Exemple : `loomy delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" --task-label "Revue d'architecture" "…"`.
+
+Disponibilité des fournisseurs : le code 75 signifie en pause. L'événement final enregistre `status: "paused"`, `outcome: "waiting_for_reset"` et `resume_at` (epoch Unix). Atteindre cette heure ne signifie pas que le travail a repris ou réussi. Garde exactement le rôle/fournisseur/modèle/effort/sandbox/options ; après la réinitialisation, relance une seule fois avec la tâche du contexte vivant ou une référence de tâche/résultat privé autorisée. `loomy memory show N` expose le descripteur de reprise structuré d'un bridge conservé, pas une commande exécutable. Vérifie les modifications existantes avant de relancer. Si la tâche et les options d'origine sont indisponibles, signale `tâche d’origine nécessaire pour reprendre` et arrête le travail dépendant ; ne devine jamais et ne choisis pas un modèle moins puissant. À chaque nouvelle pause, utilise son nouveau `resume_at`.
 
 Les délégations se mettent en pause seulement après un refus réel ou à 100 % / limite atteinte ; le seuil de relais préventif configurable du lead reste distinct.
 
@@ -305,7 +373,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Vérifie les prérequis et signale les fichiers d'historique de Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle)
+Vérifie les prérequis, la santé de la politique de contenu, un stockage de libellés plein et les fichiers d'historique Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle). Ces informations de santé ne certifient pas l'absence de texte sensible dans les anciens fichiers.
 
 ### `loomy config`
 
@@ -329,6 +397,8 @@ loomy version --all
 
 Mise à jour de Loomy, valable pour tous les projets ; `update --catalog` : seulement le catalogue des modèles et des prix ; `version --all` liste toutes les installations
 
+Une mise à jour exécutant encore le code 0.17.6 ne peut pas afficher le nouvel écran d'autorisation. Après la mise à jour, le premier `loomy init` interactif ou `loomy watch` autonome propose les choix encore en attente pour le projet ; un contexte non interactif n'accorde aucune autorisation.
+
 ### `loomy uninstall`
 
 ```bash
@@ -344,7 +414,7 @@ loomy feedback
 loomy feedback --print
 ```
 
-Signale un bug ou une idée : issue GitHub pré-remplie (versions, état du projet anonymisé, sans nom, objectif ni texte des tâches), envoyée seulement après ton accord ; `--print` pour voir le texte
+Signale un bug ou une idée : issue GitHub préremplie avec les versions, les faits autorisés sur l'état du projet et les 15 derniers événements projetés du journal. Le contexte automatique omet le nom/objectif du projet, le texte des tâches, les libellés, les résultats privés et les chemins du projet ; il ne prépare aucune copie complète du brief ou du journal brut. Ton propre message reste dans l'aperçu. Envoi seulement après ton accord ; `--print` affiche le texte sans publication ni accès réseau.
 
 ### `loomy feedback list`
 

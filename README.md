@@ -6,9 +6,9 @@
 </picture>
 
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
-Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, a memory shared across sessions and tools, and the whole dispatch live in your terminal.
+Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, durable state and optional private results shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.17.6-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.7-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -40,7 +40,7 @@ Loomy frames each project, then a lead agent on the best model routes every requ
 |---|---|
 | 🎯&nbsp;**Quality** | The best reasoning plans, decides and reviews; every change can be cross-reviewed by the other model family; the project's characteristics (accounts, payments, sensitive data…) set the checks the agents must do. |
 | 💰&nbsp;**Cost** | Each piece of work goes to the cheapest role that does it reliably (GPT-6-Luna for bounded tasks, Sonnet 5.5 or GPT-6.1 Sol for everyday work, Opus 5.5 for architecture and security). Tokens, cost and subscription quotas are measured; work moves to the other tool before a quota runs out. |
-| 🧠&nbsp;**Continuity** | Shared memory, durable documentation and one commit per finished request keep the thread across sessions, compactions, machines, and between Claude Code and Codex, for a few hundred tokens per session. |
+| 🧠&nbsp;**Continuity** | Work state, durable documentation and one commit per finished request keep the thread across sessions, compactions and tools. Optional private results add local task/result continuity; authored continuity documents can travel through the private backup. |
 | 🧩&nbsp;**Method** | A project type and its key characteristics set up the structure, the roles and the official skills (Anthropic and OpenAI) the agents need, added as the project evolves. |
 | 👀&nbsp;**Visibility** | The lead agent on the left, the dispatch on the right: phases, delegations, agent tree and costs live, in the terminal or beside the desktop app. |
 
@@ -66,7 +66,7 @@ loomy doctor --fix --live
 loomy init
 ```
 
-`loomy init` offers to create a folder named after the project (name editable), to use the current folder, or another location. `loomy init my-project` creates the folder directly. At the end, it offers to open the lead agent session.
+`loomy init` offers to create a folder named after the project (name editable), to use the current folder, or another location. `loomy init my-project` creates the folder directly. First interactive use also asks separately about **task labels** and **private task/results**, both with **Yes** as the proposed answer; nothing is enabled without your answers. See the privacy choices below. At the end, it offers to open the lead agent session.
 
 **4. Reopen the lead agent session** later, from the project folder
 
@@ -179,7 +179,7 @@ flowchart LR
   A["🩺 Check<br/>loomy doctor"]:::check --> B["📝 Questionnaire<br/>loomy init"]:::step
   B --> C["🧭 Routing<br/>loomy route"]:::route
   C --> D["🎯 Lead agent<br/>routes every request"]:::lead
-  D --> E["🧠 Memory · 🧩 Skills<br/>results kept, methods added"]:::step
+  D --> E["🧠 Memory · 🧩 Skills<br/>receipts, optional results, methods"]:::step
   E --> F["📈 Tracking<br/>loomy watch"]:::check
   classDef step fill:#F1EFE8,stroke:#888780,color:#2C2C2A
   classDef check fill:#E1F5EE,stroke:#1D9E75,color:#085041
@@ -196,7 +196,7 @@ flowchart LR
 
    It delegates the work to dedicated roles and never moves on without your approval.
 5. **Day to day.** Every request, your feedback included, goes through the lead agent: the cheapest capable role does it, the other model family reviews it, the durable documentation is updated and the work committed.
-6. **Memory and tracking.** Every delegation is recorded (model, effort, duration, tokens, cost) and its result kept in the shared memory, given back at the next session, Claude Code or Codex. You follow it all live.
+6. **Memory and tracking.** Delegation facts are recorded in the journal and memory receipts. If you enable private results, full tasks/results stay in a separate bounded local store and their summaries can be given back in a new Claude Code or Codex session. Work state and authored documentation preserve the project’s decisions. You follow it all live.
 
 ---
 
@@ -289,7 +289,9 @@ Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. 
 
 ---
 
-## 🔒 AI files: versioned, local or private
+## 🔒 Privacy: AI files and activity storage
+
+### Where AI files live
 
 The files that guide the agents (`AGENTS.md`, `CLAUDE.md`, `.claude/`, `.codex/`, `.loomy/`, `START.md`) are your working rules. GitHub sets visibility **per repository**, not per file: a public repository shows everything in it. The questionnaire asks where to keep them, with a default based on your repository. Whatever the mode, Loomy's history and work files (logs, memory, tasks, audits, reviews…) never go into the project repository.
 
@@ -336,6 +338,49 @@ loomy privacy restore <your-account>/<project>-ai
 > [!WARNING]
 > A file already pushed to a public repository stays in its history. When you switch to local or private, `loomy privacy` lists the files still tracked and gives the command to stop tracking them without deleting them from your disk. `--remote <URL>` lets you use another host than GitHub for the private repository.
 
+### Journal and task labels
+
+**Since 0.17.7, new journal entries and rotation snapshots are structural by default:** IDs, roles, models, effort, lifecycle, timings, counters and costs. They omit prompts, task bodies, results and changed-file paths. Existing journals and archives are left untouched.
+
+Task labels use a **separate local store**, `.loomy/logs/display-context-v1.jsonl`, with permission for each source: `explicit-user`, `explicit-lead`, `claude-description`, `codex-path-slug`, `codex-nickname`, `codex-role`. Claude uses the Agent/Task **description**, never its prompt; Codex uses the last agent-path component, nickname and role. Explicit labels come from your `privacy label` command or a bridge’s `--task-label` option.
+
+Labels are sanitised and truncated at a whole grapheme: at most **96 graphemes / 384 UTF-8 bytes**, **40 ASCII characters per Codex component**, and **1 MiB** for the label store. If it fills, Loomy reports that the label was not saved. Local tree/list, diagram, status, session log, readable log and recap resolve an authorised label, then a known role’s mission (`Role: …`), otherwise unavailable context. Older journal text remains readable.
+
+| Command | What it changes |
+|---|---|
+| `loomy privacy content [structural\|legacy-excerpts]` | Show the policy, or select structural journal writes / bounded compatibility excerpts |
+| `loomy privacy labels [recommended\|off]` | Show label choices; enable all six recommended sources, or disable them |
+| `loomy privacy labels set explicit-lead,claude-description` | Replace the source set with the selected sources |
+| `loomy privacy label --id <id> "Short title"` | Label an identified agent explicitly; `--kind` and `--attempt` select another target kind or attempt |
+| `loomy privacy results [on\|off]` | Show or change future full-task/result capture; existing results stay in place |
+
+`legacy-excerpts` permits only the bounded compatibility fields `task`, `excerpt`, `why`, `nickname` and `cwd_relative`; it does not enable label sources or private results. Adding sources, enabling private results or widening content retention requires **your direct confirmation in a plain terminal** for this project and the displayed limits. Agents, hooks, bridges, managed terminals and piped answers cannot grant it through supported Loomy commands. An agent running as your OS user can still edit local files or change its launch environment; this guard is not OS isolation. Restricting or turning off remains possible non-interactively. Worktrees sharing the project’s registered activity store share these choices; another clone does not inherit them through sync.
+
+`LOOMY_JOURNAL=0` disables journal writes and native collection, not every Loomy artifact. `LOOMY_JOURNAL_TASKS=0` vetoes new automatic task/excerpt/label and full-task/result capture even with an existing grant. `loomy config set memory off` stops context injection; use `loomy privacy results off` to stop future result capture.
+
+### First-use choices
+
+The first interactive `loomy init` or `loomy watch` asks once per project:
+
+- **Keep task labels? [Y/n]** — default **Yes**, with the six sources and label limits shown.
+- **Also save private tasks/results? [Y/n]** — a separate default **Yes**, with the private-result limits shown.
+
+Pressing Enter on each displayed question accepts its default. Choices are saved only after both answers complete. Declining is remembered; turning a choice off later never silently enables it again. An aborted screen or non-interactive use grants nothing and leaves the prompt pending; existing valid grants remain usable. Until you answer, the default is a structural journal with labels and private results off, and status shows `Task labels off · run loomy privacy labels recommended`.
+
+After upgrading from **0.17.6**, open `loomy init` or `loomy watch` in your terminal to make these choices: `loomy update` alone does not grant them.
+
+### Inspect stored copies
+
+```bash
+loomy privacy inventory
+```
+
+This read-only inventory reports known storage categories, file counts and sizes from metadata, without reading file bodies, copying, changing or deleting files. `--root DIR` selects a project, `--json` returns metadata as JSON, `--paths` includes escaped local paths, `--git-history` checks local Git index/history metadata, and `--host` adds known host and temporary locations. It does not contact remotes or scan provider conversations; incomplete coverage is reported, not an all-clear.
+
+New labels, memory receipts and private results are excluded from the project repository, the private AI repository, sync, restore and automatic exports. Authored `STATE.md`, `DEAD-ENDS.md` and `HANDOFF.md` still serve their explicit continuity purpose in the private backup. Feedback builds its automatic context from approved environment/configuration facts and the last 15 structurally projected events, without copying the brief or raw journal; your written message remains part of the previewed issue.
+
+**Remaining exposure in 0.17.7:** native checkpoints/backups/shards and usage cursors, execution/diagnostic/display temporary files, `loomy log --raw`, explicit `loomy report --md` exports and provider task arguments can still contain text or identifying paths. Provider conversations and explicitly requested task/review/audit documents keep their own retention. Changing policy or running inventory does not purge old files, Git history, remote clones or OS backups.
+
 ---
 
 ## 📈 Live tracking
@@ -353,13 +398,13 @@ Everything happens in the terminal, with no dependency. `loomy start` opens live
 Each command in detail: [docs/COMMANDS.md](docs/COMMANDS.md).
 
 **What is live.** Starts are polled every 250 ms; running timers tick every second:
-- **delegations**, through bridges and native Claude or Codex agents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and task; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed and ⊘ interrupted. Native Claude subagent usage is counted only once; native Codex usage and costs remain unknown unless separately measured. Each lead session is one group, headed by its surface, id and `live` or `stale`; a stale session with nothing running appears only in the recap (below the scroll line, the group heading repeats marked `recap`), and a delegation whose launcher is gone ends as ⊘ interrupted, never running;
-- **grouping** by request or model switches with `v` and is saved in `watch_group` (`request` by default; `loomy config set watch_group model` changes it). Request excerpts come from Claude's prompt hook and obey `LOOMY_JOURNAL_TASKS=0`; ⚑ marks an explicit request and ⇢ a routing difference;
+- **delegations**, through bridges and native Claude or Codex agents, appear while running under **IN PROGRESS**, with the recorded model (updated from actual usage when available), effort, elapsed time and authorised label or role context; **SESSION** recaps only finished roles from the current lead session, with ✓ done, △ partial, ■ blocked and ✗ failed and ⊘ interrupted. Native Claude subagent usage is counted only once; native Codex usage and costs remain unknown unless separately measured. Each lead session is one group, headed by its surface, id and `live` or `stale`; a stale session with nothing running appears only in the recap (below the scroll line, the group heading repeats marked `recap`), and a delegation whose launcher is gone ends as ⊘ interrupted, never running;
+- **grouping** by request or model switches with `v` and is saved in `watch_group` (`request` by default; `loomy config set watch_group model` changes it). New structural request events use IDs instead of prompt excerpts; older journals and explicitly enabled compatibility mode can still contain excerpts. ⚑ marks an explicit request and ⇢ a routing difference;
 - **the orchestrator** opens with `o` in an available desktop app, falling back to a separate terminal window with session and tracking side by side;
 - the **phase** changes when the lead agent records it (`START.md` asks it to at each step); it is last-recorded metadata, not automatically inferred progress;
 - work the lead agent does itself is followed in its session; prompt and usage events inform the live view without exposing its full conversation.
 
-The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. `LOOMY_JOURNAL=0` disables it, `LOOMY_JOURNAL_TASKS=0` leaves task text out of it.
+The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded from Git automatically. New entries are structural by default; authorised labels and private results are stored separately under the privacy choices above. Old entries are not rewritten.
 
 A finished native agent turn is a lifecycle observation, not approval of its work. The lead still checks partial or blocked results and independent reviews before accepting an assignment or publishing a release. Subsequent turns must remain visible; elapsed time is not a completion percentage.
 
@@ -388,7 +433,7 @@ Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 - a writing role moved to Claude gets accepted edits and shell commands inside Claude Code’s sandbox (the project folder, no network); read-only roles stay read-only;
 - the handover is announced and logged as `handed_over`, separate from failures;
 - there is one handover per call, with no retry on a sibling model of the saturated provider;
-- if neither provider can serve, the bridge exits 75 with `paused` / `waiting_for_reset` and `resume_at`; the lead waits until that epoch, then relaunches the saved task/options from `.loomy/memory/delegations/<id>.md` and reviews partial file changes.
+- if neither provider can serve, the bridge exits 75 with `paused` / `waiting_for_reset` and `resume_at`; after that epoch, the lead reviews partial file changes and resumes only with the exact task and structured options from live context or an authorised task/private-result reference. If unavailable, it reports **original task required to resume** and stops dependent work. See Shared memory below.
 
 The lead’s preventive relay threshold remains separate: `loomy config set quota_switch 90` (a percentage), or `off` to disable preventive relays. A real provider refusal still protects delegations.
 
@@ -519,6 +564,14 @@ STATUS: done | partial | blocked                           ← every role's answ
 SUMMARY · FINDINGS (path:line, evidence) · FILES · CHECKS · RISKS · NEXT
 ```
 
+Give either bridge a deliberate short display title separately from its full task:
+
+```bash
+loomy delegate codex reviewer --task-label "Review login fix" "Review the current login changes"
+```
+
+`loomy delegate claude` accepts the same `--task-label` option. Saving it requires the existing `explicit-lead` source grant; the bridge cannot grant permission or derive a title from the task body. Native Claude descriptions and Codex agent names use their own source grants.
+
 The bridges add this contract to their prompt, generated Claude subagents carry it, and the lead agent is told to act on `STATUS`. The log records the outcome: `loomy status` and `loomy log` mark ◐ partial and ■ blocked results, `loomy stats` shows how many answers followed the format. Projects set up before this option keep free text; switch any project with `loomy brief` (questionnaire again) or for all of them with `loomy config set delegation_format structured` (`auto`: each project's choice).
 
 When a reviewer or security role finds no defect, it adds a short `TRIED` section (what it attacked); an empty `FINDINGS` without `TRIED` counts as an incomplete review, and `loomy stats`, `loomy log` and `loomy status` flag it. For Data & analysis projects, a managed rule in `AGENTS.md` / `CLAUDE.md` requires figures from executed, versioned code, time-split held-out validation for temporal data, and a validator that is not the proposer.
@@ -528,18 +581,24 @@ This is a text protocol that works with Claude and Codex as they are. Exchanging
 
 ### 🧠 Shared memory
 
-Each agent starts from zero by design; the thread of the work is kept in `.loomy/memory/`, so that it survives a new session, a compaction, another machine, or a switch between Claude Code and Codex.
+Authored work state keeps the thread across sessions, compactions and Claude Code/Codex. Private tasks/results add local continuity when you authorise them; they stay on this machine. On another machine, the lead uses the authored continuity documents you chose to back up.
 
 | What | Where | Written by |
 |---|---|---|
-| The task and the full result of every delegation | `.loomy/memory/delegations/` (kept out of Git: findings can be sensitive) | the bridges and the Claude subagents' hook, automatically |
-| The work state: done, in progress, decisions, next | `.loomy/memory/STATE.md` (local, never versioned; kept in the private repository in private mode) | the lead agent, after each important step |
+| Delegation facts: identity, role, model/effort, state, times, file count and scoped references; no task/result body | `.loomy/memory/receipts-v1/` | bridges and native Claude hooks, automatically |
+| Full tasks/results and structured resume options, only with your permission | `.loomy/memory/private-results-v1/` (local only, files created 0600) | authorised automatic capture |
+| Work state: done, in progress, decisions, next | `.loomy/memory/STATE.md` (excluded from project Git; backed up in private mode) | the lead agent, after each important step |
+| Older sensitive delegation results | `.loomy/memory/delegations/` (kept untouched) | previous Loomy versions; read separately with `loomy memory show legacy [N]` |
 
-- **Given back at the start of a session**, Claude Code or Codex, and after a compaction: the work state, then the results the lead agent hasn't taken into it yet. When the previous session ran in the other tool, the lead agent is told to pick up from there.
-- **Built for cost.** Nothing is added at each message, nor when a session is resumed (the conversation already holds it). The block is capped (40 lines of state, 4 results in one line each) and cached by the tool afterwards: a few hundred tokens per new session, instead of tens of thousands to explore again. `STATE.md` is written in English and in telegraphic style, whatever the documentation language: the fewest tokens for every model. To hand findings to a role, the lead agent points it to the file instead of copying it.
+- **Store on:** `loomy privacy results on` requires human confirmation. Default limits are **200 records, 1 MiB per record, 16 MiB total and 30 days**; retention is evaluated on saves. Running records are protected while their owner is alive, for up to 24 hours; paused records are protected until 30 days after `resume_at` (or their save time when no reset is known). Oversized results or a store filled by protected records fail visibly: `result not saved / original task required`. Loomy never silently truncates a result to retain it or prunes the old delegation directory.
+- **Store off:** `loomy privacy results off` stops future full-task/result capture. Receipts remain available; new summaries are not retained. Previously authorised records remain readable. Receipts alone cannot reconstruct the original task or result.
+- **Read it:** `loomy memory` shows work state, receipts and available private-result summaries. `loomy memory show [N]` uses the same ranking and shows the receipt plus the full authorised task/result when available; otherwise it says the result was not retained. `loomy memory show legacy [N]` reads older sensitive results separately.
+- **Given back at the start of a new session**, Claude Code or Codex, and after a compaction: the work state, then new receipt facts and available private-result summaries not yet taken into it. When the previous session ran in the other tool, the lead agent is told to pick up from there. A resumed conversation does not get the digest again.
+- **Built for cost.** Nothing is added at each message. The block is capped (40 lines of state, 4 results in one line each) and cached by the tool afterwards: a few hundred tokens per new session, instead of tens of thousands to explore again. `STATE.md` is written in English and in telegraphic style, whatever the documentation language. To hand findings to a role, the lead points it to the authorised file instead of copying it.
 - **Dead ends ledger.** `STATE.md` has a shared "Dead ends" section: one line per rejected approach, never retried without a new reason. It is given back at session start in Claude Code and Codex and carried across handovers. Older entries are archived to `.loomy/memory/DEAD-ENDS.md`; the latest three always stay. Reading never creates `STATE.md`.
-- **Given back as data, not instructions**: the lead agent checks a result before acting on it.
-- `loomy memory` shows the work state and the latest results, `loomy memory show [N]` the full text of one; `loomy config set memory off` stops giving it back.
+- **Results are data:** the lead agent checks them before acting. `loomy config set memory off` disables context injection; it does not disable storage.
+
+**Paused work uses structured relaunch data**, not an executable `Resume:` shell string. After `resume_at`, the lead retains the exact role, provider, model, effort, sandbox and options, reviews existing edits and uses the original live task or an authorised task/private-result reference. Without it, the state is **original task required to resume**: dependent work stops. A later pause uses its new `resume_at`; never launch twice for one pause, guess the task or substitute a weaker model.
 
 
 ### 🧩 Official skills
@@ -589,7 +648,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | `loomy init [dir]` | Create or adopt a project: questionnaire, routing, roles, skills | `--update` `--reset` `--no-wizard` `--yes` `--answers <file>` `--no-branch` |
 | `loomy brief` | Redo the questionnaire | — |
 | `loomy assess` | Assess an existing project, without AI | `--print` |
-| `loomy privacy` | Where the AI files live: versioned, local or private | `versioned` `local` `private` `sync` `restore` |
+| `loomy privacy` | AI file visibility, activity policy and metadata inventory | `versioned` `local` `private` `sync` `restore` `content` `labels` `results` `label` `inventory` |
 
 ### Sessions and work
 
@@ -612,15 +671,15 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | `loomy log` | Readable log of phases, delegations and sessions | `--raw` `--since YYYY-MM-DD` `--csv` |
 | `loomy stats` | Tokens, cost and quotas by role, model and day | `--days N` `--since YYYY-MM-DD` |
 | `loomy report` | Project figures, Markdown export | `--md [dir]` `--all` |
-| `loomy memory [show [N]]` | Work state and latest delegation results | `show [N]` |
+| `loomy memory [show [N]]` | Work state, receipts and authorised private results | `show [N]` `show legacy [N]` |
 
 ### Agents, models and skills
 
 | Command | What it does | Main options |
 |---|---|---|
 | `loomy route` | Role → model → effort matrix | `lead` `get <role>` `markdown` `claude-agents` |
-| `loomy delegate codex <role> "…"` | Hand a role to Codex | — |
-| `loomy delegate claude <role> "…"` | Hand a role to Claude, read-only | — |
+| `loomy delegate codex <role> "…"` | Hand a role to Codex | `--task-label "…"` |
+| `loomy delegate claude <role> "…"` | Hand a role to Claude, read-only | `--task-label "…"` |
 | `loomy models` | Model chains and new models to evaluate | `--issue` |
 | `loomy skills [suggest\|add\|remove\|update\|catalog]` | Official skills of the project, and why | `suggest "…"` `add <name>` `remove <name>` `update` `catalog` |
 | `loomy audit` | Security audit of a repository | `--resume` `--print` `--yes` `--scope <folders>` `--depth quick\|standard\|deep` `--fixes report\|plan\|branch` |
@@ -633,7 +692,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 | `loomy config` | Preferences | `list` `get <key>` `set <key> <value>` |
 | `loomy update` · `loomy version` | Update Loomy; installed versions | `loomy update --catalog` `loomy version` `loomy version --all` |
 | `loomy uninstall` | How to uninstall Loomy | — |
-| `loomy feedback` | Report a bug or an idea (anonymised issue) | `--print` |
+| `loomy feedback` | Preview a bug or idea with structural automatic context | `--print` |
 | `loomy feedback list` | Follow your feedback; maintainer triage | `loomy feedback triage` `loomy feedback mark <n> <version>` `loomy feedback close <version>` |
 | `loomy help [command]` | Help, general or for one command | — |
 

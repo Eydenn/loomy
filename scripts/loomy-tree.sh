@@ -356,19 +356,21 @@ loomy_native_sorted() {
 
 # Cache fitted-row inputs, not timer text: duration-width transitions still refit exactly.
 loomy_native_draw() {
-  local i elapsed state age
+  local i r elapsed state age
   for (( i=0; i<${#NS_DRAW_TYPE[@]}; i++ )); do
-    if [[ "${NS_DRAW_TYPE[i]}" == S ]]; then loomy_live_line "${NS_DRAW_TEXT[i]}"; continue; fi
-    elapsed="${NS_DRAW_TIME[i]}"; state="${NS_DRAW_STATE[i]}"
-    if [[ "${NS_DRAW_CLOCK[i]}" == elapsed ]]; then
-      age=$(( LV_NOW - NS_DRAW_AT[i] )); (( age >= 0 )) || age=0
+    # An R record repeats the record NS_DRAW_AT (a recap row replayed from the live block).
+    r=$i; [[ "${NS_DRAW_TYPE[i]}" != R ]] || r=${NS_DRAW_AT[i]}
+    if [[ "${NS_DRAW_TYPE[r]}" == S ]]; then loomy_live_line "${NS_DRAW_TEXT[r]}"; continue; fi
+    elapsed="${NS_DRAW_TIME[r]}"; state="${NS_DRAW_STATE[r]}"
+    if [[ "${NS_DRAW_CLOCK[r]}" == elapsed ]]; then
+      age=$(( LV_NOW - NS_DRAW_AT[r] )); (( age >= 0 )) || age=0
       loomy_live_time "$age"; elapsed="$LV_TIME"
-    elif [[ "${NS_DRAW_CLOCK[i]}" == idle ]]; then
-      age=$(( LV_NOW - NS_DRAW_AT[i] )); (( age >= 0 )) || age=0
+    elif [[ "${NS_DRAW_CLOCK[r]}" == idle ]]; then
+      age=$(( LV_NOW - NS_DRAW_AT[r] )); (( age >= 0 )) || age=0
       loomy_live_time "$age"; tv state 'waiting since %s' "$LV_TIME"
-      state="${NS_DRAW_STATE[i]} · $state"
+      state="${NS_DRAW_STATE[r]} · $state"
     fi
-    NS_STATE_KIND="${NS_DRAW_KIND[i]:-}" NS_CELL_FIT="${NS_DRAW_CELL[i]:-0}" NS_CELL_ROW="$i" NS_CELL_HINT="${NS_DRAW_CELL_META[i]:-}" loomy_native_line "${NS_DRAW_PREFIX[i]}" "${NS_DRAW_TASK[i]}" "${NS_DRAW_MODEL[i]}" "$state" "$elapsed"
+    NS_STATE_KIND="${NS_DRAW_KIND[r]:-}" NS_CELL_FIT="${NS_DRAW_CELL[r]:-0}" NS_CELL_ROW="$r" NS_CELL_HINT="${NS_DRAW_CELL_META[r]:-}" loomy_native_line "${NS_DRAW_PREFIX[r]}" "${NS_DRAW_TASK[r]}" "${NS_DRAW_MODEL[r]}" "$state" "$elapsed"
   done
 }
 
@@ -427,11 +429,22 @@ loomy_native_line() {
 
 loomy_native_agent() {
   local wanted="$1" depth="$2" group="$3" row kind key sid parent state role task model effort start end duration outcome turn seen turnstate turns indent="" i label age d tkey ta tstate tout tduration active=0 word idle_word ai="${4:-0}" child_index turn_index
-  local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE="" was_idle=0
+  local NS_TIMER_KIND="" NS_TIMER_AT=0 NS_TIMER_STATE="" was_idle=0 memo="" lines_at=0 draws_at=0
   local NS_CELL_FIT="${NS_AI_FALLBACK[ai]:-0}"
   (( depth < 32 )) || return 0
   [[ "$wanted" != "$group" && "${NS_VISITED_IDX[ai]:-0}" == 0 ]] || return 0
   NS_VISITED_IDX[ai]=1
+  # An active agent's own rows depend only on depth and turn detail: the recap replays the live block's.
+  if (( ${NS_MEMO_ON:-0} )) && [[ "${NS_AI_STATE[ai]}" == running || "${NS_AI_STATE[ai]}" == waiting ]]; then
+    memo="$depth|$(( ${NS_MODE:-0} < 2 ))"
+    if (( ! ${NS_RECAP:-0} )); then lines_at=${#LV_FRAME_LINES[@]}; draws_at=${#NS_DRAW_TYPE[@]}
+    elif [[ "${NS_MEMO_KEY[ai]:-}" == "$memo" ]]; then
+      loomy_native_replay "$ai"
+      loomy_native_sorted ${NS_CHILDREN[ai]}
+      for child_index in $NS_SORTED; do loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"; done
+      return 0
+    fi
+  fi
   if (( ! ${NS_RECAP:-0} && ${NS_MODE:-0} == 0 )) && [[ "$NS_FOLD_SET" == *"|$ai|"* ]]; then return 0; fi
   # An ended row is either in the live block or in the recap, never in both.
   if (( ${NS_RECAP:-0} )) && [[ -n "${NS_LIVE_MODE:-}" ]]; then
@@ -487,7 +500,10 @@ loomy_native_agent() {
     fi
     if [[ "$model" == gpt-* || "$model" == claude-* ]]; then loomy_live_short_model "$model"; model=" $LV_SHORT${effort:+ $effort}"; else model=""; fi
     if (( ${NS_MODE:-0} == 0 )) || (( active )); then
-      if [[ "${NS_SELECTED:-*}" == '*' || "$NS_SELECTED" == *"|$key|"* ]]; then
+      if [[ -n "$memo" && "${NS_MEMO_KEY[ai]:-}" == "$depth|0" ]]; then
+        # Only the agent row was fitted (live block without turn detail): replay it, fit the turn rows below.
+        loomy_native_replay "$ai"
+      elif [[ "${NS_SELECTED:-*}" == '*' || "$NS_SELECTED" == *"|$key|"* ]]; then
         NS_ROW_AGENT="$key" loomy_native_line "${indent}┣━ " "$label" "$model" "$state" "$d"
       fi
     fi
@@ -513,11 +529,20 @@ loomy_native_agent() {
       if [[ "$tduration" =~ ^[0-9]+([.][0-9]+)?$ ]]; then loomy_live_time "$tduration"; d="$LV_TIME"; else d="—"; fi
       loomy_native_line "${indent}┃  ┗━ " "turn ${NS_TI_SHORT[turn_index]}" "" "$tstate" "$d"
     done
+    [[ -z "$memo" || "${NS_RECAP:-0}" == 1 ]] || { NS_MEMO_KEY[ai]="$memo"; NS_MEMO_LINES[ai]="$lines_at ${#LV_FRAME_LINES[@]}"; NS_MEMO_DRAWS[ai]="$draws_at ${#NS_DRAW_TYPE[@]}"; }
   fi
   loomy_native_sorted ${NS_CHILDREN[ai]}
   for child_index in $NS_SORTED; do
     loomy_native_agent "${NS_AI_KEY[child_index]}" "$(( depth + 1 ))" "$group" "$child_index"
   done
+}
+
+# Append an agent's rows fitted earlier in this frame; timer frames redraw them through references to their records.
+loomy_native_replay() {
+  local ai="$1" i n from="${NS_MEMO_LINES[$1]% *}" to="${NS_MEMO_LINES[$1]#* }"
+  for (( i=from; i<to; i++ )); do LV_FRAME_LINES+=("${LV_FRAME_LINES[i]}"); done
+  from="${NS_MEMO_DRAWS[ai]% *}"; to="${NS_MEMO_DRAWS[ai]#* }"
+  for (( i=from; i<to; i++ )); do n=${#NS_DRAW_TYPE[@]}; NS_DRAW_TYPE[n]=R; NS_DRAW_AT[n]=$i; done
 }
 
 # Routing detail is optional when the active hierarchy needs the available height. One family prefix per
@@ -786,6 +811,9 @@ loomy_native_render() {
     NS_LAYOUT_SELECTED=$selected; NS_LAYOUT_BUDGET=$budget
   fi
   NS_RECAP=0
+  # Memoize live rows for the recap only when both select every row; replays copy this frame's captured lines.
+  NS_MEMO_KEY=(); local NS_MEMO_ON=$(( compact && NS_CAPTURE_LINES ))
+  [[ "$selected" == '*' ]] || NS_MEMO_ON=0
   tv word '%s running' "$count"; tv usage 'native usage unknown'; loomy_live_line "$C_YELLOW$word$C_RESET$C_DIM · $usage$C_RESET"
   for (( i=0; i<${#order[@]}; i++ )); do
     (( modes[i] != 9 )) || continue
@@ -797,6 +825,7 @@ loomy_native_render() {
   # Watch pins everything before this delimiter; only the detailed remainder scrolls.
   [[ "${LOOMY_WATCH_PIN:-0}" != 1 ]] || loomy_live_line $'\036loomy-recap'
   if (( compact )); then
+    NS_MEMO_ON=${#NS_MEMO_KEY[@]}
     for (( i=0; i<${#order[@]}; i++ )); do
       for (( j=0; j<${#NS_G[@]}; j++ )); do [[ "${NS_G[j]}" != "${order[i]}" ]] || break; done
       (( modes[i] > 0 || ${NS_FOLD_N[j]:-0} > 0 )) || continue
@@ -815,7 +844,7 @@ loomy_native_render() {
 
 # Compose a frame without a terminal: the lead/active block stays above the scrolling recap.
 loomy_live_viewport() {
-  local height="$2" offset="$3" line pinned=() recap_rows=() rows=() boundary=0 room i rest="$1"
+  local height="$2" offset="$3" line recap_rows=() rows=() boundary=0 room i rest="$1"
   UI_PAGE_L=(); LV_PINNED=0; LV_PAGE_LINES=0; LV_SCROLL_TOP=$offset
   if [[ -n "${LV_FRAME:-}" && ( "$rest" == "$LV_FRAME" || "$rest" == "${LV_FRAME%$'\n'}" ) ]]; then
     rows=(${LV_FRAME_LINES[@]+"${LV_FRAME_LINES[@]}"})
@@ -827,13 +856,13 @@ loomy_live_viewport() {
     done
   fi
   for line in ${rows[@]+"${rows[@]}"}; do
-    if [[ "$line" == $'\036loomy-recap' ]]; then boundary=1; LV_PINNED=1; continue; fi
-    if (( boundary )); then recap_rows+=("$line"); else pinned+=("$line"); fi
-    LV_PAGE_LINES=$(( LV_PAGE_LINES + 1 ))
+    if [[ "$line" == $'\036loomy-recap' ]]; then boundary=1; LV_PINNED=1
+    elif (( boundary )); then recap_rows+=("$line"); else UI_PAGE_L+=("$line"); fi
   done
-  UI_PAGE_L=(${pinned[@]+"${pinned[@]}"})
+  # shellcheck disable=SC2034  # read by the watch loop (loomy-status.sh)
+  LV_PAGE_LINES=$(( ${#UI_PAGE_L[@]} + ${#recap_rows[@]} ))
   (( LV_PINNED )) || return 0
-  room=$(( height - ${#pinned[@]} )); (( room >= 0 )) || room=0
+  room=$(( height - ${#UI_PAGE_L[@]} )); (( room >= 0 )) || room=0
   LV_SCROLL_MAX=$(( ${#recap_rows[@]} - room )); (( LV_SCROLL_MAX >= 0 )) || LV_SCROLL_MAX=0
   (( LV_SCROLL_TOP <= LV_SCROLL_MAX )) || LV_SCROLL_TOP=$LV_SCROLL_MAX
   (( LV_SCROLL_TOP >= 0 )) || LV_SCROLL_TOP=0

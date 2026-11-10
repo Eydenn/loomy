@@ -9,8 +9,10 @@ use Fcntl qw(:mode);
 use File::Find qw(find);
 use File::Path qw(make_path);
 use File::Temp qw(tempdir);
+use IPC::Open3 qw(open3);
 use JSON::PP ();
 use POSIX qw(strftime mkfifo);
+use Symbol qw(gensym);
 use Test::More;
 use Time::HiRes ();
 
@@ -66,6 +68,15 @@ sub denied {
     my ($name,$code)=@_; my $ok=eval {$code->(); 1};
     ok(!$ok,$name); is($@,"invalid structural checkpoint\n","$name has a fixed content-free error") unless $ok;
 }
+sub bash_snapshot {
+    my ($api,$root,@mode)=@_; my $error=gensym();
+    my $pid=open3(undef,my $out,$error,'/bin/bash','-c',
+        'source "$1"; _loomy_content_ui() { exit 98; }; shift; "$@"','r2-snapshot',
+        "$repo/scripts/lib/content-policy.sh",$api,$root,@mode);
+    my $raw=do {local $/; <$out>}//''; my $errors=do {local $/; <$error>}//'';
+    waitpid($pid,0)==$pid or die "snapshot wrapper wait failed\n";
+    return ($?,$raw,$errors);
+}
 
 # No external provider/process census is permitted, even if an accidental code
 # path is introduced later. These executables are test-owned, never real CLIs.
@@ -84,6 +95,27 @@ is($snapshot->{project_id},$project_id,'existing identity retained exactly');
 is($snapshot->{policy_generation},7,'read-only snapshot retains grant generation');
 is($snapshot->{private_results},'on','same-project grant is readable');
 is($snapshot->{journal_content},'legacy-excerpts','journal compatibility remains separately visible');
+
+# Git registration and the link are fixture setup, outside the read-only probe.
+{
+    my $owner=project('snapshot-owner',1,{journal_content=>'legacy-excerpts',private_results=>'on',
+        label_sources=>'explicit-lead',grant_prompt_version=>1,policy_generation=>12});
+    system('git','-C',$owner,'init','-q','-b','main')==0 or die "fixture init failed\n";
+    system('git','-C',$owner,'-c','user.name=test','-c','user.email=test@example.invalid',
+        '-c','commit.gpgsign=false','commit','-q','--allow-empty','-m','fixture')==0 or die "fixture commit failed\n";
+    my $wt="$work/snapshot-worktree";
+    system('git','-C',$owner,'worktree','add','-q','-b','shared',$wt)==0 or die "fixture worktree failed\n";
+    symlink "$owner/.loomy","$wt/.loomy" or die;
+    my $p=readonly('registered shared worktree snapshot',$work,sub {
+        my $shared=Loomy::ContentPolicy::policy_snapshot($wt);
+        is_deeply($shared,Loomy::ContentPolicy::policy_snapshot($owner),'registered worktree reads the exact owner snapshot');
+        return $shared;
+    });
+    is($p->{identity_state},'present','registered shared worktree attests existing identity');
+    is($p->{project_id},$project_id,'registered shared worktree retains exact owner identity');
+    is($p->{policy_generation},12,'registered shared worktree retains owner policy generation');
+    is($p->{private_results},'on','registered shared worktree reads the existing grant');
+}
 
 for my $case ('no-loomy','no-logs','no-identity','no-policy') {
     my $root="$work/$case";
@@ -165,6 +197,8 @@ for my $replacement (qw(identity logs-directory)) {
 
 my $export=readonly('structural export selection',$granted,sub {Loomy::ContentPolicy::export_policy_snapshot($granted)});
 is($export->{journal_content},'structural','export defaults to explicit structural mode despite project compatibility');
+is($export->{identity_state},'present','successful structural export requires the existing identity');
+is($export->{project_id},$project_id,'successful structural export retains the exact project salt');
 my $event={type=>'delegation',id=>'d1',role=>'developer',cost_in=>'usage',cost_usd=>0,task=>'EXPORT_CANARY',why=>'EXPORT_CANARY'};
 my $public=Loomy::ContentPolicy::project_with_policy($export,$event);
 ok(!exists($public->{task}) && !exists($public->{why}),'export goes through project_with_policy with structural snapshot');
@@ -172,6 +206,10 @@ is($public->{cost_usd},0,'export projection preserves known zero cost');
 my $compat=readonly('explicit compatibility selection',$granted,sub {Loomy::ContentPolicy::export_policy_snapshot($granted,'legacy-excerpts')});
 is(Loomy::ContentPolicy::project_with_policy($compat,$event)->{task},'EXPORT_CANARY','existing compatibility grant can be consumed explicitly');
 my $ungranted=project('ungranted',1,undef);
+readonly('identified structural export without a content grant',$ungranted,sub {
+    is(Loomy::ContentPolicy::export_policy_snapshot($ungranted,'structural')->{project_id},$project_id,
+        'existing valid identity permits explicit structural export without a content grant');
+});
 readonly('ungranted compatibility refusal',$ungranted,sub {
     ok(!eval {Loomy::ContentPolicy::export_policy_snapshot($ungranted,'legacy-excerpts'); 1},'output flag never creates a compatibility grant');
 });
@@ -195,22 +233,71 @@ readonly('ungranted compatibility refusal',$ungranted,sub {
     });
 }
 readonly('Bash snapshot API',$granted,sub {
-    open my $p,'-|','/bin/bash','-c','source "$1"; _loomy_content_ui() { exit 98; }; loomy_content_policy_snapshot "$2"','r2-snapshot',"$repo/scripts/lib/content-policy.sh",$granted or die;
-    my $raw=do {local $/; <$p>}; close $p; is($?,0,'Bash read-only accessor succeeds without interactive UI');
+    my ($status,$raw,$errors)=bash_snapshot('loomy_content_policy_snapshot',$granted);
+    is($status,0,'Bash read-only accessor succeeds without interactive UI');
+    is($errors,'','Bash read-only accessor emits no diagnostics');
     is_deeply($json->decode($raw),Loomy::ContentPolicy::policy_snapshot($granted),'Bash accessor uses the same canonical snapshot');
 });
+for my $selection ([default=>undef],[structural=>'structural'],['legacy-excerpts'=>'legacy-excerpts']) {
+    my @mode=defined($selection->[1]) ? ($selection->[1]) : ();
+    readonly("Bash $selection->[0] export API",$granted,sub {
+        my ($status,$raw,$errors)=bash_snapshot('loomy_content_export_policy_snapshot',$granted,@mode);
+        is($status,0,"Bash $selection->[0] export succeeds without interactive UI");
+        is($errors,'',"Bash $selection->[0] export emits no diagnostics");
+        is_deeply($json->decode($raw),Loomy::ContentPolicy::export_policy_snapshot($granted,@mode),
+            "Bash $selection->[0] export forwards the selected mode to the canonical snapshot");
+    });
+}
+
+# No identity means no export snapshot, including structural output and vetoed
+# compatibility output. Unsafe fixture objects must remain untouched on error.
+for my $identity_case (qw(no-loomy no-logs no-identity identity-malformed identity-oversized
+        identity-symlink identity-hardlink identity-fifo identity-directory identity-mode
+        directory-loomy-mode directory-logs-mode directory-logs-symlink directory-loomy-symlink)) {
+    my $root="$work/$identity_case";
+    isnt(Loomy::ContentPolicy::policy_snapshot($root)->{identity_state},'present',"$identity_case cannot attest identity");
+    for my $tasks (1,0) {
+        local $ENV{LOOMY_JOURNAL_TASKS}=$tasks;
+        for my $selection ([default=>undef],[structural=>'structural'],['legacy-excerpts'=>'legacy-excerpts']) {
+            my @mode=defined($selection->[1]) ? ($selection->[1]) : ();
+            my $name="$identity_case $selection->[0] export TASKS=$tasks";
+            readonly($name,$root,sub {
+                my ($value,$error); my $warnings='';
+                my $ok=eval {local $SIG{__WARN__}=sub {$warnings.=join('',@_)};
+                    $value=Loomy::ContentPolicy::export_policy_snapshot($root,@mode); 1};
+                $error=$@;
+                ok(!$ok && !defined($value),"$name refuses before returning a snapshot");
+                is($error,"content export grant unavailable\n","$name has the fixed content-free diagnostic");
+                is($warnings,'',"$name leaks no warnings or supplied content");
+            });
+        }
+    }
+}
+for my $tasks (1,0) {
+    local $ENV{LOOMY_JOURNAL_TASKS}=$tasks;
+    for my $selection ([default=>undef],[structural=>'structural'],['legacy-excerpts'=>'legacy-excerpts']) {
+        my @mode=defined($selection->[1]) ? ($selection->[1]) : ();
+        my $name="Bash missing-identity $selection->[0] export TASKS=$tasks";
+        readonly($name,"$work/no-identity",sub {
+            my ($status,$raw,$errors)=bash_snapshot('loomy_content_export_policy_snapshot',"$work/no-identity",@mode);
+            isnt($status,0,"$name propagates refusal");
+            is($raw,'',"$name emits no snapshot bytes");
+            is($errors,"content export grant unavailable\n","$name emits only the fixed content-free diagnostic");
+        });
+    }
+}
 
 my $context={project_id=>$project_id,source_roots=>['/synthetic-provider/sessions'],workspace_roots=>['/synthetic-workspace'],policy_generation=>7};
 my $source='/synthetic-provider/sessions/missing.jsonl';
 my $ref={version=>1,project_id=>$project_id,target_kind=>'agent',target_id=>'agent1',attempt_id=>'attempt1',label_id=>'label1'};
 for my $identity_case ('no-identity','identity-malformed') {
-    my $closed_export=Loomy::ContentPolicy::export_policy_snapshot("$work/$identity_case");
+    my $closed_snapshot=Loomy::ContentPolicy::policy_snapshot("$work/$identity_case");
     my $warnings=''; local $SIG{__WARN__}=sub {$warnings.=join('',@_)};
     for my $field (qw(label_ref task_ref label_refs)) {
         my $forged={%$ref,project_id=>''}; delete $forged->{label_id} if $field eq 'task_ref';
         $forged={slug=>$forged} if $field eq 'label_refs';
-        my $out=Loomy::ContentPolicy::project_with_policy($closed_export,{type=>'delegation',$field=>$forged});
-        ok(!defined($out->{$field}),"$identity_case export cannot authorize forged $field scope");
+        my $out=Loomy::ContentPolicy::project_with_policy($closed_snapshot,{type=>'delegation',$field=>$forged});
+        ok(!defined($out->{$field}),"$identity_case snapshot cannot authorize forged $field scope");
     }
     is($warnings,'',"$identity_case forged scopes leak no warnings or content");
 }

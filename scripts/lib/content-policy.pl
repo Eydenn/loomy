@@ -414,6 +414,7 @@ sub export_policy_snapshot {
     my ($root,$mode)=@_; $mode//='structural';
     die "invalid content export mode\n" unless _scalar($mode) && $mode =~ /\A(?:structural|legacy-excerpts)\z/;
     my $p=policy_snapshot($root);
+    die "content export grant unavailable\n" unless $p->{identity_state} eq 'present';
     if ($mode eq 'legacy-excerpts' && ($ENV{LOOMY_JOURNAL_TASKS}//'1') ne '0') {
         die "content export grant unavailable\n" unless $p->{valid} && $p->{identity_state} eq 'present'
             && $p->{policy_state} eq 'project' && $p->{journal_content} eq 'legacy-excerpts';

@@ -61,6 +61,11 @@ sub identity {
     my @st = lstat($path);
     return @st ? [@st[0, 1], $st[2] & 07777, @st[3, 4, 5]] : undef;
 }
+sub parent_identity {
+    my $id = identity($_[0]);
+    # APFS directory link counts change when our temporary is removed.
+    return $id ? [@$id[0, 1, 2, 4, 5]] : undef;
+}
 sub temps {
     my ($dir) = @_;
     opendir my $dh, $dir or die "fixture readdir: $!";
@@ -147,8 +152,8 @@ if (($mode // '') eq '--flock-probe') {
 require "$repo/scripts/lib/hooks.pl";
 
 # Ownership bytes come from the documented generated templates, independently
-# of the engine's serializer/catalog. Historical filename substitutions are not
-# trusted without an approved known-generated historical descriptor.
+# of the engine's serializer/catalog. Historical ownership is the finite set of
+# decoded commands below, not a filename substitution rule.
 my @claude = (
     ['SessionStart', 'start', 20], ['SessionEnd', 'end', 3],
     ['Stop', 'stop', 10], ['SubagentStop', 'subagent', 10],
@@ -157,6 +162,23 @@ my @claude = (
 );
 my @codex = (['SessionStart', 'start', 20], ['SessionEnd', 'end', 3]);
 my $status_command = q{sh -c 'd=${CLAUDE_PROJECT_DIR:-$PWD}; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/loomy-statusline.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/loomy-statusline.sh" ] && exec bash "$d/.loomy/scripts/loomy-statusline.sh"'};
+# Known installer history: 6af0aa8 start/end; 47c2159 Codex; 40eb004 stop
+# and subagent; bfae49d prompt; 6c1f519 statusLine. 49e0d92 renamed these
+# generated filenames. No historical agent-* or alternate statusLine form exists.
+my %historical = (
+    claude => {
+        SessionStart => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook start},
+        SessionEnd => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook end},
+        Stop => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook stop},
+        SubagentStop => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook subagent},
+        UserPromptSubmit => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook prompt},
+        statusLine => q{sh -c 'd=${CLAUDE_PROJECT_DIR:-$PWD}; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/ai-statusline.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/ai-statusline.sh" ] && exec bash "$d/.loomy/scripts/ai-statusline.sh"'},
+    },
+    codex => {
+        SessionStart => q{sh -c 'd=$PWD; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/ai-context.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/ai-context.sh" ] && exec bash "$d/.loomy/scripts/ai-context.sh" --hook start --tool codex'},
+        SessionEnd => q{sh -c 'd=$PWD; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/ai-context.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/ai-context.sh" ] && exec bash "$d/.loomy/scripts/ai-context.sh" --hook end --tool codex'},
+    },
+);
 my $descriptor = {executable => '/opt/loomy/0.17.8/bin/loomy', version => '0.17.8', resource_version => '0.17.8'};
 my $retained = {executable => '/opt/loomy/0.17.9/bin/loomy', version => '0.17.9', resource_version => '0.17.9'};
 my @descriptors = ($descriptor, $retained);
@@ -176,6 +198,19 @@ sub shell_data {
     }
     $data->{statusLine} = {type => 'command', padding => 0, command => $status_command} if $provider eq 'claude';
     return $data;
+}
+sub unrelated_events {
+    my ($provider) = @_;
+    my $events = {
+        Notification => [{matcher => 'x', private => "PRIVATE_CUSTOM_SENTINEL\0\n日本語", values => [undef, JSON::PP::true, 7]}],
+        FutureString => "PRIVATE_CUSTOM_SENTINEL\nstring",
+        FutureNull => undef,
+        FutureBoolean => JSON::PP::false,
+        FutureNumber => 12,
+        FutureMalformedGroups => [undef, 'scalar', {hooks => 'not-a-hook-array', extra => {keep => 1}}],
+    };
+    $events->{Stop} = [{matcher => 'Claude-only event without hooks'}] if $provider eq 'codex';
+    return $events;
 }
 sub slot {
     my ($facts, $event) = @_;
@@ -211,8 +246,6 @@ subtest 'H01 exact typed catalog and finite native descriptors' => sub {
             ) {
                 is(Loomy::Hooks::classify_command($provider, $event, $wrong, \@descriptors), 'custom', "$provider/$event wrong type or near-match stays custom");
             }
-            my $old = $hook->{command} =~ s/loomy-context\.sh/ai-context.sh/r;
-            is(Loomy::Hooks::classify_command($provider, $event, {type => 'command', command => $old}, \@descriptors), 'custom', "$provider/$event unsupported historical filename stays custom");
             is(Loomy::Hooks::classify_command($provider, 'UnknownEvent', $hook, \@descriptors), 'custom', "$provider/$event correct bytes in wrong event stay custom");
             is(Loomy::Hooks::classify_command($provider eq 'claude' ? 'codex' : 'claude', $event, $hook, \@descriptors), 'custom', "$provider/$event correct bytes in wrong provider stay custom");
         }
@@ -226,6 +259,34 @@ subtest 'H01 exact typed catalog and finite native descriptors' => sub {
         ok($fresh->{facts}{ready}, "$provider all expected slots are ready");
         ok(!Loomy::Hooks::transform($provider, $fresh->{data})->{changed}, "$provider second ensure is semantically unchanged");
     }
+    is(scalar(map { keys %{$historical{$_}} } keys %historical), 8, 'historical fixture contains only the eight observed generated commands');
+    for my $provider (qw(claude codex)) {
+        for my $event (sort keys %{$historical{$provider}}) {
+            my $command = $historical{$provider}{$event};
+            is(Loomy::Hooks::classify_command($provider, $event, {type => 'command', command => $command}), 'shell', "$provider/$event exact historical generated command is owned");
+            for my $wrong (
+                {type => 'prompt', command => $command},
+                {type => 'command', command => " $command"},
+                {type => 'command', command => "$command --extra"},
+            ) {
+                is(Loomy::Hooks::classify_command($provider, $event, $wrong), 'custom', "$provider/$event historical wrong type or near-match stays custom");
+            }
+            is(Loomy::Hooks::classify_command($provider, 'UnknownEvent', {type => 'command', command => $command}), 'custom', "$provider/$event historical bytes in the wrong event stay custom");
+            is(Loomy::Hooks::classify_command($provider eq 'claude' ? 'codex' : 'claude', $event, {type => 'command', command => $command}), 'custom', "$provider/$event historical bytes in the wrong provider stay custom");
+            if ($provider eq 'codex' || $event eq 'statusLine') {
+                my $mixed_names = $command =~ s/ai-(context|statusline)\.sh/loomy-$1.sh/r;
+                is(Loomy::Hooks::classify_command($provider, $event, {type => 'command', command => $mixed_names}), 'custom', "$provider/$event mixed historical and current walk paths stay custom");
+            }
+        }
+    }
+    for my $spec (grep { $_->[1] =~ /\Aagent-/ } @claude) {
+        my $unowned = q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook } . $spec->[1];
+        is(Loomy::Hooks::classify_command('claude', $spec->[0], {type => 'command', command => $unowned}), 'custom', "Claude/$spec->[0] ungenerated historical filename substitution stays custom");
+    }
+    my $unknown_status = $status_command =~ s/loomy-statusline\.sh/ai-status.sh/gr;
+    is(Loomy::Hooks::classify_command('claude', 'statusLine', {type => 'command', command => $unknown_status}), 'custom', 'ungenerated historical statusLine filename stays custom');
+    is(Loomy::Hooks::classify_command('claude', 'statusLine', {type => 'command', command => q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-statusline.sh"}}), 'custom', 'ungenerated direct historical statusLine stays custom');
+    is(Loomy::Hooks::classify_command('codex', 'SessionStart', {type => 'command', command => $historical{claude}{SessionStart}}), 'custom', 'ungenerated direct historical Codex hook stays custom');
     is(Loomy::Hooks::classify_command('claude', 'statusLine', {type => 'command', command => $status_command}), 'shell', 'owned statusLine is separate from the ten hooks');
     is(Loomy::Hooks::native_command('claude', 'statusLine', $descriptor), '"/opt/loomy/0.17.8/bin/loomy" __statusline', 'native statusLine has the frozen direct form');
     my $unicode = {%$descriptor, executable => '/opt/Loomy 日本語/bin/loomy'};
@@ -301,19 +362,100 @@ subtest 'H02 ensure, inverse, customization and exact duplicate semantics' => su
         is_deeply($fixed->{data}{hooks}{$event}[0], $wrong->{hooks}{$event}[0], "$provider wrong-type exact command is preserved as custom");
         is(slot($fixed->{facts}, $event)->{owned}, 1, "$provider missing owned slot is filled beside wrong-type custom");
     }
+    for my $provider (qw(claude codex)) {
+        my $historical_data = shell_data($provider);
+        my $expected = clone($historical_data);
+        for my $spec (@{specs($provider)}) {
+            next unless exists($historical{$provider}{$spec->[0]});
+            $historical_data->{hooks}{$spec->[0]}[0]{hooks}[0]{command} = $historical{$provider}{$spec->[0]};
+        }
+        if ($provider eq 'claude') {
+            $historical_data->{statusLine}{command} = $historical{claude}{statusLine};
+            # 6af0aa8 generated SessionEnd with timeout 5; only its command may change.
+            $historical_data->{hooks}{SessionEnd}[0]{hooks}[0]{timeout} = 5;
+            $expected->{hooks}{SessionEnd}[0]{hooks}[0]{timeout} = 5;
+            $historical_data->{statusLine}{padding} = $expected->{statusLine}{padding} = 9;
+            $historical_data->{statusLine}{extra} = $expected->{statusLine}{extra} = {keep => 1};
+        }
+        my $before = clone($historical_data);
+        for my $target (qw(ensure shell)) {
+            my $out = repaired($provider, $historical_data, $target);
+            ok($out->{changed}, "$provider $target repairs historical generated commands");
+            is_deeply($out->{data}, $expected, "$provider $target changes only historical owned commands to current shell forms");
+            ok(!repaired($provider, $out->{data}, $target)->{changed}, "$provider historical $target repair is idempotent");
+            for my $spec (@{specs($provider)}) {
+                is(slot($out->{facts}, $spec->[0])->{owned}, 1, "$provider/$spec->[0] historical $target repair has one owned hook");
+            }
+        }
+        is_deeply($historical_data, $before, "$provider historical repair never mutates its input");
+        my $duplicates = shell_data($provider);
+        for my $spec (@{specs($provider)}) {
+            next unless exists($historical{$provider}{$spec->[0]});
+            my $old_group = clone($duplicates->{hooks}{$spec->[0]}[0]);
+            $old_group->{hooks}[0]{command} = $historical{$provider}{$spec->[0]};
+            unshift @{$duplicates->{hooks}{$spec->[0]}}, $old_group;
+            push @{$duplicates->{hooks}{$spec->[0]}[0]{hooks}}, clone($duplicates->{hooks}{$spec->[0]}[1]{hooks}[0]);
+        }
+        $duplicates->{statusLine}{command} = $historical{claude}{statusLine} if $provider eq 'claude';
+        for my $target (qw(ensure shell)) {
+            is_deeply(repaired($provider, $duplicates, $target)->{data}, shell_data($provider), "$provider historical/current duplicate hooks coalesce after $target conversion");
+        }
+        my $unrelated = shell_data($provider);
+        my $unknown = unrelated_events($provider);
+        @{$unrelated->{hooks}}{keys %$unknown} = values %$unknown;
+        my $unrelated_before = clone($unrelated);
+        my $facts = Loomy::Hooks::inspect($provider, $unrelated);
+        is($facts->{unknown_event_count}, scalar(keys %$unknown), "$provider only catalog events contribute required slots");
+        ok($facts->{ready} && $facts->{state} eq 'shell', "$provider malformed unrelated events do not block catalog readiness");
+        unlike($json->encode($facts), qr/PRIVATE_CUSTOM_SENTINEL/, "$provider unknown event values stay out of typed facts");
+        for my $target (qw(ensure shell)) {
+            my $out = repaired($provider, $unrelated, $target);
+            ok(!$out->{changed}, "$provider $target ignores malformed unrelated event shapes");
+            is_deeply($out->{data}, $unrelated_before, "$provider $target preserves every unrelated event JSON value");
+        }
+        delete $unrelated->{hooks}{SessionEnd};
+        is_deeply(repaired($provider, $unrelated)->{data}, $unrelated_before, "$provider a missing catalog slot is repaired alongside malformed unrelated events");
+        for my $spec (@{specs($provider)}) {
+            for my $groups (undef, 'scalar', {}, [undef], [{matcher => 'x'}], [{hooks => {}}], [{hooks => [undef]}]) {
+                my $bad = shell_data($provider);
+                $bad->{hooks}{$spec->[0]} = $groups;
+                ok(!eval { Loomy::Hooks::transform($provider, $bad); 1 }, "$provider/$spec->[0] malformed catalog groups still fail validation");
+            }
+        }
+    }
     my $null = shell_data('claude');
     $null->{statusLine} = undef;
     my $out = repaired('claude', $null);
     ok(!$out->{changed} && exists($out->{data}{statusLine}) && !defined($out->{data}{statusLine}), 'explicit null statusLine is preserved');
     is($out->{facts}{status_line}{state}, 'custom', 'explicit null statusLine is a typed custom choice');
+    ok(!$out->{facts}{status_line}{ambiguous} && $out->{facts}{ready}, 'explicit null statusLine is a valid nonambiguous custom choice');
+    my $string_status = shell_data('claude');
+    $string_status->{statusLine} = "PRIVATE_CUSTOM_SENTINEL\ncustom statusLine";
+    for my $target (qw(ensure shell)) {
+        my $custom = repaired('claude', $string_status, $target);
+        ok(!$custom->{changed}, "$target preserves a string statusLine without replacement");
+        is_deeply($custom->{data}, $string_status, "$target preserves string statusLine bytes and all hooks");
+        is_deeply($custom->{facts}{status_line}, {state => 'ambiguous', owned => 0, shell => 0, native => 0, custom => 1, ambiguous => 1}, "$target string statusLine is reported as ambiguous custom");
+        ok(!$custom->{facts}{ready} && $custom->{facts}{state} eq 'ambiguous', "$target string statusLine blocks readiness");
+        unlike($json->encode($custom->{facts}), qr/PRIVATE_CUSTOM_SENTINEL/, "$target string statusLine facts do not disclose its contents");
+    }
+    delete $string_status->{hooks}{SessionEnd};
+    my $string_repaired = repaired('claude', $string_status);
+    is($string_repaired->{data}{statusLine}, $string_status->{statusLine}, 'string statusLine survives a changed hook repair');
+    is(slot($string_repaired->{facts}, 'SessionEnd')->{owned}, 1, 'string statusLine does not prevent a missing catalog hook from being repaired');
+    for my $value ('', '123') {
+        my $data = shell_data('claude');
+        $data->{statusLine} = $value;
+        my $custom = repaired('claude', $data);
+        is($custom->{data}{statusLine}, $value, 'empty and numeric-looking string statusLine values are preserved');
+        ok($custom->{facts}{status_line}{custom} && $custom->{facts}{status_line}{ambiguous}, 'empty and numeric-looking string statusLine values remain ambiguous custom');
+    }
     my $padding = shell_data('claude');
     $padding->{statusLine}{padding} = 12;
     $padding->{statusLine}{extra} = {keep => 1};
     my $native = Loomy::Hooks::fixture_native_transform('claude', $padding, $descriptor, \@descriptors);
     is_deeply(repaired('claude', $native->{data}, 'shell')->{data}, $padding, 'statusLine padding and unknown fields survive both transforms');
-    my $historical = $status_command =~ s/loomy-statusline\.sh/ai-statusline.sh/gr;
-    is(Loomy::Hooks::classify_command('claude', 'statusLine', {type => 'command', command => $historical}), 'custom', 'unsupported historical statusLine stays custom');
-    for my $bad ([], 'scalar', {hooks => []}, {hooks => undef}, {hooks => {SessionStart => {}}}, {hooks => {SessionStart => [undef]}}, {hooks => {SessionStart => [{hooks => {}}]}}, {hooks => {SessionStart => [{hooks => [undef]}]}}, {statusLine => []}) {
+    for my $bad ([], 'scalar', {hooks => []}, {hooks => undef}, {hooks => {SessionStart => {}}}, {hooks => {SessionStart => [undef]}}, {hooks => {SessionStart => [{hooks => {}}]}}, {hooks => {SessionStart => [{hooks => [undef]}]}}, {statusLine => []}, {statusLine => 1}, {statusLine => JSON::PP::true}) {
         ok(!eval { Loomy::Hooks::transform('claude', $bad); 1 }, 'wrong settings/container shape fails before transform');
     }
 };
@@ -371,7 +513,42 @@ subtest 'H03 filesystem no-op identity, modes and hardlink aliases' => sub {
             is(decode_json(bytes($changed_path))->{customRoot}{keep}, 'mode', "$provider custom JSON survives changed repair");
             is_deeply(temps(parent_path($changed_root, $provider)), [], "$provider successful repair leaves no temporary or lock file");
         }
+        my $scoped_root = root("unrelated-events-$provider");
+        my $complete = shell_data($provider);
+        my $unknown = unrelated_events($provider);
+        @{$complete->{hooks}}{keys %$unknown} = values %$unknown;
+        my $scoped_path = seed($scoped_root, $provider, " \n" . $json->encode($complete) . "\n\t", 0640);
+        my $scoped_before = manifest($scoped_root);
+        ok(Loomy::Hooks::settings_inspect($scoped_root, $provider)->{ok}, "$provider filesystem inspection accepts malformed unrelated event groups");
+        is_deeply(manifest($scoped_root), $scoped_before, "$provider unrelated event inspection preserves exact bytes and namespace");
+        my $scoped = Loomy::Hooks::settings_update($scoped_root, $provider);
+        ok($scoped->{ok} && !$scoped->{changed} && !$scoped->{applied}, "$provider complete catalog with unrelated malformed groups is a no-op");
+        is_deeply(manifest($scoped_root), $scoped_before, "$provider unrelated event no-op preserves bytes, mode and inode");
+        my $incomplete = clone($complete);
+        delete $incomplete->{hooks}{SessionEnd};
+        put($scoped_path, $json->encode($incomplete), 0640);
+        my $scoped_repair = Loomy::Hooks::settings_update($scoped_root, $provider);
+        ok($scoped_repair->{ok} && $scoped_repair->{applied}, "$provider repairs a missing slot alongside malformed unrelated events");
+        is_deeply(decode_json(bytes($scoped_path)), $complete, "$provider changed repair preserves all unrelated event JSON values");
+        is(identity($scoped_path)->[2], 0640, "$provider scoped repair preserves existing file mode");
+        ok(!Loomy::Hooks::settings_update($scoped_root, $provider)->{changed}, "$provider scoped repair retry is idempotent");
     }
+    my $string_root = root('string-statusline');
+    my $string_data = shell_data('claude');
+    $string_data->{statusLine} = "PRIVATE_CUSTOM_SENTINEL\ncustom statusLine";
+    my $string_path = seed($string_root, 'claude', " \n" . $json->encode($string_data) . "\n", 0640);
+    my $string_before = manifest($string_root);
+    my $string_noop = Loomy::Hooks::settings_update($string_root, 'claude');
+    ok($string_noop->{ok} && !$string_noop->{changed} && !$string_noop->{applied}, 'custom string statusLine permits filesystem no-op repair');
+    is_deeply(manifest($string_root), $string_before, 'custom string statusLine no-op preserves bytes, mode and inode');
+    ok(!$string_noop->{facts}{ready} && $string_noop->{facts}{status_line}{ambiguous}, 'filesystem string statusLine result reports ambiguity without readiness');
+    my $string_incomplete = clone($string_data);
+    delete $string_incomplete->{hooks}{SessionEnd};
+    put($string_path, $json->encode($string_incomplete), 0640);
+    my $string_changed = Loomy::Hooks::settings_update($string_root, 'claude');
+    ok($string_changed->{ok} && $string_changed->{applied}, 'missing hooks repair beside a custom string statusLine');
+    is_deeply(decode_json(bytes($string_path)), $string_data, 'changed filesystem repair preserves custom string statusLine bytes');
+    ok(!$string_changed->{facts}{ready} && $string_changed->{facts}{state} eq 'ambiguous', 'changed filesystem repair retains string statusLine ambiguity');
 };
 
 subtest 'H04 missing parents, invalid shapes, no-follow and fenced races' => sub {
@@ -551,6 +728,142 @@ subtest 'H05 checked operations, cleanup, interruption and partial-provider retr
         ok(!$out->{ok} && !$out->{applied} && !$out->{changed}, "$operation failure reports pre-rename unchanged result");
         ok(defined($out->{code}) && length($out->{code}), "$operation failure has a diagnostic code");
         is_deeply(manifest($r), $before, "$operation failure preserves bytes/inode/mode and cleans temporary");
+    }
+    for my $provider (qw(claude codex)) {
+        for my $operation (qw(create print flush sync chmod close rename)) {
+            my $r = root("bootstrap-failure-$provider-$operation");
+            my $before = manifest($r);
+            my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', {fail_at => $operation});
+            ok(!$out->{ok} && !$out->{applied} && !$out->{changed}, "$provider bootstrap $operation failure is unapplied");
+            is_deeply(manifest($r), $before, "$provider bootstrap $operation failure removes only its new empty parent and temporary");
+        }
+        for my $interruption ('exception', 'TERM') {
+            for my $stage ('after_parent_create', 'after_parent_lock', 'after_temp_create', 'before_parent_cleanup') {
+                my $r = root("bootstrap-$provider-$interruption-$stage");
+                my $before = manifest($r);
+                pipe(my $read, my $write) or die;
+                my $pid = fork_child(sub {
+                    close $read;
+                    my $called = 0;
+                    my $options = {test_hook => sub {
+                        return unless $_[0] eq $stage;
+                        $called++;
+                        die "fixture bootstrap exception\n" if $interruption eq 'exception';
+                        kill('TERM', $$) == 1 or die 'fixture self-TERM failed';
+                    }};
+                    $options->{fail_at} = 'create' if $stage eq 'before_parent_cleanup';
+                    my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', $options);
+                    my $facts = ($called == 1 ? 'C' : 'E')
+                        . (!$out->{ok} && !$out->{applied} && !$out->{changed} ? 'R' : 'E');
+                    syswrite($write, $facts) == 2 or die;
+                    close $write;
+                });
+                close $write;
+                is(receive($read), 'C', "$provider $interruption reaches $stage");
+                is(receive($read), 'R', "$provider $interruption at $stage returns an unapplied failure");
+                close $read;
+                reap($pid, "$provider $interruption bootstrap writer at $stage");
+                is_deeply(manifest($r), $before, "$provider $interruption at $stage removes its own new empty parent");
+            }
+        }
+        for my $origin ('existing', 'racing') {
+            my $r = root("bootstrap-preserve-$provider-$origin");
+            my $parent = parent_path($r, $provider);
+            my $expected;
+            if ($origin eq 'existing') {
+                mkdir($parent, 0751) or die;
+                chmod(0751, $parent) or die;
+                $expected = manifest($r);
+            }
+            my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', {test_hook => sub {
+                if ($origin eq 'racing' && $_[0] eq 'before_parent_create') {
+                    mkdir($parent, 0751) or die;
+                    chmod(0751, $parent) or die;
+                    $expected = manifest($r);
+                }
+                die "fixture existing-parent failure\n" if $_[0] eq 'after_parent_lock';
+            }});
+            ok(!$out->{ok} && !$out->{applied}, "$provider failure in $origin empty parent is unapplied");
+            is_deeply(manifest($r), $expected, "$provider failure preserves $origin empty parent inode and mode");
+        }
+        my $outside = root("bootstrap-outside-$provider");
+        put("$outside/sentinel", 'OUTSIDE_SENTINEL');
+        for my $stage ('after_parent_create', 'after_temp_create', 'before_parent_cleanup') {
+            for my $replacement ('nonempty', 'directory', 'symlink') {
+                my $r = root("bootstrap-race-$provider-$stage-$replacement");
+                my $parent = parent_path($r, $provider);
+                my $detached = "$r/detached";
+                my $outside_before = manifest($outside);
+                my ($called, $expected_parent, $expected_detached) = (0);
+                my $options = {test_hook => sub {
+                    return unless $_[0] eq $stage;
+                    $called++;
+                    if ($replacement eq 'nonempty') {
+                        put("$parent/sentinel", 'KEEP_NONEMPTY_PARENT');
+                    } else {
+                        rename($parent, $detached) or die;
+                        if ($replacement eq 'directory') {
+                            mkdir($parent, 0751) or die;
+                            chmod(0751, $parent) or die;
+                        } else {
+                            symlink($outside, $parent) or die;
+                        }
+                        $expected_detached = parent_identity($detached);
+                    }
+                    $expected_parent = parent_identity($parent);
+                    die "fixture bootstrap namespace failure\n";
+                }};
+                $options->{fail_at} = 'create' if $stage eq 'before_parent_cleanup';
+                my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', $options);
+                is($called, 1, "$provider $replacement replacement reaches $stage");
+                ok(!$out->{ok} && !$out->{applied}, "$provider $replacement at $stage reports an unapplied failure");
+                is_deeply(parent_identity($parent), $expected_parent, "$provider $replacement at $stage retains the replacement or nonempty parent inode, mode and owner");
+                if ($replacement eq 'nonempty') {
+                    is(bytes("$parent/sentinel"), 'KEEP_NONEMPTY_PARENT', "$provider $stage preserves the new nonempty parent contents");
+                    is_deeply(temps($parent), [], "$provider $stage cleans only its own temporary in the nonempty parent");
+                } else {
+                    is_deeply(parent_identity($detached), $expected_detached, "$provider $stage preserves the detached original parent inode, mode and owner");
+                    is_deeply(temps($detached), [], "$provider $stage cleans its own temporary in the detached parent");
+                }
+                is_deeply(manifest($outside), $outside_before, "$provider $replacement at $stage never changes the outside directory");
+            }
+        }
+        my $busy_root = root("bootstrap-contender-$provider");
+        my $busy_parent = parent_path($busy_root, $provider);
+        pipe(my $ready, my $send_ready) or die;
+        pipe(my $release, my $send_release) or die;
+        my ($contender, $busy_before);
+        my $busy = Loomy::Hooks::settings_update($busy_root, $provider, 'ensure', {test_hook => sub {
+            return unless $_[0] eq 'after_parent_create';
+            $contender = fork_child(sub {
+                close $ready;
+                close $send_release;
+                sysopen my $lock, $busy_parent, O_RDONLY or die;
+                flock($lock, LOCK_EX | LOCK_NB) or die;
+                syswrite($send_ready, 'R') == 1 or die;
+                receive($release);
+                close $lock;
+                close $send_ready;
+                close $release;
+            });
+            close $send_ready;
+            close $release;
+            receive($ready) eq 'R' or die;
+            $busy_before = manifest($busy_root);
+            die "fixture failure while another writer owns the new parent lock\n";
+        }});
+        ok(!$busy->{ok} && !$busy->{applied}, "$provider bootstrap failure stays unapplied while another writer holds the new parent");
+        is($busy->{code}, 'test_hook_failed', "$provider busy cleanup preserves the original failure diagnostic");
+        is_deeply(manifest($busy_root), $busy_before, "$provider cleanup preserves the empty parent owned by a live competing writer");
+        syswrite($send_release, 'G') == 1 or die;
+        close $send_release;
+        close $ready;
+        reap($contender, "$provider new-parent lock contender");
+        ok(Loomy::Hooks::settings_update($busy_root, $provider)->{ok}, "$provider retry repairs the preserved parent after contender release");
+        my $applied_root = root("bootstrap-applied-$provider");
+        my $applied = Loomy::Hooks::settings_update($applied_root, $provider, 'ensure', {fail_at => 'directory_sync'});
+        ok(!$applied->{ok} && $applied->{applied} && $applied->{changed}, "$provider post-rename bootstrap failure reports applied state");
+        is_deeply(decode_json(bytes(settings_path($applied_root, $provider))), shell_data($provider), "$provider post-rename failure preserves the populated new parent and settings");
     }
     for my $stage ('after_temp_create', 'after_print', 'after_flush', 'after_sync', 'after_chmod', 'after_close') {
         my $r = root("interrupted-$stage");

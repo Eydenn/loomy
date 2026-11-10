@@ -26,6 +26,18 @@ my $claude_prefix = q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.s
 my $codex_template = q{sh -c 'd=$PWD; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/loomy-context.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/loomy-context.sh" ] && exec bash "$d/.loomy/scripts/loomy-context.sh" --hook MODE --tool codex'};
 my $statusline = q{sh -c 'd=${CLAUDE_PROJECT_DIR:-$PWD}; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/loomy-statusline.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/loomy-statusline.sh" ] && exec bash "$d/.loomy/scripts/loomy-statusline.sh"'};
 
+# Retain only commands emitted before the 0.10 rename (49e0d92). These literal
+# installer templates first appeared in 6af0aa8, 47c2159, 40eb004, bfae49d and
+# 6c1f519. The Agent/Task events were introduced after the rename.
+my $historical_claude_prefix = q{bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/ai-context.sh" --hook };
+my %historical_claude_modes = (
+    SessionStart=>'start', SessionEnd=>'end', Stop=>'stop',
+    SubagentStop=>'subagent', UserPromptSubmit=>'prompt',
+);
+my %historical_codex_modes = (SessionStart=>'start', SessionEnd=>'end');
+my $historical_codex_template = q{sh -c 'd=$PWD; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/ai-context.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/ai-context.sh" ] && exec bash "$d/.loomy/scripts/ai-context.sh" --hook MODE --tool codex'};
+my $historical_statusline = q{sh -c 'd=${CLAUDE_PROJECT_DIR:-$PWD}; while [ "$d" != / ] && [ ! -f "$d/.loomy/scripts/ai-statusline.sh" ]; do d=$(dirname "$d"); done; [ -f "$d/.loomy/scripts/ai-statusline.sh" ] && exec bash "$d/.loomy/scripts/ai-statusline.sh"'};
+
 sub _provider {
     my ($provider) = @_;
     die "hooks: provider must be claude or codex\n"
@@ -105,6 +117,19 @@ sub _shell_command {
     return $command;
 }
 
+sub _historical_command {
+    my ($provider, $event) = @_;
+    if ($provider eq 'claude') {
+        return $historical_statusline if $event eq 'statusLine';
+        return unless exists($historical_claude_modes{$event});
+        return $historical_claude_prefix . $historical_claude_modes{$event};
+    }
+    return unless exists($historical_codex_modes{$event});
+    my $command = $historical_codex_template;
+    $command =~ s/MODE/$historical_codex_modes{$event}/;
+    return $command;
+}
+
 sub _native_command {
     my ($provider, $event, $descriptor) = @_;
     my $executable = '"' . $descriptor->{executable} . '"';
@@ -130,6 +155,8 @@ sub _classify {
     my $shell = _shell_command($provider, $event);
     return 'custom' unless defined($shell);
     return 'shell' if $hook->{command} eq $shell;
+    my $historical = _historical_command($provider, $event);
+    return 'shell' if defined($historical) && $hook->{command} eq $historical;
     for my $descriptor (@$descriptors) {
         return 'native' if $hook->{command} eq _native_command($provider, $event, $descriptor);
     }
@@ -151,7 +178,10 @@ sub _validate_settings {
     _copy($data); # Also reject non-JSON values/cycles in preserved unknown fields.
     if (exists($data->{hooks})) {
         die "hooks: hooks must be an object\n" unless ref($data->{hooks}) eq 'HASH';
-        for my $event (keys %{$data->{hooks}}) {
+        # Other provider events are opaque user data, including their shapes.
+        for my $spec (@{$catalog{$provider}}) {
+            my $event = $spec->{event};
+            next unless exists($data->{hooks}{$event});
             my $groups = $data->{hooks}{$event};
             die "hooks: event groups must be an array\n" unless ref($groups) eq 'ARRAY';
             for my $group (@$groups) {
@@ -163,9 +193,10 @@ sub _validate_settings {
             }
         }
     }
-    die "hooks: statusLine must be an object or null\n"
+    die "hooks: statusLine must be an object, string or null\n"
         if $provider eq 'claude' && exists($data->{statusLine}) && defined($data->{statusLine})
-            && ref($data->{statusLine}) ne 'HASH';
+            && ref($data->{statusLine}) ne 'HASH'
+            && (ref($data->{statusLine}) || $json->encode($data->{statusLine}) !~ /\A"/);
 }
 
 # Group semantics include matcher and every unknown group field. Sibling hooks
@@ -216,6 +247,9 @@ sub _status_fact {
         my $kind = _classify('claude', 'statusLine', $data->{statusLine}, $descriptors);
         $fact->{$kind} = 1;
         $fact->{owned} = $kind eq 'custom' ? 0 : 1;
+        # A scalar string is an uninterpreted customization, not a replacement
+        # target. Keep it but report the unsupported shape for manual review.
+        $fact->{ambiguous} = 1 if defined($data->{statusLine}) && !ref($data->{statusLine});
     }
     $fact->{state} = _state($fact);
     return $fact;
@@ -233,8 +267,8 @@ sub _inspect {
     my $status_fact = $provider eq 'claude' ? _status_fact($data, $descriptors) : undef;
     my @required = @slots[0 .. $#{$catalog{$provider}}];
     my $ready = !grep {!$_->{owned} || $_->{ambiguous}} @required;
-    # A deliberately custom or null statusLine is a valid user selection.
-    $ready = 0 if $status_fact && $status_fact->{state} eq 'missing';
+    # A custom object or null statusLine is a valid user selection.
+    $ready = 0 if $status_fact && ($status_fact->{state} eq 'missing' || $status_fact->{ambiguous});
     my @summary = (@required, $status_fact ? ($status_fact) : ());
     my $state = 'missing';
     if (grep {$_->{ambiguous}} @summary) { $state = 'ambiguous' }
@@ -289,9 +323,12 @@ sub _transform {
         my $owned = 0;
         for my $group (@$groups) {
             for my $hook (@{$group->{hooks}}) {
-                next if _classify($provider, $event, $hook, $descriptors) eq 'custom';
+                my $kind = _classify($provider, $event, $hook, $descriptors);
+                next if $kind eq 'custom';
                 ++$owned;
-                $hook->{command} = _shell_command($provider, $event) if $target eq 'shell';
+                my $shell = _shell_command($provider, $event);
+                $hook->{command} = $shell
+                    if $target eq 'shell' || ($kind eq 'shell' && $hook->{command} ne $shell);
                 $hook->{command} = _native_command($provider, $event, $fixture_descriptor)
                     if $target eq 'fixture-native';
             }
@@ -312,10 +349,14 @@ sub _transform {
                 ? _native_command($provider, 'statusLine', $fixture_descriptor) : $statusline;
             $copy->{statusLine} = {type=>'command', padding=>0, command=>$command};
         }
-        elsif (_classify($provider, 'statusLine', $copy->{statusLine}, $descriptors) ne 'custom') {
-            $copy->{statusLine}{command} = $statusline if $target eq 'shell';
-            $copy->{statusLine}{command} = _native_command($provider, 'statusLine', $fixture_descriptor)
-                if $target eq 'fixture-native';
+        else {
+            my $kind = _classify($provider, 'statusLine', $copy->{statusLine}, $descriptors);
+            if ($kind ne 'custom') {
+                $copy->{statusLine}{command} = $statusline
+                    if $target eq 'shell' || ($kind eq 'shell' && $copy->{statusLine}{command} ne $statusline);
+                $copy->{statusLine}{command} = _native_command($provider, 'statusLine', $fixture_descriptor)
+                    if $target eq 'fixture-native';
+            }
         }
     }
     return {data=>$copy, changed=>$before eq $json->encode($copy) ? 0 : 1,
@@ -349,7 +390,7 @@ sub fixture_native_transform {
 # The Perl API also restores its caller's cwd. All mutations use names relative
 # to an opened directory, so a renamed/replaced parent cannot redirect a write.
 use Cwd ();
-use Errno qw(ENOENT EEXIST EAGAIN EWOULDBLOCK);
+use Errno qw(ENOENT EEXIST ENOTEMPTY EAGAIN EWOULDBLOCK);
 use Fcntl qw(:DEFAULT :flock :mode O_DIRECTORY O_NOFOLLOW O_NONBLOCK);
 use File::Spec ();
 use IO::Handle ();
@@ -415,6 +456,70 @@ sub _settings_assert_namespace {
     my $parent=_settings_lstat($c,"$c->{root}/$c->{parent}");
     _settings_error($c,'parent_changed') unless _settings_dir_identity($c->{parent_stat},$parent)
         && _settings_dir_identity($parent,[Time::HiRes::stat($c->{parent_h})]);
+}
+sub _settings_create_parent {
+    my ($c)=@_;
+    _settings_stage($c,'before_parent_create');
+    $c->{saved_umask}=umask;
+    umask(0077);
+    _settings_stage($c,'after_parent_umask');
+    # Defer termination until mkdir's new inode and descriptor are recorded.
+    # The cleanup path must know ownership even when the first callback dies.
+    my $blocked=POSIX::SigSet->new(POSIX::SIGINT(),POSIX::SIGTERM(),POSIX::SIGHUP());
+    my $saved=POSIX::SigSet->new;
+    defined POSIX::sigprocmask(POSIX::SIG_BLOCK(),$blocked,$saved)
+        or _settings_error($c,'signal_mask_failed');
+    my ($created,$mkdir_errno);
+    my $pinned=eval {
+        # EEXIST belongs to the racing creator, never to this cleanup path.
+        $created=mkdir($c->{parent},0700); $mkdir_errno=$!;
+        if ($created) {
+            $c->{created_parent}=1;
+            $c->{created_parent_stat}=_settings_lstat($c,$c->{parent});
+            ($c->{parent_h},$c->{parent_stat})=_settings_open_dir($c,$c->{parent},'unsafe_parent');
+            _settings_error($c,'parent_changed')
+                unless _settings_dir_identity($c->{created_parent_stat},$c->{parent_stat});
+        }
+        1;
+    };
+    my $exception=$@;
+    umask(delete $c->{saved_umask});
+    my $restored=POSIX::sigprocmask(POSIX::SIG_SETMASK(),$saved);
+    _settings_error($c,'signal_mask_failed') unless defined $restored;
+    die $exception unless $pinned;
+    _settings_error($c,'parent_create_failed') unless $created || $mkdir_errno==EEXIST;
+    _settings_stage($c,'after_parent_create');
+    if ($created) {
+        $c->{root_h}->sync or _settings_error($c,'parent_sync_failed');
+        _settings_assert_namespace($c,1);
+    }
+    return _settings_lstat($c,$c->{parent});
+}
+sub _settings_cleanup_parent {
+    my ($c)=@_;
+    return unless $c->{created_parent} && $c->{created_parent_stat} && $c->{root_h} && $c->{parent_h};
+    # An early bootstrap failure may precede our initial flock. Preserve the
+    # namespace if another cooperating writer already owns this empty inode.
+    # Repeating flock on our existing descriptor retains its lock until close.
+    if (!flock($c->{parent_h},LOCK_EX|LOCK_NB)) {
+        return if $! == EAGAIN || $! == EWOULDBLOCK;
+        return 'cleanup_parent_lock_failed';
+    }
+    return 'cleanup_parent_chdir_failed' unless chdir($c->{root_h});
+    # Test exceptions or repeated termination here cannot skip the identity
+    # check. Real cleanup remains relative to the opened project directory,
+    # even if its original path or the newly-created child has been replaced.
+    eval { _settings_stage($c,'before_parent_cleanup'); 1 };
+    return 'cleanup_parent_chdir_failed' unless chdir($c->{root_h});
+    $!=0;
+    my @now=Time::HiRes::lstat($c->{parent});
+    return 'cleanup_parent_stat_failed' if !@now && $! != ENOENT;
+    my $created=$c->{created_parent_stat};
+    return unless @now && S_ISDIR($now[2]) && $now[0]==$created->[0] && $now[1]==$created->[1];
+    # rmdir is the emptiness check; never enumerate then recursively remove.
+    # A user/editor's new entry makes this fail harmlessly without being touched.
+    return if rmdir($c->{parent}) || $! == ENOTEMPTY || $! == EEXIST || $! == ENOENT;
+    return 'cleanup_parent_remove_failed';
 }
 sub _settings_read {
     my ($c,$name)=@_; my $s=_settings_lstat($c,$name);
@@ -555,19 +660,8 @@ sub _settings_run {
         _settings_assert_namespace($c,0);
         my $parent=_settings_lstat($c,$c->{parent});
         if (!@$parent && $repair) {
-            _settings_stage($c,'before_parent_create');
             # Only a direct child of the pinned project is ever bootstrapped.
-            # EEXIST means another creator won; reopen and validate it below.
-            $c->{saved_umask}=umask;
-            umask(0077);
-            _settings_stage($c,'after_parent_umask');
-            my $created=mkdir($c->{parent},0700); my $mkdir_errno=$!;
-            umask($c->{saved_umask}); delete $c->{saved_umask};
-            _settings_error($c,'parent_create_failed') unless $created || $mkdir_errno==EEXIST;
-            $c->{created_parent}=1 if $created;
-            _settings_stage($c,'after_parent_create');
-            $c->{root_h}->sync or _settings_error($c,'parent_sync_failed') if $created;
-            $parent=_settings_lstat($c,$c->{parent});
+            $parent=_settings_create_parent($c);
         }
         if (!@$parent) {
             _settings_assert_namespace($c,0);
@@ -575,7 +669,8 @@ sub _settings_run {
             $result={ok=>1,code=>'missing',applied=>0,changed=>0,exists=>0,
                 facts=>inspect($provider,undef,production_descriptors())};
         } else {
-            ($c->{parent_h},$c->{parent_stat})=_settings_open_dir($c,$c->{parent},'unsafe_parent');
+            ($c->{parent_h},$c->{parent_stat})=_settings_open_dir($c,$c->{parent},'unsafe_parent')
+                unless $c->{parent_h};
             if ($repair) {
                 flock($c->{parent_h},LOCK_EX|LOCK_NB) or _settings_error($c,
                     ($! == EAGAIN || $! == EWOULDBLOCK) ? 'busy' : 'directory_lock_failed');
@@ -621,10 +716,18 @@ sub _settings_run {
         delete $c->{temp_h};
     }
     if ($c->{temp} && !$c->{applied}) {
-        my @now=Time::HiRes::lstat($c->{temp});
-        if (@now && $c->{temp_stat} && $now[0]==$c->{temp_stat}[0] && $now[1]==$c->{temp_stat}[1]) {
-            unlink($c->{temp}) or $error='cleanup_unlink_failed';
+        if (!$c->{parent_h} || !chdir($c->{parent_h})) {
+            $error='cleanup_parent_chdir_failed';
+        } else {
+            my @now=Time::HiRes::lstat($c->{temp});
+            if (@now && $c->{temp_stat} && $now[0]==$c->{temp_stat}[0] && $now[1]==$c->{temp_stat}[1]) {
+                unlink($c->{temp}) or $error='cleanup_unlink_failed';
+            }
         }
+    }
+    if (!$ok || $c->{interrupted}) {
+        my $cleanup_error=_settings_cleanup_parent($c);
+        $error=$cleanup_error if defined($cleanup_error);
     }
     if ($cwd) {
         if (!chdir($cwd)) { $ok=0; $error='cwd_restore_failed' }

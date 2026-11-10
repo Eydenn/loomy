@@ -44,6 +44,9 @@ _sk_row_ok() {
   [[ -z "${2:-}" ]] || [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
 }
 
+# _sk_clean <text>: the text without control characters (lock fields reach terminals and agent context).
+_sk_clean() { printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177'; }
+
 # skills_line <name>: the catalog line of a skill (name|source|path|commit|license|auto|keywords|summary).
 skills_line() { _sk_valid "$1" || return 0; grep -v '^#' "$(skills_catalog)" | grep -v '^date=' | awk -F'|' -v n="$1" '$1 == n { print; exit }'; }
 
@@ -203,10 +206,11 @@ _sk_lock_write() {
 # otherwise move it back below, changing .gitignore after every skill install).
 _sk_gitignore() {
   local f="$1/.gitignore" tmp
-  [[ -L "$f" ]] && return 0
+  [[ -L "$f" || -L "$1" ]] && return 0
   grep -qxF "$2" "$f" 2>/dev/null && return 0
   if grep -q '^# >>> Loomy: local history' "$f" 2>/dev/null; then
-    tmp="$f.loomy-$$"
+    # Exclusive, unpredictable name in the same directory: a planted link can never be followed.
+    tmp="$(mktemp "$f.XXXXXX")" || return 0
     # Above the blank line that separates the block, so the block keeps its exact layout.
     awk -v e="$2" '
       held { if (!done && /^# >>> Loomy: local history/) { print e; done = 1 } print hl; held = 0 }
@@ -225,13 +229,19 @@ _sk_gitignore() {
 # SK_LAST says what happened. Returns 0 only when the skill is in place in every folder.
 skills_install() { local rc=0; SK_LAST=""; _sk_install "$@" || rc=1; return $rc; }
 _sk_install() {
-  local r="$1" name="$2" reason="$3" force="${4:-}" fromlock="${5:-}" line src path commit lic tmp an d n=0 dirs
+  local r="$1" name="$2" reason force="${4:-}" fromlock="${5:-}" line cline src path commit lic tmp an d n=0 dirs
+  reason="$(_sk_clean "$3")"
   _sk_valid "$name" || { SK_LAST="$name: invalid name"; return 1; }
   [[ -d "$r/.loomy" && ! -L "$r/.loomy" ]] || { SK_LAST="$name: not a Loomy project"; return 1; }
   if [[ -n "$fromlock" ]]; then
     # Sync: the source, path and commit of the lock, so another clone gets exactly the same skill.
     line="$(skills_lock_line "$r" "$name")"; [[ -n "$line" ]] || return 1
     _sk_row_ok "$line" lock || { SK_LAST="$name: invalid lock row"; return 1; }
+    # Bound to the catalog: source, path and licence must be the catalog's (a claimed licence never lifts a gate). Only the
+    # commit may differ, to give another clone the same version. Residual: it may be a commit of a fork of that source.
+    cline="$(skills_line "$name")"
+    [[ "$(printf '%s' "$line" | cut -d'|' -f2,3,5)" == "$(printf '%s' "$cline" | cut -d'|' -f2,3,5)" && -n "$cline" ]] \
+      || { SK_LAST="$name: lock row differs from the catalog"; return 1; }
   else
     line="$(skills_line "$name")"; [[ -n "$line" ]] || { SK_LAST="$name: not in the catalog"; return 1; }
   fi
@@ -287,6 +297,7 @@ skills_sync() {
   while IFS= read -r row || [[ -n "$row" ]]; do
     _sk_row_ok "$row" lock || continue
     IFS='|' read -r name _ _ _ lic _ reason _ <<<"$row"
+    reason="$(_sk_clean "$reason")"
     miss=0; for d in $(_sk_dirs "$r" "$lic"); do [[ -f "$r/$d/$name/SKILL.md" ]] || miss=1; done
     if (( miss )); then skills_install "$r" "$name" "$reason" force lock >/dev/null 2>&1 || true; fi
   done < "$r/.loomy/skills.lock"
@@ -295,10 +306,11 @@ skills_sync() {
 
 # skills_updates <root>: "name old→new" for each installed skill whose catalog commit changed.
 skills_updates() {
-  local r="$1" name commit line cur
+  local r="$1" row name commit line cur
   [[ -f "$r/.loomy/skills.lock" ]] || return 0
-  while IFS='|' read -r name _ _ commit _; do
-    _sk_valid "$name" || continue
+  while IFS= read -r row || [[ -n "$row" ]]; do
+    _sk_row_ok "$row" lock || continue
+    IFS='|' read -r name _ _ commit _ <<<"$row"
     line="$(skills_line "$name")"; [[ -n "$line" ]] || continue
     cur="$(printf '%s' "$line" | cut -d'|' -f4)"
     if [[ "$cur" != "$commit" ]]; then echo "$name ${commit:0:7}→${cur:0:7}"; fi

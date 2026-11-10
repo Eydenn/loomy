@@ -5105,6 +5105,19 @@ printf '%s\n' "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09b
 (cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ -f "$SKH/.claude/skills/frontend-design/SKILL.md" ]] && ok "skills lock: a valid row still syncs" || ko "skills lock: valid row not synced"
 printf '%s\n' "frontend-design|anthropic|skills/../x|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"; rm -rf "$SKH/.claude/skills"
 (cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKH/.claude/skills/frontend-design" ]] && ok "skills lock: a row with a path escape is skipped" || ko "skills lock: path escape installed"
+# Lock rows are bound to the catalog (source, path, licence), and nothing outside the project is written through planted links.
+rm -rf "$SKH" "$SKM"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "pdf|anthropic|skills/pdf|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" \
+  "frontend-design|openai|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKH/.claude/skills/pdf" && ! -e "$SKH/.claude/skills/frontend-design" ]] && ok "skills lock: a row differing from the catalog (licence, source) is skipped" || ko "skills lock: catalog mismatch installed"
+rm -rf "$SKH"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf 'frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r\033]0;PWNED\007x|a\033[2Jb\n' >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills list) >"$OUT" 2>&1; ! grep -q "$(printf '\033')\]0;PWNED" "$OUT" && ! grep -q "$(printf '\033')\[2J" "$OUT" && ok "skills list: control characters of the lock are stripped" || ko "skills list: escape sequences printed"
+SKV="$WORK/skills-victim"; rm -rf "$SKH" "$SKV"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"; echo keep >"$SKV"
+grep -q '^# >>> Loomy: local history' "$SKH/.gitignore" || printf '\n# >>> Loomy: local history\n.loomy/x\n# <<< Loomy\n' >>"$SKH/.gitignore"
+for ((pid=$$; pid<$$+3000; pid++)); do ln -s "$SKV" "$SKH/.gitignore.loomy-$pid"; done
+printf '%s\n' "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ "$(cat "$SKV")" == keep ]] && grep -q 'skills/frontend-design' "$SKH/.gitignore" && ok "skills gitignore: planted temp-file links are never followed" || ko "skills gitignore: link followed or entry missing"
 skf skills_install "$SKP" xlsx "auto" >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/xlsx" ]] && ok "skills: proprietary licence never installed on its own" || ko "skills: proprietary installed"
 (cd "$SKP" && "$LOOMY" skills add xlsx) >/dev/null 2>&1; [[ -d "$SKP/.claude/skills/xlsx" && ! -d "$SKP/.agents/skills/xlsx" ]] && ok "skills: proprietary on request, for Claude only" || ko "skills: proprietary add"
 "$LOOMY" config set skills off >/dev/null 2>&1

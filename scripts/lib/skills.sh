@@ -30,6 +30,20 @@ skills_policy() { local p; p="$(loomy_config_get skills 2>/dev/null || true)"; c
 # _sk_valid <name>: a plain skill name (letters, digits, dashes), nothing that could be a path.
 _sk_valid() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; }
 
+# _sk_source_ok <source>: one of the two official sources, by exact name (never used to build a variable name otherwise).
+_sk_source_ok() { case "$1" in anthropic|openai) return 0 ;; *) return 1 ;; esac; }
+
+# _sk_row_ok <line> [lock]: a well-formed catalog or lock row (name|source|path|commit|license|…): valid name, official
+# source, plain path, hex commit, plain licence and, for a lock row, an ISO date. The lock is versioned (a cloned
+# repository controls it): nothing of an invalid row is ever used, no fetch, no command.
+_sk_row_ok() {
+  local n s p c l d
+  IFS='|' read -r n s p c l d _ <<<"$1"
+  _sk_valid "$n" && _sk_source_ok "$s" || return 1
+  [[ "$p" =~ ^[A-Za-z0-9._/-]+$ && "$p" != *..* && "$c" =~ ^[0-9a-f]{7,40}$ && "$l" =~ ^[A-Za-z0-9.+-]{0,40}$ ]] || return 1
+  [[ -z "${2:-}" ]] || [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+}
+
 # skills_line <name>: the catalog line of a skill (name|source|path|commit|license|auto|keywords|summary).
 skills_line() { _sk_valid "$1" || return 0; grep -v '^#' "$(skills_catalog)" | grep -v '^date=' | awk -F'|' -v n="$1" '$1 == n { print; exit }'; }
 
@@ -113,6 +127,7 @@ _sk_archive_ok() {
 # repository (codeload, or gh). LOOMY_SKILLS_FIXTURES=<dir> serves <dir>/<source>/<path> (tests).
 _sk_fetch() {
   local src="$1" path="$2" commit="$3" dest="$4" repo arch top part
+  _sk_source_ok "$src" || return 1
   [[ "$commit" =~ ^[0-9a-f]{7,40}$ && "$path" =~ ^[A-Za-z0-9._/-]+$ && "$path" != *..* ]] || return 1
   if [[ -n "${LOOMY_SKILLS_FIXTURES:-}" ]]; then
     [[ -d "$LOOMY_SKILLS_FIXTURES/$src/$path" ]] || return 1
@@ -216,6 +231,7 @@ _sk_install() {
   if [[ -n "$fromlock" ]]; then
     # Sync: the source, path and commit of the lock, so another clone gets exactly the same skill.
     line="$(skills_lock_line "$r" "$name")"; [[ -n "$line" ]] || return 1
+    _sk_row_ok "$line" lock || { SK_LAST="$name: invalid lock row"; return 1; }
   else
     line="$(skills_line "$name")"; [[ -n "$line" ]] || { SK_LAST="$name: not in the catalog"; return 1; }
   fi
@@ -266,10 +282,11 @@ skills_remove() {
 
 # skills_sync <root>: the skills of the lock missing on this machine (another clone), installed again at their commit.
 skills_sync() {
-  local r="$1" name lic reason d miss
+  local r="$1" row name lic reason d miss
   [[ -f "$r/.loomy/skills.lock" ]] || return 0
-  while IFS='|' read -r name _ _ _ lic _ reason _; do
-    _sk_valid "$name" || continue
+  while IFS= read -r row || [[ -n "$row" ]]; do
+    _sk_row_ok "$row" lock || continue
+    IFS='|' read -r name _ _ _ lic _ reason _ <<<"$row"
     miss=0; for d in $(_sk_dirs "$r" "$lic"); do [[ -f "$r/$d/$name/SKILL.md" ]] || miss=1; done
     if (( miss )); then skills_install "$r" "$name" "$reason" force lock >/dev/null 2>&1 || true; fi
   done < "$r/.loomy/skills.lock"

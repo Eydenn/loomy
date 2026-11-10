@@ -5078,6 +5078,33 @@ SKL="$WORK/skills-lien"; cp -R "$WORK/_tpl-skills" "$SKL"
 rm -rf "$SKL/.claude/skills"; mkdir -p "$WORK/dehors"; ln -s "$WORK/dehors" "$SKL/.claude/skills"
 skf skills_install "$SKL" frontend-design "test" force >/dev/null 2>&1; [[ -z "$(ls "$WORK/dehors")" ]] && ok "skills: never written through a symbolic link" || ko "skills: written through a link"
 [[ -z "$(skf skills_suggest "$WORK/aucun" "Fix the build and improve precision of the crossword solver" 3 2>/dev/null)" ]] && ok "skills suggest: whole words only (build, precision, crossword)" || ko "skills suggest: $(skf skills_suggest "$SKP" "Fix the build and improve precision of the crossword solver" 3)"
+# Safety (security hotfix): skills.lock is versioned, so a cloned repository controls it. A hostile source such as
+# x[$(cmd)] must never reach an indirect expansion: no command, no fetch; invalid rows are skipped, valid ones sync.
+SKH="$WORK/skills-hostile"; SKM="$WORK/skills-marker"; SKC="$WORK/skills-curl-called"; mkdir -p "$WORK/skills-shim"
+printf '#!/bin/sh\ntouch "%s"\nexit 22\n' "$SKC" >"$WORK/skills-shim/curl"; chmod +x "$WORK/skills-shim/curl"
+skills_hostile() {  # <source> : a lock holding one hostile row and one valid row, then every entry point
+  local src="$1" c
+  rm -rf "$SKH" "$SKM" "$SKC"; cp -R "$WORK/_tpl-skills" "$SKH"
+  rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+  printf '%s\n' "evil|$src|skills/evil|$(printf 'a%.0s' {1..40})|MIT|2026-01-01|r|an" \
+    "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+  # Offline (curl is a recording shim) and without fixtures, so a hostile source would reach the real fetch path.
+  (cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/skills.sh"; skills_sync "$2"; skills_install "$2" evil r force lock' _ "$REPO" "$SKH") >/dev/null 2>&1 || true
+  for c in sync list update; do (cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" "$LOOMY" skills $c) >/dev/null 2>&1 || true; done
+  [[ ! -e "$SKM" && ! -e "$SKH/.claude/skills/evil" ]]
+}
+for hs in 'x[$(touch '"$SKM"')]' '$(touch '"$SKM"')' '`touch '"$SKM"'`' 'a[0]' 'x y' 'anthropic[$(touch '"$SKM"')]' 'a/../b' 'unknown'; do
+  skills_hostile "$hs" && ok "skills lock: hostile source '${hs:0:14}' runs nothing and installs nothing" || ko "skills lock: hostile source '$hs' had an effect"
+done
+# The only fetch allowed in that run is the valid row's (the shim stands for it); an invalid row never triggers one on its own.
+rm -rf "$SKH" "$SKC" "$SKM"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "evil|x[\$(touch $SKM)]|skills/evil|$(printf 'a%.0s' {1..40})|MIT|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKC" && ! -e "$SKM" ]] && ok "skills lock: a hostile-only lock triggers no fetch" || ko "skills lock: hostile-only lock fetched or ran"
+rm -rf "$SKH"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ -f "$SKH/.claude/skills/frontend-design/SKILL.md" ]] && ok "skills lock: a valid row still syncs" || ko "skills lock: valid row not synced"
+printf '%s\n' "frontend-design|anthropic|skills/../x|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"; rm -rf "$SKH/.claude/skills"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKH/.claude/skills/frontend-design" ]] && ok "skills lock: a row with a path escape is skipped" || ko "skills lock: path escape installed"
 skf skills_install "$SKP" xlsx "auto" >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/xlsx" ]] && ok "skills: proprietary licence never installed on its own" || ko "skills: proprietary installed"
 (cd "$SKP" && "$LOOMY" skills add xlsx) >/dev/null 2>&1; [[ -d "$SKP/.claude/skills/xlsx" && ! -d "$SKP/.agents/skills/xlsx" ]] && ok "skills: proprietary on request, for Claude only" || ko "skills: proprietary add"
 "$LOOMY" config set skills off >/dev/null 2>&1

@@ -201,8 +201,9 @@ context() {
 
     # The attachment is structural regardless of project grants or environment.
     my $policy=Loomy::ContentPolicy::defaults();
-    my $id=prefix("$root/.loomy/project-id",67); $id =~ s/\n\z//;
-    $policy->{project_id}=$id =~ /\Ap[0-9a-f]{64}\z/ ? $id : "p".sha256_hex($root);
+    # The real project identity never leaves the machine: a per-bundle random salt replaces it, so the hashes in a
+    # public issue cannot be checked against dictionaries or linked across issues.
+    $policy->{project_id}="p".sha256_hex(join("\0",time,$$,rand,rand));
     print "| $journal_label | $policy->{journal_content} |\n";
 
     # Last complete, valid events, not the raw log reader or its legacy display.
@@ -219,6 +220,7 @@ context() {
       my $event=eval {$json->decode($line)}; next unless ref($event) eq "HASH";
       my $safe=eval {Loomy::ContentPolicy::project_with_policy($policy,$event)};
       next unless $safe;
+      delete @{$safe}{qw(task_ref label_ref)};
       push @events,$json->encode($safe); last if @events==15;
     }
     exit unless @events;
@@ -263,7 +265,7 @@ trap feedback_cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-FEEDBACK_TMP="$(mktemp -d)"
+FEEDBACK_TMP="$(mktemp -d "${TMPDIR:-/tmp}/loomy-feedback.XXXXXX")"
 BODY_FILE="$FEEDBACK_TMP/issue.md"
 (
 ui_clear

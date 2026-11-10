@@ -57,6 +57,8 @@ if [[ "$CMD" == inventory ]]; then
   tv LM_INV_UNKNOWN "unknown"
   tv LM_INV_LEGACY "legacy content possible"
   tv LM_INV_GIT "%s: %s runtime index path(s), %s local history commit(s)"
+  tv LM_INV_GIT_UNKNOWN "%s: runtime index paths and local history unknown"
+  tv LM_INV_NONE "%s: none found"
   tv LM_INV_HOST "Host candidates are not proof of abandoned files or safe deletion."
   tv LM_INV_EXTERNAL "Provider stores, arbitrary exports, remote clones and OS backups: unknown; not scanned."
   tv LM_INV_JOURNAL "Journal"
@@ -75,13 +77,19 @@ if [[ "$CMD" == inventory ]]; then
   tv LM_INV_HOST_TMP "Host temporary candidates"
   tv LM_INV_PROJECT_GIT "Project Git metadata"
   tv LM_INV_COMPANION_GIT "Companion Git metadata"
+  export LM_INV_GIT_UNKNOWN LM_INV_NONE
   export LM_INV_TITLE LM_INV_ROW LM_INV_PARTIAL LM_INV_COMPLETE LM_INV_NOTE LM_INV_UNKNOWN LM_INV_LEGACY LM_INV_GIT LM_INV_HOST
   export LM_INV_EXTERNAL
   export LM_INV_JOURNAL LM_INV_ARCHIVES LM_INV_SCRATCH LM_INV_LABELS LM_INV_DELEGATIONS LM_INV_RESULTS LM_INV_RECEIPTS LM_INV_WORK
   export LM_INV_AUTHORED LM_INV_STATE LM_INV_REPORTS LM_INV_BACKUPS LM_INV_HOST_FILES LM_INV_HOST_TMP LM_INV_PROJECT_GIT LM_INV_COMPANION_GIT
+  # A root that does not exist is one clear line, not a table of unknown rows. A symlinked ancestor is fine: the
+  # user-supplied root itself is resolved physically in the scanner, only the tree below it is never followed.
+  # (--json keeps the structured partial report, which is the machine-readable form of the same fact.)
+  if (( ! INVENTORY_JSON )) && [[ -n "$ROOT" && ! -e "$ROOT" ]]; then t "Directory not found: %s" "$ROOT" >&2; echo >&2; exit 1; fi
   INVENTORY_SPECS=()
   if (( INVENTORY_GIT )); then
-    while IFS= read -r spec; do INVENTORY_SPECS+=("$spec"); done <<<"$(loomy_history_pathspecs)"
+    loomy_history_specs_load || { t "Can't build the runtime exclusion list" >&2; echo >&2; exit 1; }
+    INVENTORY_SPECS=("${LOOMY_HISTORY_SPECS[@]}")
   fi
   # Authored continuity documents are deliberately backed up, not runtime.
   INVENTORY_SPECS+=(':(exclude,literal).loomy/memory/STATE.md' ':(exclude,literal).loomy/memory/DEAD-ENDS.md' ':(exclude,literal).loomy/docs/HANDOFF.md')
@@ -92,6 +100,7 @@ use Fcntl qw(:DEFAULT :mode);
 use JSON::PP;
 use Encode qw(decode FB_DEFAULT);
 use POSIX qw(strftime);
+use Cwd ();
 use Time::HiRes qw(time stat lstat);
 use Errno qw(ENOENT ELOOP ENOTDIR EINVAL EAGAIN);
 my ($root,$as_json,$paths,$with_git,$host,@history_specs)=@ARGV;
@@ -126,8 +135,12 @@ sub directory {
     }
     return $h;
 }
+# A user-supplied base (--root, TMPDIR, XDG_CONFIG_HOME, HOME) is resolved physically first, like cd -P: /tmp and
+# /var are links on macOS. Only that base is resolved; everything below it is still opened without following links.
 sub absolute_directory {
     my ($path)=@_; my $base;
+    my $physical=Cwd::abs_path($path); return unless defined $physical;
+    $path=$physical;
     sysopen($base,$path=~m{^/}?'/':'.',$dir_flags) or return;
     my @parts=grep {length && $_ ne '.'} split m{/+},$path;
     return directory($base,\@parts);
@@ -176,6 +189,7 @@ sub walk {
 my $root_handle=absolute_directory($root);
 my $root_ok=0;
 if ($root_handle) {my @s=stat($root_handle); $root_ok=@s && $s[4]==$< && ($s[2]&0500)==0500}
+my $root_parent=do {my $p=Cwd::abs_path($root)//'/'; $p=~s{/[^/]*\z}{}; length($p)?$p:'/'};
 my @specs=(
  ['journal-active','local-runtime','unbounded',['.loomy/logs/events.jsonl']],
  ['journal-archives','local-runtime','unbounded',['.loomy/logs/archive']],
@@ -245,6 +259,8 @@ sub git_metadata {
         close $rd; open STDOUT,'>&',$wr or POSIX::_exit(1); close $wr;
         open STDERR,'>','/dev/null' or POSIX::_exit(1); open STDIN,'<','/dev/null' or POSIX::_exit(1);
         delete @ENV{grep {/\AGIT_/} keys %ENV};
+        # No repository discovery: the explicit git directory is the only candidate, and no parent is ever searched.
+        $ENV{GIT_CEILING_DIRECTORIES}=$root_parent;
         @ENV{qw(GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_CONFIG_COUNT GIT_TERMINAL_PROMPT GIT_OPTIONAL_LOCKS GIT_NO_LAZY_FETCH GIT_NO_REPLACE_OBJECTS GIT_ALLOW_PROTOCOL GIT_PROTOCOL_FROM_USER)}=(1,'/dev/null',0,0,0,1,1,'',0);
         exec('git','--no-pager','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-c','log.showSignature=false',@$base,@$argv) or POSIX::_exit(1);
     }
@@ -288,7 +304,7 @@ if ($with_git) {
             $safe=defined($keys) && !grep { /\A(?:include(?:\.|if\.)|extensions\.(?:worktreeconfig|partialclone)\z|remote\..*\.promisor\z)/i } split /\0/,$keys//'';
         }
         if ($safe) {
-            my @base=$repo eq 'project'?('-C','.') : ('--git-dir=.loomy/ai.git','--work-tree=.');
+            my @base=$repo eq 'project'?('--git-dir=.git','--work-tree=.') : ('--git-dir=.loomy/ai.git','--work-tree=.');
             my $index=git_metadata(\@base,['ls-files','-z','--',@history_specs]);
             if (defined $index) {$g->{index}={file_count=>scalar(grep {length} split /\0/,$index),scan_complete=>JSON::PP::true}}
             my $history=git_metadata(\@base,['log','--no-show-signature','--all','--format=%H','--',@history_specs]);
@@ -360,11 +376,19 @@ else {
       'host-repair-reports-cache'=>$ENV{LM_INV_HOST_FILES},'host-temporary-candidates'=>$ENV{LM_INV_HOST_TMP});
     print "$ENV{LM_INV_TITLE}\n";
     for my $r (@rows) {
-        printf "$ENV{LM_INV_ROW}\n",$labels{$r->{category}},$r->{file_count},$r->{bytes},$r->{symlink_count},$r->{unreadable_count},
-          $r->{content_status} eq 'legacy-possible'?$ENV{LM_INV_LEGACY}:$ENV{LM_INV_UNKNOWN};
+        if (!$r->{file_count} && !$r->{symlink_count} && !$r->{unreadable_count} && $r->{scan_complete}) {
+            printf "$ENV{LM_INV_NONE}\n",$labels{$r->{category}};
+        } else {
+            printf "$ENV{LM_INV_ROW}\n",$labels{$r->{category}},$r->{file_count},$r->{bytes},$r->{symlink_count},$r->{unreadable_count},
+              $r->{content_status} eq 'legacy-possible'?$ENV{LM_INV_LEGACY}:$ENV{LM_INV_UNKNOWN};
+        }
         if ($paths) {print '  ',$json->encode($_),"\n" for @{$r->{paths}}}
     }
-    for my $g (@git) {printf "$ENV{LM_INV_GIT}\n",$g->{repository} eq 'project'?$ENV{LM_INV_PROJECT_GIT}:$ENV{LM_INV_COMPANION_GIT},$g->{index}{file_count}//$ENV{LM_INV_UNKNOWN},$g->{history}{commit_count}//$ENV{LM_INV_UNKNOWN}}
+    for my $g (@git) {
+        my $name=$g->{repository} eq 'project'?$ENV{LM_INV_PROJECT_GIT}:$ENV{LM_INV_COMPANION_GIT};
+        if (defined $g->{index}{file_count} && defined $g->{history}{commit_count}) {printf "$ENV{LM_INV_GIT}\n",$name,$g->{index}{file_count},$g->{history}{commit_count}}
+        else {printf "$ENV{LM_INV_GIT_UNKNOWN}\n",$name}
+    }
     print $complete?"$ENV{LM_INV_COMPLETE}\n":"$ENV{LM_INV_PARTIAL}\n";
     print "$ENV{LM_INV_HOST}\n" if $host;
     print "$ENV{LM_INV_EXTERNAL}\n";
@@ -450,9 +474,11 @@ do_sync() {
   # it keeps nothing of them but the continuity notes STATE.md, DEAD-ENDS.md and HANDOFF.md (force-added); what it tracked before is
   # dropped from its index.
   privacy_companion_config "$ROOT"
-  while IFS= read -r p; do
+  # Fail closed: an incomplete spec list would leave runtime paths tracked and pushed.
+  loomy_history_specs_load || { ui_err "$(t "Can't build the runtime exclusion list")" "$(t "Sync stopped before staging.")"; return 1; }
+  for p in "${LOOMY_HISTORY_SPECS[@]}"; do
     ai_git "$ROOT" rm -r --cached --quiet --ignore-unmatch -- "$p" >/dev/null 2>&1 || true
-  done < <(loomy_history_pathspecs)
+  done
   ai_git "$ROOT" add -A -- "${paths[@]}"
   for p in .loomy/memory/STATE.md .loomy/memory/DEAD-ENDS.md .loomy/docs/HANDOFF.md; do [[ -f "$ROOT/$p" ]] && ai_git "$ROOT" add -f -- "$p"; done
   if ! ai_git "$ROOT" diff --cached --quiet 2>/dev/null; then
@@ -572,14 +598,34 @@ case "$CMD" in
       rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
     fi
     # Files already present: identical ones are kept; different ones are set aside before restoring.
+    # Nothing is moved or written through a symlinked or foreign-owned directory: every parent component of every
+    # restored path is checked first, and the whole restore is refused (before any move) if one is in the way.
     backup="$ROOT/.loomy/restore-backup-$(date +%Y%m%d-%H%M%S)"; moved=0
+    blocked=""
     while IFS= read -r -d '' f; do
-      [[ -e "$ROOT/$f" ]] || continue
-      if ai_git "$ROOT" show "HEAD:$f" 2>/dev/null | cmp -s - "$ROOT/$f"; then continue; fi
+      d="$ROOT"; rest="$(dirname "$f")"
+      if [[ "$rest" != . ]]; then
+        old_ifs="$IFS"; IFS=/; set -f; for comp in $rest; do
+          d="$d/$comp"
+          if [[ -L "$d" || ( -e "$d" && ( ! -d "$d" || ! -O "$d" ) ) ]]; then blocked="${d#"$ROOT"/}"; break; fi
+          [[ -e "$d" ]] || break
+        done; set +f; IFS="$old_ifs"
+      fi
+      [[ -z "$blocked" ]] || break
+    done < <(ai_git "$ROOT" ls-files -z 2>/dev/null)
+    if [[ -n "$blocked" ]]; then
+      t "Can't restore: %s" "$url" >&2; echo >&2
+      t "A symlinked or foreign directory is in the way: %s. Nothing was moved or written." "$blocked" >&2; echo >&2
+      rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
+    fi
+    while IFS= read -r -d '' f; do
+      [[ -e "$ROOT/$f" || -L "$ROOT/$f" ]] || continue
+      if [[ ! -L "$ROOT/$f" ]] && ai_git "$ROOT" show "HEAD:$f" 2>/dev/null | cmp -s - "$ROOT/$f"; then continue; fi
       mkdir -p "$backup/$(dirname "$f")" && mv "$ROOT/$f" "$backup/$f" && moved=$(( moved + 1 ))
     done < <(ai_git "$ROOT" ls-files -z 2>/dev/null)
     if ! ai_git "$ROOT" checkout-index --all --force 2>/dev/null; then
       t "Can't restore: %s" "$url" >&2; echo >&2
+      if (( moved > 0 )); then t "%s different local file(s) set aside" "$moved" >&2; echo " (${backup#"$ROOT"/})" >&2; fi
       rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
     fi
     if (( moved > 0 )); then ui_warn "$(t "%s different local file(s) set aside" "$moved")" "${backup#"$ROOT"/}"; fi

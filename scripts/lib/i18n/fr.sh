@@ -2448,5 +2448,12 @@ _t_fr() {
     'Host temporary candidates') _T='Fichiers temporaires candidats de l’hôte' ;;
     'Project Git metadata') _T='Métadonnées Git du projet' ;;
     'Companion Git metadata') _T='Métadonnées Git du dépôt compagnon' ;;
+    '%s: runtime index paths and local history unknown') _T='%s : chemins d’exécution de l’index et historique local inconnus' ;;
+    '%s: none found') _T='%s : aucun trouvé' ;;
+    'Directory not found: %s') _T='Dossier introuvable : %s' ;;
+    'Can'\''t build the runtime exclusion list') _T='Impossible de construire la liste d’exclusion d’exécution' ;;
+    'Sync stopped before staging.') _T='Synchronisation arrêtée avant l’indexation.' ;;
+    'A symlinked or foreign directory is in the way: %s. Nothing was moved or written.') _T='Un dossier lié par symlink ou appartenant à un autre utilisateur bloque : %s. Rien n’a été déplacé ni écrit.' ;;
+    'Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed') _T='Inventaire des métadonnées des emplacements de l’activité locale : aucun contenu lu, rien modifié ni supprimé' ;;
   esac
 }

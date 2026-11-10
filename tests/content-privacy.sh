@@ -138,6 +138,11 @@ for name in ('missing', 'denied', 'symlink'):
     elif name == 'symlink':
         target.symlink_to(project, target_is_directory=True)
     report, raw = inventory(target, '--paths')
+    if name == 'symlink':
+        # A user-supplied root is resolved physically (like cd -P): a symlinked root or ancestor is the same project.
+        check(category(report, 'journal-active')['file_count'] == 1 and 'PRIVATE_' not in raw,
+              'P16 symlinked --root is resolved and scanned (/tmp, /var links on macOS)')
+        continue
     check(not report['scan_complete'] and 'PRIVATE_' not in raw, f'P16 {name} root is bounded and partial')
     if name == 'denied':
         check(stat.S_IMODE(target.stat().st_mode) == 0, 'denied root mode is preserved')
@@ -205,6 +210,29 @@ host_link.mkdir()
 (host_link / 'loomy').symlink_to(host_config / 'loomy', target_is_directory=True)
 report, _ = inventory(project, '--host', overrides={'XDG_CONFIG_HOME': str(host_link)})
 check(not category(report, 'host-repair-reports-cache')['scan_complete'], 'a linked host ancestor never becomes complete empty coverage')
+# A symlinked ancestor of --root, and a symlinked TMPDIR / XDG base, are resolved like cd -P (macOS /tmp, /var).
+ancestor_link = work / 'ancestor-link'
+ancestor_link.symlink_to(work, target_is_directory=True)
+report, raw = inventory(ancestor_link / 'project', '--paths')
+check(category(report, 'journal-active')['file_count'] == 1 and 'PRIVATE_' not in raw,
+      'P16 --root below a symlinked ancestor is resolved and scanned')
+real_tmp = work / 'real-tmp'
+put(real_tmp / 'loomy-local-candidate/body', 'PRIVATE_TMP')
+tmp_link = work / 'tmp-link'
+tmp_link.symlink_to(real_tmp, target_is_directory=True)
+report, raw = inventory(project, '--host', overrides={'TMPDIR': str(tmp_link)})
+check(category(report, 'host-temporary-candidates')['file_count'] == 1 and category(report, 'host-temporary-candidates')['scan_complete']
+      and 'PRIVATE_' not in raw, 'P16 symlinked TMPDIR base is resolved; host candidates are counted')
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', work / 'does-not-exist', success=False)
+check(plain.returncode != 0 and plain.stderr.count('\n') == 1 and 'not found' in plain.stderr and not plain.stdout,
+      'P16 a missing --root is one clear "Directory not found" line')
+empty = work / 'empty-root'
+empty.mkdir()
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', empty)
+check('none found' in plain.stdout and 'legacy content possible' not in plain.stdout,
+      'P16 empty locations say "none found", not "legacy content possible"')
+french = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', empty, '--git-history', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
+check('inconnu chemin' not in french.stdout and 'inconnus' in french.stdout, 'P16 FR unknown Git counts use a dedicated grammatical form')
 census = work / 'census'
 for name in ('events.next', 'usage.idx', 'desktop-resume.stdout', 'skill-install.log'):
     put(census / '.loomy/logs' / name, 'PRIVATE_CENSUS')
@@ -453,24 +481,21 @@ RUNTIME=[
  '.loomy/memory/delegations/legacy.md','.loomy/memory/private-results-v1/result.json',
  '.loomy/memory/receipts-v1/result.json','.loomy/tasks/deep/task.md',
  '.loomy/reviews/deep/result.md','.loomy/audits/deep/result.md',
- '.loomy/scratch/logs/deep/raw.jsonl','.loomy/scratch/memory/deep/raw.json',
- '.loomy/scratch/tasks/deep/task.md','.loomy/scratch/reviews/deep/result.md',
- '.loomy/scratch/audits/deep/result.md','.loomy/scratch/task-prompt.txt',
- '.loomy/scratch/prompts/deep/prompt.txt','.loomy/scratch/TASKS.md',
- '.loomy/scratch/audit.md','.loomy/scratch/assessment.md',
+ '.loomy/task-prompt.txt','.loomy/prompts/deep/prompt.txt','.loomy/TASKS.md',
+ '.loomy/audit.md','.loomy/assessment.md',
  '.loomy/restore-backup-old/logs/raw','.loomy/scratch/restore-backup-old/raw',
  '.loomy/scratch/private-results-v1/result.json','.loomy/scratch/receipts-v1/result.json',
  '.loomy/scratch/display-context-v1.jsonl','.loomy/scratch/display-context-full',
- '.loomy/scratch/content-policy.conf','.loomy/scratch/project-id',
- '.loomy/scratch/inventory.json','.loomy/scratch/inventory-export/deep/raw',
- '.loomy/scratch/tmp/deep/raw','.loomy/scratch/temp/deep/raw',
+ '.loomy/scratch/content-policy.conf',
+ '.loomy/inventory.json','.loomy/inventory-export/deep/raw',
+ '.loomy/tmp/deep/raw','.loomy/temp/deep/raw',
  '.loomy/scratch/value.tmp','.loomy/scratch/value.tmp.123',
  '.loomy/scratch/tree.tmp/deep/raw','.loomy/scratch/tree.tmp.123/deep/raw',
  '.loomy/scratch/ai.git/objects/raw']
 CONTINUITY=['.loomy/memory/STATE.md','.loomy/memory/DEAD-ENDS.md','.loomy/docs/HANDOFF.md']
 AUTHORED=['AGENTS.md','.loomy/brief.md','.loomy/docs/AI_WORKFLOW.md',
  '.loomy/docs/tutorial.state','.loomy/docs/notes\nwith tab\t.md',
- '.loomy/custom/allowed.txt','.ai/notes.md','.claude/agents/executor.md','.codex/config.toml',*CONTINUITY]
+ '.loomy/custom/allowed.txt','.loomy/docs/inventory.md','.loomy/docs/tasks/plan.md','.loomy/docs/reviews/r1.md','.loomy/docs/audits/a1.md','.loomy/docs/memory/notes.md','.loomy/docs/prompts/p1.md','.loomy/docs/tmp/x.md','.loomy/docs/logs/l.md','.loomy/docs/audit.md','.loomy/docs/TASKS.md','.loomy/docs/project-id.md','.ai/notes.md','.claude/agents/executor.md','.codex/config.toml',*CONTINUITY]
 CANARY='T5_RAW_RUNTIME_CANARY_9f4a01'
 def populate(root,mode):
     for name in RUNTIME: write(root,name,CANARY+' '+name+'\n')
@@ -489,11 +514,11 @@ for mode in ('versioned','local','private'):
     lib(p,'loomy_gitignore_sync "$2"; '+('privacy_add_exclude "$2"; ' if mode!='versioned' else '')+
         'while IFS= read -r p; do git -C "$2" check-ignore --no-index -q -- "$p"; done < <(printf "%s\\n" '+
         ' '.join("'"+v+"'" for v in RUNTIME)+')')
-    check(f'{mode}: project ignores all 41 recursive runtime fixtures',True)
+    check(f'{mode}: project ignores all recursive runtime fixtures',True)
     tracked=lib(p,'loomy_history_tracked "$2"').stdout.decode().splitlines()
     # Test fixture runtime paths have no newlines; authored odd path must remain outside this set.
-    check(f'{mode}: pretracked runtime detected without matching authored tutorial.state',
-          set(RUNTIME)<=set(tracked) and '.loomy/docs/tutorial.state' not in tracked)
+    check(f'{mode}: pretracked runtime detected without matching authored tutorial.state or .loomy/docs names',
+          set(RUNTIME)<=set(tracked) and not (set(AUTHORED)-set(CONTINUITY))&set(tracked))
     lib(p,'while IFS= read -r spec; do git -C "$2" rm -r --cached --quiet --ignore-unmatch -- "$spec"; done < <(loomy_history_pathspecs)')
     indexed=names(git(p,'ls-files','-z'))
     check(f'{mode}: existing project untrack semantics remove runtime index entries',not set(RUNTIME)&indexed)
@@ -521,7 +546,7 @@ check('private sync: current companion archive contains no raw runtime canary',a
 first_exclude=(p/'.loomy/ai.git/info/exclude').read_bytes()
 lib(p,'privacy_companion_config "$2"; privacy_companion_config "$2"')
 check('companion mandatory exclusions idempotent',first_exclude==(p/'.loomy/ai.git/info/exclude').read_bytes())
-lib(p,'for p in .loomy/scratch/project-id .loomy/scratch/inventory.json .loomy/memory/receipts-v1/result.json; do ai_git "$2" check-ignore --no-index -q -- "$p"; done')
+lib(p,'for p in .loomy/project-id .loomy/inventory.json .loomy/memory/receipts-v1/result.json; do ai_git "$2" check-ignore --no-index -q -- "$p"; done')
 check('companion independently ignores policy identity, receipt and inventory runtime',True)
 
 restored=W/'restored'; init(restored)
@@ -664,6 +689,85 @@ remote_before=command(['git',f'--git-dir={safe_origin}','rev-parse','HEAD']).std
 bad=command(['bash',APP/'scripts/loomy-privacy.sh','--root',safe,'--quiet','sync'],allow_failure=True)
 check('sync: remote root link rejected before rebase',bad.returncode!=0 and b'cannot be rebased safely' in bad.stdout+bad.stderr)
 check('sync: root-link refusal keeps authors, local HEAD, remote and live root',snapshot(safe,['.loomy/brief.md',*CONTINUITY])==authors_before and companion(safe,'rev-parse','HEAD').stdout==head_before and command(['git',f'--git-dir={safe_origin}','rev-parse','HEAD']).stdout==remote_before and not (safe/'.loomy').is_symlink())
+
+# ---- T5 fix round: restore/guard hardening.
+def fixture_remote(label,entries):
+    """Bare repository whose HEAD commit holds synthetic entries: (path, mode, bytes)."""
+    bare=W/(label+'.git'); command(['git','init','--bare','-q','-b','main',bare])
+    idx={**ENV,'GIT_INDEX_FILE':str(W/(label+'-fixture-index'))}
+    for path,mode,data in entries:
+        f=W/(label+'-blob'); f.write_bytes(data)
+        oid=command(['git',f'--git-dir={bare}','hash-object','-w',f],env=idx).stdout.decode().strip()
+        command(['git',f'--git-dir={bare}','update-index','--add','--cacheinfo',mode,oid,path],env=idx)
+    tree=command(['git',f'--git-dir={bare}','write-tree'],env=idx).stdout.decode().strip()
+    commit=command(['git',f'--git-dir={bare}','commit-tree',tree,'-m',label],env=idx).stdout.decode().strip()
+    command(['git',f'--git-dir={bare}','update-ref','refs/heads/main',commit])
+    return bare
+
+# Symlinked .claude during restore: nothing is moved out of, or written through, the link.
+dot=W/'dotfiles-claude'; (dot/'agents').mkdir(parents=True); (dot/'agents/executor.md').write_text('USER DOTFILE CANARY\n')
+link_proj=W/'link-restore'; init(link_proj); (link_proj/'.claude').symlink_to(dot,target_is_directory=True)
+dot_before=snapshot(dot,['agents/executor.md'])
+bad=command(['bash',APP/'scripts/loomy-privacy.sh','--root',link_proj,'restore',historical],allow_failure=True)
+check('restore: symlinked .claude refuses the whole restore',bad.returncode!=0 and b'in the way' in bad.stdout+bad.stderr)
+check('restore: symlinked .claude keeps link and target files; nothing moved to a backup',(link_proj/'.claude').is_symlink() and snapshot(dot,['agents/executor.md'])==dot_before and not list((link_proj/'.loomy').glob('restore-backup-*')))
+check('restore: refusal leaves no half-restored companion',not (link_proj/'.loomy/ai.git').exists() and not (link_proj/'AGENTS.md').exists())
+
+# Continuity files must be regular blobs on restore.
+state_link=fixture_remote('state-link',[('.loomy/memory/STATE.md','120000',b'../logs/events.jsonl'),
+  ('.loomy/memory/DEAD-ENDS.md','120000',b'/etc/hosts'),('.loomy/docs/HANDOFF.md','100644',b'regular handoff\n'),('AGENTS.md','100644',b'agents\n')])
+state_proj=W/'state-restore'; init(state_proj); write(state_proj,'.loomy/logs/events.jsonl','LIVE JOURNAL\n')
+command(['bash',APP/'scripts/loomy-privacy.sh','--root',state_proj,'restore',state_link])
+check('restore: STATE.md/DEAD-ENDS.md symlinks in companion HEAD are not materialized',
+      not (state_proj/'.loomy/memory/STATE.md').is_symlink() and not (state_proj/'.loomy/memory/DEAD-ENDS.md').is_symlink()
+      and not (state_proj/'.loomy/memory/STATE.md').exists())
+check('restore: regular continuity and authored files still restored; live journal untouched',
+      (state_proj/'.loomy/docs/HANDOFF.md').read_text()=='regular handoff\n' and (state_proj/'AGENTS.md').exists()
+      and (state_proj/'.loomy/logs/events.jsonl').read_text()=='LIVE JOURNAL\n')
+check('restore: non-regular continuity entries are absent from the companion index',not ({'.loomy/memory/STATE.md','.loomy/memory/DEAD-ENDS.md'}&names(companion(state_proj,'ls-files','-z'))))
+
+# Case-variant runtime paths and anything outside the AI allowlist.
+variant=fixture_remote('case-variant',[('.loomy/Logs/events.jsonl','100644',b'CASE CANARY\n'),
+  ('.loomy/Memory/delegations/x.md','100644',b'CASE CANARY\n'),('.loomy/AI.git/config','100644',b'[core]\n'),
+  ('.loomy/PROJECT-ID','100644',b'p0\n'),('.env','100644',b'SECRET=1\n'),('.venv/pyvenv.cfg','100644',b'x\n'),
+  ('AGENTS.md','100644',b'agents\n'),('.claude/agents/a.md','100644',b'agent\n')])
+variant_proj=W/'variant-restore'; init(variant_proj); write(variant_proj,'.loomy/logs/events.jsonl','LIVE JOURNAL\n'); write(variant_proj,'.env','LOCAL ENV\n')
+live_before=snapshot(variant_proj,['.loomy/logs/events.jsonl','.env'])
+command(['bash',APP/'scripts/loomy-privacy.sh','--root',variant_proj,'restore',variant])
+rest=names(companion(variant_proj,'ls-files','-z'))
+check('restore: case-variant runtime paths, non-AI paths and nested .git are dropped from the index',rest=={'AGENTS.md','.claude/agents/a.md'})
+check('restore: live journal and ignored .env untouched; no variant path materialized',
+      snapshot(variant_proj,['.loomy/logs/events.jsonl','.env'])==live_before and sorted(os.listdir(variant_proj/'.loomy/logs'))==['events.jsonl'] and not (variant_proj/'.loomy/memory').exists()
+      and (variant_proj/'.loomy/logs/events.jsonl').read_text()=='LIVE JOURNAL\n' and not (variant_proj/'.venv').exists())
+def guard_with(label,path):
+    alt={**ENV,'GIT_INDEX_FILE':str(W/(label+'-index'))}
+    companion(safe,'read-tree',base,env=alt)
+    blob=companion(safe,'hash-object','-w',root_target).stdout.decode().strip()
+    companion(safe,'update-index','--add','--cacheinfo','100644',blob,path,env=alt)
+    tree=companion(safe,'write-tree',env=alt).stdout.decode().strip()
+    oid=companion(safe,'commit-tree',tree,'-p',base,'-m',label,env=alt).stdout.decode().strip()
+    ref='refs/remotes/fixture/'+label; companion(safe,'update-ref',ref,oid)
+    return lib(safe,'privacy_companion_ref_safe "$2" '+ref,allow_failure=True)
+for label,path in (('case-logs','.loomy/Logs/events.jsonl'),('case-memory','.loomy/Memory/delegations/x.md'),('case-aigit','.loomy/AI.git/config'),
+                   ('outside-env','.env'),('outside-venv','.venv/lib/x.py')):
+    bad=guard_with(label,path)
+    check(f'ref guard: {label} refused without paths',bad.returncode!=0 and not bad.stdout and not bad.stderr)
+check('ref guard: an ordinary authored path under an AI root is still accepted',guard_with('ok-authored','.claude/agents/new.md').returncode==0)
+
+# Inherited repository variables never redirect the companion's index.
+foreign={**ENV,'GIT_INDEX_FILE':str(W/'foreign-index'),'GIT_OBJECT_DIRECTORY':str(W/'foreign-objects')}
+plain_names=names(lib(p,'ai_git "$2" ls-files -z'))
+inherited=names(lib(p,'ai_git "$2" ls-files -z',env=foreign))
+check('ai_git ignores inherited GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY',plain_names and inherited==plain_names and not (W/'foreign-index').exists())
+command(['bash',APP/'scripts/loomy-privacy.sh','--root',p,'--quiet','sync'],env=foreign,allow_failure=True)
+check('sync with an inherited GIT_INDEX_FILE does not create or use it',not (W/'foreign-index').exists())
+
+# Fail-closed pathspec list: complete, case-insensitive, and authored .loomy/docs names stay out.
+specs=lib(p,'loomy_history_pathspecs').stdout.decode().splitlines()
+paths_n=len(lib(p,'loomy_history_paths').stdout.decode().splitlines())
+check('history pathspecs: one case-insensitive spec per pattern',len(specs)==paths_n>=30 and all(x.startswith(':(glob,icase)') for x in specs))
+indexed_after=names(companion(p,'ls-files','-z'))
+check('authored .loomy/docs names stay tracked after a private sync',all(n in indexed_after for n in ('.loomy/docs/inventory.md','.loomy/docs/tasks/plan.md','.loomy/docs/reviews/r1.md','.loomy/docs/memory/notes.md')))
 
 check('no provider CLI, gh, HTTP client or SSH executed',not (W/'forbidden-calls.log').exists())
 (W/'results.json').write_text(json.dumps({'checks':CHECKS,'count':len(CHECKS),'fixture_root':str(W)},indent=2)+'\n')

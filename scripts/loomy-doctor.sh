@@ -194,7 +194,8 @@ loomy_doctor_content() {
       ;;
   esac
 }
-loomy_doctor_content
+# Only inside a Loomy project: elsewhere the section would show a policy path that does not exist.
+if [[ -d "$ROOT/.loomy" ]]; then loomy_doctor_content; fi
 
 # ---------------------------------------------------------------- CLI IA
 ui_section "$(t "AI CLIS")" "$(t "at least one required; ideal: both, for hybrid mode")"

@@ -165,6 +165,7 @@ usage() {
   _h_cmd delegate "$(t "<claude|codex> <role> [options] \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
   _h_cmd privacy "[mode|sync|restore]" "$(t "AI files visibility: versioned, local, or in a separate private repository")"
   _h_cmd privacy "content|labels|results|label" "$(t "Project-local journal policy, task label grants and private result retention")"
+  _h_cmd privacy "inventory [--json|--paths|--git-history|--host]" "$(t "Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed")"
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"
   _h_group "$(t "TRACKING")"
   _h_cmd status "" "$(t "Project status: phases, running delegations, activity, costs, Git")"

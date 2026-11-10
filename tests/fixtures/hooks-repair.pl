@@ -10,6 +10,7 @@ use Fcntl qw(O_RDONLY LOCK_EX LOCK_NB);
 use IO::Handle ();
 use POSIX ();
 use Time::HiRes qw(time);
+use Errno qw(EPERM);
 
 my ($repo, $work, $mode) = @ARGV;
 die "usage: hooks-repair.pl REPO WORK [--flock-probe]\n"
@@ -150,6 +151,50 @@ if (($mode // '') eq '--flock-probe') {
 }
 
 require "$repo/scripts/lib/hooks.pl";
+
+sub metadata_key { return @{$_[0]} ? join(':', @{$_[0]}[0, 1]) : '' }
+sub with_settings_stats {
+    my ($adjust, $body) = @_;
+    my $lstat = \&Loomy::Hooks::_settings_lstat;
+    my $fstat = \&Loomy::Hooks::_settings_handle_stat;
+    no warnings 'redefine';
+    local *Loomy::Hooks::_settings_lstat = sub {
+        my $s = [@{$lstat->(@_)}];
+        $adjust->($s);
+        return $s;
+    };
+    local *Loomy::Hooks::_settings_handle_stat = sub {
+        my $s = [@{$fstat->(@_)}];
+        $adjust->($s);
+        return $s;
+    };
+    return $body->();
+}
+sub with_reaper_stats {
+    my ($adjust, $body) = @_;
+    my $stat = \&Loomy::Hooks::_settings_reap_stat;
+    no warnings 'redefine';
+    local *Loomy::Hooks::_settings_reap_stat = sub {
+        my $s = [@{$stat->(@_)}];
+        $adjust->($s);
+        return $s;
+    };
+    return $body->();
+}
+sub entry_snapshot {
+    my ($path) = @_;
+    return [identity($path), -l $path ? readlink($path) : -f $path ? bytes($path) : undef];
+}
+sub stale_name {
+    my ($provider, $pid, $hex) = @_;
+    my $file = $provider eq 'claude' ? 'settings.json' : 'hooks.json';
+    return ".$file.loomy-$pid-" . ($hex x 24);
+}
+sub age_file {
+    my ($path, $seconds) = @_;
+    my $stamp = time - $seconds;
+    utime($stamp, $stamp, $path) == 1 or die "fixture utime: $!";
+}
 
 # Ownership bytes come from the documented generated templates, independently
 # of the engine's serializer/catalog. Historical ownership is the finite set of
@@ -551,6 +596,436 @@ subtest 'H03 filesystem no-op identity, modes and hardlink aliases' => sub {
     ok(!$string_changed->{facts}{ready} && $string_changed->{facts}{state} eq 'ambiguous', 'changed filesystem repair retains string statusLine ambiguity');
 };
 
+subtest 'H1c directory write permissions and primary-group policy' => sub {
+    my $primary_gid = (getpwuid($>))[3];
+    for my $provider (qw(claude codex)) {
+        for my $location (qw(root parent)) {
+            my $r = root("world-writable-$provider-$location");
+            seed($r, $provider, {user => 'KEEP_WORLD_WRITABLE_ORIGINAL'});
+            my $dir = $location eq 'root' ? $r : parent_path($r, $provider);
+            chmod(0777, $dir) or die "fixture chmod: $!";
+            my $before = manifest($r);
+            for my $action (qw(inspect repair)) {
+                my $out = $action eq 'inspect' ? Loomy::Hooks::settings_inspect($r, $provider)
+                    : Loomy::Hooks::settings_update($r, $provider);
+                ok(!$out->{ok} && !$out->{applied} && !$out->{changed}, "$provider $action refuses a world-writable $location");
+                is($out->{code}, 'unsafe_parent', "$provider world-writable $location has the directory safety code");
+                is_deeply(manifest($r), $before, "$provider $action leaves world-writable $location settings and namespace unchanged");
+            }
+        }
+        my $r = "$work/primary-group-$provider";
+        my $saved_umask = umask(0002);
+        mkdir($r, 0775) or die "fixture mkdir: $!";
+        mkdir(parent_path($r, $provider), 0775) or die "fixture mkdir: $!";
+        for my $dir ($r, parent_path($r, $provider)) {
+            my @s = lstat($dir);
+            chown(-1, $primary_gid, $dir) == 1 or die "fixture primary-group setup: $!" if $s[5] != $primary_gid;
+            is((lstat($dir))[5], $primary_gid, "$provider real umask-002 directory uses the primary gid");
+            is(identity($dir)->[2], 0775, "$provider umask 002 creates a group-writable directory");
+        }
+        put(settings_path($r, $provider), '{"user":"KEEP_PRIMARY_GROUP"}');
+        my $accepted = Loomy::Hooks::settings_update($r, $provider);
+        my $remaining_umask = umask($saved_umask);
+        ok($accepted->{ok} && $accepted->{applied}, "$provider real primary-group directories permit repair under umask 002");
+        is($remaining_umask, 0002, "$provider group-writable repair preserves the caller umask");
+        is(decode_json(bytes(settings_path($r, $provider)))->{user}, 'KEEP_PRIMARY_GROUP', "$provider primary-group repair retains custom data");
+        for my $location (qw(root parent)) {
+            my $foreign = root("nonprimary-group-$provider-$location");
+            seed($foreign, $provider, {user => 'KEEP_NONPRIMARY_GROUP'});
+            my $dir = $location eq 'root' ? $foreign : parent_path($foreign, $provider);
+            chmod(0775, $dir) or die "fixture chmod: $!";
+            my $key = metadata_key([lstat($dir)]);
+            my $before = manifest($foreign);
+            my $out = with_settings_stats(sub {
+                $_[0][5] = $primary_gid + 1 if metadata_key($_[0]) eq $key;
+            }, sub { Loomy::Hooks::settings_update($foreign, $provider) });
+            ok(!$out->{ok} && !$out->{applied}, "$provider refuses a simulated nonprimary-group-writable $location without chgrp privileges");
+            is($out->{code}, 'unsafe_parent', "$provider nonprimary-group $location has the directory safety code");
+            is_deeply(manifest($foreign), $before, "$provider nonprimary-group $location refusal preserves exact settings and namespace");
+        }
+        for my $location (qw(root parent)) {
+            for my $permission (qw(world nonprimary-group)) {
+                my $raced = root("late-permissions-$provider-$location-$permission");
+                my $path = seed($raced, $provider, {user => 'KEEP_LATE_PERMISSION_ORIGINAL'});
+                my $dir = $location eq 'root' ? $raced : parent_path($raced, $provider);
+                if ($permission eq 'nonprimary-group') {
+                    chown(-1, $primary_gid, $dir) == 1 or die "fixture primary-group setup: $!" if (lstat($dir))[5] != $primary_gid;
+                    chmod(0775, $dir) or die "fixture chmod: $!";
+                }
+                my $key = metadata_key([lstat($dir)]);
+                my $before = entry_snapshot($path);
+                my ($changed, $reached) = (0, 0);
+                my $out = with_settings_stats(sub {
+                    $_[0][5] = $primary_gid + 1 if $changed && metadata_key($_[0]) eq $key;
+                }, sub {
+                    Loomy::Hooks::settings_update($raced, $provider, 'ensure', {test_hook => sub {
+                        return unless $_[0] eq 'after_temp_create';
+                        $reached++;
+                        if ($permission eq 'world') { chmod(0777, $dir) or die "fixture chmod: $!" }
+                        else { $changed = 1 }
+                    }});
+                });
+                is($reached, 1, "$provider late $permission $location mutation reaches the write boundary");
+                ok(!$out->{ok} && !$out->{applied}, "$provider late $permission $location mutation refuses original replacement");
+                is_deeply(entry_snapshot($path), $before, "$provider late $permission $location mutation retains exact original bytes and inode");
+                is_deeply(temps(parent_path($raced, $provider)), [], "$provider late $permission $location mutation cleans its own temporary");
+            }
+        }
+    }
+};
+
+subtest 'H1c numeric token fidelity and verified output serialization' => sub {
+    my @unsupported = (
+        ['large-integer', '123456789012345678901234567890'],
+        ['long-decimal', '0.123456789012345678901234567890'],
+        ['overflow', '1e400'], ['decimal-spelling', '1.0'],
+        ['negative-zero', '-0'], ['exponent-spelling', '1e2'],
+    );
+    my $supported = '[0,1,-1,2147483647,9007199254740991,12.5,0.25,1000000]';
+    for my $provider (qw(claude codex)) {
+        for my $case (@unsupported) {
+            my ($name, $number) = @$case;
+            my $r = root("numeric-$provider-$name");
+            seed($r, $provider, qq|{"permissions":{"deny":["PRIVATE_NUMERIC_SENTINEL"]},"nested":[{"value":$number}]}|, 0640);
+            my $before = manifest($r);
+            my $out = Loomy::Hooks::settings_update($r, $provider);
+            ok(!$out->{ok} && !$out->{applied} && !$out->{changed}, "$provider $name refuses a lossy numeric rewrite");
+            is($out->{code}, 'unsupported_number', "$provider $name returns the numeric-fidelity code");
+            ok(!$out->{facts} || !$out->{facts}{ready}, "$provider $name refusal never claims ready");
+            unlike($json->encode($out), qr/PRIVATE_NUMERIC_SENTINEL|12345678901234567890/, "$provider $name result does not disclose preserved private data");
+            is_deeply(manifest($r), $before, "$provider $name refusal preserves original bytes, inode, mode and namespace");
+        }
+        for my $literal (qw(NaN Inf -Inf)) {
+            my $r = root("numeric-invalid-$provider-$literal");
+            seed($r, $provider, qq|{"user":"KEEP_INVALID_NUMERIC_ORIGINAL","value":$literal}|);
+            my $before = manifest($r);
+            my $out = Loomy::Hooks::settings_update($r, $provider);
+            ok(!$out->{ok} && !$out->{applied}, "$provider bare $literal is invalid JSON and cannot become ready");
+            is($out->{code}, 'invalid_settings', "$provider bare $literal has the invalid-settings code");
+            is_deeply(manifest($r), $before, "$provider bare $literal preserves exact invalid input for manual repair");
+        }
+        my $r = root("numeric-supported-$provider");
+        my $quoted = q|numbers 1e400 1.0 -0 123456789012345678901234567890 and an escaped quote: \" 1e400|;
+        my $raw = '{"numbers":' . $supported . ',"quoted":' . $json->encode($quoted)
+            . ',"permissions":{"deny":["KEEP_NUMERIC_DENY"]}}';
+        my $path = seed($r, $provider, $raw, 0640);
+        my $out = Loomy::Hooks::settings_update($r, $provider);
+        ok($out->{ok} && $out->{applied}, "$provider supported number tokens and numeric-looking strings permit repair");
+        my $encoded = bytes($path);
+        my $decoded = eval { decode_json($encoded) };
+        ok(!$@ && ref($decoded) eq 'HASH', "$provider written bytes decode as valid JSON");
+        is($json->encode($decoded->{numbers}), $supported, "$provider supported values remain numeric with byte-exact token spelling");
+        is($decoded->{quoted}, $quoted, "$provider numeric text inside escaped strings remains uninterpreted");
+        is_deeply($decoded->{permissions}{deny}, ['KEEP_NUMERIC_DENY'], "$provider supported serialization retains permissions.deny");
+        my $codec = JSON::PP->new->utf8->canonical->indent->indent_length(2)->space_after;
+        is($codec->encode($decoded), $encoded, "$provider written bytes have an identical decode and re-encode");
+        unlike($encoded, qr/:\s*(?:-?Inf|NaN)(?=\s|[,}])/, "$provider never writes bare non-JSON numeric constants");
+        my $before = manifest($r);
+        ok(!Loomy::Hooks::settings_update($r, $provider)->{changed}, "$provider supported numeric repair is idempotent");
+        is_deeply(manifest($r), $before, "$provider supported numeric no-op retains exact serialized bytes and inode");
+        for my $failure (qw(invalid unstable exception)) {
+            my $bad = root("serialization-$provider-$failure");
+            seed($bad, $provider, {user => 'KEEP_SERIALIZATION_ORIGINAL'});
+            my $snapshot = manifest($bad);
+            my $encode = \&Loomy::Hooks::_settings_encode;
+            my $calls = 0;
+            no warnings 'redefine';
+            local *Loomy::Hooks::_settings_encode = sub {
+                $calls++;
+                die "fixture encoder failure\n" if $failure eq 'exception';
+                return '{"value":Inf}' if $failure eq 'invalid';
+                return $encode->(@_) . ($calls % 2 ? "\n" : '');
+            };
+            my $refused = Loomy::Hooks::settings_update($bad, $provider);
+            ok(!$refused->{ok} && !$refused->{applied}, "$provider $failure serializer output is refused before writing");
+            is($refused->{code}, $failure eq 'exception' ? 'serialization_failed' : 'invalid_serialization', "$provider $failure serializer has a clear output-validation code");
+            cmp_ok($calls, '>=', $failure eq 'unstable' ? 2 : 1, "$provider $failure serializer seam was exercised");
+            is_deeply(manifest($bad), $snapshot, "$provider $failure serializer preserves original bytes, inode and namespace");
+        }
+    }
+};
+
+subtest 'H1c original gid retention and fail-closed metadata verification' => sub {
+    for my $provider (qw(claude codex)) {
+        my $r = root("real-gid-$provider");
+        my $path = seed($r, $provider, {user => 'KEEP_REAL_GID'}, 0640);
+        my $gid = (lstat($path))[5];
+        my $out = Loomy::Hooks::settings_update($r, $provider);
+        ok($out->{ok} && $out->{applied}, "$provider real gid-preserving rewrite succeeds");
+        is((lstat($path))[5], $gid, "$provider real replacement preserves the original gid");
+        my $same = root("same-gid-chown-denied-$provider");
+        my $same_path = seed($same, $provider, {user => 'KEEP_SAME_GID'});
+        my $same_gid = (lstat($same_path))[5];
+        my $attempted = 0;
+        {
+            no warnings 'redefine';
+            local *Loomy::Hooks::_settings_chown = sub { $attempted++; $! = EPERM; return 0 };
+            my $accepted = Loomy::Hooks::settings_update($same, $provider);
+            ok($accepted->{ok} && $accepted->{applied}, "$provider denied best-effort chown succeeds when the actual temp gid is already correct");
+        }
+        is($attempted, 1, "$provider best-effort same-gid chown was attempted");
+        is((lstat($same_path))[5], $same_gid, "$provider denied no-op chown retains the actual original gid");
+        for my $behavior (qw(preserve denied ineffective late-change)) {
+            my $fake = root("gid-$provider-$behavior");
+            my $fake_path = seed($fake, $provider, {user => 'KEEP_GID_ORIGINAL'}, 0640);
+            my $original = entry_snapshot($fake_path);
+            my $original_key = metadata_key([lstat($fake_path)]);
+            my $wanted_gid = (lstat($fake_path))[5] + 10000;
+            my %gids = ($original_key => $wanted_gid);
+            my ($calls, $after_chown, $temp_key) = (0, 0);
+            my $handle_stat = \&Loomy::Hooks::_settings_handle_stat;
+            my $result = with_settings_stats(sub {
+                my ($s) = @_;
+                my $key = metadata_key($s);
+                $s->[5] = $gids{$key} if exists $gids{$key};
+            }, sub {
+                no warnings 'redefine';
+                local *Loomy::Hooks::_settings_chown = sub {
+                    my ($fh, $gid) = @_;
+                    $calls++;
+                    die "fixture wrong target gid\n" unless $gid == $wanted_gid;
+                    $temp_key = metadata_key($handle_stat->($fh));
+                    $gids{$temp_key} = $gid if $behavior eq 'preserve' || $behavior eq 'late-change';
+                    $! = EPERM if $behavior eq 'denied';
+                    return $behavior eq 'denied' ? 0 : 1;
+                };
+                return Loomy::Hooks::settings_update($fake, $provider, 'ensure', {test_hook => sub {
+                    return unless $_[0] eq 'after_chown';
+                    $after_chown++;
+                    $gids{$temp_key} = $wanted_gid + 1 if $behavior eq 'late-change';
+                }});
+            });
+            is($calls, 1, "$provider $behavior tests a different original gid using only metadata seams");
+            if ($behavior eq 'preserve') {
+                ok($result->{ok} && $result->{applied}, "$provider verifies the requested gid on the new handle before replacing");
+                is($after_chown, 1, "$provider preserved-gid handle reaches the checked post-chown boundary");
+                is(decode_json(bytes($fake_path))->{user}, 'KEEP_GID_ORIGINAL', "$provider successful gid preservation keeps user data");
+            } else {
+                ok(!$result->{ok} && !$result->{applied} && !$result->{changed}, "$provider $behavior gid preservation refuses original replacement");
+                is($result->{code}, 'gid_preservation_failed', "$provider $behavior gid mismatch has a clear fail-closed code");
+                is_deeply(entry_snapshot($fake_path), $original, "$provider $behavior gid mismatch preserves original bytes, inode, mode and gid");
+                is($after_chown, $behavior eq 'late-change' ? 1 : 0, "$provider $behavior verifies gid before the post-chown boundary");
+            }
+            is_deeply(temps(parent_path($fake, $provider)), [], "$provider $behavior gid handling leaves no temporary");
+        }
+    }
+};
+
+subtest 'H1c global project roots and their aliases are refused' => sub {
+    for my $provider (qw(claude codex)) {
+        for my $global (qw(home claude-config-parent codex-home-parent)) {
+            my $r = root("global-$provider-$global");
+            my $config = "$r/provider-config";
+            mkdir($config, 0700) or die "fixture mkdir: $!";
+            my $alias = "$work/global-alias-$provider-$global";
+            symlink($r, $alias) or die "fixture symlink: $!";
+            local $ENV{HOME} = $global eq 'home' ? $r : $ENV{HOME};
+            local $ENV{CLAUDE_CONFIG_DIR} = $global eq 'claude-config-parent' ? $config : $ENV{CLAUDE_CONFIG_DIR};
+            local $ENV{CODEX_HOME} = $global eq 'codex-home-parent' ? $config : $ENV{CODEX_HOME};
+            my $before = manifest($r);
+            for my $input ($r, "$r/.", "$r/", $alias) {
+                for my $action (qw(inspect repair)) {
+                    my $out = $action eq 'inspect' ? Loomy::Hooks::settings_inspect($input, $provider)
+                        : Loomy::Hooks::settings_update($input, $provider);
+                    ok(!$out->{ok} && !$out->{applied} && !$out->{changed}, "$provider $action refuses $global through a canonical or alias root");
+                    is($out->{code}, 'unsafe_project', "$provider $global refusal has the project-scope code");
+                    is_deeply(manifest($r), $before, "$provider $action never bootstraps provider settings in $global");
+                }
+            }
+        }
+        # A bad regression must fail without ever opening or mutating /, even
+        # when this hermetic fixture is run by a privileged release runner.
+        my $open_dir = \&Loomy::Hooks::_settings_open_dir;
+        my $root_opened = 0;
+        no warnings 'redefine';
+        local *Loomy::Hooks::_settings_open_dir = sub {
+            if ($_[1] eq '/') { $root_opened++; die "fixture refuses to open filesystem root\n" }
+            return $open_dir->(@_);
+        };
+        for my $input ('/', '/.') {
+            my $out = Loomy::Hooks::settings_update($input, $provider);
+            ok(!$out->{ok} && !$out->{applied}, "$provider refuses the filesystem-root alias before mutation");
+            is($out->{code}, 'unsafe_project', "$provider filesystem root has the project-scope code");
+        }
+        is($root_opened, 0, "$provider rejects / before the directory-open boundary");
+    }
+};
+
+subtest 'H1c stale temporary reaping is narrow, locked and best effort' => sub {
+    my $dead_pid = fork_child(sub {});
+    reap($dead_pid, 'known-dead stale-temp owner');
+    my $uncertain_pid = fork_child(sub {});
+    reap($uncertain_pid, 'simulated inaccessible stale-temp owner');
+    ok(Loomy::Hooks::_settings_pid_dead($dead_pid), 'a specifically reaped fixture child is a dead owner PID');
+    ok(!Loomy::Hooks::_settings_pid_dead($$), 'the running fixture process is a live owner PID');
+    for my $provider (qw(claude codex)) {
+        my $r = root("reap-policy-$provider");
+        my $path = seed($r, $provider, shell_data($provider));
+        my $parent = parent_path($r, $provider);
+        my $outside = root("reap-policy-outside-$provider");
+        put("$outside/sentinel", 'KEEP_REAPER_OUTSIDE');
+        my %names = (
+            eligible => stale_name($provider, $dead_pid, 'a'),
+            live => stale_name($provider, $$, 'b'),
+            recent => stale_name($provider, $dead_pid, 'c'),
+            foreign => stale_name($provider, $dead_pid, 'd'),
+            uncertain => stale_name($provider, $uncertain_pid, 'e'),
+            hardlink => stale_name($provider, $dead_pid, 'f'),
+            directory => stale_name($provider, $dead_pid, '1'),
+            symlink => stale_name($provider, $dead_pid, '2'),
+            fifo => stale_name($provider, $dead_pid, '3'),
+            cross_provider => stale_name($provider eq 'claude' ? 'codex' : 'claude', $dead_pid, '4'),
+            short_hex => substr(stale_name($provider, $dead_pid, '5'), 0, -1),
+            # Keep the lowercase equivalent unused on case-insensitive APFS.
+            uppercase_hex => stale_name($provider, $dead_pid, 'B'),
+            malformed_pid => stale_name($provider, 'not-a-pid', '6'),
+            unrelated => 'unrelated.loomy-' . $dead_pid . '-' . ('7' x 24),
+        );
+        for my $kind (grep { $_ ne 'directory' && $_ ne 'symlink' && $_ ne 'fifo' } keys %names) {
+            put("$parent/$names{$kind}", "KEEP_REAPER_$kind");
+            age_file("$parent/$names{$kind}", $kind eq 'recent' ? 60 : 1200);
+        }
+        link("$parent/$names{hardlink}", "$parent/hardlink-alias") or die "fixture link: $!";
+        mkdir("$parent/$names{directory}", 0700) or die "fixture mkdir: $!";
+        put("$parent/$names{directory}/sentinel", 'KEEP_REAPER_DIRECTORY');
+        age_file("$parent/$names{directory}", 1200);
+        symlink("$outside/sentinel", "$parent/$names{symlink}") or die "fixture symlink: $!";
+        POSIX::mkfifo("$parent/$names{fifo}", 0600) == 0 or die "fixture mkfifo: $!";
+        age_file("$parent/$names{fifo}", 1200);
+        my $foreign_key = metadata_key([lstat("$parent/$names{foreign}")]);
+        my $symlink_key = metadata_key([lstat("$parent/$names{symlink}")]);
+        my %expected = map { $_ => entry_snapshot("$parent/$names{$_}") } keys %names;
+        my $alias_before = entry_snapshot("$parent/hardlink-alias");
+        my $outside_before = manifest($outside);
+        my $settings_before = entry_snapshot($path);
+        my $before = manifest($r);
+        my $pid_dead = \&Loomy::Hooks::_settings_pid_dead;
+        with_reaper_stats(sub {
+            my ($s) = @_;
+            $s->[4] = $> + 1 if metadata_key($s) eq $foreign_key;
+            $s->[9] = time - 1200 if metadata_key($s) eq $symlink_key;
+        }, sub {
+            no warnings 'redefine';
+            local *Loomy::Hooks::_settings_pid_dead = sub {
+                if ($_[0] == $uncertain_pid) { $! = EPERM; return 0 }
+                return $pid_dead->(@_);
+            };
+            ok(Loomy::Hooks::settings_inspect($r, $provider)->{ok}, "$provider stale-temp inspection succeeds without cleanup");
+            is_deeply(manifest($r), $before, "$provider inspection never reaps even eligible stale temps");
+            my $out = Loomy::Hooks::settings_update($r, $provider);
+            ok($out->{ok} && !$out->{applied} && !$out->{changed}, "$provider reaps stale temps without rewriting already-complete settings");
+        });
+        ok(!lstat("$parent/$names{eligible}"), "$provider removes its own old single-link regular temp after its owner exited");
+        for my $kind (sort grep { $_ ne 'eligible' } keys %names) {
+            is_deeply(entry_snapshot("$parent/$names{$kind}"), $expected{$kind}, "$provider retains $kind temporary bytes and identity");
+        }
+        is_deeply(entry_snapshot("$parent/hardlink-alias"), $alias_before, "$provider never alters an old temp hardlink alias");
+        is_deeply(entry_snapshot($path), $settings_before, "$provider reaping preserves complete settings bytes, inode and mode");
+        is_deeply(manifest($outside), $outside_before, "$provider reaping never follows a temp symlink outside");
+        my $busy_root = root("reap-locked-$provider");
+        seed($busy_root, $provider, shell_data($provider));
+        my $busy_parent = parent_path($busy_root, $provider);
+        my $stale = "$busy_parent/" . stale_name($provider, $dead_pid, 'a');
+        put($stale, 'KEEP_UNDER_CONTENTION');
+        age_file($stale, 1200);
+        pipe(my $ready, my $send_ready) or die "fixture pipe: $!";
+        pipe(my $release, my $send_release) or die "fixture pipe: $!";
+        my $holder = fork_child(sub {
+            close $ready;
+            close $send_release;
+            sysopen my $lock, $busy_parent, O_RDONLY or die "fixture directory open: $!";
+            flock($lock, LOCK_EX | LOCK_NB) or die "fixture lock: $!";
+            syswrite($send_ready, 'R') == 1 or die "fixture write: $!";
+            receive($release);
+            close $lock;
+            close $send_ready;
+            close $release;
+        });
+        close $send_ready;
+        close $release;
+        is(receive($ready), 'R', "$provider stale cleanup contender holds the actual parent directory flock");
+        my $busy_before = manifest($busy_root);
+        my $started = time;
+        my $busy = Loomy::Hooks::settings_update($busy_root, $provider);
+        is($busy->{code}, 'busy', "$provider locked directory reports busy regardless of holder attribution");
+        ok(!$busy->{ok} && !$busy->{applied} && time - $started < 2, "$provider cleanup lock contention is bounded and never ready");
+        is_deeply(manifest($busy_root), $busy_before, "$provider never reaps before acquiring the parent lock");
+        syswrite($send_release, 'G') == 1 or die "fixture write: $!";
+        close $send_release;
+        close $ready;
+        reap($holder, "$provider stale-temp directory-lock holder");
+        ok(Loomy::Hooks::settings_update($busy_root, $provider)->{ok}, "$provider cleanup retries after the lock holder exits");
+        ok(!lstat($stale), "$provider stale cleanup starts only after acquiring the released lock");
+    }
+};
+
+subtest 'H1c stale cleanup rechecks candidate identity, liveness and pinned namespace' => sub {
+    my $dead_pid = fork_child(sub {});
+    reap($dead_pid, 'stale-temp race owner');
+    for my $provider (qw(claude codex)) {
+        for my $replacement (qw(file symlink directory refreshed live-pid)) {
+            my $r = root("reap-race-$provider-$replacement");
+            my $path = seed($r, $provider, shell_data($provider));
+            my $parent = parent_path($r, $provider);
+            my $stale = "$parent/" . stale_name($provider, $dead_pid, 'a');
+            put($stale, 'KEEP_REAPER_RACE_ORIGINAL');
+            age_file($stale, 1200);
+            my $outside = root("reap-race-outside-$provider-$replacement");
+            put("$outside/sentinel", 'KEEP_REAPER_RACE_OUTSIDE');
+            my $outside_before = manifest($outside);
+            my $settings_before = entry_snapshot($path);
+            my ($reached, $unknown, $expected, $parked) = (0, 0);
+            my $pid_dead = \&Loomy::Hooks::_settings_pid_dead;
+            no warnings 'redefine';
+            local *Loomy::Hooks::_settings_pid_dead = sub { return 0 if $unknown; return $pid_dead->(@_) };
+            my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', {test_hook => sub {
+                return unless $_[0] eq 'before_stale_unlink';
+                $reached++;
+                if ($replacement eq 'refreshed') { age_file($stale, 60) }
+                elsif ($replacement eq 'live-pid') { $unknown = 1 }
+                else {
+                    $parked = "$parent/parked-original";
+                    rename($stale, $parked) or die "fixture rename: $!";
+                    if ($replacement eq 'file') { put($stale, 'KEEP_REAPER_RACE_REPLACEMENT'); age_file($stale, 1200) }
+                    elsif ($replacement eq 'symlink') { symlink("$outside/sentinel", $stale) or die "fixture symlink: $!" }
+                    else { mkdir($stale, 0700) or die "fixture mkdir: $!" }
+                }
+                $expected = entry_snapshot($stale);
+            }});
+            is($reached, 1, "$provider $replacement candidate race reaches the final-unlink boundary");
+            ok($out->{ok} && !$out->{applied}, "$provider $replacement cleanup race is best effort without rewriting complete settings");
+            is_deeply(entry_snapshot($stale), $expected, "$provider preserves the $replacement candidate after the final safety recheck");
+            is(bytes($parked), 'KEEP_REAPER_RACE_ORIGINAL', "$provider does not follow the renamed old temp") if defined $parked;
+            is_deeply(entry_snapshot($path), $settings_before, "$provider $replacement race preserves settings bytes and inode");
+            is_deeply(manifest($outside), $outside_before, "$provider $replacement race never escapes through a replacement symlink");
+        }
+        my $r = root("reap-parent-swap-$provider");
+        my $path = seed($r, $provider, shell_data($provider));
+        my $original = entry_snapshot($path);
+        my $parent = parent_path($r, $provider);
+        my $name = stale_name($provider, $dead_pid, 'a');
+        put("$parent/$name", 'OWN_STALE_TEMP');
+        age_file("$parent/$name", 1200);
+        my $outside = root("reap-parent-swap-outside-$provider");
+        put("$outside/$name", 'KEEP_RETARGETED_TEMP_SENTINEL');
+        age_file("$outside/$name", 1200);
+        put("$outside/" . ($provider eq 'claude' ? 'settings.json' : 'hooks.json'), 'KEEP_RETARGETED_SETTINGS_SENTINEL');
+        my $outside_before = manifest($outside);
+        my $detached = "$r/detached";
+        my $reached = 0;
+        my $out = Loomy::Hooks::settings_update($r, $provider, 'ensure', {test_hook => sub {
+            return unless $_[0] eq 'before_stale_unlink';
+            $reached++;
+            rename($parent, $detached) or die "fixture rename: $!";
+            symlink($outside, $parent) or die "fixture symlink: $!";
+        }});
+        is($reached, 1, "$provider stale cleanup reaches the parent-swap boundary");
+        ok(!$out->{ok} && !$out->{applied}, "$provider retargeted cleanup never claims ready or replaces settings");
+        is_deeply(manifest($outside), $outside_before, "$provider cleanup uses the pinned directory after parent retargeting");
+        is_deeply(entry_snapshot("$detached/" . ($provider eq 'claude' ? 'settings.json' : 'hooks.json')), $original, "$provider retargeted cleanup retains original settings in the detached parent");
+    }
+};
+
 subtest 'H04 missing parents, invalid shapes, no-follow and fenced races' => sub {
     for my $provider (qw(claude codex)) {
         my $r = root("fresh-$provider");
@@ -708,6 +1183,7 @@ subtest 'H04 directory flock serializes cooperating writers across rename' => su
     my $started = time;
     my $busy = Loomy::Hooks::settings_update($r, 'claude');
     ok(!$busy->{ok} && !$busy->{applied}, 'second cooperating writer refuses a held directory lock');
+    is($busy->{code}, 'busy', 'a held directory flock has the documented busy code');
     ok(time - $started < 2, 'contended writer uses bounded nonblocking acquisition');
     is_deeply(manifest($r), $before, 'contender does not mutate the active writer namespace');
     syswrite($send_release, 'G') == 1 or die;
@@ -984,6 +1460,29 @@ subtest 'H1 sourced shell compatibility wrappers survive cwd changes' => sub {
     }
     my $repair = decode_json(bytes("$work/wrapper-repair.json"));
     ok($repair->{ok} && !$repair->{changed} && !$repair->{applied}, 'explicit shell repair wrapper returns sanitized no-op result');
+    for my $provider (qw(claude codex)) {
+        my $bad = root("wrapper-unsupported-number-$provider");
+        seed($bad, $provider, '{"permissions":{"deny":["PRIVATE_WRAPPER_SENTINEL"]},"value":123456789012345678901234567890}');
+        my $before = manifest($bad);
+        my $output = "$work/wrapper-unsupported-$provider.json";
+        my $errors = "$work/wrapper-unsupported-$provider.stderr";
+        my $refused = system('bash', '-c', q{
+            set -euo pipefail
+            cd "$1"
+            source scripts/lib/hooks.sh
+            cd "$2"
+            loomy_hooks_repair "$2" "$3" --shell >"$4" 2>"$5"
+        }, 'hooks-wrapper-refusal', $repo, $bad, $provider, $output, $errors);
+        is($refused, 256, "$provider sourced repair wrapper propagates the nonzero engine refusal status");
+        my $raw = bytes($output);
+        my $result = eval { decode_json($raw) };
+        ok(!$@ && ref($result) eq 'HASH', "$provider sourced refusal stays valid typed JSON");
+        $result //= {};
+        is($result->{code}, 'unsupported_number', "$provider sourced refusal preserves the public numeric-fidelity code");
+        ok(!$result->{ok} && !$result->{applied} && (!$result->{facts} || !$result->{facts}{ready}), "$provider sourced refusal never reports ready or applied");
+        unlike($raw . bytes($errors), qr/PRIVATE_WRAPPER_SENTINEL|12345678901234567890/, "$provider sourced refusal does not disclose custom settings bytes");
+        is_deeply(manifest($bad), $before, "$provider sourced refusal preserves exact original settings and namespace");
+    }
 };
 
 done_testing();

@@ -6,6 +6,11 @@ _LOOMY_HOOKS_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/hooks.pl" 
 
 # Both APIs emit sanitized JSON facts and return nonzero on failure. Inspection
 # never creates directories; repair defaults to ensure-only shell registration.
+# unsafe_parent rejects world-write and group-write outside the primary group;
+# unsupported_number rejects JSON numbers that cannot round-trip exactly;
+# gid_preservation_failed refuses a replacement that cannot retain the original
+# file's group. A busy result means another process holds the directory lock;
+# retry after release.
 loomy_hooks_inspect() {
   perl "$_LOOMY_HOOKS_HELPER" inspect "$@"
 }

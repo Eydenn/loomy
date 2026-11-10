@@ -380,6 +380,12 @@ for raw,line in zip(domain_rows,domain_output.splitlines()):
     row=json.loads(line)
     for key,value in raw.items(): assert row[key]==value, ('declared producer domain lost',key,value,row[key])
 print('PASS P19 declared routing roles, audit/task/project phases and skill repositories retain exact values')
+# Shell and hook writers stamp events with the wall clock, while journal
+# rotation and validation read the pinned LOOMY_NATIVE_NOW. Once the wall clock
+# leaves the pinned month, a second append rotates and drops earlier rows as
+# future, so every wall-stamped writer below runs on one clock: the real one.
+# Native collectors stamp provider fixture time and keep the pinned clock.
+wall_env={k:v for k,v in os.environ.items() if k!='LOOMY_NATIVE_NOW'}
 # Real hook boundary: description only, actual usage dedup/model matching and
 # result handoff on stdin. A Perl launch guard rejects the result in any argv.
 hook_script = r'''
@@ -405,7 +411,7 @@ for agent_type in ('developer','Explore','custom private agent type'):
     transcript = root/'transcript.jsonl'
     transcript.write_text(''.join(json.dumps({'type':'assistant','message':{'id':f'msg_{i}','model':'claude-haiku-4-5-20251001','usage':{'input_tokens':1000000,'cache_creation_input_tokens':0,'cache_read_input_tokens':0,'output_tokens':0}}},separators=(',',':'))+'\n' for i in (1,1,2)))
     start = {'session_id':'hook-session','tool_use_id':'call1','tool_input':{'subagent_type':agent_type,'description':'Approved title','prompt':'PRIVATE_PROMPT','run_in_background':True}}
-    env = dict(os.environ, REPO=str(repo),PROJECT=str(root),TRANSCRIPT=str(transcript),AGENT_TYPE=agent_type,
+    env = dict(wall_env, REPO=str(repo),PROJECT=str(root),TRANSCRIPT=str(transcript),AGENT_TYPE=agent_type,
                START=json.dumps(start),STOP=json.dumps({'session_id':'hook-session','agent_id':'agent1','agent_type':agent_type}),
                RETURN=json.dumps({'session_id':'hook-session','tool_use_id':'call1','tool_response':{'agentId':'agent1'}}))
     run(['/bin/bash','-c',hook_script],env=env)
@@ -430,7 +436,7 @@ for agent_type in ('developer','Explore','custom private agent type'):
 start_only = hook_script[:hook_script.index('# The exact same transcript')]
 for i, description in enumerate(['a'*n for n in (95,96,97,199,200,201)]+['界'*129,'a'+'\u0301'*400, '\x1b[31mTitle\x1b[0m\n\u202e safe']):
     root = work/f'labels-{i}'; seed_policy(root,label_sources='claude-description')
-    run(['/bin/bash','-c',start_only],env=dict(os.environ,REPO=str(repo),PROJECT=str(root),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':description,'prompt':'PRIVATE_PROMPT'}})))
+    run(['/bin/bash','-c',start_only],env=dict(wall_env,REPO=str(repo),PROJECT=str(root),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':description,'prompt':'PRIVATE_PROMPT'}})))
     events = rows(root); labels_path=root/'.loomy/logs/display-context-v1.jsonl'
     if i==7: assert not labels_path.exists() and 'label_ref' not in events[0] # first grapheme exceeds byte cap
     else:
@@ -442,7 +448,7 @@ for i, description in enumerate(['a'*n for n in (95,96,97,199,200,201)]+['界'*1
 print('PASS P23 hook descriptions 95/96/97/199/200/201, Unicode byte/grapheme caps and control stripping')
 for description in (None,'','\x1b[31m\x1b[0m\u202e'):
     root=work/('empty-description-'+str(len(list(work.glob('empty-description-*'))))); seed_policy(root,label_sources='claude-description')
-    run(['/bin/bash','-c',start_only],env=dict(os.environ,REPO=str(repo),PROJECT=str(root),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':description,'prompt':'PRIVATE_PROMPT'}})))
+    run(['/bin/bash','-c',start_only],env=dict(wall_env,REPO=str(repo),PROJECT=str(root),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':description,'prompt':'PRIVATE_PROMPT'}})))
     assert not (root/'.loomy/logs/display-context-v1.jsonl').exists() and 'label_ref' not in rows(root)[0]
 native_label_root=work/'native-description'; seed_policy(native_label_root,label_sources='claude-description')
 native_label_sources=work/'native-description-sources'
@@ -457,7 +463,7 @@ run(['perl',str(repo/'scripts/lib/claude-native.pl'),str(native_label_root),str(
 assert label_file.read_bytes()==original_labels
 print('PASS P23 no-hook Claude description has one scoped label, no prompt/checkpoint copy, empty descriptions remain unavailable')
 restricted=work/'hooks-restrict'; seed_policy(restricted,journal_content='legacy-excerpts',label_sources='claude-description',policy_generation=4)
-env=dict(os.environ,REPO=str(repo),PROJECT=str(restricted),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':'Approved title','prompt':'PRIVATE_PROMPT','run_in_background':True}}))
+env=dict(wall_env,REPO=str(repo),PROJECT=str(restricted),START=json.dumps({'session_id':'s','tool_use_id':'c','tool_input':{'subagent_type':'developer','description':'Approved title','prompt':'PRIVATE_PROMPT','run_in_background':True}}))
 run(['/bin/bash','-c',start_only],env=env)
 assert rows(restricted)[0]['task']=='Approved title'
 seed_policy(restricted,policy_generation=5)
@@ -472,7 +478,7 @@ print('PASS P03 hook stop/return rechecks restrictive generation instead of copy
 # Stream relay bytes/exit status stay intact while links use the shared appender.
 stream_root=work/'stream'; seed_policy(stream_root)
 stream='''source "$REPO/scripts/lib/journal.sh"; ai_codex_bin() { :; }; source "$REPO/scripts/lib/launch.sh"; _loomy_cli_stream "$PROJECT/.loomy/logs/events.jsonl" d1 d1 /usr/bin/printf '%s\\n' '{"type":"thread.started","thread_id":"thread1"}' '{"item":{"type":"collab_tool_call","tool":"spawn_agent","sender_thread_id":"thread1","receiver_thread_ids":["thread2"]}}' '''
-stream_output=run(['/bin/bash','-c',stream],env=dict(os.environ,REPO=str(repo),PROJECT=str(stream_root)))
+stream_output=run(['/bin/bash','-c',stream],env=dict(wall_env,REPO=str(repo),PROJECT=str(stream_root)))
 assert [json.loads(x) for x in stream_output.splitlines()][0]['thread_id']=='thread1'
 assert len(rows(stream_root))==2 and all(e['type']=='bridge_link' and drift(e,True) for e in rows(stream_root))
 print('PASS P02 stream relay preserves provider bytes and projects exact nested session links')
@@ -530,7 +536,7 @@ for root in work.glob('hooks-*'): seen.update(e['type'] for e in rows(root))
 seen.update(e['type'] for e in rows(stream_root))
 prompt_root=work/'prompt-hook'; seed_policy(prompt_root)
 (prompt_root/'.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\n---\n')
-run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=json.dumps({'session_id':'prompt-session','prompt':'PRIVATE_PROMPT'}))
+run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=json.dumps({'session_id':'prompt-session','prompt':'PRIVATE_PROMPT'}),env=wall_env)
 for row in rows(prompt_root): drift(row,True); seen.add(row['type'])
 assert 'PRIVATE_PROMPT' not in json.dumps(rows(prompt_root))
 expected={kind for kind in manifest if '/' not in kind}
@@ -638,19 +644,19 @@ utf_script='''source "$REPO/scripts/lib/journal.sh"; ai_codex_bin() { :; }; sour
 perl() { for arg in "$@"; do case "$arg" in *"$SECRET"*) exit 93 ;; esac; done; command perl "$@"; }
 loomy_cli_bridge_start "$PROJECT" utf8 codex reviewer codex gpt-6-luna max read-only "$SECRET" 1 model "$SECRET"
 '''
-run(['/bin/bash','-c',utf_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(utf_root),LC_ALL='C',SECRET='a'*199+'界秘密'))
+run(['/bin/bash','-c',utf_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(utf_root),LC_ALL='C',SECRET='a'*199+'界秘密'))
 assert len(rows(utf_root))==1 and 'task' not in rows(utf_root)[0]
 # Real prompt path repairs permissions, retaining a structural request.
 (root_dir:=prompt_root/'.loomy/logs').chmod(0o755); (root_dir/'events.jsonl').chmod(0o644)
-run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=json.dumps({'session_id':'permissions','prompt':'SECRET_EXCERPT'}))
+run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=json.dumps({'session_id':'permissions','prompt':'SECRET_EXCERPT'}),env=wall_env)
 assert root_dir.stat().st_mode & 0o777 == 0o700 and (root_dir/'events.jsonl').stat().st_mode & 0o777 == 0o600
 assert rows(prompt_root)[-1]['type']=='request' and 'SECRET_EXCERPT' not in json.dumps(rows(prompt_root))
 print('PASS C-locale excerpt argv privacy, complete Unicode start, and real prompt mode tightening')
 seed_policy(prompt_root,journal_content='legacy-excerpts')
 prompt_json=json.dumps({'session_id':'unicode-prompt','prompt':'界'*61+'PRIVATE_PROMPT'})
-run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=prompt_json)
+run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=prompt_json,env=wall_env)
 assert rows(prompt_root)[-1]['excerpt']=='界'*60 and rows(prompt_root)[-1]['content_policy']=='legacy-excerpts-v1'
-run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=prompt_json,env=dict(os.environ,LOOMY_JOURNAL_TASKS='0'))
+run(['/bin/bash',str(repo/'scripts/loomy-context.sh'),'--hook','prompt','--root',str(prompt_root)],input=prompt_json,env=dict(wall_env,LOOMY_JOURNAL_TASKS='0'))
 assert 'excerpt' not in rows(prompt_root)[-1] and rows(prompt_root)[-1]['content_policy']=='structural-v1'
 print('PASS real prompt callback: Unicode legacy excerpt bounded to 60 characters, TASKS veto builds none')
 
@@ -660,7 +666,7 @@ quota_script='''source "$REPO/scripts/lib/journal.sh"; source "$REPO/scripts/lib
 ai_switch_threshold() { printf 90; }; ai_quota() { printf '300 92 1999999999\\n'; }; _ai_window_label() { printf '5 h'; }
 ai_ts_epoch() { printf 0; }; _lf_reason claude; lf_start "$PROJECT" claude codex "$LF_REASON" "$LF_RESUME_AT"; lf_end "$PROJECT"
 '''
-run(['/bin/bash','-c',quota_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(quota_root)))
+run(['/bin/bash','-c',quota_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(quota_root)))
 assert len(rows(quota_root))==2 and all(e['quota_window']=='5h' and e['used_percent']==92 for e in rows(quota_root))
 print('PASS failover and return preserve quota_window=5h and used_percent=92')
 # Native front matter facts survive independently of serialized key order.
@@ -670,7 +676,7 @@ front_root=work/'front-matter'; seed_policy(front_root)
 (front_root/'.claude/agents/developer.md').write_text('---\nmodel: claude-sonnet-5-5\neffort: high\n---\n')
 front_input=json.dumps({'session_id':'live','tool_use_id':'native-1','tool_input':{'subagent_type':'loomy-developer','description':'Approved description'}})
 front_script='''source "$REPO/scripts/lib/models.sh"; source "$REPO/scripts/lib/journal.sh"; ai_journal_agent_start "$PROJECT" "$INPUT" 0'''
-run(['/bin/bash','-c',front_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(front_root),INPUT=front_input))
+run(['/bin/bash','-c',front_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(front_root),INPUT=front_input))
 e=rows(front_root)[0]
 assert (e['bridge'],e['role'],e['family'],e['model'],e['effort'],e['session'],e['id'])==('subagent','developer','claude','claude-sonnet-5-5','high','live','native-1')
 print('PASS native front matter role/family/model/effort/session/id are retained')
@@ -686,7 +692,7 @@ for i in 1 2; do ai_journal_agent_stop "$PROJECT" '{"session_id":"reverse","agen
 wait
 for id in t2 t1 t2; do ai_journal_agent_stop "$PROJECT" "{\\"session_id\\":\\"reverse\\",\\"agent_id\\":\\"a$id\\",\\"agent_type\\":\\"developer\\"}" 0 'STATUS: done'; done
 '''
-run(['/bin/bash','-c',reverse_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(reverse_root)))
+run(['/bin/bash','-c',reverse_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(reverse_root)))
 ends=[e for e in rows(reverse_root) if e['type']=='delegation']
 assert [e['id'] for e in ends]==['t2','t1']
 labels={e['label_id']:e for e in map(json.loads,(reverse_root/'.loomy/logs/display-context-v1.jsonl').read_text().splitlines())}
@@ -700,12 +706,12 @@ price_root=work/'prices'; seed_policy(price_root)
 tr=price_root/'prices.jsonl'
 tr.write_text(''.join(json.dumps({'type':'assistant','message':{'id':'msg_'+str(i),'model':'claude-haiku-5-5','usage':{'input_tokens':tin,'output_tokens':tout,'cache_creation_input_tokens':0,'cache_read_input_tokens':0}}},separators=(',',':'))+'\n' for i,(tin,tout) in enumerate(((50000,1000000),(1000000,0)))))
 price_script='''source "$REPO/scripts/lib/models.sh"; source "$REPO/scripts/lib/journal.sh"; ai_usage_record "$PROJECT" "$TRANSCRIPT" lead'''
-run(['/bin/bash','-c',price_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(price_root),TRANSCRIPT=str(tr)))
+run(['/bin/bash','-c',price_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(price_root),TRANSCRIPT=str(tr)))
 assert sorted(e['cost_usd'] for e in rows(price_root))==[.5,.505]
 advisor_root=work/'advisor-prices'; seed_policy(advisor_root)
 tr=advisor_root/'advisor.jsonl'
 tr.write_text(json.dumps({'type':'assistant','message':{'id':'msg_1','model':'claude-sonnet-5-5','usage':{'input_tokens':2,'cache_creation_input_tokens':100,'cache_read_input_tokens':1000,'output_tokens':50,'iterations':[{'input_tokens':2,'output_tokens':26,'type':'message'},{'input_tokens':35648,'output_tokens':476,'cache_read_input_tokens':0,'cache_creation_input_tokens':0,'cache_creation':{'ephemeral_5m_input_tokens':0,'ephemeral_1h_input_tokens':0},'type':'advisor_message','model':'claude-opus-5-5'}]}}},separators=(',',':'))+'\n')
-run(['/bin/bash','-c',price_script],env=dict(os.environ,REPO=str(repo),PROJECT=str(advisor_root),TRANSCRIPT=str(tr)))
+run(['/bin/bash','-c',price_script],env=dict(wall_env,REPO=str(repo),PROJECT=str(advisor_root),TRANSCRIPT=str(tr)))
 a=[e for e in rows(advisor_root) if e['type']=='advisor']
 assert len(a)==1 and (a[0]['model'],a[0]['calls'],a[0]['tokens_in'])==('claude-opus-5-5',1,35648)
 u=[e for e in rows(advisor_root) if e['type']=='usage']

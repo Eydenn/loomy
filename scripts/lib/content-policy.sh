@@ -135,3 +135,12 @@ loomy_content_hint_refresh() {
   _loomy_content_hint_load "$1" "$2"
 }
 loomy_content_policy() { loomy_content_command show "$1"; }
+
+# Read-only machine API: no UI initialization, identity creation or grant prompt.
+# Exporters use the explicitly structural export snapshot with project_with_policy.
+loomy_content_policy_snapshot() {
+  perl -e 'require $ARGV[0]; print JSON::PP->new->utf8->canonical->encode(Loomy::ContentPolicy::policy_snapshot($ARGV[1])),"\n"' "$LOOMY_CONTENT_POLICY_LIB" "$1"
+}
+loomy_content_export_policy_snapshot() {
+  perl -e 'require $ARGV[0]; print JSON::PP->new->utf8->canonical->encode(Loomy::ContentPolicy::export_policy_snapshot($ARGV[1],$ARGV[2])),"\n"' "$LOOMY_CONTENT_POLICY_LIB" "$1" "${2:-structural}"
+}

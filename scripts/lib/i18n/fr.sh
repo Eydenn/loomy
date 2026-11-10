@@ -2455,5 +2455,25 @@ _t_fr() {
     'Sync stopped before staging.') _T='Synchronisation arrêtée avant l’indexation.' ;;
     'A symlinked or foreign directory is in the way: %s. Nothing was moved or written.') _T='Un dossier lié par symlink ou appartenant à un autre utilisateur bloque : %s. Rien n’a été déplacé ni écrit.' ;;
     'Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed') _T='Inventaire des métadonnées des emplacements de l’activité locale : aucun contenu lu, rien modifié ni supprimé' ;;
+    'Read-only policy unavailable: missing or invalid project identity.') _T='Politique en lecture seule indisponible : identité du projet absente ou invalide.' ;;
+    'Export refused: legacy excerpts require an existing grant for this project or direct human confirmation.') _T='Export refusé : les extraits historiques nécessitent une autorisation existante pour ce projet ou une confirmation humaine directe.' ;;
+    'Structural export: task labels and private results are excluded.') _T='Export structurel : les libellés de tâche et les résultats privés sont exclus.' ;;
+    'Content collection refused: incompatible live collector; stop it from its owning terminal and retry.') _T='Collecte refusée : collecteur actif incompatible ; arrêtez-le depuis son terminal propriétaire puis réessayez.' ;;
+    'Content collection unavailable: collector ownership could not be verified.') _T='Collecte indisponible : l’identité du propriétaire du collecteur n’a pas pu être vérifiée.' ;;
+    'Content collection unavailable: legacy collector requires verified quiescence.') _T='Collecte indisponible : l’arrêt du collecteur historique doit être vérifié.' ;;
+    'Content collection refused: live collector does not satisfy LOOMY_JOURNAL_TASKS=0.') _T='Collecte refusée : le collecteur actif ne respecte pas LOOMY_JOURNAL_TASKS=0.' ;;
+    'Private result unavailable: capture was not authorized.') _T='Résultat privé indisponible : l’enregistrement n’était pas autorisé.' ;;
+    'Private result unavailable: result exceeds the capture limit; complete output was delivered.') _T='Résultat privé indisponible : la limite d’enregistrement est dépassée ; la sortie complète a été remise.' ;;
+    'Private result unavailable: capture failed; complete output was delivered.') _T='Résultat privé indisponible : échec de l’enregistrement ; la sortie complète a été remise.' ;;
+    'Execution scratch could not be created safely; delegation not started.') _T='Impossible de créer les fichiers temporaires d’exécution de façon sûre ; délégation non démarrée.' ;;
+    'Execution scratch write failed; complete output unavailable.') _T='Échec d’écriture des fichiers temporaires d’exécution ; sortie complète indisponible.' ;;
+    'Execution scratch cleanup incomplete; retry cleanup on the next bridge start.') _T='Nettoyage incomplet des fichiers temporaires d’exécution ; nouvelle tentative au prochain démarrage du bridge.' ;;
+    'Execution scratch: private temporary files, removed after each delegation; stale files reaped on the next bridge start.') _T='Exécution : fichiers temporaires privés, supprimés après chaque délégation ; fichiers abandonnés nettoyés au prochain démarrage du bridge.' ;;
+    'Execution scratch is not a private result; it is never synced or exported.') _T='Les fichiers temporaires d’exécution sont distincts des résultats privés ; ils ne sont jamais synchronisés ni exportés.' ;;
+    'Journal: %s · task labels: %s · private results: %s · execution scratch: private temporary files') _T='Journal : %s · libellés : %s · résultats privés : %s · exécution : fichiers temporaires privés' ;;
+    'Content boundary: structural storage; local checkpoint locators and private execution scratch remain.') _T='Périmètre de contenu : stockage structurel ; les chemins locaux des checkpoints et les fichiers temporaires privés d’exécution subsistent.' ;;
+    'Unsupported provider output framing; execution boundary remains unverified.') _T='Format de sortie du fournisseur non pris en charge ; le périmètre d’exécution reste non vérifié.' ;;
+    'Provider-created files: not verified; release gate pending.') _T='Fichiers créés par le fournisseur : non vérifiés ; validation avant publication en attente.' ;;
+    '- Execution scratch may contain raw provider output until delegation cleanup.') _T='- Les fichiers temporaires d’exécution peuvent contenir la sortie brute du fournisseur jusqu’au nettoyage de la délégation.' ;;
   esac
 }

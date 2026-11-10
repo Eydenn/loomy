@@ -4,6 +4,7 @@ use warnings;
 use utf8;
 use JSON::PP;
 use POSIX qw(strftime);
+use Encode qw(decode);
 use File::Path qw(make_path);
 my ($repo,$root,$setup,$grant,$pid)=@ARGV;
 require "$repo/scripts/lib/content-policy.pl";
@@ -26,6 +27,8 @@ sub ts { strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now+$_[0])) }
 sub label {
     my ($kind,$id,$attempt,$source,$text)=@_;
     return unless $grant;
+    # Optional wide-label matrix (tests/content-display.sh): the label keeps its distinct tail.
+    $text=decode('UTF-8',$ENV{LOOMY_FIXTURE_LABEL_PREFIX}).' '.$text if length($ENV{LOOMY_FIXTURE_LABEL_PREFIX}//'');
     return Loomy::ContentPolicy::save_label($root,{project_id=>$project,target_kind=>$kind,
         target_id=>$id,attempt_id=>$attempt,source=>$source,text=>$text});
 }

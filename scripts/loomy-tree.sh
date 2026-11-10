@@ -178,7 +178,7 @@ loomy_native_cell_title() {
   (( boundary == 0 )) || cut=$boundary
   AI_TASK_TITLE="${text:0:cut}"
   while [[ "$AI_TASK_TITLE" == *' ' ]]; do AI_TASK_TITLE="${AI_TASK_TITLE% }"; done
-  AI_TASK_TITLE="$AI_TASK_TITLE…"
+  AI_TASK_TITLE="${AI_TASK_TITLE}…"
 }
 
 # Index ownership only on deltas; timer frames never scan unrelated agents or recap turns.
@@ -1121,8 +1121,13 @@ loomy_live_states() {
 loomy_live_clip() {
   local text="$1" width="$2" plain="$1" pattern=$'\033''\[[0-9;]*[[:alpha:]]'
   while [[ "$plain" =~ $pattern ]]; do plain="${plain//"${BASH_REMATCH[0]}"/}"; done
-  if (( ${#plain} > width )); then LV_CLIPPED="${plain:0:$(( width - 1 ))}…$C_RESET"
-  else LV_CLIPPED="$text"; fi
+  # Terminal cells, not codepoints: wide and combining characters are measured (ASCII and accented Latin need no interpreter).
+  if [[ "$plain" =~ $CV_SIMPLE_RE ]]; then
+    if (( ${#plain} > width )); then LV_CLIPPED="${plain:0:$(( width - 1 ))}…$C_RESET"; else LV_CLIPPED="$text"; fi
+  else
+    _cv_prep "$plain" "$width"
+    if (( CV_CUT )); then LV_CLIPPED="$CV_P$C_RESET"; else LV_CLIPPED="$text"; fi
+  fi
 }
 loomy_live_line() {
   if [[ "${NS_RECORD:-0}" == 1 && "${NS_RECORD_NATIVE:-0}" == 0 ]]; then
@@ -1575,8 +1580,6 @@ case "${TREE_MODE:-auto}" in
 esac
 TREE_SMALL=0; [[ "${TREE_MODE:-auto}" != "list" ]] && (( ! DIAGRAM )) && TREE_SMALL=1
 if (( DIAGRAM )); then
-  # shellcheck source=lib/canvas.sh
-  source "$SCRIPT_DIR/lib/canvas.sh"
   # Interface texts translated once per frame (no subshell per label).
   tv TR_0 "LOOMY AGENT TREE"
   tv TR_1 "LEADS"
@@ -1882,10 +1885,11 @@ if (( DIAGRAM )); then
       cv_put 2 "$ly" "$K_DIM" "$tm"
       cv_put 12 "$ly" "$wk" "$who"
       nb=""; (( new )) && nb="$C_BOLD"
-      log_room=$(( W - 29 - ${#right} - ${#what} ))
-      ai_task_title "$left" "$log_room"; left="$AI_TASK_TITLE"
-      if [[ "$who" == lead && "$what" == "$(t "request")" ]]; then ai_task_title "$extra" "$(( W - 29 - ${#what} ))"; left="$AI_TASK_TITLE"; right=""; fi
-      cv_put 24 "$ly" "$nb" "$what${left:+ · $left}"
+      _cv_prep "$right"; log_right_cells=$CV_N; _cv_prep "$what"; log_what_cells=$CV_N
+      log_room=$(( W - 29 - log_right_cells - log_what_cells ))
+      loomy_native_cell_title "$left" "$log_room"; left="$AI_TASK_TITLE"
+      if [[ "$who" == lead && "$what" == "$(t "request")" ]]; then loomy_native_cell_title "$extra" "$(( W - 29 - log_what_cells ))"; left="$AI_TASK_TITLE"; right=""; fi
+      cv_text 24 "$ly" "$nb" "$what${left:+ · $left}"
       cv_right $(( W - 3 )) "$ly" "$K_DIM" "$right"
       (( new )) && cv_put 1 "$ly" "$C_YELLOW" "▸"
       ly=$(( ly + 1 ))
@@ -1897,9 +1901,9 @@ if (( DIAGRAM )); then
   PY=$(( LY + LOGN + 3 ))
   tilde="~"
   pname="${ROOT##*/}"
-  cv_put 0 "$PY" "$C_GREEN" "$tilde/$pname \$"
+  cv_text 0 "$PY" "$C_GREEN" "$tilde/$pname \$"; pname_cells=$(( CV_N - 4 ))
   cur=" ▏"
-  cv_put $(( ${#pname} + 5 )) "$PY" "$K_TXT" "loomy watch$cur"
+  cv_put $(( pname_cells + 5 )) "$PY" "$K_TXT" "loomy watch$cur"
   # Status bar: label, then its value in brackets, coloured like its part of the diagram.
   sx=0
   adv_state="off"; if [[ -n "$ADV" ]]; then if (( recent )); then tv adv_state "advising"; else tv adv_state "on call"; fi; fi
@@ -2002,6 +2006,9 @@ return 0
 
 }
 
+# Cell-width helpers (_cv_prep) are needed by the live clip, so by the library mode of loomy status too.
+# shellcheck source=lib/canvas.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/canvas.sh"
 # Watch sources only the reducer; ordinary loomy tree keeps its architectural diagram.
 if [[ "${1:-}" == --library ]]; then loomy_tree_log_enable; return 0; fi
 

@@ -1010,7 +1010,7 @@ live_view_tests() {
   printf '%s' '{"session_id":"live","tool_use_id":"native-5","tool_name":"Agent","tool_input":{"subagent_type":"architect","model":"claude-opus-5-5","description":"Explicitly requested routed model"}}' | bash "$REPO/scripts/loomy-context.sh" --root "$lv" --hook agent-start
   event_has "native explicit routed model: requested with empty off routing" "$lv/.loomy/logs/events.jsonl" '($_->{id}//"") eq "native-5" && ($_->{model}//"") eq "claude-opus-5-5" && $_->{requested} && ($_->{off_routing}//"") eq ""'
   run "group by request: private request numbered" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once
-  has "request grouping: numbered second prompt" 'request 2'
+  has "request grouping: private second prompt keeps its request id and named unavailability" '┌─ r[0-9]+-[0-9]+ · context unavailable'
   cp "$OUT" "$lv/request-frame.txt"
   run "watch_group saved" bash -c 'source "$1/scripts/lib/config.sh"; loomy_config_set watch_group model; test "$(loomy_config_get watch_group request)" = model' _ "$REPO"
   run "group by model from configuration" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$lv" --once

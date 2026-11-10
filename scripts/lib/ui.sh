@@ -157,7 +157,12 @@ ui_clip() {
     chomp; my ($w, $out, $vis) = ('"$1"', "", 0);
     while (length) {
       if (s/^(\e\[[0-9;?]*[A-Za-z])//) { $out .= $1; next }
-      s/^(.)//s; if ($vis >= $w - 1 && length) { $out .= "…"; $vis++; last } $out .= $1; $vis++;
+      # Terminal cells: East Asian wide = 2, combining/zero-width = 0, never inside a grapheme.
+      s/^(\X)//s; my $g = $1; my $cw = 0;
+      for my $c (split //, $g) { next if $c =~ /[\p{M}\p{Cf}\p{Emoji_Modifier}]/; $cw += $c =~ /[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/ ? 2 : 1 }
+      $cw = 2 if $cw && $g =~ /[\p{Emoji_Presentation}\p{Regional_Indicator}\x{fe0f}\x{20e3}]/;
+      if (length ? $vis + $cw > $w - 1 : $vis + $cw > $w) { $out .= "…"; $vis++; last }
+      $out .= $g; $vis += $cw;
     }
     print $out, $reset, "\n";' "${C_RESET:-}" 2>/dev/null || cat
 }

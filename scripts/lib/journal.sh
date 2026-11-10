@@ -479,10 +479,20 @@ sub reason {
   $code="unknown" unless $code =~ /\A(?:installed|removed|updated|selected|manual)\z/;
   return ui($code,ui("unknown","unknown"));
 }
+sub cells {
+  my ($g,$w)=(shift,0);
+  for my $c (split //,$g) { next if $c=~/[\p{M}\p{Cf}\p{Emoji_Modifier}]/; $w+=$c=~/[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/ ? 2 : 1 }
+  $w=2 if $w && $g=~/[\p{Emoji_Presentation}\p{Regional_Indicator}\x{fe0f}\x{20e3}]/;
+  return $w;
+}
+# Width is terminal cells (wide = 2, combining = 0), cut on whole graphemes; ASCII is unchanged.
 sub clip {
-  my ($s,$width,$ellipsis)=@_; my @g=text($s)=~/\X/g;
-  return text($s) if @g<=$width;
-  return join("",@g[0..($width-($ellipsis ? 2 : 1))]).($ellipsis ? "…" : "");
+  my ($s,$width,$ellipsis)=@_; $s=text($s); my @g=$s=~/\X/g; my ($total,$used,$out)=(0,0,"");
+  $total+=cells($_) for @g;
+  return $s if $total<=$width;
+  my $room=$width-($ellipsis ? 1 : 0);
+  for my $g (@g) { my $w=cells($g); last if $used+$w>$room; $out.=$g; $used+=$w }
+  return $out.($ellipsis ? "…" : "");
 }
 sub prepare {
   my ($e)=@_; return $e unless ref($e) eq "HASH";

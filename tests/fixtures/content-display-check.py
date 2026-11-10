@@ -197,7 +197,8 @@ class DisplayChecks:
         self.write_events([unicode_event])
         output = self.log("-n", "20")
         decoded = output.decode("utf-8", "strict")
-        self.check("pretty shortening is valid UTF-8 in C locale", "あ" * 47 + "…" in decoded)
+        # 48 terminal cells: 23 wide characters (46 cells) plus the ellipsis (cells, not codepoints).
+        self.check("pretty shortening is valid UTF-8 in C locale", "あ" * 23 + "…" in decoded and "あ" * 24 not in decoded)
         punctuation = self.label("label-punctuation", "punctuation", "punctuation", 'Review "TLS" C:\\src\\file')
         self.write_labels([punctuation])
         self.write_events([self.event(type="delegation_start", id="punctuation", attempt_id="punctuation", label_ref=self.ref(punctuation))])

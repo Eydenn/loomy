@@ -99,4 +99,64 @@ for setup in claude-solo codex-solo hybrid-claude hybrid-codex; do
     ' "$ROOT" "tree-$lang" "status-$lang" "log-$lang"
   done
 done
+# Wide labels (an authorized Claude description may hold any script): every surface fits by terminal cells.
+WIDE_CHECK="$REPO/tests/fixtures/content-wide-check.pl"
+wide_label() {
+  case "$1" in
+    ja) perl -CS -Mutf8 -e 'print join(" ", ("語彙") x 25)' ;;
+    zh) perl -CS -Mutf8 -e 'print join(" ", ("汉字数据") x 18)' ;;
+    emoji) perl -CS -Mutf8 -e 'print join(" ", ("🙂🚀", "🇫🇷", "👍🏽") x 8)' ;;
+    combining) perl -CS -Mutf8 -e 'print join(" ", ("e\x{301}a\x{308}o\x{302}\x{323}", "ｶﾀｶﾅ") x 10)' ;;
+  esac
+}
+for kind in ja zh emoji combining; do
+  for setup in claude-solo hybrid-codex; do
+    [[ "$setup" == claude-solo || "$kind" == ja ]] || continue
+    label="$(wide_label "$kind")"; ROOT="$WORK/wide-$setup-$kind"
+    LOOMY_FIXTURE_LABEL_PREFIX="$label" perl "$REPO/tests/fixtures/content-display.pl" "$REPO" "$ROOT" "$setup" 1 "$$"
+    full="$label Inspect parent"
+    for lang in en fr; do
+      export LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" NO_COLOR=1 TERM=xterm-256color
+      unset LC_ALL
+      bash "$REPO/scripts/loomy-log.sh" --root "$ROOT" -n 100 >"$ROOT/pretty-$lang" 2>&1
+      export COLUMNS=170 LINES=65
+      bash "$REPO/scripts/loomy-status.sh" --root "$ROOT" >"$ROOT/status-$lang" 2>&1
+      # Pretty log and status clip the label by cells (48 / 40), whole graphemes, with the existing ellipsis.
+      check "$setup $kind $lang loomy log pretty: label cut by cells" perl "$WIDE_CHECK" cap "$ROOT/pretty-$lang" 48 "$label" 1 '◐'
+      check "$setup $kind $lang status: recent label cut by cells" perl "$WIDE_CHECK" cap "$ROOT/status-$lang" 40 "$label" 1 '^│  [✓✗Ⅱ]'
+      check "$setup $kind $lang status: session rows cut by cells" perl "$WIDE_CHECK" cap "$ROOT/status-$lang" 52 "$label" "$([[ "$lang" == en ]] && echo 1 || echo 0)" ' start '
+      check "$setup $kind $lang formatter: start rows cut by cells" bash -c '
+        source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/sessionlog.sh"; ai_display_context_init "$2"
+        _ai_session_events "$2/.loomy/logs/events.jsonl" | grep "|start|" >"$2/rows-$3"
+        perl "$4" cap "$2/rows-$3" 52 "$5" 1' _ "$REPO" "$ROOT" "$lang" "$WIDE_CHECK" "$label"
+      for terminal in plain ascii; do
+        unset LC_ALL; export TERM=xterm-256color
+        [[ "$terminal" != ascii ]] || { export LC_ALL=C TERM=dumb; }
+        for size in 80x24 80x30 170x65; do
+          export COLUMNS="${size%x*}" LINES="${size#*x}"; tag="$lang-$terminal-$size"
+          LOOMY_WATCH_VIEW=tree bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$ROOT/wtree-$tag" 2>&1
+          LOOMY_WATCH_VIEW=list bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$ROOT/wlist-$tag" 2>&1
+          LOOMY_TREE=diagram bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" >"$ROOT/wdiagram-$tag" 2>&1
+          for surface in wtree wlist wdiagram; do
+            check "$setup $kind $surface $tag fits $COLUMNS terminal cells" perl "$WIDE_CHECK" width "$ROOT/$surface-$tag" "$COLUMNS"
+          done
+        done
+      done
+    done
+  done
+done
+unset LC_ALL; export TERM=xterm-256color
+# Shared canvas and pager clipping: ASCII is unchanged, wide and combining text is cut by cells.
+check 'canvas and pager clip by cells, ASCII untouched' bash -c '
+  export LC_ALL=en_US.UTF-8; source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/canvas.sh"
+  C_RESET=""; cv_init 40 4
+  cv_box_center 0 0 40 "" "語彙 語彙 語彙 語彙 語彙 語彙 語彙"; cv_center 0 1 40 "" "e$(printf "\xcc\x81")🇫🇷🙂 abc"; cv_right 39 2 "" "日本語"
+  cv_box_title 0 3 24 "" "漢字漢字漢字漢字漢字漢字漢字漢字"
+  cv_print "" >"$2/canvas.out"; perl "$3" width "$2/canvas.out" 40
+  [[ "$(cv_init 40 1; cv_box_center 0 0 20 "" "plain text"; cv_print "" | head -1)" == "$(printf "%*s" 5 "")plain text" ]] || exit 1
+  printf "%s\n" "語彙語彙語彙語彙語彙語彙語彙語彙" | ui_clip 21 >"$2/clip.out"; perl "$3" width "$2/clip.out" 21
+  [[ "$(printf "%s\n" "abcdefghij" | ui_clip 8)" == "abcdefg…" && "$(printf "%s\n" "abcdefgh" | ui_clip 9)" == "abcdefgh" ]] || exit 1
+  # Byte locale: no identifier parsing of the multibyte ellipsis, ASCII wrapping unchanged.
+  LC_ALL=C bash -uc "source \"\$1/scripts/lib/canvas.sh\"; C_RESET=; cv_init 30 3; cv_box_title 0 0 14 \"\" averyveryverylonglonglongname; cv_print \"\"" _ "$1" >"$2/c-locale.out" || exit 1
+  [[ "$(sed -n 1p "$2/c-locale.out")" == "   averyver" && "$(sed -n 2p "$2/c-locale.out")" == *"yverylo…" ]]' _ "$REPO" "$WORK" "$WIDE_CHECK"
 printf '%s content display checks passed\n' "$PASS"

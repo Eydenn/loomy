@@ -181,7 +181,11 @@ check 'legacy incremental aggregates and shared frames stay byte-identical witho
   done
 ' _ "$REPO" "$WORK" "$LEGACY_ROOT"
 # Sampler memory and traffic: bounded dedup, native flag, aggregates only when changed.
-sed -n '/^read -r -d .. LOOMY_WATCH_LEGACY_PERL/,/^PERL$/p' "$REPO/scripts/loomy-status.sh" | sed '1d;$d' >"$WORK/legacy-sampler.pl"; echo "1;" >>"$WORK/legacy-sampler.pl"
+# The sampler package shares the read-side resolver with direct frames.
+# shellcheck source=../scripts/lib/journal.sh
+source "$REPO/scripts/lib/journal.sh"
+printf '%s\n' "$AI_DISPLAY_CONTEXT_PERL" >"$WORK/legacy-sampler.pl"
+sed -n '/^read -r -d .. LOOMY_WATCH_LEGACY_PERL/,/^PERL$/p' "$REPO/scripts/loomy-status.sh" | sed '1d;$d' >>"$WORK/legacy-sampler.pl"; echo "1;" >>"$WORK/legacy-sampler.pl"
 check 'sampler dedup memory is bounded and still drops a recent duplicate' env REPO="$REPO" perl -MJSON::PP -e '
   require "$ENV{REPO}/scripts/lib/live-state.pl"; require $ARGV[0]; my $s=Loomy::WatchLegacy->new;
   for my $i (1..26000) { $s->consume({type=>"delegation_start",id=>"id$i",ts=>"2026-01-01T00:00:00Z",role=>"developer",model=>"m"},0,0) }
@@ -212,4 +216,74 @@ check 'file mtime alone never reopens a closed session, a new record does' perl 
   $native->{files}{a}{last_evidence_ts}="1970-01-01T00:03:20Z"; $v->source_evidence($native);
   die "new record did not reopen" if $v->{sessions}{"codex:s1"}{closed};
 ' "$REPO"
+
+# All new display content comes from separate scoped labels. Restart and small
+# frames keep the old accounting/topology, without trusting a stray journal task.
+for mode in codex-v1 codex-v2 claude bridge off unicode wide flags halfwidth hook; do
+  CONTENT_ROOT="$WORK/content-$mode"
+  perl "$REPO/tests/fixtures/watch-real-content.pl" "$CONTENT_ROOT" "$mode" "$$"
+  cp "$CONTENT_ROOT/.loomy/logs/events.jsonl" "$WORK/content-$mode.original"
+  for lang in en fr; do
+    for dimensions in '80 24' '80 30' '170 65'; do
+      read -r width height <<<"$dimensions"
+      for locale in C en_US.UTF-8; do
+        output="$WORK/content-$mode-$lang-$width-$height-$locale"
+        if ! LC_ALL="$locale" LOOMY_LANG="$lang" LOOMY_UI_LANG="$lang" LOOMY_WATCH_ID=content-fixture NO_COLOR=1 COLUMNS="$width" LINES="$height" LOOMY_WATCH_BODY_HEIGHT=80 \
+          bash "$REPO/scripts/loomy-tree.sh" --root "$CONTENT_ROOT" --once >"$output" 2>&1; then
+          cat "$output" >&2; exit 1
+        fi
+        if [[ -n "${LOOMY_WATCH_REAL_OUT:-}" ]]; then mkdir -p "$LOOMY_WATCH_REAL_OUT"; cp "$output" "$LOOMY_WATCH_REAL_OUT/"; fi
+        check "$mode $lang ${width}x$height $locale structural labels, identities and valid Unicode" \
+          perl "$REPO/tests/fixtures/watch-real-content-check.pl" "$output" "$mode" "$lang" "$width"
+      done
+    done
+  done
+  check "$mode restart leaves original journal bytes untouched" cmp "$WORK/content-$mode.original" "$CONTENT_ROOT/.loomy/logs/events.jsonl"
+done
+ln -s "$WORK/content-codex-v2" "$WORK/display-root-alias"
+for path_kind in content-codex-v2 display-root-alias; do
+  LOOMY_WATCH_ID=content-fixture LOOMY_NO_HEADER=1 COLUMNS=170 LINES=65 LOOMY_WATCH_BODY_HEIGHT=80 \
+    bash "$REPO/scripts/loomy-tree.sh" --root "$WORK/$path_kind" --once >"$WORK/path-$path_kind" 2>&1
+done
+check 'a root path alias preserves the same native frame and parent/turn identities' cmp "$WORK/path-content-codex-v2" "$WORK/path-display-root-alias"
+check 'compact IDs extend only colliding suffixes and keep full stored keys' bash -c '
+  source "$1/scripts/loomy-tree.sh" --library
+  keys=(first-a12345678 second-b12345678 unique-87654321 first-a12345678)
+  loomy_compact_ids "${keys[@]}"
+  [[ "${LC_SHORT[0]}" == a12345678 && "${LC_SHORT[1]}" == b12345678 && "${LC_SHORT[2]}" == 87654321 && "${LC_SHORT[3]}" == a12345678 ]]
+  [[ "${keys[0]}" == first-a12345678 && "${keys[1]}" == second-b12345678 ]]
+' _ "$REPO"
+check 'managed Unicode fits cache grapheme metadata across timer widths without another interpreter' bash -c '
+  source "$1/scripts/lib/journal.sh"
+  source "$1/scripts/loomy-tree.sh" --library
+  loomy_live_init
+  title="語彙 é 👩🏽 🇯🇵 ｶﾞ 語彙 é 👩🏽 🇯🇵 ｶﾞ"
+  loomy_native_cell_title "$title" 25
+  [[ "${#NS_CELL_TEXT[@]}" == 1 && -n "$AI_TASK_TITLE" ]] || exit 1
+  perl() { return 99; }
+  loomy_native_cell_title "$title" 24
+  [[ "$AI_TASK_TITLE" != "…" && "${#NS_CELL_TEXT[@]}" == 1 ]] || exit 1
+  loomy_native_cell_title "ASCII title unchanged" 12
+  [[ "$AI_TASK_TITLE" == "ASCII title…" ]]
+' _ "$REPO"
+check 'all current Unicode draw rows avoid interpreters on unchanged and resized frames beyond the first-fit cache' bash -c '
+  source "$1/scripts/lib/ui.sh"
+  source "$1/scripts/lib/journal.sh"
+  source "$1/scripts/loomy-tree.sh" --library
+  loomy_live_init
+  LV_WIDTH=79; LOOMY_WATCH_CAPTURE=1; LV_FRAME=""; LV_FRAME_LINES=()
+  for ((i=0; i<65; i++)); do
+    NS_DRAW_TYPE[i]=D; NS_DRAW_PREFIX[i]="  ┣━ "; NS_DRAW_TASK[i]="語彙 任務 $i"
+    NS_DRAW_MODEL[i]=" gpt-6-luna max"; NS_DRAW_STATE[i]=running; NS_DRAW_TIME[i]=0:10
+    NS_DRAW_CLOCK[i]=""; NS_DRAW_CELL[i]=2; NS_DRAW_CELL_META[i]=""
+  done
+  loomy_native_draw
+  for ((i=0; i<65; i++)); do [[ -n "${NS_DRAW_CELL_META[i]}" ]] || exit 1; done
+  perl() { return 99; }
+  loomy_native_draw
+  for ((i=0; i<65; i++)); do [[ -n "${NS_DRAW_CELL_META[i]}" ]] || exit 1; done
+  LV_WIDTH=78
+  loomy_native_draw
+  for ((i=0; i<65; i++)); do [[ -n "${NS_DRAW_CELL_META[i]}" ]] || exit 1; done
+' _ "$REPO"
 printf '%s watch real-data checks passed\n' "$PASS"

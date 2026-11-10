@@ -25,18 +25,21 @@ ai_session_log_rows() {
 }
 
 _ai_session_events() {
-  tail -n 4000 "$1" | ai_journal_canonical | tail -n 400 | awk '
-    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
-    function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-    function dur(d) { d = d + 0; return (d >= 60 ? int(d / 60) " min " (d % 60) " s" : d " s") }
-    /"type":"delegation_start"/ { print field("ts") "|" field("role") "|start|" field("model") " · " substr(field("task"), 1, 52); next }
-    /"type":"delegation",/ { st = field("status"); oc = field("outcome")
-      print field("ts") "|" field("role") "|" (st == "ok" ? (oc == "partial" ? "partial" : (oc == "blocked" ? "blocked" : "done")) : "failed") "|" dur(num("duration_s")) " · " field("model") (field("failover_from") != "" ? " · ⇄ " field("failover_from") : ""); next }
-    /"type":"advisor"/ { print field("ts") "|advisor|consulted|" num("calls") " × " field("model") " · " int((num("tokens_in") + 0) / 1000) "k"; next }
-    /"type":"(phase|task_phase|audit_phase)"/ { ty = field("type"); sub(/_?phase$/, "", ty); print field("ts") "|phase|" field("phase") "|" ty; next }
-    /"type":"session"/ { print field("ts") "|session|" field("event") "|" field("tool"); next }
-    /"type":"skill"/ { print field("ts") "|skills|" field("event") "|" field("name") " · " substr(field("reason"), 1, 52); next }
-    /"type":"usage"/ { if (field("scope") == "lead") print field("ts") "|lead|replied|" num("messages") " msg · " field("model"); next }'
+  local display_root="${LOOMY_DISPLAY_ROOT:-${1%/.loomy/logs/*}}"
+  [[ "$1" != */.loomy/logs/* ]] || display_root="${1%/.loomy/logs/*}"
+  ai_display_context_init "$display_root"
+  ai_journal_tail "$1" 4000 | ai_journal_canonical | tail -n 400 | perl -MJSON::PP -e "$AI_DISPLAY_CONTEXT_PERL"'
+    binmode STDOUT;
+    while (<STDIN>) {
+      my $raw=$_; my $e=eval {decode_json($raw)}; next unless ref($e) eq "HASH";
+      if (Loomy::DisplayContext::managed($e)) {
+        my $row=Loomy::DisplayContext::session_row($e);
+        print Encode::encode("UTF-8",join("|",@$row)."\n") if $row;
+      } else {
+        my $row=Loomy::DisplayContext::legacy_session_row($raw); print join("|",@$row),"\n" if $row;
+      }
+    }
+  '
 }
 
 # ai_session_log <root> <lines>: prints the lines (with colours) for the latest events.

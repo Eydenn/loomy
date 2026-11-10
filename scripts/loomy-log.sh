@@ -73,12 +73,12 @@ for p in $LOOMY_PHASES "done"; do i=$(( i + 1 )); PHASEMAP="$PHASEMAP$p=$i:$(loo
 pretty() {
   # Subscription: tokens for each piece of work; API: its cost.
   local pc=0 px=0; loomy_on_plan claude && pc=1; loomy_on_plan codex && px=1
-  awk -v pc="$pc" -v px="$px" -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
+  ai_display_context_events "$ROOT" pretty | awk -v pc="$pc" -v px="$px" -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
       -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
       -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
       -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \
       -v T_REVIEW="$(t "review without TRIED")" \
-      -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" '
+      -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" "$AI_DISPLAY_FIELD_AWK"'
     BEGIN { n = split(pm, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") { split(a[i], kv, "="); split(kv[2], il, ":"); idx[kv[1]] = il[1]; lab[kv[1]] = il[2] } }
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
@@ -94,11 +94,11 @@ pretty() {
         identity = field("session") "|" (field("turn_id") != "" ? field("turn_id") : field("id")) "|" ty
         if ((field("bridge") == "subagent" || field("bridge") == "claude-native") && seen[identity]++) next
       }
-      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
+      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, (display_task() != "" ? display_task() : cut(field("task"), 48)), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"; oc = field("outcome")
         mk = ok ? G "✓" Z : E "✗" Z; if (ok && oc == "partial") mk = Y "◐" Z; if (ok && oc == "blocked") mk = Y "■" Z
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") cut(field("task"), 36), Z, (field("review") == "incomplete" ? " · " Y T_REVIEW Z : "")
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") (display_task() != "" ? display_task() : cut(field("task"), 36)), Z, (field("review") == "incomplete" ? " · " Y T_REVIEW Z : "")
       }
       else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {

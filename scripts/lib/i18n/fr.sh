@@ -2375,6 +2375,8 @@ _t_fr() {
     'legacy excerpts (project scope)') _T='extraits historiques (portée du projet)' ;;
     'Project-local journal policy, task label grants and private result retention') _T='Politique locale du journal, autorisations des libellés et conservation des résultats privés' ;;
     'Role: %s') _T='Rôle : %s' ;;
+    'manual') _T='manuel' ;;
+    'returned') _T='de retour' ;;
     'original task required') _T='tâche d’origine nécessaire' ;;
     'original task required to resume') _T='tâche d’origine nécessaire pour reprendre' ;;
     'Paused until %s · original task held by lead') _T='En pause jusqu’à %s · tâche d’origine conservée par le lead' ;;

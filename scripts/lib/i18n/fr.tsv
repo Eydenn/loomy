@@ -2376,6 +2376,8 @@ structure only	structure seule
 legacy excerpts (project scope)	extraits historiques (portée du projet)
 Project-local journal policy, task label grants and private result retention	Politique locale du journal, autorisations des libellés et conservation des résultats privés
 Role: %s	Rôle : %s
+manual	manuel
+returned	de retour
 original task required	tâche d’origine nécessaire
 original task required to resume	tâche d’origine nécessaire pour reprendre
 Paused until %s · original task held by lead	En pause jusqu’à %s · tâche d’origine conservée par le lead

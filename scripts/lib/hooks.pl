@@ -395,7 +395,7 @@ use Fcntl qw(:DEFAULT :flock :mode O_DIRECTORY O_NOFOLLOW O_NONBLOCK);
 use File::Basename ();
 use File::Spec ();
 use IO::Handle ();
-use POSIX ();
+# POSIX (signal masks) is loaded only by the write path, keeping the common unchanged check light.
 use Time::HiRes ();
 
 sub _settings_error {
@@ -495,10 +495,11 @@ sub _settings_create_parent {
     my ($c)=@_;
     _settings_stage($c,'before_parent_create');
     $c->{saved_umask}=umask;
-    umask(0077);
+    umask(0022); # 0755 like earlier releases; the settings file itself keeps its own mode
     _settings_stage($c,'after_parent_umask');
     # Defer termination until mkdir's new inode and descriptor are recorded.
     # The cleanup path must know ownership even when the first callback dies.
+    require POSIX;
     my $blocked=POSIX::SigSet->new(POSIX::SIGINT(),POSIX::SIGTERM(),POSIX::SIGHUP());
     my $saved=POSIX::SigSet->new;
     defined POSIX::sigprocmask(POSIX::SIG_BLOCK(),$blocked,$saved)
@@ -506,7 +507,7 @@ sub _settings_create_parent {
     my ($created,$mkdir_errno);
     my $pinned=eval {
         # EEXIST belongs to the racing creator, never to this cleanup path.
-        $created=mkdir($c->{parent},0700); $mkdir_errno=$!;
+        $created=mkdir($c->{parent},0755); $mkdir_errno=$!;
         if ($created) {
             $c->{created_parent}=1;
             $c->{created_parent_stat}=_settings_lstat($c,$c->{parent});
@@ -662,6 +663,7 @@ sub _settings_replace {
     _settings_fail_at($c,'rename');
     # Defer termination across rename + applied bookkeeping. A delivered signal
     # must not turn a successful rename into an "untouched original" result.
+    require POSIX;
     my $blocked=POSIX::SigSet->new(POSIX::SIGINT(),POSIX::SIGTERM(),POSIX::SIGHUP());
     my $saved=POSIX::SigSet->new;
     defined POSIX::sigprocmask(POSIX::SIG_BLOCK(),$blocked,$saved)
@@ -871,5 +873,37 @@ sub main {
     return $r->{ok} ? 0 : 1;
 }
 
-unless (caller) { exit main(@ARGV) }
+# Project-repair status word for one repair result: what the installer and automatic
+# repair report. Only fixed codes cross into shell; nothing from the settings is echoed.
+sub repair_status {
+    my ($r,$provider)=@_;
+    return 'failed' unless ref($r) eq 'HASH';
+    unless ($r->{ok}) {
+        my $code=$r->{code}//'';
+        return $code =~ /\A(?:busy|conflict|parent_changed|invalid_settings|unsafe_project|unsafe_parent|unsafe_settings|unsupported_number|gid_preservation_failed|applied_unconfirmed)\z/ ? $code : 'failed';
+    }
+    my $facts=$r->{facts};
+    return 'failed' if ref($facts) ne 'HASH' || ($facts->{provider}//'') ne $provider;
+    return 'ambiguous' if ($facts->{state}//'') eq 'ambiguous';
+    return 'failed' unless $facts->{ready};
+    my @slots=@{ref($facts->{slots}) eq 'ARRAY' ? $facts->{slots} : []};
+    push @slots,$facts->{status_line} if ref($facts->{status_line}) eq 'HASH';
+    return 'custom' if grep {ref($_) eq 'HASH' && $_->{custom}} @slots;
+    return $r->{changed} ? 'changed' : 'unchanged';
+}
+
+# repair-status ROOT PROVIDER...: ensure-only repair of each provider in this one process,
+# one "provider<TAB>status" line each (a single perl start-up serves both providers).
+sub main_status {
+    my ($root,@providers)=@_;
+    return 1 unless defined($root) && @providers && @providers<=2
+        && !grep {!defined($_) || ($_ ne 'claude' && $_ ne 'codex')} @providers;
+    for my $provider (@providers) {
+        my $r=eval {settings_update($root,$provider,'ensure')};
+        print STDOUT $provider,"\t",repair_status($r,$provider),"\n" or return 1;
+    }
+    return 0;
+}
+
+unless (caller) { exit(($ARGV[0]//'') eq 'repair-status' ? do { shift @ARGV; main_status(@ARGV) } : main(@ARGV)) }
 1;

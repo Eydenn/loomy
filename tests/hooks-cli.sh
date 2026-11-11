@@ -595,6 +595,20 @@ text = result.stdout + result.stderr
 check('PostToolUse (ambiguous)' in text and 'by hand' in text and 'fix: loomy hooks repair' not in text,
       'doctor tells the user to edit an ambiguous event rather than run repair')
 
+# doctor --fix repairs hooks before reporting: one "project completed" line, no stale gap or fix line.
+fixed = project('doctor-fix')
+data = shell_data('claude')
+data['hooks'].pop('UserPromptSubmit')
+seed(fixed, 'claude', data)
+seed(fixed, 'codex', shell_data('codex'))
+result = run('bash', repo / 'scripts/loomy-doctor.sh', '--root', fixed, '--fix', success=False)
+text = result.stdout + result.stderr
+check('project completed' in text and 'hooks: .claude/settings.json' in text,
+      'doctor --fix reports the hook repair in its project completed output')
+check('need attention' not in text and 'fix: loomy hooks repair' not in text,
+      'doctor --fix prints no stale hook gap or fix line after a successful repair')
+check(inspect(fixed, 'claude')['facts']['ready'], 'doctor --fix leaves the Claude hooks ready')
+
 # Pure descriptor fixtures only: production intentionally supplies no native descriptor.
 descriptor = {'executable': '/opt/loomy/0.17.8/bin/loomy', 'version': '0.17.8', 'resource_version': '0.17.8'}
 fixture_perl = r'''

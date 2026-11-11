@@ -6,11 +6,15 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Hook registration repair
 
-- Claude Code and Codex hook registrations are read and written by one shared engine (`scripts/lib/hooks.pl`). It recognizes every historical Loomy hook form exactly, converts those to the current shell form, and keeps your own hooks, matchers, status line, key order, formatting and file permissions. Settings are replaced atomically with no-follow checks and refused when they changed meanwhile; invalid or unsafe files are left untouched.
+- Claude Code and Codex hook registrations are read and written by one shared engine (`scripts/lib/hooks.pl`). It recognizes every historical Loomy hook form exactly, converts those to the current shell form, and keeps your own custom entries (hooks, matchers, status line), their values and the file mode. A file that needs a change is re-serialized with the same encoding as 0.17.8 (sorted keys, 2-space indent); an unchanged file is not rewritten. Settings are replaced atomically with no-follow checks and refused when they changed meanwhile; invalid or unsafe files are left untouched.
 - New `loomy hooks status`: read-only, per provider and event, whether anything needs action. `loomy hooks repair` fills missing bindings; `loomy hooks repair --shell` restores recognized shell bindings, which is the supported way to revert before using an older Loomy. It reports changed, unchanged, custom, ambiguous or failed per file, never echoes your own commands, and changes no other project file. Rollback procedure: [README](README.md#kept-up-to-date-by-itself).
 - Repair is scoped: it acts only inside a Loomy project (`.loomy/` present) and only for the providers the project uses. `loomy init` and `loomy init --update` still write both providers, as before, because they are explicit actions. Automatic project repair, `loomy hooks repair`, `--shell` and `loomy doctor` follow the provider-in-use rule.
 - `loomy doctor` names the provider, event and missing or conflicting registration, and suggests `loomy hooks repair`. The status line is chained with a bounded, nested-safe wrapper (marker and process group) so a custom status line still runs once.
 - `loomy help hooks` and `docs/COMMANDS.md` document the command.
+- `loomy doctor` now checks `UserPromptSubmit` and the three tool-use events in every mode (it required the prompt hook only in ORCHESTRATED mode before). `doctor --fix` reports a hook repair in its usual "project completed" output and prints no stale gap after a successful repair.
+- Session start repairs both providers in a single helper process and detects the routing once (median overhead measured against 0.17.8: about +6 ms with `.codex`, about +18 ms in a Claude-only project). Once a role is routed to Codex, the repair creates `.codex/hooks.json`, which can happen later in an existing project (it depends on tool detection); Codex then asks you to approve the hooks.
+- A newly created `.claude/` or `.codex/` is created 0755 as in 0.17.8; existing settings files keep their mode and a new one is created 0644.
+- The user's own status line is read from `CLAUDE_CONFIG_DIR`, falling back to `~/.claude`.
 
 ### Not in this release
 

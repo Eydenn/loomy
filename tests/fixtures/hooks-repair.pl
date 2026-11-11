@@ -1038,7 +1038,7 @@ subtest 'H04 missing parents, invalid shapes, no-follow and fenced races' => sub
         is_deeply(manifest($r), $before, "$provider unavailable native target does not bootstrap parent");
         my $out = Loomy::Hooks::settings_update($r, $provider);
         ok($out->{ok} && $out->{applied}, "$provider explicit shell repair bootstraps missing parent");
-        is(identity(parent_path($r, $provider))->[2], 0700, "$provider new parent is private 0700");
+        is(identity(parent_path($r, $provider))->[2], 0755, "$provider new parent is 0755 as in 0.17.8");
         is(identity(settings_path($r, $provider))->[2], 0644, "$provider new settings retain baseline 0644 mode");
         is_deeply(decode_json(bytes(settings_path($r, $provider))), shell_data($provider), "$provider fresh file contains exact shell defaults");
         my $existing = root("existing-parent-$provider");

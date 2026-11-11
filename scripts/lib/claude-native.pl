@@ -411,7 +411,7 @@ sub poll {
     $Loomy::CodexNative::refusal='';
     my $result=eval {poll_locked($call,$projects)}; my $error=$@;
     Loomy::CodexNative::end_call($call);
-    if (my $why=Loomy::CodexNative::refusal_reason($error)) {delete $cache{$idx}; $Loomy::CodexNative::refusal=$why; $busy{$idx}=1; delete $busy{$idx}; return}
+    if (my $why=Loomy::CodexNative::refusal_reason($error)) {delete $cache{$idx}; $Loomy::CodexNative::refusal=$why; return}
     # A busy events.lock is transient (a hook or bridge append): the watch retries on its next tick.
     if (!defined $result) {$retry{$idx}=Time::HiRes::time()+5 unless delete $busy{$idx}}
     else {delete $retry{$idx}}
@@ -479,7 +479,7 @@ sub poll_locked {
         }
         hook($s,$e);
     }
-    if ($input ne $journal || !$jc->{at_eof}) {prune($s,\$dirty); Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call)); return $s}
+    if ($input ne $journal || !$jc->{at_eof}) {prune($s,\$dirty); Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call,(defined fileno($out) ? $out : undef))); return $s}
 
     if ($s->{reconstructing}) {delete $s->{reconstructing}; $dirty=1}
     my $discovered=discover($s,$projects,$roots,$scope_rev);
@@ -569,8 +569,8 @@ sub poll_locked {
     # Keep the consumed offset: hooks appended during source collection must be replayed next poll.
     if (-s $journal>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer,Loomy::CodexNative::owner_opt($call))} or do {Loomy::CodexNative::rethrow_owner($@); warn "Claude journal rotation unavailable\n"}}
     prune($s,\$dirty);
-    Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call)) if $dirty;
+    Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
     $cache{$idx}={sig=>signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev}; $scope_seen{$idx}=$scope_rev; $cache{$idx}{poll_sig}=input_signature($root,$projects); $watch{$idx}=$cache{$idx}{poll_sig}; return $s;
 }
-unless (caller) {my ($root,$projects)=@ARGV; poll($root,$projects//"$ENV{HOME}/.claude/projects")}
+unless (caller) {no warnings "once"; $Loomy::CodexNative::bare_election=1; my ($root,$projects)=@ARGV; poll($root,$projects//"$ENV{HOME}/.claude/projects")}
 1;

@@ -78,7 +78,8 @@ sub end_call { my $c=$_[0]; return unless $c && $c->{transient}; eval { Loomy::C
 # A new guard (promotion, reacquire) must not reuse cache built under another authority.
 sub guard_changed { my ($key,$guard)=@_; my $id=refaddr($guard); my $old=$guard_of{$key}; $guard_of{$key}=$id; return defined($old) && $old!=$id }
 # Mutators receive the same pair (L1 asserts at each storage boundary).
-sub owner_opt { my $c=$_[0]; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context}} }
+# FH, when given, is the open journal handle L1 flushes and syncs before it writes a checkpoint.
+sub owner_opt { my ($c,$fh)=@_; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context},(defined $fh ? (flush=>[$fh]) : ())} }
 sub quick {
     my $c=$_[0]; return 1 unless ref($c) eq 'HASH' && defined $c->{guard};
     return Loomy::LiveState->can('owner_check') ? Loomy::LiveState::owner_check({owner=>$c->{guard},context=>$c->{context}},'event') : Loomy::CollectorOwner::assert_owner_quick($c->{guard});
@@ -787,7 +788,7 @@ sub poll_locked {
             delete $s->{owners}{$key};
         } else { $live_owner{$group}=$key }
     }
-    if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s,owner_opt($call)); return $s }
+    if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s,owner_opt($call,(defined fileno($out) ? $out : undef))); return $s }
     $dirty=1 if ($jc->{read_bytes}//0);
     my $discovery_bytes=discover($s,$sessions,$roots,$now,$scope_rev)//0; $dirty=1 if $discovery_bytes;
     # One-time repair: v2 turns ended "unknown" by older builds are re-resolved from their rollout (a later real end wins).
@@ -1183,11 +1184,12 @@ sub poll_locked {
     my @end=stat($out);
     if ($end[7]>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer,owner_opt($call))} or do { rethrow_owner($@); warn "Codex journal rotation unavailable\n" }}
     prune_checkpoint($s,$now) if $dirty;
-    save($idx,$s,owner_opt($call)) if $dirty;
+    save($idx,$s,owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
     $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev};
     $cached{$idx}{poll_sig}=input_signature($root,$sessions,$now); $scope_seen{$idx}=$scope_rev;
     return $s;
 }
 
-unless (caller) { eval { poll(@ARGV) }; exit($@ ? 1 : 0) }
+# The executable entry is a product entrypoint: it elects for its one call; a non-owner mutates nothing.
+unless (caller) { $bare_election=1; eval { poll(@ARGV) }; exit($@ ? 1 : 0) }
 1;

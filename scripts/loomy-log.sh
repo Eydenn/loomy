@@ -70,10 +70,14 @@ OFFSET=$(( sign * (10#${z:1:2} * 60 + 10#${z:3:2}) ))
 PHASEMAP=""; i=0
 for p in $LOOMY_PHASES "done"; do i=$(( i + 1 )); PHASEMAP="$PHASEMAP$p=$i:$(loomy_phase_label "$p")|"; done
 
+# mawk (the default awk on Debian/Ubuntu) reads a pipe in blocks: a followed log would stay silent until it fills.
+LOG_AWK=(awk)
+if (( FOLLOW )) && awk -W version </dev/null 2>/dev/null | grep -q '^mawk'; then LOG_AWK=(awk -W interactive); fi
+
 pretty() {
   # Subscription: tokens for each piece of work; API: its cost.
   local pc=0 px=0; loomy_on_plan claude && pc=1; loomy_on_plan codex && px=1
-  ai_display_context_events "$ROOT" pretty | awk -v pc="$pc" -v px="$px" -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
+  ai_display_context_events "$ROOT" pretty | "${LOG_AWK[@]}" -v pc="$pc" -v px="$px" -v off="$OFFSET" -v pm="$PHASEMAP" -v R="$C_RAIL" -v Z="$C_RESET" -v D="$C_DIM" -v B="$C_BOLD" \
       -v G="$C_GREEN" -v Y="$C_YELLOW" -v E="$C_RED" -v P="$C_BRAND" \
       -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
       -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \

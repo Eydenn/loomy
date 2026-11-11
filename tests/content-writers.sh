@@ -767,7 +767,8 @@ PY
   (umask 002; ai_journal_write "$P" '"type":"phase","phase":"build"')
   grep -q '"phase":"build"' "$P/.loomy/logs/events.jsonl"
   grep -q '"content_policy":"structural-v1"' "$P/.loomy/logs/events.jsonl"
-  [[ "$(stat -f %Lp "$P/.loomy/logs" 2>/dev/null || stat -c %a "$P/.loomy/logs")" == 700 ]]
-  [[ "$(stat -f %Lp "$P/.loomy/logs/events.jsonl" 2>/dev/null || stat -c %a "$P/.loomy/logs/events.jsonl")" == 600 ]]
+  # GNU stat first: GNU "stat -f" reads file-system data and would print noise before failing.
+  [[ "$(stat -c %a "$P/.loomy/logs" 2>/dev/null || stat -f %Lp "$P/.loomy/logs")" == 700 ]]
+  [[ "$(stat -c %a "$P/.loomy/logs/events.jsonl" 2>/dev/null || stat -f %Lp "$P/.loomy/logs/events.jsonl")" == 600 ]]
 )
 printf 'ok journal under umask 002 writes a structural event with private logs\n'

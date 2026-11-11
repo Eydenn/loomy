@@ -606,6 +606,8 @@ watch_terminal_tests() {
   mkdir -p "$wt/project/.loomy/logs" "$wt/config/loomy" "$wt/bin" "$wt/apps/Codex.app/Contents/Resources"
   printf -- '---\nname: Watch regression\nai_mode: ORCHESTRATED\nai_lead: codex\nbudget: equilibre\n---\n' >"$wt/project/.loomy/brief.md"
   printf 'phase=done\n' >"$wt/project/.loomy/state"
+  # A plain terminal (CI, no agent ancestor) would otherwise open the first-use screen before any frame.
+  run "watch PTY: human first-use No" test_content_decline "$REPO" "$wt/project"
   nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"watch-test","pid":%s,"model":"gpt-6.1-sol","effort":"high"}\n' "$nowz" "$$" >"$wt/project/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation_start","id":"run","session":"watch-test","pid":%s,"role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Fix watch"}\n' "$nowz" "$$" >>"$wt/project/.loomy/logs/events.jsonl"
@@ -2950,6 +2952,7 @@ expect "Where to create the project" ; expect "⏎ confirm" ; send "\r"
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 300 ; send "\r" }
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -2976,6 +2979,7 @@ spawn "$LOOMY" init sous-projet --no-clipboard
 for {set i 0} {\$i < 80} {incr i} {
   expect {
     -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -3642,6 +3646,7 @@ set timeout 15
 spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -3679,6 +3684,7 @@ spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {already exists \\(} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -3704,6 +3710,7 @@ spawn bash "$REPO/scripts/loomy-init-wizard.sh" "\$env(WIZ_DIR)" --no-clipboard
 for {set i 0} {\$i < 60} {incr i} {
   expect {
     -re {GitHub repository name \\(} { if {\$tabbed} { exp_continue } ; set tabbed 1 ; expect "edit the suggestion" ; send "\t" ; after 200 ; send -- "-edit\r" }
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }
@@ -3736,6 +3743,7 @@ for {set i 0} {\$i < 80} {incr i} {
     -re {Where to keep the AI files} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\033\[B" ; after 200 ; send "\r" }
     -re {Create these two repositories} { expect "⏎ confirm" ; send "\r" }
     -re {Open the lead agent session} { expect "⏎ confirm" ; send "\033\[B" ; after 200 ; send "\r" }
+    -re {\? \[Y/n\]} { send "n\r" }
     -re {⏎ confirm} { send "\r" }
     eof { exit [lindex [wait] 3] }
     timeout { exit 3 }

@@ -46,6 +46,8 @@ cp "$REPO/tests/fixtures/watch-backpressure-perl.sh" "$WORK/bin/perl"
 chmod +x "$WORK/bin/perl"
 export LOOMY_HOME="$WATCH_BACKPRESSURE_RUNTIME"
 perl "$REPO/tests/fixtures/codex-native.pl" compact-seed "$WATCH_BACKPRESSURE_ROOT" "$CODEX_HOME/sessions" "$$"
+# A plain terminal (CI) would otherwise open the first-use questions before the watch frame (real Perl, not the slow stub).
+WORK="$WORK" PATH="$REPO/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPO/tests/lib/content-grant.sh" --decline "$REPO" "$WATCH_BACKPRESSURE_ROOT"
 check 'slow renderer watch quits promptly and restores its terminal' expect "$REPO/tests/fixtures/watch-backpressure.exp"
 check 'coalesced slow frames start on recent sampler timestamps' perl -e 'my @rows; while(<>){my ($start,$tick)=split /\|/; push @rows,[$start,$tick]; die "stale frame: ".($start-$tick)." seconds\n" if $start-$tick>2.5} die "too few slow frames\n" unless @rows>=6;' "$WATCH_BACKPRESSURE_TRACE"
 check 'watch cleanup terminates its own persistent sampler' perl -e 'my $pid=<>; chomp $pid; die "sampler still running\n" if kill(0,$pid);' "$WATCH_BACKPRESSURE_SAMPLER"

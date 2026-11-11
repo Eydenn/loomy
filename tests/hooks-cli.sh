@@ -189,12 +189,12 @@ def shell_data(provider):
     return data
 
 
-def project(name, managed=True):
+def project(name, managed=True, mode='HYBRID', lead='codex'):
     root = universe / name
     root.mkdir(mode=0o700)
     if managed:
         put(root / '.loomy/brief.md', '---\nname: HOOK fixture\ntype: web\nstage: mvp\n'
-            'ai_mode: SOLO\nai_lead: codex\nbudget: equilibre\nai_files: local\n---\n')
+            f'ai_mode: {mode}\nai_lead: {lead}\nbudget: equilibre\nai_files: local\n---\n')
         put(root / '.loomy/VERSION', '0.0.0\n')
         put(root / '.loomy/state', 'phase=build\nupdated=2000-01-01 00:00\n')
     return root
@@ -402,10 +402,22 @@ assert_catalog(fresh, 'project repair fills each provider')
 # Global custom statusLine capture must use exact ownership, not a filename substring.
 global_settings = Path(env['CLAUDE_CONFIG_DIR']) / 'settings.json'
 cache = Path(env['XDG_CONFIG_HOME']) / 'loomy/statusline-user'
-custom_line = 'printf CUSTOM; # loomy-statusline.sh is user documentation'
+custom_line = 'printf CUSTOM'
 put(global_settings, {'statusLine': {'type': 'command', 'command': custom_line}})
 install(fresh, update=True)
-check(cache.read_text() == custom_line, 'installer captures a custom statusLine even when its text names Loomy')
+check(cache.read_text() == custom_line, 'installer captures an ordinary custom statusLine')
+near_match = fixtures / 'near/scripts/loomy-statusline.sh'
+near_match.parent.mkdir(parents=True, mode=0o700)
+near_match.write_text((repo / 'scripts/loomy-statusline.sh').read_text())
+for risky in (f'bash {near_match}', 'printf CUSTOM; # loomy-statusline.sh is user documentation',
+              'bash /old/ai-statusline.sh'):
+    put(global_settings, {'statusLine': {'type': 'command', 'command': risky}})
+    install(fresh, update=True)
+    check(cache.read_text() == custom_line, 'a global command naming a Loomy status line is never cached')
+    cache.unlink()
+    install(fresh, update=True)
+    check(not cache.exists(), 'a Loomy-naming global command never populates an absent cache')
+    put(cache, custom_line)
 for owned_line in (status_command, status_command.replace('loomy-statusline.sh', 'ai-statusline.sh')):
     put(global_settings, {'statusLine': {'type': 'command', 'command': owned_line}})
     install(fresh, update=True)
@@ -508,6 +520,81 @@ check(str(diagnostics / '.loomy') in text and 'chmod g-w,o-w' in text
 check(before == manifest(diagnostics), 'doctor never normalizes unsafe directory modes')
 (diagnostics / '.loomy').chmod(0o700)
 
+# Provider scope: a Claude-only project never gets Codex files from any automatic or scoped repair.
+solo = project('claude-only', mode='SOLO', lead='claude')
+for action in (('repair',), ('repair', '--shell')):
+    cli(solo, *action)
+    check(settings(solo, 'claude').exists() and not (solo / '.codex').exists(),
+          f'{" ".join(action)} creates Claude settings and never .codex in a Claude-only project')
+project_repair(solo)
+check(not (solo / '.codex').exists(), 'automatic project repair never creates .codex for a Claude-only project')
+check(inspect(solo, 'claude')['facts']['ready'], 'Claude-only project is fully registered')
+result = cli(solo, 'repair')
+check('not used by this project' in result.stdout and 'Native hook registration' not in result.stdout,
+      'repair names the skipped provider and omits the native footer')
+result = run('bash', repo / 'scripts/loomy-doctor.sh', '--root', solo, success=False)
+check('Codex hooks' not in result.stdout + result.stderr and not (solo / '.codex').exists(),
+      'doctor inspects only providers in use')
+codex_only = project('claude-only-existing-codex', mode='SOLO', lead='claude')
+seed(codex_only, 'codex', shell_data('codex'))
+before = manifest(codex_only / '.codex')
+project_repair(codex_only)
+check(settings(codex_only, 'claude').exists() and inspect(codex_only, 'codex')['facts']['ready']
+      and before == manifest(codex_only / '.codex'), 'an existing registration file keeps its provider in scope')
+
+# An ordinary custom statusLine is a supported case: init/update keep it without a warning-like line.
+quiet = project('quiet-custom', managed=False)
+put(settings(quiet, 'claude'), {'statusLine': {'type': 'command', 'command': 'echo mine'}})
+output = install(quiet)
+check('custom settings kept' not in output.stdout + output.stderr
+      and read_json(settings(quiet, 'claude'))['statusLine']['command'] == 'echo mine',
+      'init keeps an ordinary custom statusLine silently')
+
+# Repair refuses outside a Loomy project; status still works there and changes nothing.
+plain = project('plain-folder', managed=False)
+(plain / '.git').mkdir()
+before = manifest(universe)
+for action in (('repair',), ('repair', '--shell')):
+    result = cli(plain, *action, success=False)
+    check(result.returncode == 1 and str(plain) in result.stderr and 'loomy init' in result.stderr
+          and before == manifest(universe), f'{" ".join(action)} refuses a folder without .loomy and writes nothing')
+result = cli(plain, 'status')
+check(result.returncode == 0 and before == manifest(universe), 'status works in any folder with zero mutations')
+
+# Wording: counts per state, footer only in --help, one error for a failed file.
+mixed = project('mixed-wording')
+data = shell_data('claude')
+data['hooks'].pop('PostToolUse')
+seed(mixed, 'claude', data)
+seed(mixed, 'codex', shell_data('codex'))
+result = cli(mixed, 'status')
+check(re.search(r'Claude Code hooks \(\.claude/settings\.json\): 8 shell, 1 missing', result.stdout) is not None,
+      'status counts each state instead of reporting the worst slot')
+check('Native hook registration' not in result.stdout, 'status omits the native footer')
+usage = run(repo / 'bin/loomy', 'hooks', 'bogus', success=False)
+check(usage.returncode == 2 and 'Native hook registration' not in usage.stdout + usage.stderr,
+      'usage errors omit the native footer')
+check('Native hook registration' in run(repo / 'bin/loomy', 'hooks', '--help').stdout, '--help keeps the native footer')
+broken = project('broken-once')
+seed(broken, 'claude', '{invalid PRIVATE_BROKEN')
+seed(broken, 'codex', shell_data('codex'))
+result = cli(broken, 'status', success=False)
+check(result.stdout.count('Invalid hook settings') == 1 and 'unavailable' not in result.stdout,
+      'a failed file prints its error once, without per-event rows')
+
+# Doctor: an ambiguous event gets a manual remedy rather than a repair that cannot resolve it.
+amb = project('doctor-ambiguous')
+data = shell_data('claude')
+duplicate = copy.deepcopy(data['hooks']['PostToolUse'][0])
+duplicate['hooks'][0]['timeout'] = 99
+data['hooks']['PostToolUse'].append(duplicate)
+seed(amb, 'claude', data)
+seed(amb, 'codex', shell_data('codex'))
+result = run('bash', repo / 'scripts/loomy-doctor.sh', '--root', amb, success=False)
+text = result.stdout + result.stderr
+check('PostToolUse (ambiguous)' in text and 'by hand' in text and 'fix: loomy hooks repair' not in text,
+      'doctor tells the user to edit an ambiguous event rather than run repair')
+
 # Pure descriptor fixtures only: production intentionally supplies no native descriptor.
 descriptor = {'executable': '/opt/loomy/0.17.8/bin/loomy', 'version': '0.17.8', 'resource_version': '0.17.8'}
 fixture_perl = r'''
@@ -599,6 +686,25 @@ put(cache, 'exec /bin/sleep 5')
 result = run('sh', '-c', status_command_installed, cwd=runtime / 'src/深い folder', input_data='{}', timeout=4)
 check(result.elapsed < 3.2 and result.stdout == '\n',
       'custom statusLine keeps its two-second execution budget (with scheduler margin)')
+
+def live(needle):
+    out = subprocess.run(['/bin/ps', '-axo', 'command'], capture_output=True, text=True).stdout
+    # Match by executable name so an unrelated parent command line that merely quotes the text is not counted.
+    return [line for line in out.splitlines() if needle in line and line.split()[0].rsplit('/', 1)[-1] in ('sleep', 'bash')]
+
+
+# A cached command that runs a Loomy status line again (a stale cache or hand edit) is bounded and leaves nothing.
+put(cache, f'bash {near_match}')
+result = run('sh', '-c', status_command_installed, cwd=runtime / 'src/深い folder', input_data=payload, timeout=8)
+check(result.elapsed < 3.2 and result.stdout == 'Loomy · Fixture Model\n' and result.stderr == '',
+      'self-referencing cached statusLine finishes in one bounded run')
+time.sleep(0.5)
+check(not live(str(near_match)), 'self-referencing cached statusLine leaves no process behind')
+put(cache, "sh -c 'sleep 33 & sleep 34'")
+result = run('sh', '-c', status_command_installed, cwd=runtime / 'src/深い folder', input_data='{}', timeout=6)
+time.sleep(0.5)
+check(result.elapsed < 3.2 and result.stderr == '' and not live('sleep 33') and not live('sleep 34'),
+      'statusLine timeout stops the whole process group of the user command')
 cache.unlink()
 
 calls = Path(env['STUB_LOG']).read_text() if Path(env['STUB_LOG']).exists() else ''

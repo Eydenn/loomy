@@ -9,11 +9,16 @@ source "$SCRIPT_DIR/lib/i18n.sh"
 source "$SCRIPT_DIR/lib/models.sh"
 # shellcheck source=lib/hooks.sh
 source "$SCRIPT_DIR/lib/hooks.sh"
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
 
-hooks_help() {
+hooks_usage() {
   t "Usage: loomy hooks [status | repair [--shell]] [--root DIR]"; echo
   t "status is read-only; repair fills missing bindings and keeps recognized active bindings and custom settings."; echo
   t "repair --shell restores recognized shell bindings without changing other project files."; echo
+}
+hooks_help() {
+  hooks_usage
   t "Native hook registration is not available in this release."; echo
 }
 
@@ -24,18 +29,23 @@ while [[ $# -gt 0 ]]; do
       [[ -n "${2:-}" ]] || { t "--root requires a directory" >&2; echo >&2; exit 2; }
       ROOT="$2"; shift ;;
     status|repair)
-      if (( ACTION_SET )); then hooks_help >&2; exit 2; fi
+      if (( ACTION_SET )); then hooks_usage >&2; exit 2; fi
       ACTION="$1"; ACTION_SET=1 ;;
     --shell) SHELL_TARGET=1 ;;
     --native|native)
       t "Native hook registration is not available in this release." >&2; echo >&2; exit 2 ;;
     -h|--help) hooks_help; exit 0 ;;
-    *) hooks_help >&2; exit 2 ;;
+    *) hooks_usage >&2; exit 2 ;;
   esac
   shift
 done
-if (( SHELL_TARGET )) && [[ "$ACTION" != repair ]]; then hooks_help >&2; exit 2; fi
+if (( SHELL_TARGET )) && [[ "$ACTION" != repair ]]; then hooks_usage >&2; exit 2; fi
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
+# Repair writes only inside a Loomy project: the registrations call scripts that exist only there.
+if [[ "$ACTION" == repair && ! -d "$ROOT/.loomy" ]]; then
+  t "No Loomy project in %s: run loomy init there first." "$ROOT" >&2; echo >&2
+  exit 1
+fi
 
 # Only catalog event names, bounded counters and fixed codes cross into shell.
 # Even a helper failure must never turn an error payload into interface text.
@@ -96,6 +106,11 @@ FAILED=0; CUSTOM=0; AMBIGUOUS=0
 for PROVIDER in claude codex; do
   if [[ "$PROVIDER" == claude ]]; then LABEL="$(t "Claude Code hooks")"; FILE=.claude/settings.json
   else LABEL="$(t "Codex hooks")"; FILE=.codex/hooks.json; fi
+  # Repair acts only on a provider the project uses; status inspects both and changes nothing.
+  if [[ "$ACTION" == repair ]] && ! loomy_hooks_provider_in_use "$ROOT" "$PROVIDER"; then
+    printf '%s (%s): %s\n' "$LABEL" "$FILE" "$(t "not used by this project; skipped")"
+    continue
+  fi
   RESULT=""; ENGINE_RC=0
   if [[ "$ACTION" == status ]]; then
     RESULT="$(loomy_hooks_inspect "$ROOT" "$PROVIDER" 2>/dev/null)" || ENGINE_RC=$?
@@ -109,29 +124,29 @@ for PROVIDER in claude codex; do
     printf '%s (%s): %s\n  %s\n' "$LABEL" "$FILE" "$(t "failed")" "$(hooks_error operation_failed)"
     continue
   fi
-  FILE_OK=0
+  FILE_OK=0; HEAD_CHANGE=""; HEAD_CUSTOM=0; SLOTS=""
+  COUNTS=""   # one state per line, counted below (bash 3.2: no associative arrays)
   while IFS=$'\t' read -r KIND A B C D E F; do
     if [[ "$KIND" == file ]]; then
       FILE_OK="$A"
       if (( ! FILE_OK || ENGINE_RC )); then
+        # A failed file reports its error once; per-event rows would only repeat it.
         FAILED=1; FILE_OK=0
         printf '%s (%s): %s\n  %s\n' "$LABEL" "$FILE" "$(t "failed")" "$(hooks_error "$B")"
-      elif [[ "$ACTION" == repair ]]; then
-        if (( E )); then CHANGE="$(t "changed")"; else CHANGE="$(t "unchanged")"; fi
-        printf '%s (%s): %s; %s\n' "$LABEL" "$FILE" "$CHANGE" "$(hooks_state "$C")"
+        break
+      fi
+      if [[ "$ACTION" == repair ]]; then
+        if (( E )); then HEAD_CHANGE="$(t "changed")"; else HEAD_CHANGE="$(t "unchanged")"; fi
         (( D )) || FAILED=1
-      else
-        printf '%s (%s): %s\n' "$LABEL" "$FILE" "$(hooks_state "$C")"
       fi
-      if (( F )); then
-        CUSTOM=1
-        printf '  %s\n' "$(t "Other events: custom settings kept.")"
-      fi
+      if (( F )); then HEAD_CUSTOM=1; fi
       continue
     fi
     [[ "$KIND" == slot ]] || continue
-    if (( ! FILE_OK )); then NEXT="$(t "inspect this file before retrying")"
-    elif (( E )); then NEXT="$(t "review this event before switching versions")"; AMBIGUOUS=1
+    case "$B" in
+      shell|native|mixed|custom|missing|invalid|ambiguous) COUNTS="$COUNTS$B"$'\n' ;;
+    esac
+    if (( E )); then NEXT="$(t "review this event before switching versions")"; AMBIGUOUS=1
     elif [[ "$A" == statusLine && "$B" == custom ]]; then NEXT="$(t "custom settings kept")"
     elif (( ! C )); then NEXT="$(t "run loomy hooks repair")"
     else NEXT="$(t "no action required")"; fi
@@ -139,8 +154,22 @@ for PROVIDER in claude codex; do
       CUSTOM=1
       if [[ "$A" != statusLine || "$B" != custom ]]; then NEXT="$NEXT; $(t "custom settings kept")"; fi
     fi
-    printf '  %s: %s — %s\n' "$A" "$(hooks_state "$B")" "$NEXT"
+    SLOTS="$SLOTS$(printf '  %s: %s — %s' "$A" "$(hooks_state "$B")" "$NEXT")"$'\n'
   done <<<"$ROWS"
+  (( FILE_OK )) || continue
+  # One count per state: a mixed file is described as it is, never by its worst slot.
+  SUMMARY=""
+  for STATE in shell native mixed custom missing invalid ambiguous; do
+    N="$(printf '%s' "$COUNTS" | grep -c "^$STATE\$" || true)"
+    if (( N )); then SUMMARY="${SUMMARY:+$SUMMARY, }$N $(hooks_state "$STATE")"; fi
+  done
+  if [[ "$ACTION" == repair ]]; then printf '%s (%s): %s; %s\n' "$LABEL" "$FILE" "$HEAD_CHANGE" "$SUMMARY"
+  else printf '%s (%s): %s\n' "$LABEL" "$FILE" "$SUMMARY"; fi
+  if (( HEAD_CUSTOM )); then
+    CUSTOM=1
+    printf '  %s\n' "$(t "Other events: custom settings kept.")"
+  fi
+  printf '%s' "$SLOTS"
 done
 
 if (( AMBIGUOUS )); then t "Loomy hooks: conflicting registrations; review the listed events before switching."; echo; fi
@@ -150,5 +179,4 @@ if [[ "$ACTION" == repair ]]; then
   else t "Loomy hooks: registration checked."; echo; fi
   if (( CUSTOM )); then t "Loomy hooks: custom settings kept."; echo; fi
 fi
-t "Native hook registration is not available in this release."; echo
 exit "$FAILED"

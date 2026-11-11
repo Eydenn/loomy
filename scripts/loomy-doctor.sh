@@ -19,6 +19,8 @@ source "$SCRIPT_DIR/lib/usage.sh"
 source "$SCRIPT_DIR/lib/repair.sh"
 # shellcheck source=lib/hooks.sh
 source "$SCRIPT_DIR/lib/hooks.sh"
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
 
 usage() {
   i18n_lines >&2 <<'EOF'
@@ -119,7 +121,7 @@ loomy_doctor_tracking
 
 # All readiness decisions come from H1's exact catalog; command text stays private.
 loomy_doctor_hooks() {
-  local provider="$1" label file facts rows kind event state ready=0 code="" issues=""
+  local provider="$1" label file facts rows kind event state ready=0 code="" issues="" amb=0 other=0
   if [[ "$provider" == claude ]]; then
     label="$(t "Claude Code hooks")"; file=".claude/settings.json"
   else
@@ -150,7 +152,8 @@ loomy_doctor_hooks() {
       case "$kind" in
         ready) ready="$event" ;;
         error) code="$event" ;;
-        slot) issues="${issues:+$issues, }$event ($(t "$state"))" ;;
+        slot) issues="${issues:+$issues, }$event ($(t "$state"))"
+              if [[ "$state" == ambiguous ]]; then amb=1; else other=1; fi ;;
       esac
     done <<<"$rows"
   fi
@@ -168,7 +171,9 @@ loomy_doctor_hooks() {
     ui_info "$(t "fix: %s" "loomy hooks status")"
   elif [[ "$ready" != 1 ]]; then
     ui_warn "$(t 'Loomy hooks need attention in %s' "$file")" "$issues"
-    ui_info "$(t "fix: %s" "loomy hooks repair")"
+    # Repair keeps conflicting registrations: an ambiguous event can only be resolved by editing the file.
+    if (( amb )); then ui_info "$(t 'fix: edit the conflicting events in %s by hand (loomy hooks status lists them)' "$file")"; fi
+    if (( other || ! amb )); then ui_info "$(t "fix: %s" "loomy hooks repair")"; fi
   else
     if [[ "$provider" == claude ]]; then ui_ok "$label" "$(t "in .claude/settings.json")"
     else ui_ok "$label" "$(t "in .codex/hooks.json")"; fi
@@ -454,8 +459,10 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
       ui_ok "$(t "Claude subagents")" "$(t "every routed role has its .claude/agents/ file")"
     fi
   fi
-  loomy_doctor_hooks claude
-  loomy_doctor_hooks codex
+  # Only the providers the project uses (registration file present, or work routed to them).
+  for p_prov in claude codex; do
+    if loomy_hooks_provider_in_use "$ROOT" "$p_prov"; then loomy_doctor_hooks "$p_prov"; fi
+  done
   # Orchestration rule where the agents read it (managed block, kept by Loomy).
   if [[ -f "$ROOT/AGENTS.md" || -f "$ROOT/CLAUDE.md" ]]; then
     if grep -qs '<!-- loomy:orchestration:start' "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ui_ok "$(t "orchestration rule")" "AGENTS.md / CLAUDE.md"

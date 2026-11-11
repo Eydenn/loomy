@@ -257,6 +257,27 @@ loomy_project_rename_scripts() {
   return 0
 }
 
+# loomy_hooks_provider_in_use <root> <claude|codex>: the provider's registration file already exists, or the project
+# routes work to it (lead or any role resolved by the brief and routing). Read-only; nothing is created or probed.
+loomy_hooks_provider_in_use() {
+  local r="$1" provider="$2" file
+  case "$provider" in
+    claude) file="$r/.claude/settings.json" ;;
+    codex) file="$r/.codex/hooks.json" ;;
+    *) return 1 ;;
+  esac
+  [[ -e "$file" || -L "$file" ]] && return 0
+  [[ -f "$r/.loomy/brief.md" ]] || return 1
+  (
+    ai_detect_env "$r" readonly >/dev/null 2>&1 || exit 1
+    for role in $AI_ROLES; do
+      ai_resolve "$role" "$AI_ENV" "$AI_PROFILE" >/dev/null 2>&1 || continue
+      [[ "$R_FAMILY" == "$provider" ]] && exit 0
+    done
+    exit 1
+  )
+}
+
 # Installer and automatic repair consume the same typed result. Failed providers
 # remain independent, so a safe retry can finish either file without a fallback.
 _lp_hooks_repair() {
@@ -291,7 +312,7 @@ _lp_hooks_repair() {
   case "$provider" in claude) LP_HOOKS_CLAUDE="$status" ;; codex) LP_HOOKS_CODEX="$status" ;; esac
   case "$status" in
     changed|unchanged) return 0 ;;
-    custom) t "Loomy hooks in %s: custom settings kept." "$file" >&2 ;;
+    custom) return 0 ;;
     ambiguous) t "Loomy hooks in %s: conflicting registrations kept; run loomy hooks status." "$file" >&2 ;;
     busy) t "Loomy hooks in %s: another process holds the settings lock; retry loomy hooks repair." "$file" >&2 ;;
     conflict|parent_changed) t "Loomy hooks in %s: settings changed during repair; retry loomy hooks repair." "$file" >&2 ;;
@@ -305,7 +326,7 @@ _lp_hooks_repair() {
     *) t "Loomy hooks in %s: repair incomplete; run loomy hooks status." "$file" >&2 ;;
   esac
   echo >&2
-  [[ "$status" == custom ]]
+  return 1
 }
 
 # _lp_review_tried_rule <root>: the shared review rule, in the project's document language.
@@ -418,8 +439,9 @@ loomy_project_repair() {
   loomy_project_migrate "$r"
   loomy_project_rename_scripts "$r"
   # Each provider is repaired independently; failures never enter LP_DONE.
-  _lp_hooks_repair "$r" claude || true
-  _lp_hooks_repair "$r" codex || true
+  # A provider the project does not use (no registration file, nothing routed to it) is never created here.
+  if loomy_hooks_provider_in_use "$r" claude; then _lp_hooks_repair "$r" claude || true; fi
+  if loomy_hooks_provider_in_use "$r" codex; then _lp_hooks_repair "$r" codex || true; fi
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
   route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
   mkdir -p "$docs"

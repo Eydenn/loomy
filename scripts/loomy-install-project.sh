@@ -227,6 +227,9 @@ if (ref($line) ne 'HASH' || ($line->{type}//'') ne 'command'
 if (!length($line->{command})) { unlink $dest if -f $dest || -l $dest; exit }
 if (Loomy::Hooks::classify_command('claude','statusLine',$line,
     Loomy::Hooks::production_descriptors()) ne 'custom') { $prune_owned->(); exit }
+# Any command that mentions Loomy's own status line could chain back into it (a near-match form the exact
+# classifier calls custom): never cached. Other custom commands are kept.
+if (index($line->{command},'loomy-statusline.sh')>=0 || index($line->{command},'ai-statusline.sh')>=0) { $prune_owned->(); exit }
 make_path($cfg,{mode=>0700}) unless -d $cfg;
 my ($out,$temp)=tempfile('.statusline-user.XXXXXX',DIR=>$cfg,UNLINK=>1);
 binmode $out,':raw' or exit;

@@ -39,7 +39,7 @@ sub _facts {
 # the project's .loomy; the primitive never deletes or repairs either file.
 my %REASON_FILE=('unsafe-record'=>'logs/collector-owner-v1.json','invalid-record'=>'logs/collector-owner-v1.json',
     'unsupported-schema'=>'logs/collector-owner-v1.json','unsupported-protocol'=>'logs/collector-owner-v1.json',
-    'unsafe-lock'=>'logs/collector.lock','missing-lock'=>'logs/collector.lock');
+    'unsafe-lock'=>'logs/collector.lock','missing-lock'=>'logs/collector-owner-v1.json');
 sub _refusal {
     my ($reason)=@_;
     my $status=$reason =~ /\Aunsupported-/ ? 'incompatible' : $reason eq 'io-error' ? 'unavailable' : 'unsafe';
@@ -66,6 +66,11 @@ sub _same_inode {
 sub _same_file {
     my ($a,$b) = @_;
     return _same_inode($a,$b) && !grep { $a->[$_] != $b->[$_] } (2,3,4,5,7,9,10);
+}
+# Metadata-only touches (xattr, no-op chmod) change ctime only: never compared here.
+sub _same_quick {
+    my ($a,$b) = @_;
+    return _same_inode($a,$b) && !grep { $a->[$_] != $b->[$_] } (2,3,4,7,9);
 }
 sub _private_file {
     my ($s) = @_;
@@ -344,7 +349,7 @@ sub _clean_stale_tmp {
     my ($seen,$removed,$now)=(0,0,time);
     while (defined(my $name=readdir $dir)) {
         last if ++$seen > 4096 || $removed >= 64;
-        next unless $name =~ /\A\.collector-owner-v1\.[A-Za-z0-9._-]{1,200}\.tmp\z/;
+        next unless $name =~ /\A\.collector-owner-v1\.[0-9]{1,10}\.[0-9a-f]{64}\.[0-9]{1,10}\.tmp\z/;
         my @s=lstat($name);
         next unless @s && S_ISREG($s[2]) && $s[4]==$< && !($s[2]&077) && $now-$s[9] > 600;
         my @again=lstat($name);
@@ -589,7 +594,7 @@ sub assert_owner_quick {
         _abort('unsafe-lock') unless _private_file(\@held) && _private_file(\@named)
             && _same_inode($state->{lock_stat},\@held) && _same_inode(\@held,\@named);
         my @record = lstat($state->{record_path});
-        _abort('unsafe-record') unless @record && _same_file($state->{record_stat},\@record);
+        _abort('unsafe-record') unless @record && _same_quick($state->{record_stat},\@record);
         1;
     };
     unless ($ok) { _close_state($state,'FENCED'); die "collector owner FENCED\n" }

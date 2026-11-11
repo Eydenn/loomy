@@ -217,7 +217,7 @@ sub shared_owner {
     die "unsafe content directory\n" unless @link && S_ISLNK($link[2]) && $link[4]==$<;
     my $target=abs_path("$root/$suffix") // die "unsafe content directory\n";
     die "unsafe content directory\n" unless $target =~ m{\A(.+)/\Q$suffix\E\z};
-    my $owner=$1; my $cache=$opt && $opt->{relations};
+    my $owner=$1; my $cache=$opt && $opt->{_relations};
     my $a=_relation($root,$cache); my $b=_relation($owner,$cache);
     # Registration is checked by scope_set/election; readers never list worktrees.
     die "unsafe content directory\n" unless $a && $b && $a->{common} eq $b->{common}
@@ -235,13 +235,13 @@ sub resolve {
     my ($alias,$parent,$ps);
     if (S_ISLNK($entry[2])) {
         $alias={path=>"$root/.loomy",stat=>\@entry};
-        _alias_spelling($input) unless $opt && $opt->{trusted};
+        _alias_spelling($input) unless $opt && $opt->{_trusted};
         $root=shared_owner($root,'.loomy',$private_group,$opt);
     } elsif (-l "$root/.loomy/logs") {
         ($parent,$ps)=dir("$root/.loomy",undef,$private_group);
         my @link=lstat("$root/.loomy/logs");
         $alias={path=>"$root/.loomy/logs",stat=>\@link};
-        _alias_spelling($input) unless $opt && $opt->{trusted};
+        _alias_spelling($input) unless $opt && $opt->{_trusted};
         $root=shared_owner($root,'.loomy/logs',$private_group,$opt);
     }
     die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
@@ -324,7 +324,7 @@ sub scope_set {
                         }
                         $relations{$root}={common=>$common,top=>$top,relative=>$relation->{relative}};
                     }
-                    resolve($root,$c->{_private_group},{relations=>\%relations,trusted=>1});
+                    resolve($root,$c->{_private_group},{_relations=>\%relations,_trusted=>1});
                 };
                 next unless $candidate && $candidate->{loomy};
                 my ($a,$b)=$c->{logs} ? ($c->{ds},$candidate->{ds}) : ($c->{ls},$candidate->{ls});

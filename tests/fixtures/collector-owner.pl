@@ -535,6 +535,15 @@ for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record'
     chmod 0644,"$root/.loomy/logs/collector.lock" or die;
     my $answer=acquire($root);
     is_deeply([@$answer{qw(status reason file)}],['unsafe','unsafe-lock','logs/collector.lock'],'an unsafe lock is named too');
+    unlink "$root/.loomy/logs/collector.lock" or die;
+    $answer=acquire($root);
+    is_deeply([@$answer{qw(status reason file)}],['unsafe','missing-lock','logs/collector-owner-v1.json'],'a record without its lock names the record to remove');
+    is(acquire($root,)->{status},'unsafe','removing only the lock does not recover');
+    unlink "$root/.loomy/logs/collector-owner-v1.json" or die;
+    is(acquire($root)->{status},'owned','removing the record recovers a missing lock');
+    my $proto=Loomy::CollectorOwner::try_acquire(context($root),'fixture-build',2);
+    is_deeply([@$proto{qw(status reason)}],['incompatible','unsupported-protocol'],'a caller protocol refusal is typed');
+    ok(!exists($proto->{file}),'a caller protocol refusal names no file');
     my $busy_root=project('busy-has-no-file',1); my $holder=acquire($busy_root);
     ok(!exists(acquire($busy_root)->{file}),'ordinary busy results name no file');
     Loomy::CollectorOwner::release($holder->{guard});
@@ -544,12 +553,13 @@ for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record'
 {
     my $root=project('stale-temp',1); my $logs="$root/.loomy/logs";
     my $old=time-3600; my $old_stamp=POSIX::strftime('%Y%m%d%H%M',localtime($old));
-    my %tmp=(stale=>'.collector-owner-v1.4242.aaaa.1.tmp',fresh=>'.collector-owner-v1.4243.bbbb.1.tmp',
-        wide=>'.collector-owner-v1.4244.cccc.1.tmp',shape=>'.collector-owner-v1.4245.dddd.1.tmpx',
-        other=>'unrelated.tmp',linked=>'.collector-owner-v1.4246.eeee.1.tmp',dir=>'.collector-owner-v1.4247.ffff.1.tmp');
-    put("$logs/$tmp{$_}",'x') for qw(stale fresh wide shape other);
+    my %tmp=(stale=>'.collector-owner-v1.4242.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.1.tmp',fresh=>'.collector-owner-v1.4243.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.1.tmp',
+        wide=>'.collector-owner-v1.4244.cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.1.tmp',shape=>'.collector-owner-v1.4245.dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.1.tmpx',
+        other=>'unrelated.tmp',notes=>'.collector-owner-v1.notes.tmp',short=>'.collector-owner-v1.4248.eeee.1.tmp',
+        linked=>'.collector-owner-v1.4246.eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.1.tmp',dir=>'.collector-owner-v1.4247.ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff.1.tmp');
+    put("$logs/$tmp{$_}",'x') for qw(stale fresh wide shape other notes short);
     chmod 0644,"$logs/$tmp{wide}" or die;
-    utime $old,$old,"$logs/$tmp{$_}" for qw(stale wide shape other);
+    utime $old,$old,"$logs/$tmp{$_}" for qw(stale wide shape other notes short);
     put("$work/stale-temp-target",'keep'); symlink "$work/stale-temp-target","$logs/$tmp{linked}" or die;
     system('touch','-h','-t',$old_stamp,"$logs/$tmp{linked}")==0 or die;
     mkdir "$logs/$tmp{dir}",0700 or die; utime $old,$old,"$logs/$tmp{dir}";
@@ -557,7 +567,7 @@ for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record'
     ok(-e "$logs/$tmp{stale}",'inspection never cleans stale temp files');
     my $r=acquire($root); is($r->{status},'owned','election succeeds beside stale temp files');
     ok(!-e "$logs/$tmp{stale}",'an aged owner-only regular temp file is removed under the gate');
-    ok(-e "$logs/$tmp{$_}","$_ temp entry is kept") for qw(fresh wide shape other dir);
+    ok(-e "$logs/$tmp{$_}","$_ temp entry is kept") for qw(fresh wide shape other notes short dir);
     ok(-l "$logs/$tmp{linked}" && -e "$work/stale-temp-target",'a symlink temp entry is never followed or removed');
     Loomy::CollectorOwner::release($r->{guard});
 }
@@ -583,6 +593,19 @@ for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record'
         put("$path.new",bytes($path)); rename "$path.new",$path or die;
         dies_code("a replaced $kind fences the cheap assertion",sub {Loomy::CollectorOwner::assert_owner_quick($guard)},'FENCED');
         dies_code("the fence from the cheap assertion is final for $kind",sub {Loomy::CollectorOwner::assert_owner($guard)},'FENCED');
+    }
+    {
+        my $touch=project('quick-metadata',1); my $te=acquire($touch); my $tg=$te->{guard};
+        my $rec="$touch/.loomy/logs/collector-owner-v1.json";
+        chmod 0600,$rec or die;
+        is(Loomy::CollectorOwner::assert_owner_quick($tg),1,'a no-op chmod (ctime only) does not fence the cheap assertion');
+        my $xattr=($^O eq 'darwin') ? ['xattr','-w','com.example.l0','1',$rec] : ['setfattr','-n','user.l0','-v','1',$rec];
+        if (system(@$xattr) == 0) {
+            is(Loomy::CollectorOwner::assert_owner_quick($tg),1,'an extended attribute (ctime only) does not fence the cheap assertion');
+        } else { pass('extended attributes unavailable here; the no-op chmod covers the ctime-only case') }
+        is(Loomy::CollectorOwner::assert_owner($tg),1,'the full assertion agrees');
+        my $moved="$work/quick-metadata-renamed"; rename $touch,$moved or die;
+        dies_code('renaming the project directory fences the cheap assertion',sub {Loomy::CollectorOwner::assert_owner_quick($tg)},'FENCED');
     }
     my $forked=project('quick-fork',1); my $fe=acquire($forked);
     my $kid=child(sub {my $ok=eval {Loomy::CollectorOwner::assert_owner_quick($fe->{guard}); 1}; die unless !$ok && $@ eq "collector owner FORKED\n"});

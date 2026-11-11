@@ -850,6 +850,16 @@ scopes($owner_ctx,[$owner],'retargeted aliases leave original source scope');
     });
 }
 
+# 8. A nonexistent root keeps the R2-T0 strict values.
+{
+    my $gone="$work/does-not-exist-l0e";
+    my $p=Loomy::ContentPolicy::policy_snapshot($gone);
+    is($p->{identity_state},'missing','a strict snapshot of a nonexistent root has identity missing');
+    is($p->{policy_state},'default','a strict snapshot of a nonexistent root has policy default');
+    is($p->{valid},0,'a nonexistent root grants nothing');
+    ok(!-e $gone,'the nonexistent root is not created');
+}
+
 # 2-4. Git shim: count processes, refuse -z like Git < 2.36, forge odd and excess entries.
 my $real_git=''; for my $dir (split /:/,$ENV{PATH}) {if (-x "$dir/git") {$real_git="$dir/git"; last}}
 die "git not found\n" unless length $real_git;

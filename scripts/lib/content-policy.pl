@@ -82,7 +82,8 @@ sub parse_policy {
 sub _group_info { my @g=getgrgid($_[0]); return @g ? ($g[0],$g[3]) : () }
 sub _private_group {
     my ($gid)=@_; my @pw=getpwuid($<); my ($name,$members)=_group_info($gid);
-    return 0 unless @pw && defined($name) && $name eq $pw[0];
+    # getgrgid lists only secondary members: also require the group to be the user's own primary group.
+    return 0 unless @pw && defined($name) && $name eq $pw[0] && $gid==$pw[3];
     for my $m (split ' ',$members//'') { return 0 unless $m eq $pw[0] }
     return 1;
 }
@@ -160,16 +161,44 @@ sub _context {
 # Pin the old namespace once, before any new references are made. Keeping that
 # namespace is the migration: historical journal/label/memory references need no
 # rewrite. The file lives in the shared .loomy, independently of its current path.
-# The identity file may only be stored where it cannot appear as an untracked file: outside a Git work tree, or
-# where .gitignore / .git/info/exclude already ignores it (read directly: no process on the writer path).
+# The identity file may only be stored where it cannot appear as an untracked file: outside any Git work tree, or
+# where a .gitignore / info/exclude of the owning repository already ignores it. Read directly: no process on the
+# writer path. Only trailing spaces are ignored (Git strips nothing else); a `!` line naming .loomy or project-id,
+# or a .loomy/.gitignore, means the outcome cannot be judged from the text: not pinned.
+sub _ignore_text {
+    my ($f)=@_; return '' unless -f $f && !-l $f && -s _ <= 1048576; open my $h,'<',$f or return '';
+    local $/; my $t=<$h>//''; close $h; return $t;
+}
+sub _git_exclude_file {
+    my ($dotgit)=@_; return "$dotgit/info/exclude" if -d $dotgit;
+    # Worktree or submodule: ".git" is a file naming the real directory; info/exclude lives in the common one.
+    my $line=_ignore_text($dotgit); return undef unless $line =~ /\Agitdir: (.+?)\r?\n?\z/;
+    my $gd=$1; $gd="$1/$gd" if $gd !~ m{\A/} && $dotgit =~ m{\A(.*)/\.git\z};
+    my $common=_ignore_text("$gd/commondir"); $common =~ s/\s+\z//;
+    $gd=$common =~ m{\A/} ? $common : "$gd/$common" if length $common;
+    return "$gd/info/exclude";
+}
 sub _identity_ignorable {
-    my ($root)=@_; return 1 unless -e "$root/.git";
-    for my $f ("$root/.gitignore","$root/.git/info/exclude") {
-        next unless -f $f && !-l $f && -s _ <= 1048576; open my $h,'<',$f or next;
-        local $/; my $t=<$h>//''; close $h;
-        return 1 if $t =~ m{^/?\.loomy(?:/(?:project-id)?)?[ \t]*\r?$}m;
+    my ($root)=@_;
+    return 0 if -e "$root/.loomy/.gitignore" || -l "$root/.loomy/.gitignore";
+    my $top=$root; $top =~ s{/[^/]*\z}{} until $top eq '' || -e "$top/.git";
+    return 1 if $top eq ''; # No owning Git work tree (the filesystem root itself is not one).
+    my $rel=substr($root,length $top); $rel =~ s{\A/}{};
+    my $q=quotemeta($rel); my $ignore=qr{\.loomy(?:/(?:project-id)?)?};
+    my @sources=(["$root/.gitignore",qr{\A/?$ignore\z}]);
+    my $anchored=length($rel) ? qr{\A(?:/?$q/$ignore|\.loomy/?)\z} : qr{\A/?$ignore\z};
+    push @sources,["$top/.gitignore",$anchored] if $top ne $root;
+    my $ex=_git_exclude_file("$top/.git"); push @sources,[$ex,$anchored] if defined $ex;
+    my $found=0;
+    for my $src (@sources) {
+        my ($f,$re)=@$src; my $t=_ignore_text($f); next unless length $t;
+        for my $line (split /\n/,$t) {
+            return 0 if $line =~ /\A!/ && $line =~ /\.loomy|project-id/;
+            my $l=$line; $l =~ s/ +\z//;
+            $found=1 if $l =~ $re;
+        }
     }
-    return 0;
+    return $found;
 }
 sub _project_id {
     my ($root,$create)=@_; my $name='project-id';
@@ -871,6 +900,11 @@ unless (caller) {
     my $ok=eval {_cli(); 1}; unless ($ok) {
         # Only fixed, content-free errors leave this boundary (never raw labels/paths/JSON).
         my $err=$@; my ($unsafe_dir)=$err =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+        # The stored policy reads as invalid when the real cause is an unsafe directory: name the directory instead.
+        if (!defined($unsafe_dir) && $err eq "invalid stored content policy\n" && defined($ARGV[1])) {
+            my $probe=eval {_context($ARGV[1],0); 1} ? '' : $@;
+            ($unsafe_dir)=$probe =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+        }
         $err="content operation failed\n" unless defined($unsafe_dir)
             || $err =~ /\A(?:invalid|unsafe|unknown|human|content|label|display|unclassified)[A-Za-z ;_-]+\n\z/;
         my $agent=$err eq "human content confirmation required\n" ? agent_ancestor_name() : '';
@@ -883,6 +917,7 @@ unless (caller) {
             : $err =~ /\Acontent confirmation/ ? 'CONFIRMATION_ABORTED' : 'OPERATION_FAILED';
         if (defined $unsafe_dir) {
             print STDERR _encode_utf8("unsafe directory: ".display_path($unsafe_dir)." (group/world writable)\n");
+            print STDERR _message('UNSAFE_DIRECTORY_HINT',display_path($unsafe_dir)) if exists $ENV{LOOMY_CONTENT_UI_UNSAFE_DIRECTORY_HINT};
         } else {
             print STDERR exists($ENV{"LOOMY_CONTENT_UI_$key"})
                 ? _message($key,$key eq 'INVALID_POLICY' ? display_path("$ARGV[1]/.loomy/logs/$POLICY")

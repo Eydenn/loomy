@@ -293,6 +293,7 @@ def rows(root):
     return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
 def seed_policy(root, **changes):
     directory = root/'.loomy/logs'; directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (root/'.loomy').chmod(0o755)  # parents follow the umask: explicit mode, as Loomy creates it
     raw = run(['perl', '-e', 'require $ARGV[0]; my $p=Loomy::ContentPolicy::defaults(); print "$_=$p->{$_}\\n" for sort keys %$p;', str(repo/'scripts/lib/content-policy.pl')])
     policy = dict(x.split('=',1) for x in raw.splitlines()); policy.update({k:str(v) for k,v in changes.items()})
     path = directory/'content-policy.conf'; path.write_text(''.join(f'{k}={v}\n' for k,v in policy.items())); path.chmod(0o600)

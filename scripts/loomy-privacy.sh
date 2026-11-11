@@ -406,7 +406,8 @@ if (( INVENTORY_JSON || INVENTORY_PATHS || INVENTORY_GIT || INVENTORY_HOST )); t
 fi
 ROOT="$(cd "${ROOT:-$(ai_project_root)}" && pwd -P)"
 # On a new machine, .loomy doesn't exist yet (outside the repository): only restore can do without it.
-if [[ "$CMD" == "restore" ]]; then mkdir -p "$ROOT/.loomy"
+# shellcheck disable=SC2174 # -m on the final directory only is intended
+if [[ "$CMD" == "restore" ]]; then mkdir -p -m 0755 "$ROOT/.loomy"
 elif [[ ! -d "$ROOT/.loomy" ]]; then t "No Loomy project in %s: loomy init first (or loomy privacy restore <account/repo> to recover its AI files)." "${ROOT/#$HOME/~}" >&2; echo >&2; exit 1; fi
 case "$CMD" in
   content|labels|results|label)

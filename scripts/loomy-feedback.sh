@@ -135,8 +135,8 @@ ver() {
 }
 
 # Reads only bounded metadata and projects historical events in RAM. In particular,
-# project_event/effective_policy are not read-only (they can create project-id), so
-# feedback uses project_with_policy with an explicitly structural policy instead.
+# effective_policy no longer creates project-id (readers derive it without storing it); feedback still
+# uses project_with_policy with an explicitly structural policy so that it never reads stored grants.
 context() {
   perl -MFcntl=O_RDONLY,O_NOFOLLOW,O_NONBLOCK,S_ISREG -MJSON::PP -MDigest::SHA=sha256_hex -e '
     use strict; use warnings;

@@ -51,6 +51,8 @@ sub bytes {my ($p)=@_; return '' unless -f $p; open my $f,'<',$p or die $!; loca
 sub conf {my (%extra)=@_; my $p={%{Loomy::ContentPolicy::defaults()},%extra}; return join('',map {"$_=$p->{$_}\n"} sort keys %$p)}
 sub seed {my ($r,%p)=@_; put("$r/.loomy/logs/content-policy.conf",conf(%p))}
 sub policy {return Loomy::ContentPolicy::effective_policy($_[0])}
+# Group-writable parents are accepted only in the user's primary group: temp directories may inherit another one.
+sub primary_group {chown -1,(getpwuid($<))[3],@_}
 sub deny {my ($name,$code)=@_; my $ok=eval {$code->(); 1}; ok(!$ok,$name)}
 sub label {
     my ($r,$text,%extra)=@_; my $p=policy($r);
@@ -201,7 +203,7 @@ for my $part ('.loomy','.loomy/logs') {
 {
     my $a="$work/umask-002"; make_path($a);
     system('git','-C',$a,'init','-q','-b','main')==0 or die 'umask fixture git init';
-    my $mask=umask 0002; mkdir "$a/.loomy" or die $!; umask $mask;
+    my $mask=umask 0002; mkdir "$a/.loomy" or die $!; umask $mask; primary_group("$a/.loomy");
     is((stat("$a/.loomy"))[2]&0777,0775,'mkdir .loomy under umask 002 produces expected 0775 mode');
     # Group write is accepted only for the user's private group (Linux user-private groups). Simulate that
     # group on any host, then check the real one: a shared group such as macOS staff is refused by name.
@@ -267,7 +269,7 @@ for my $id ('.','..','_name','-name',':name') {
     symlink "$owner/.loomy/logs","$wt/.loomy/logs" or die $!;
     is(policy($wt)->{project_id},policy($owner)->{project_id},'tracked .loomy layout shares identity through logs link');
     is(policy($wt)->{policy_generation},13,'logs link reads owner generation');
-    chmod 0775,"$wt/.loomy" or die $!;
+    chmod 0775,"$wt/.loomy" or die $!; primary_group("$wt/.loomy");
     {
         no warnings 'redefine'; my $user=(getpwuid($<))[0];
         local *Loomy::ContentPolicy::_group_info=sub {($user,'')};
@@ -407,6 +409,47 @@ for my $pre_move (0,1) {
     my $again=label($moved,'New title');
     is($again->{project_id},$id,'new writes use the migrated namespace');
     is((stat("$moved/.loomy/project-id"))[2]&0777,0600,'persistent project identity is private');
+}
+# Writer branch of the identity pin: only where Git cannot show project-id as an untracked file.
+{
+    sub pinned_in {
+        my ($name,$ignore,%o)=@_; my $r="$work/pin-$name"; make_path($r);
+        my $top=$o{parent} ? $r : $r; my $proj=$o{sub} ? "$r/sub" : $r;
+        system('git','-C',$r,'init','-q','-b','main')==0 or die 'pin git init' unless $o{nogit};
+        make_path("$proj/.loomy/logs",{mode=>0700}); chmod 0755,"$proj/.loomy";
+        if (defined $ignore) {open my $f,'>',"$proj/.gitignore" or die; print $f $ignore; close $f}
+        if (defined $o{parent_ignore}) {open my $f,'>',"$r/.gitignore" or die; print $f $o{parent_ignore}; close $f}
+        if (defined $o{exclude}) {open my $f,'>>',"$r/.git/info/exclude" or die; print $f $o{exclude}; close $f}
+        if ($o{loomy_gitignore}) {open my $f,'>',"$proj/.loomy/.gitignore" or die; print $f "!project-id\n"; close $f}
+        Loomy::ContentPolicy::_context($proj,1);
+        return -e "$proj/.loomy/project-id" ? 1 : 0;
+    }
+    is(pinned_in('outside',undef,nogit=>1),1,'identity pinned outside any Git work tree');
+    is(pinned_in('ignored',"/.loomy/\n"),1,'identity pinned when .gitignore ignores .loomy');
+    is(pinned_in('ignored-file',".loomy/project-id\n"),1,'identity pinned when .gitignore ignores project-id');
+    is(pinned_in('not-ignored',"node_modules/\n"),0,'identity not pinned when Git does not ignore it');
+    is(pinned_in('no-gitignore',undef),0,'identity not pinned in Git without any .gitignore');
+    is(pinned_in('empty-gitignore',''),0,'identity not pinned with a 0-byte .gitignore');
+    is(pinned_in('trailing-space',".loomy  \n"),1,'trailing spaces are ignored by Git, so the identity is pinned');
+    is(pinned_in('trailing-tab',".loomy\t\n"),0,'a trailing tab is part of the pattern: not pinned');
+    is(pinned_in('negated',".loomy\n!.loomy/project-id\n"),0,'a later negation naming project-id prevents pinning');
+    is(pinned_in('negated-dir',".loomy/\n!.loomy\n"),0,'a negation naming .loomy prevents pinning');
+    is(pinned_in('loomy-gitignore',".loomy/\n",loomy_gitignore=>1),0,'a .loomy/.gitignore prevents pinning');
+    is(pinned_in('exclude',undef,exclude=>"/.loomy/\n"),1,'identity pinned when info/exclude ignores .loomy');
+    is(pinned_in('sub-not-ignored',undef,sub=>1),0,'subdirectory project in a parent repository without an ignore rule: not pinned');
+    is(pinned_in('sub-own',"/.loomy/\n",sub=>1),1,'subdirectory project with its own .gitignore rule: pinned');
+    is(pinned_in('sub-parent-anchored',undef,sub=>1,parent_ignore=>"/.loomy/\n"),0,'parent anchored rule does not cover a subdirectory project');
+    is(pinned_in('sub-parent',undef,sub=>1,parent_ignore=>".loomy/\n"),1,'parent unanchored rule covers a subdirectory project');
+    is(pinned_in('sub-parent-path',undef,sub=>1,parent_ignore=>"/sub/.loomy/\n"),1,'parent rule naming the subdirectory covers it');
+    is(pinned_in('sub-exclude',undef,sub=>1,exclude=>".loomy\n"),1,'parent info/exclude covers a subdirectory project');
+}
+# _private_group also needs the user's primary gid: gr_mem omits accounts that only have it as primary group.
+{
+    no warnings 'redefine';
+    my @pw=getpwuid($<);
+    local *Loomy::ContentPolicy::_group_info=sub {($pw[0],'')};
+    is(Loomy::ContentPolicy::_private_group($pw[3]),1,'private group: name and primary gid match');
+    is(Loomy::ContentPolicy::_private_group($pw[3]+4242),0,'a group of the right name whose gid is not the primary gid is refused');
 }
 for my $kind (qw(symlink hardlink mode)) {
     my $a=project("identity-$kind"); my $target="$work/identity-target-$kind";

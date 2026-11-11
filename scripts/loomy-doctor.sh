@@ -115,9 +115,9 @@ loomy_doctor_tracking() {
 }
 loomy_doctor_tracking
 
-# Read policy/health without _context: that resolver initializes project-id even
-# for reads. Reuse its directory/file checks and closed parser, but never create
-# identities, locks or stores, and never read label/result bodies for diagnostics.
+# Read policy/health without _context so that the unsafe-directory cause stays visible. Reuse its
+# directory/file checks and closed parser; never create identities, locks or stores (effective_policy
+# derives the project identity without storing it), and never read label/result bodies for diagnostics.
 loomy_doctor_content() {
   local facts state path journal labels results generation health
   ui_section "$(t 'CONTENT POLICY')" "$(t 'stored project grants')"
@@ -154,7 +154,12 @@ loomy_doctor_content() {
       }
       1;
     };
-    ($state,$policy,$health)=("invalid",Loomy::ContentPolicy::defaults(),"unavailable") unless $ok;
+    unless ($ok) {
+      # An unsafe directory is the cause, not the policy file: report the directory.
+      my ($unsafe)=$@ =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+      ($state,$policy,$health)=(defined($unsafe) ? "unsafe" : "invalid",Loomy::ContentPolicy::defaults(),"unavailable");
+      $path=$unsafe if defined $unsafe;
+    }
     my $display=Loomy::ContentPolicy::display_path($path);
     $display=Loomy::ContentPolicy::_encode_utf8($display) if utf8::is_utf8($display);
     print join("\t",$state,$display,@{$policy}{qw(journal_content label_sources private_results policy_generation)},$health),"\n";
@@ -171,13 +176,18 @@ loomy_doctor_content() {
       ui_warn "$(t 'Invalid content policy')" "$path"
       missing_ideal "$(t 'Content policy health')"
       ;;
+    unsafe)
+      ui_warn "$(t 'Unsafe content directory (group or world writable)')" "$path"
+      ui_info "$(t 'Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)' "$path")"
+      missing_ideal "$(t 'Content policy health')"
+      ;;
   esac
   case "$journal" in
     structural) journal="$(t 'structure only')" ;;
     legacy-excerpts) journal="$(t 'legacy excerpts (project scope)')" ;;
   esac
   [[ "$labels" != none ]] || labels="$(t 'none selected')"
-  if [[ "$state" == invalid ]]; then
+  if [[ "$state" == invalid || "$state" == unsafe ]]; then
     ui_info "$(t 'Safe defaults — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
   else
     ui_info "$(t 'Stored grants — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"

@@ -116,7 +116,8 @@ if [[ "$CMD" == "set" ]]; then
     *" $PHASE_ARG "*) ;;
     *) t "Unknown phase: \"%s\". Phases: %s" "$PHASE_ARG" "$PHASES" >&2; echo >&2; exit 2 ;;
   esac
-  mkdir -p "$ROOT/.loomy"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$ROOT/.loomy"
   now="$(date '+%Y-%m-%d %H:%M')"
   history=""; keep=""
   [[ -f "$STATE" ]] && history="$(grep '^log=' "$STATE" || true)"
@@ -531,13 +532,17 @@ loomy_watch_content_hint_accept() {
 
 # Policy wording is cached by the command/controller, never parsed by a frame.
 loomy_status_content_load() {
-  local policy="structural|none|off" journal labels results
+  local policy="structural|none|off|" journal labels results unsafe
   # Outside a Loomy project there is no policy to report.
-  if [[ ! -d "$ROOT/.loomy" ]]; then LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; return 0; fi
-  if [[ -e "$ROOT/.loomy/logs/content-policy.conf" || -L "$ROOT/.loomy/logs/content-policy.conf" ]]; then
-    policy="$(perl -e 'require $ARGV[0]; my $p=Loomy::ContentPolicy::effective_policy($ARGV[1]); print join("|",@$p{qw(journal_content label_sources private_results)})' "$LOOMY_CONTENT_POLICY_LIB" "$ROOT")" || policy="structural|none|off"
-  fi
-  IFS='|' read -r journal labels results <<<"$policy"
+  if [[ ! -d "$ROOT/.loomy" ]]; then LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; LOOMY_CONTENT_UNSAFE=""; return 0; fi
+  # An unsafe (group/world writable) directory makes the stored policy unreadable: name it, never the policy file.
+  policy="$(perl -e 'require $ARGV[0]; my ($c,$r)=@ARGV; my $p=Loomy::ContentPolicy::effective_policy($r); my $u="";
+    if (!$p->{valid}) { eval { Loomy::ContentPolicy::_context($r,0); 1 } or ($u)=$@ =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+      $u=Loomy::ContentPolicy::_encode_utf8(Loomy::ContentPolicy::display_path($u)) if defined $u; $u//="" }
+    print join("|",@$p{qw(journal_content label_sources private_results)},$u)' "$LOOMY_CONTENT_POLICY_LIB" "$ROOT")" || policy="structural|none|off|"
+  IFS='|' read -r journal labels results unsafe <<<"$policy"
+  LOOMY_CONTENT_UNSAFE=""
+  if [[ -n "$unsafe" ]]; then tv LOOMY_CONTENT_UNSAFE "Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s" "$unsafe" "$unsafe"; fi
   if [[ "$journal" == legacy-excerpts ]]; then tv journal "legacy excerpts (project scope)"; else tv journal "structure only"; fi
   if [[ "$labels" == none ]]; then tv labels "off"; else tv labels "on"; fi
   tv results "$results"
@@ -552,6 +557,8 @@ loomy_status_content_render() {
   for line in "${UI_LINES[@]}"; do ui_rail "${C_DIM}$line${C_RESET}"; done
   _ui_wrap "$LOOMY_CONTENT_OLD_COPIES" "$width"
   for line in "${UI_LINES[@]}"; do ui_rail "${C_DIM}$line${C_RESET}"; done
+  [[ -z "${LOOMY_CONTENT_UNSAFE:-}" ]] || { _ui_wrap "$LOOMY_CONTENT_UNSAFE" "$width"
+    for line in "${UI_LINES[@]}"; do ui_rail "${C_YELLOW}$line${C_RESET}"; done; }
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
@@ -1161,7 +1168,7 @@ loomy_status_content_render
 
 # Shared renderers consume the same precomputed hint as the direct command.
 # No frame renderer launches the policy backend or reads the journal for it.
-LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""; LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""
+LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""; LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; LOOMY_CONTENT_UNSAFE=""
 if (( ! WATCH )) || [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then
   [[ ! -d "$ROOT/.loomy" ]] || _loomy_content_hint_load "$ROOT" || true
   loomy_status_content_load

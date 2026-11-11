@@ -254,6 +254,7 @@ check('task labels' not in status.stdout and 'loomy privacy' not in status.stdou
 # A project whose managed .gitignore block predates project-id: read-only commands leave Git clean.
 legacy = work / 'gitignore-0176'
 (legacy / '.loomy/logs').mkdir(parents=True)
+os.chmod(legacy / '.loomy', 0o755); os.chmod(legacy / '.loomy/logs', 0o700)  # explicit modes whatever the umask
 (legacy / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
 (legacy / '.gitignore').write_text('# >>> Loomy: local history and work files, never versioned\n.loomy/logs/\n.loomy/memory/\n.loomy/*.state\n# <<< Loomy: local history and work files\n')
 run('git', '-C', legacy, 'init', '-q', '-b', 'main')
@@ -419,6 +420,7 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
     doctor_root = work / f'doctor-{state}'
     doctor_logs = doctor_root / '.loomy/logs'
     doctor_logs.mkdir(parents=True)
+    os.chmod(doctor_root / '.loomy', 0o755); os.chmod(doctor_logs, 0o700)  # explicit modes whatever the umask
     conf = doctor_logs / 'content-policy.conf'
     marker = doctor_logs / 'display-context-full'
     if state == 'valid':
@@ -454,6 +456,39 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
             check('explicit-user,explicit-lead' in combined and ('private results: on' in combined if lang == 'en' else 'résultats privés : activés' in combined),
                   f'doctor {lang}: stored label and results grants are visible')
         check(before_doctor == manifest(doctor_root), f'doctor {lang}: no identity, mode, content or marker mutation')
+
+# A group/world-writable .loomy must be reported as such (never as an invalid policy file) by every command.
+for mode in (0o775, 0o777):
+    unsafe_root = work / f'unsafe-{mode:o}'
+    (unsafe_root / '.loomy/logs').mkdir(parents=True)
+    (unsafe_root / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+    os.chmod(unsafe_root / '.loomy/logs', 0o700)
+    os.chmod(unsafe_root / '.loomy', mode)
+    named = str(unsafe_root / '.loomy')
+    for lang in ('en', 'fr'):
+        ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}
+        outs = {
+            'privacy content': run(repo / 'scripts/loomy-privacy.sh', '--root', unsafe_root, 'content', overrides=ov, success=False),
+            'doctor': run(repo / 'scripts/loomy-doctor.sh', '--compact', '--root', unsafe_root, overrides=ov, success=False),
+            'status': run(repo / 'scripts/loomy-status.sh', '--root', unsafe_root, overrides=ov, success=False),
+        }
+        for name, result in outs.items():
+            text = ''.join((result.stdout + result.stderr).split())  # wrapped paths: compare without whitespace
+            check(named.replace(' ', '') in text and 'chmodg-w,o-w' in text,
+                  f'{name} {lang}: unsafe .loomy ({mode:o}) names the directory and the chmod remedy')
+            check('Invalidcontentpolicy' not in text and 'Politiquedecontenuinvalide' not in text and 'Corrigezousupprimez' not in text,
+                  f'{name} {lang}: unsafe .loomy ({mode:o}) is never reported as an invalid policy file')
+    check(oct(os.stat(unsafe_root / '.loomy').st_mode & 0o777) == oct(mode), f'unsafe .loomy ({mode:o}) is never chmodded by a diagnostic')
+
+# Creators of .loomy set an explicit mode, so a group-writable umask cannot make a new project unusable.
+for umask_value in ('002', '077'):
+    for creator_name, creator_args in (('status', ('loomy-status.sh', 'set', 'build')),):
+        creator = work / f'creator-{creator_name}-{umask_value}'
+        creator.mkdir()
+        run('bash', '-c', 'umask "$1"; cd "$2" && bash "$3/scripts/$4" --root "$2" "${@:5}"',
+            '_', umask_value, creator, repo, *creator_args, success=False)
+        mode = os.stat(creator / '.loomy').st_mode & 0o777
+        check(mode == 0o755, f'loomy {creator_name} creates .loomy 0755 under umask {umask_value} (got {mode:o})')
 
 print(f'1..{passed}')
 PY

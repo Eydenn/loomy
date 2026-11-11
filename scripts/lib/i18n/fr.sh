@@ -2460,5 +2460,9 @@ _t_fr() {
     'Sync stopped before staging.') _T='Synchronisation arrêtée avant l’indexation.' ;;
     'A symlinked or foreign directory is in the way: %s. Nothing was moved or written.') _T='Un dossier lié par symlink ou appartenant à un autre utilisateur bloque : %s. Rien n’a été déplacé ni écrit.' ;;
     'Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed') _T='Inventaire des métadonnées des emplacements de l’activité locale : aucun contenu lu, rien modifié ni supprimé' ;;
+    'Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)') _T='Correction : chmod g-w,o-w %s (il doit vous appartenir et ne pas être modifiable par le groupe ni par tous)' ;;
+    'Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous). Correction : chmod g-w,o-w %s' ;;
+    'Unsafe content directory (group or world writable)') _T='Dossier de contenu non sûr (modifiable par le groupe ou par tous)' ;;
+    'Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous) · correction : chmod g-w,o-w %s' ;;
   esac
 }

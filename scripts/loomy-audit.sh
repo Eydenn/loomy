@@ -104,7 +104,8 @@ if (( ! RESUME )); then
   fi
   DATE="$(date +%Y-%m-%d)"; DIR=".loomy/audits/$DATE-security"
   n=2; while [[ -e "$ROOT/$DIR" ]]; do DIR=".loomy/audits/$DATE-security-$n"; n=$(( n + 1 )); done
-  mkdir -p "$ROOT/$DIR" "$ROOT/.loomy/logs"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$ROOT/.loomy"; mkdir -p "$ROOT/$DIR"; mkdir -m 0700 "$ROOT/.loomy/logs" 2>/dev/null || true
   # Outside Git: Loomy's folder when the repository had none, and the reports always (they can describe weaknesses).
   (( had_loomy )) || exclude_add "/.loomy/"
   exclude_add "/.loomy/audits/"

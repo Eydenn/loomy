@@ -581,17 +581,43 @@ for ordered in (False, True):
             '_', str(repo), str(root)], text=True)
         assert output == expected, (ordered, rows, output, expected)
 PYSESSION
+# Fractional seconds keep their weight in the 300 s grouping, and a nested object's "tool" is not the row's tool.
+project session-fractions
+check 'session continuity keeps fractional seconds and reads only the top-level tool' python3 - "$REPO" "$P" <<'PYFRAC'
+import json, pathlib, subprocess, sys
+repo, root = map(pathlib.Path, sys.argv[1:])
+journal = root/'.loomy/logs/events.jsonl'
+def start(tool, ts, **extra):
+    return dict(ts=ts, type='session', event='start', tool=tool, session=tool, **extra)
+def previous(rows):
+    journal.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    return subprocess.check_output(['bash', '-c', 'source "$1/scripts/lib/memory.sh"; loomy_memory_previous_tool "$2"',
+                                    '_', str(repo), str(root)], text=True)
+claude = start('claude', '2026-10-01T10:00:00Z')
+a = start('codex', '2026-10-01T10:30:00.100Z')
+b_far = start('codex', '2026-10-01T10:35:00.900Z')   # 300.8 s after a: a separate session
+b_near = start('codex', '2026-10-01T10:35:00.050Z')  # 299.95 s after a: the same session
+assert previous([claude, a, b_far]) == 'codex'
+assert previous([claude, a, b_near]) == 'claude'
+nested = start('codex', '2026-10-01T10:40:00Z', meta=dict(tool='claude'))
+assert previous([claude, a, nested]) == 'codex'
+other = start('codex', '2026-10-01T10:41:00Z')
+other['tool'] = 'gemini'; other['meta'] = dict(tool='claude')   # unknown top-level tool: the row does not count
+assert previous([claude, a, other]) == 'claude'
+PYFRAC
 # Group-writable parents (umask 002). Private group = group name equals the user name and nobody else
 # is a member; shared groups (macOS staff) and world write are always refused.
 check 'directory group rule: private group accepted, shared group, other members and world write refused' perl -e '
   require shift; no warnings "redefine"; my $u=(getpwuid($<))[0];
   my %g=(private=>[$u,""],alone=>[$u,$u],shared=>["staff",""],crowd=>[$u,"$u other"]);
   my $cur; local *Loomy::ContentPolicy::_group_info=sub {@{$g{$cur}}};
-  my $bad=sub {my ($mode,$name,$lenient)=@_; $cur=$name; return Loomy::ContentPolicy::_dir_unsafe($mode,1,$lenient)};
+  my $gid=(getpwuid($<))[3];
+  my $bad=sub {my ($mode,$name,$lenient,$g)=@_; $cur=$name; return Loomy::ContentPolicy::_dir_unsafe($mode,$g//$gid,$lenient)};
   die "private group refused" if $bad->(0775,"private",1) || $bad->(0775,"alone",1);
   die "shared group accepted" unless $bad->(0775,"shared",1);
   die "extra member accepted" unless $bad->(0775,"crowd",1);
   die "world write accepted" unless $bad->(0777,"private",1) && $bad->(0757,"private",1);
+  die "foreign primary gid accepted" unless $bad->(0775,"private",1,$gid+4242);
   die "strict directory accepted group write" unless $bad->(0775,"private",0);
   die "private mode refused" if $bad->(0755,"shared",1) || $bad->(0700,"shared",0);
 ' "$REPO/scripts/lib/content-policy.pl"
@@ -629,7 +655,25 @@ else
 fi
 chmod 0777 "$P/.loomy"
 check 'world-writable .loomy is always refused' bash -c 'source "$1/scripts/lib/memory.sh"; ! loomy_memory_count "$2" >/dev/null 2>&1' _ "$REPO" "$P"
-chmod 0755 "$P/.loomy"
+check 'unsafe .loomy: the memory backend names the absolute directory and the chmod remedy' bash -c '
+  source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
+  [[ "$s" == *"Unsafe directory: $2/.loomy (group or world writable)"* && "$s" == *"chmod g-w,o-w $2/.loomy"* && "$s" != *"Content operation failed"* ]]' _ "$REPO" "$P"
+chmod 0755 "$P/.loomy"; chmod 0777 "$P/.loomy/memory"
+check 'unsafe memory directory: the backend names it with its absolute path, not the relative name' bash -c '
+  source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
+  [[ "$s" == *"Unsafe directory: $2/.loomy/memory (group or world writable)"* ]]' _ "$REPO" "$P"
+chmod 0700 "$P/.loomy/memory"
+
+# A resume descriptor's free-text reason must survive clean_text unchanged: C1 controls and bidi are refused at storage.
+project descriptor-why; policy
+valid_why="$(printf '%s\0' reviewer codex gpt-6.1-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
+for why in 'a\u009bb' 'a\u009db' 'a\u202eb' 'a\u009b2J \u009d52;c;x\u202e'; do
+  bad="$(printf '%s' "$valid_why" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["options"]["why"]=json.loads("\""+sys.argv[1]+"\""); print(json.dumps(d))' "$why")"
+  check "stored descriptor with a reason containing $why is refused" bash -c '
+    source "$1/scripts/lib/memory.sh"; ! { printf "%s\0" "$3" reviewer codex | _lm_backend descriptor-env "$2"; } >/dev/null 2>&1' _ "$REPO" "$P" "$bad"
+done
+check 'descriptor still accepts a clean reason' bash -c '
+  source "$1/scripts/lib/memory.sh"; printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "plain reason" "" "" "" | _lm_backend descriptor "$2" >/dev/null' _ "$REPO" "$P"
 
 # memory show prints agent-written text: terminal controls never reach the user's terminal.
 project show-escape; policy

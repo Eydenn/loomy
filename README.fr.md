@@ -278,14 +278,14 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 
 Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jamais touchés. Chaque étape est journalisée dans `~/.config/loomy/logs/repair-<outil>.log`. `loomy doctor` liste toutes les copies trouvées dans le PATH, avec leur méthode et leur version.
 
-**Enregistrement des hooks et retour en arrière.** Loomy enregistre ses hooks dans `.claude/settings.json` et `.codex/hooks.json`, uniquement pour les fournisseurs que le projet utilise. Tes propres hooks, ta ligne d'état et tes permissions sont conservés.
+**Enregistrement des hooks et retour en arrière.** Loomy enregistre ses hooks dans `.claude/settings.json` et `.codex/hooks.json`, et la réparation automatique comme `loomy hooks repair` n'agissent que pour les fournisseurs que le projet utilise (`loomy init` et `loomy init --update` écrivent les deux). Tes propres hooks, ta ligne d'état et tes permissions sont conservés.
 - `loomy hooks status` indique, pour chaque fournisseur et chaque événement, s'il y a quelque chose à faire (lecture seule) ;
 - `loomy hooks repair` complète les enregistrements manquants ; `loomy hooks repair --shell` rétablit les enregistrements shell reconnus.
 
 Avant de revenir à un Loomy plus ancien, tant que cette version est encore installée :
 1. `loomy hooks status` ;
 2. `loomy hooks repair --shell` ;
-3. `loomy hooks status` à nouveau : il ne doit rester que des enregistrements shell et personnalisés. Corrige à la main les événements en conflit qu'il liste, puis recommence.
+3. `loomy hooks status` à nouveau : il ne doit rester que des enregistrements shell et personnalisés (un fournisseur que le projet n'utilise pas peut encore afficher `manquant`). Corrige à la main les événements en conflit qu'il liste, puis recommence.
 
 Installe seulement ensuite l'ancienne version. Répéter la mise à jour et la réparation ne duplique jamais un enregistrement. L'enregistrement natif des hooks n'est pas disponible dans cette version.
 

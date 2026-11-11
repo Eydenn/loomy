@@ -278,14 +278,14 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 
 Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. Each step is logged in `~/.config/loomy/logs/repair-<tool>.log`. `loomy doctor` lists every copy found in the PATH, with its method and version.
 
-**Hook registration and going back.** Loomy registers its hooks in `.claude/settings.json` and `.codex/hooks.json`, and only for the providers the project uses. Your own hooks, status line and permissions are kept.
+**Hook registration and going back.** Loomy registers its hooks in `.claude/settings.json` and `.codex/hooks.json`, and automatic repair and `loomy hooks repair` act only for the providers the project uses (`loomy init` and `loomy init --update` write both). Your own hooks, status line and permissions are kept.
 - `loomy hooks status` shows, for each provider and event, whether anything needs doing (read-only);
 - `loomy hooks repair` fills in missing registrations; `loomy hooks repair --shell` restores the recognized shell registrations.
 
 Before going back to an older Loomy, while this version is still installed:
 1. `loomy hooks status`;
 2. `loomy hooks repair --shell`;
-3. `loomy hooks status` again: no registration other than shell and custom ones should remain. Fix by hand any conflicting event it lists, then repeat.
+3. `loomy hooks status` again: no registration other than shell and custom ones should remain (a provider the project does not use may still show `missing`). Fix by hand any conflicting event it lists, then repeat.
 
 Only then install the older version. Repeating the upgrade and the repair never duplicates a registration. Native hook registration is not available in this release.
 

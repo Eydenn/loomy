@@ -19,6 +19,7 @@ hooks_usage() {
 }
 hooks_help() {
   hooks_usage
+  t "Before going back to an older Loomy: loomy hooks status, then loomy hooks repair --shell, then loomy hooks status again."; echo
   t "Native hook registration is not available in this release."; echo
 }
 

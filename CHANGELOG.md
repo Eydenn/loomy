@@ -2,6 +2,21 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.17.9 — 2026-11-11
+
+### Hook registration repair
+
+- Claude Code and Codex hook registrations are read and written by one shared engine (`scripts/lib/hooks.pl`). It recognizes every historical Loomy hook form exactly, converts those to the current shell form, and keeps your own hooks, matchers, status line, key order, formatting and file permissions. Settings are replaced atomically with no-follow checks and refused when they changed meanwhile; invalid or unsafe files are left untouched.
+- New `loomy hooks status`: read-only, per provider and event, whether anything needs action. `loomy hooks repair` fills missing bindings; `loomy hooks repair --shell` restores recognized shell bindings, which is the supported way to revert before using an older Loomy. It reports changed, unchanged, custom, ambiguous or failed per file, never echoes your own commands, and changes no other project file. Rollback procedure: [README](README.md#kept-up-to-date-by-itself).
+- Repair is scoped: it acts only inside a Loomy project (`.loomy/` present) and only for the providers the project uses. `loomy init` and `loomy init --update` still write both providers, as before, because they are explicit actions. Automatic project repair, `loomy hooks repair`, `--shell` and `loomy doctor` follow the provider-in-use rule.
+- `loomy doctor` names the provider, event and missing or conflicting registration, and suggests `loomy hooks repair`. The status line is chained with a bounded, nested-safe wrapper (marker and process group) so a custom status line still runs once.
+- `loomy help hooks` and `docs/COMMANDS.md` document the command.
+
+### Not in this release
+
+- No native hook registration: it stays unavailable (`loomy hooks --native` says so), and no latency or native handler claim is made. This release only establishes the shell-form repair that a later native step must build on.
+- Unchanged: watch display, keys and captures.
+
 ## 0.17.8 — 2026-11-11
 
 ### Changed defaults

@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, un état durable et des résultats privés facultatifs partagés entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.17.8-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.9-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -277,6 +277,17 @@ Le bootstrap terminé, `START.md` disparaît et l'orchestrateur suit `AGENTS.md`
 4. réinstallation propre : toutes les copies supprimables, puis l'installateur officiel.
 
 Les réglages, connexions et conversations (`~/.claude`, `~/.codex`) ne sont jamais touchés. Chaque étape est journalisée dans `~/.config/loomy/logs/repair-<outil>.log`. `loomy doctor` liste toutes les copies trouvées dans le PATH, avec leur méthode et leur version.
+
+**Enregistrement des hooks et retour en arrière.** Loomy enregistre ses hooks dans `.claude/settings.json` et `.codex/hooks.json`, uniquement pour les fournisseurs que le projet utilise. Tes propres hooks, ta ligne d'état et tes permissions sont conservés.
+- `loomy hooks status` indique, pour chaque fournisseur et chaque événement, s'il y a quelque chose à faire (lecture seule) ;
+- `loomy hooks repair` complète les enregistrements manquants ; `loomy hooks repair --shell` rétablit les enregistrements shell reconnus.
+
+Avant de revenir à un Loomy plus ancien, tant que cette version est encore installée :
+1. `loomy hooks status` ;
+2. `loomy hooks repair --shell` ;
+3. `loomy hooks status` à nouveau : il ne doit rester que des enregistrements shell et personnalisés. Corrige à la main les événements en conflit qu'il liste, puis recommence.
+
+Installe seulement ensuite l'ancienne version. Répéter la mise à jour et la réparation ne duplique jamais un enregistrement. L'enregistrement natif des hooks n'est pas disponible dans cette version.
 
 ### 4. Mettre à jour, reprendre ou réinitialiser
 
@@ -688,6 +699,7 @@ Chaque commande en détail (comportement, toutes les options, exemples) : [docs/
 
 | Commande | Ce qu'elle fait | Options principales |
 |---|---|---|
+| `loomy hooks` | Enregistrement des hooks : état, réparation, retour à la forme shell | `status` `repair` `repair --shell` |
 | `loomy doctor` | Vérifier et réparer la machine et le projet | `--fix` `--live` |
 | `loomy config` | Préférences | `list` `get <clé>` `set <clé> <valeur>` |
 | `loomy update` · `loomy version` | Mettre à jour Loomy ; versions installées | `loomy update --catalog` `loomy version` `loomy version --all` |

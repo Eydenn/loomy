@@ -2,7 +2,7 @@
 
 [← README](../README.fr.md)
 
-Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.8**. Dans le terminal : `loomy help <commande>`.
+Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.9**. Dans le terminal : `loomy help <commande>`.
 
 ## Projet
 
@@ -364,6 +364,18 @@ loomy audit --fixes report|plan|branch
 Audit de sécurité d'un dépôt Git existant, une mission plutôt qu'un projet (voir plus bas) : `--resume`, `--print`, `--yes`, `--scope`, `--depth quick|standard|deep`, `--fixes report|plan|branch`
 
 ## Maintenance et aide
+
+### `loomy hooks [status|repair [--shell]]`
+
+```bash
+loomy hooks status
+loomy hooks repair
+loomy hooks repair --shell
+```
+
+Inspection et réparation ciblées des enregistrements de hooks Loomy dans `.claude/settings.json` et `.codex/hooks.json` ; aucun autre fichier du projet, aucune autorisation de contenu, aucun appel à un fournisseur. `status` ne modifie rien et liste, par fournisseur et par événement, `shell`, `natif`, `mixte`, `personnalisé`, `manquant`, `invalide` ou `ambigu`, et si une action est nécessaire. `repair` complète les enregistrements manquants et conserve les enregistrements actifs reconnus, tes propres hooks, matchers, ligne d'état et permissions de fichier ; il indique `modifié` ou `inchangé` par fichier. `repair --shell` rétablit les enregistrements shell reconnus : c'est l'étape à faire avant de revenir à un Loomy plus ancien. `repair` n'agit que dans un projet Loomy et que pour les fournisseurs qu'il utilise (l'autre est signalé comme ignoré) ; `--root DIR` cible un autre projet. Rien n'est réécrit si le fichier est invalide, non sûr ou modifié entre-temps, et tes propres commandes ne sont jamais affichées. L'enregistrement natif n'est pas disponible dans cette version (`--native` est refusé).
+
+Retour en arrière avant un Loomy plus ancien, tant que cette version est installée : `loomy hooks status`, puis `loomy hooks repair --shell`, puis `loomy hooks status` à nouveau ; résous à la main tout événement en conflit qu'il liste, et installe seulement ensuite l'ancienne version. Répéter la mise à jour et la réparation ne duplique pas les enregistrements.
 
 ### `loomy doctor`
 

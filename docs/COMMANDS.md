@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-Every command with its variants and what it does in detail. Reference for Loomy **0.17.8**. In the terminal: `loomy help <command>`.
+Every command with its variants and what it does in detail. Reference for Loomy **0.17.9**. In the terminal: `loomy help <command>`.
 
 ## Project
 
@@ -364,6 +364,18 @@ loomy audit --fixes report|plan|branch
 Security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick|standard|deep`, `--fixes report|plan|branch`
 
 ## Maintenance and help
+
+### `loomy hooks [status|repair [--shell]]`
+
+```bash
+loomy hooks status
+loomy hooks repair
+loomy hooks repair --shell
+```
+
+Scoped inspection and repair of the Loomy hook registrations in `.claude/settings.json` and `.codex/hooks.json`; no other project file, content grant or provider call is involved. `status` is read-only and lists, per provider and event, `shell`, `native`, `mixed`, `custom`, `missing`, `invalid` or `ambiguous`, and whether action is needed. `repair` fills missing registrations and keeps recognized active ones and your own hooks, matchers, status line and file permissions; it reports `changed` or `unchanged` per file. `repair --shell` restores recognized shell registrations and is the step to run before going back to an older Loomy. `repair` acts only in a Loomy project and only for the providers it uses (the other is reported as skipped); `--root DIR` targets another project. Nothing is rewritten when the file is invalid, unsafe or changed meanwhile, and your own commands are never echoed. Native registration is not available in this release (`--native` is refused).
+
+Rollback before an older Loomy, while this version is installed: `loomy hooks status`, then `loomy hooks repair --shell`, then `loomy hooks status` again; resolve any conflicting event it lists by hand, and only then install the older version. Repeating the upgrade and the repair does not duplicate registrations.
 
 ### `loomy doctor`
 

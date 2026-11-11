@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, durable state and optional private results shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.17.8-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.9-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -277,6 +277,17 @@ After the bootstrap, `START.md` is gone and the lead agent follows `AGENTS.md` a
 4. clean reinstall: every removable copy, then the official installer.
 
 Settings, logins and conversations (`~/.claude`, `~/.codex`) are never touched. Each step is logged in `~/.config/loomy/logs/repair-<tool>.log`. `loomy doctor` lists every copy found in the PATH, with its method and version.
+
+**Hook registration and going back.** Loomy registers its hooks in `.claude/settings.json` and `.codex/hooks.json`, and only for the providers the project uses. Your own hooks, status line and permissions are kept.
+- `loomy hooks status` shows, for each provider and event, whether anything needs doing (read-only);
+- `loomy hooks repair` fills in missing registrations; `loomy hooks repair --shell` restores the recognized shell registrations.
+
+Before going back to an older Loomy, while this version is still installed:
+1. `loomy hooks status`;
+2. `loomy hooks repair --shell`;
+3. `loomy hooks status` again: no registration other than shell and custom ones should remain. Fix by hand any conflicting event it lists, then repeat.
+
+Only then install the older version. Repeating the upgrade and the repair never duplicates a registration. Native hook registration is not available in this release.
 
 ### 4. Update, resume or reset
 
@@ -688,6 +699,7 @@ Every command in detail (behaviour, all options, examples): [docs/COMMANDS.md](d
 
 | Command | What it does | Main options |
 |---|---|---|
+| `loomy hooks` | Hook registration: status, repair, restore shell form | `status` `repair` `repair --shell` |
 | `loomy doctor` | Check and repair the machine and the project | `--fix` `--live` |
 | `loomy config` | Preferences | `list` `get <key>` `set <key> <value>` |
 | `loomy update` · `loomy version` | Update Loomy; installed versions | `loomy update --catalog` `loomy version` `loomy version --all` |

@@ -2641,6 +2641,11 @@ if [[ "${1:-}" == --section ]]; then
     'Live growth') section 'Live growth'; run 'checkpoint growth/recovery' bash "$HERE/live-growth.sh" ;;
     'W2/W3 resume and session-only') section 'W2/W3 resume and session-only'; run 'resume regressions' bash "$HERE/resume-app.sh" ;;
     'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
+    'Hooks repair')
+      section 'Hooks repair'
+      run 'shared hook engine' bash "$HERE/hooks-repair.sh"
+      run 'scoped hook consumers and rollback' bash "$HERE/hooks-cli.sh"
+      ;;
     *) model_section=0 ;;
   esac
   if (( model_section )); then suite_summary; (( FAIL == 0 )); exit $?; fi
@@ -2721,6 +2726,10 @@ for content_test in "$HERE"/content-*.sh; do
   # TAP failures are printed early; the failure tail alone does not name them.
   grep -a '^not ok' "$OUT" | head -20 | sed 's/^/      │ /' || true
 done
+
+section "Hooks repair"
+run "shared hook engine" bash "$HERE/hooks-repair.sh"
+run "scoped hook consumers and rollback" bash "$HERE/hooks-cli.sh"
 
 section "Syntax and static analysis"
 w47_static_tests
@@ -4929,7 +4938,8 @@ d["hooks"].pop("UserPromptSubmit", None)
 json.dump(d, open(p, "w"))
 PY
 run "doctor with an older settings.json" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
-has "doctor: missing prompt hook, with the fix" "hooks missing in \.claude/settings\.json.*prompt"
+has "doctor: missing prompt binding" 'Loomy hooks need attention in \.claude/settings\.json.*UserPromptSubmit \(missing\)'
+has "doctor: scoped hook repair" 'fix: loomy hooks repair'
 rm -f "$SG/.claude/agents/explorer.md"
 run "doctor with a missing subagent" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 has "doctor: names the missing subagent" "subagents missing in \.claude/agents/.*explorer"
@@ -5027,7 +5037,30 @@ has "rename: said in the start context" "Loomy has just completed this project's
 [[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" && ! -e "$SR/.loomy/scripts/delegate-to-codex.sh" ]] && ok "rename: new relays added, old relays removed" || ko "rename: relays $(ls "$SR/.loomy/scripts" | tr '\n' ' ')"
 [[ -f "$SR/.loomy/scripts/ai-mine.sh" ]] && ok "rename: a script of the project with an old-looking name is kept" || ko "rename: project script removed"
 [[ -f "$SR/.loomy/scripts/ai-log.sh" ]] && ok "rename: a customised relay is kept" || ko "rename: customised relay removed"
-grep -q 'loomy-context.sh." --hook start' "$SR/.claude/settings.json" && ! grep -q 'ai-context.sh' "$SR/.claude/settings.json" && ok "rename: hooks rewritten" || ko "rename: hooks: $(grep -o 'scripts/[a-z-]*' "$SR/.claude/settings.json" | sort -u | tr '\n' ' ')"
+run "rename: exact historical hooks converted, custom variants kept" perl -MJSON::PP -e '
+  my ($helper,$path)=@ARGV; require $helper;
+  open my $in,"<",$path or die $!; local $/; my $data=decode_json(<$in>);
+  my $facts=Loomy::Hooks::inspect("claude",$data);
+  die "not ready" unless $facts->{ready};
+  for my $slot (@{$facts->{slots}}) {
+    my $event=$slot->{event};
+    die "wrong owned count: $event" unless $slot->{owned}==1 && $slot->{shell}==1;
+    my $expected_custom=$event =~ /\A(?:PreToolUse|PostToolUse|PostToolUseFailure)\z/ ? 1 : 0;
+    die "custom variant lost: $event" unless $slot->{custom}==$expected_custom;
+    for my $group (@{$data->{hooks}{$event}}) {
+      for my $hook (@{$group->{hooks}}) {
+        my $kind=Loomy::Hooks::classify_command("claude",$event,$hook);
+        if ($kind eq "shell") {
+          die "historical binding not converted" if $hook->{command} =~ /ai-context\.sh/;
+        } else {
+          die "custom historical variant changed" unless $expected_custom && $hook->{command} =~ /ai-context\.sh/;
+        }
+      }
+    }
+  }
+  die "statusLine not converted" unless $facts->{status_line}{owned}==1
+    && $data->{statusLine}{command} !~ /ai-statusline\.sh/;
+' "$REPO/scripts/lib/hooks.pl" "$SR/.claude/settings.json"
 printf 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.\n' >>"$SR/CLAUDE.md"; rm -f "$SR/.loomy/scripts/loomy-route.sh"
 bash "$REPO/scripts/loomy-context.sh" --root "$SR" >/dev/null 2>&1
 grep -q 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.' "$SR/CLAUDE.md" && ok "rename: other paths and suffixes untouched" || ko "rename: $(grep 'Other:' "$SR/CLAUDE.md")"

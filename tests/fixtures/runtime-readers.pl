@@ -384,6 +384,31 @@ for my $change (qw(disappeared changed)) {
     closed($p,"$change identity between helper and pin");
     is_deeply(manifest($work),$injected_manifest,"$change identity read preserves the injected filesystem evidence");
 }
+# A concurrent first writer may pin an absent identity while an effective reader
+# runs (umask 002 label-store race): accept only the namespace the reader derived.
+for my $pin (qw(empty-during-read after-read other-namespace)) {
+    my $root=project("concurrent-pin-$pin",0,1); my $path="$root/.loomy/project-id";
+    my $derived='p'.sha256_hex($root); my $calls=0; my $p;
+    {
+        no warnings 'redefine';
+        my $read=\&Loomy::ContentPolicy::_read; my $stored=\&Loomy::ContentPolicy::_stored;
+        local *Loomy::ContentPolicy::_read=sub {
+            if ($_[0] eq 'project-id' && $pin ne 'after-read') {
+                $calls++;
+                put($path,$pin eq 'other-namespace' ? "$other_id\n" : '') if $calls==1;
+                put($path,"$derived\n") if $calls==2 && $pin eq 'empty-during-read';
+            }
+            return $read->(@_);
+        };
+        local *Loomy::ContentPolicy::_stored=sub {
+            put($path,"$derived\n") if $pin eq 'after-read' && !$calls++;
+            return $stored->(@_);
+        };
+        $p=Loomy::ContentPolicy::effective_policy($root);
+    }
+    if ($pin eq 'other-namespace') {closed($p,'a concurrent pin of another namespace')}
+    else {compatible($p,$derived,"identity pinned concurrently ($pin)",1)}
+}
 readonly('unsupported identity mode',$work,sub {
     my $ok=eval {Loomy::ContentPolicy::policy_snapshot($identified,'invented'); 1};
     my $error=$@;

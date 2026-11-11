@@ -384,7 +384,7 @@ sub _snapshot_context {
         # Retain R1's bounded wait for a writer between O_EXCL and its first
         # durable identity write. create=0 never pins the fallback namespace.
         $c->{project_id}=_project_id($c->{root},0) if $mode eq 'effective';
-        ($raw,$identity_stat)=_read('project-id',128);
+        ($raw,$identity_stat)=_read_identity($c,$present);
         die "content identity changed\n" if $mode eq 'effective'
             && ($present && !defined($raw) || defined($raw) && $raw ne "$c->{project_id}\n");
         1;
@@ -394,12 +394,34 @@ sub _snapshot_context {
     $c->{project_id}=$1 if defined($raw) && $raw =~ /\A(p[0-9a-f]{64})\n\z/;
     return $c;
 }
+# A concurrent writer may pin an absent identity while an effective reader runs: the file
+# can appear, still empty or mid-write, between the derivation and the pin. Accept only
+# the same namespace the reader derived; a present identity that changes stays closed.
+sub _concurrent_pin {
+    my ($c,$present)=@_;
+    return 0 unless ($c->{identity_mode}//'') eq 'effective' && !$present && defined($c->{project_id});
+    return 0 unless lstat('project-id') && _project_id($c->{root},0) eq $c->{project_id};
+    return 1;
+}
+sub _read_identity {
+    my ($c,$present)=@_; my ($raw,$s);
+    my $ok=eval {($raw,$s)=_read('project-id',128); 1}; my $err=$@;
+    return ($raw,$s) if $ok && (!defined($raw) || ($c->{identity_mode}//'') ne 'effective'
+        || $raw eq "$c->{project_id}\n");
+    die $err unless $ok || $err eq "content file changed\n";
+    return _read('project-id',128) if _concurrent_pin($c,$present);
+    die $err unless $ok; return ($raw,$s);
+}
 sub _assert_snapshot_context {
     my ($c)=@_; Loomy::RuntimePaths::assert_current($c); return unless $c->{loomy};
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
     chdir $c->{loomy} or die "content directory unavailable\n";
     my $ok=eval {
-        die "content identity changed\n" unless _same_or_absent($c->{identity_stat},_private_stat('project-id'));
+        my $now=_private_stat('project-id');
+        unless (_same_or_absent($c->{identity_stat},$now)) {
+            die "content identity changed\n" unless $c->{identity_stat} && !@{$c->{identity_stat}} && _concurrent_pin($c,0);
+            (undef,$c->{identity_stat})=_read('project-id',128);
+        }
         1;
     }; my $err=$@;
     chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;

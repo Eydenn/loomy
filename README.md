@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, durable state and optional private results shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.17.7-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.8-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -340,7 +340,7 @@ loomy privacy restore <your-account>/<project>-ai
 
 ### Journal and task labels
 
-**Since 0.17.7, new journal entries and rotation snapshots are structural by default:** IDs, roles, models, effort, lifecycle, timings, counters and costs. They omit prompts, task bodies, results and changed-file paths. Existing journals and archives are left untouched.
+**Since 0.17.8, new journal entries and rotation snapshots are structural by default:** IDs, roles, models, effort, lifecycle, timings, counters and costs. They omit prompts, task bodies, results and changed-file paths. Existing journals and archives are left untouched.
 
 Task labels use a **separate local store**, `.loomy/logs/display-context-v1.jsonl`, with permission for each source: `explicit-user`, `explicit-lead`, `claude-description`, `codex-path-slug`, `codex-nickname`, `codex-role`. Claude uses the Agent/Task **description**, never its prompt; Codex uses the last agent-path component, nickname and role. Explicit labels come from your `privacy label` command or a bridge’s `--task-label` option.
 
@@ -379,7 +379,7 @@ This read-only inventory reports known storage categories, file counts and sizes
 
 New labels, memory receipts and private results are excluded from the project repository, the private AI repository, sync, restore and automatic feedback context. Authored `STATE.md`, `DEAD-ENDS.md` and `HANDOFF.md` still serve their explicit continuity purpose in the private backup. Feedback builds its automatic context from approved environment/configuration facts and the last 15 structurally projected events, without copying the brief or raw journal; your written message remains part of the previewed issue.
 
-**Remaining exposure in 0.17.7:** native checkpoints/backups/shards and usage cursors, execution/diagnostic/display temporary files, `loomy log --raw`, explicit `loomy report --md` exports and provider task arguments can still contain text or identifying paths. Provider conversations and explicitly requested task/review/audit documents keep their own retention. Changing policy or running inventory does not purge old files, Git history, remote clones or OS backups.
+**Remaining exposure in 0.17.8:** native checkpoints/backups/shards and usage cursors, execution/diagnostic/display temporary files, `loomy log --raw`, explicit `loomy report --md` exports and provider task arguments can still contain text or identifying paths. Provider conversations and explicitly requested task/review/audit documents keep their own retention. Changing policy or running inventory does not purge old files, Git history, remote clones or OS backups.
 
 ---
 

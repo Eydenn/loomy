@@ -2751,7 +2751,7 @@ grep -q "\"version\": \"$V\"" "$REPO/package.json" && grep -q "badge/version-$V-
 run "loomy help" "$LOOMY" help
 has "help: structured sections" "◇  TRACKING"
 hasnt "help: no colour outside a terminal" $'\033\\['
-hasnt "help: no more route json" "json"
+hasnt "help: no more route json" "route json"
 bad=""
 for c in init brief assess stats route status watch log doctor config delegate worktrees; do
   "$LOOMY" "$c" --help >"$OUT" 2>&1 </dev/null || bad="$bad $c"

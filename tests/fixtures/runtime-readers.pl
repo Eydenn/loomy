@@ -944,6 +944,24 @@ my @gall=sort($gmain,@gtops);
     }
 }
 
+# Election latency: an ordinary single-workspace project needs no Git process.
+{
+    local $ENV{PATH}="$shim_dir:$ENV{PATH}"; local $ENV{SHIM_LOG}="$shim_dir/shim.log";
+    local $ENV{SHIM_REAL_GIT}=$real_git; local $ENV{SHIM_WORK}=$work; local $ENV{SHIM_MODE}='';
+    my $plain=project('l0f-nogit',1); my $single=project('l0f-single',1); repository($single);
+    for my $pair ([$plain,'a project outside any repository'],[$single,'a repository without linked worktrees']) {
+        my ($root,$name)=@$pair; shim_reset();
+        my $sc=Loomy::RuntimePaths::scope_set(Loomy::RuntimePaths::resolve($root));
+        is_deeply($sc->{roots},[$root],"$name has the single-workspace union");
+        is(scalar(shim_log()),0,"$name elects without spawning Git");
+    }
+    my $linked=worktree($single,'l0f-linked'); symlink "$single/.loomy","$linked/.loomy" or die;
+    shim_reset();
+    is_deeply(Loomy::RuntimePaths::scope_set(Loomy::RuntimePaths::resolve($single))->{roots},[sort($single,$linked)],
+        'a linked worktree is found again once registered');
+    ok(scalar(shim_log())>0,'registered worktrees use Git');
+}
+
 # 9. An identity absent at the start is accepted only when equal to the derived id.
 {
     my $race=project('l0d-identity-race',0,1);

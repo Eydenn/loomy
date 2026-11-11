@@ -521,8 +521,6 @@ Error: the folder doesn't exist: %s	Erreur : le dossier n'existe pas : %s
 Error: can't create the folder %s	Erreur : impossible de créer le dossier %s
 existing .codex/hooks.json left unchanged	.codex/hooks.json existant non modifié
 add the Loomy hooks to it by hand (see .loomy/scripts/loomy-context.sh)	ajoute-y les hooks Loomy à la main (voir .loomy/scripts/loomy-context.sh)
-existing .claude/settings.json left unchanged	.claude/settings.json existant non modifié
-add the hooks from .loomy/claude-hooks.json to it	ajoute-y les hooks de .loomy/claude-hooks.json
 Error: %s exists but doesn't come from Loomy (no .loomy folder). Refusing to overwrite.	Erreur : %s existe mais ne vient pas de Loomy (pas de dossier .loomy). Écrasement refusé.
 Loomy updated in the project	Loomy mis à jour dans le projet
 brief, phase and log kept	brief, phase et journal conservés
@@ -1826,10 +1824,8 @@ present	présent
 subagents missing in .claude/agents/	sous-agents absents de .claude/agents/
 Claude subagents	sous-agents Claude
 every routed role has its .claude/agents/ file	chaque rôle routé a son fichier dans .claude/agents/
-Loomy hooks missing in .claude/settings.json	hooks Loomy absents de .claude/settings.json
 Claude Code hooks	hooks Claude Code
 in .claude/settings.json	dans .claude/settings.json
-Loomy hooks missing in .codex/hooks.json	hooks Loomy absents de .codex/hooks.json
 Codex hooks	hooks Codex
 in .codex/hooks.json	dans .codex/hooks.json
 loomy-delegate-claude: this project's lead agent is Claude Code. Use the subagent .claude/agents/%s.md (Agent tool, in the foreground) instead: this bridge runs claude -p, where shell commands that aren't pre-approved are refused.	loomy-delegate-claude : l'orchestrateur de ce projet est Claude Code. Utilise plutôt le sous-agent .claude/agents/%s.md (outil Agent, au premier plan) : ce bridge lance claude -p, où les commandes shell non pré-approuvées sont refusées.
@@ -2488,3 +2484,58 @@ Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s	Dossier no
 Unsafe content directory (group or world writable)	Dossier de contenu non sûr (modifiable par le groupe ou par tous)
 Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s	Dossier non sûr : %s (modifiable par le groupe ou par tous) · correction : chmod g-w,o-w %s
 unsafe directory: %s (group/world writable)	dossier non sûr : %s (modifiable par le groupe ou par tous)
+Inspects hook registration; repair fills missing bindings, --shell restores recognized shell bindings	Inspecte l’enregistrement des hooks ; repair complète les liaisons manquantes, --shell rétablit les liaisons shell reconnues
+Loomy hooks in %s: conflicting registrations kept; run loomy hooks status.	Hooks Loomy dans %s : enregistrements en conflit conservés ; lancer loomy hooks status.
+Loomy hooks in %s: another process holds the settings lock; retry loomy hooks repair.	Hooks Loomy dans %s : un autre processus détient le verrou des réglages ; relancer loomy hooks repair.
+Loomy hooks in %s: settings changed during repair; retry loomy hooks repair.	Hooks Loomy dans %s : les réglages ont changé pendant la réparation ; relancer loomy hooks repair.
+Loomy hooks in %s: invalid settings; review the JSON file, then run loomy hooks repair.	Hooks Loomy dans %s : réglages invalides ; vérifier le fichier JSON, puis lancer loomy hooks repair.
+Loomy hooks in %s: unsafe project folder; check directory type, ownership and permissions, and use a dedicated project folder distinct from your home and global configuration folders.	Hooks Loomy dans %s : dossier de projet non sûr ; vérifier son type, son propriétaire et ses permissions, puis utiliser un dossier de projet dédié, différent du dossier personnel et des dossiers de configuration globale.
+Loomy hooks in %s: unsafe settings folder; check ownership, permissions and symlinks, then run loomy hooks repair.	Hooks Loomy dans %s : dossier des réglages non sûr ; vérifier le propriétaire, les permissions et les liens symboliques, puis lancer loomy hooks repair.
+Loomy hooks in %s: unsafe settings file; use a regular file owned by your current user, then run loomy hooks repair.	Hooks Loomy dans %s : fichier de réglages non sûr ; utiliser un fichier normal appartenant à l’utilisateur courant, puis lancer loomy hooks repair.
+Loomy hooks in %s: a JSON number cannot be preserved exactly; edit it before retrying loomy hooks repair.	Hooks Loomy dans %s : un nombre JSON ne peut pas être conservé à l’identique ; le modifier avant de relancer loomy hooks repair.
+Loomy hooks in %s: the file's group could not be preserved; check its group, then retry loomy hooks repair.	Hooks Loomy dans %s : le groupe du fichier n’a pas pu être conservé ; le vérifier, puis relancer loomy hooks repair.
+Loomy hooks in %s: settings applied, but placement or durability is unconfirmed; run loomy hooks status before retrying.	Hooks Loomy dans %s : réglages appliqués, mais emplacement ou persistance non confirmé ; lancer loomy hooks status avant de réessayer.
+Loomy hooks in %s: repair incomplete; run loomy hooks status.	Hooks Loomy dans %s : réparation incomplète ; lancer loomy hooks status.
+Hook settings are unsafe; check ownership, directory permissions and symlinks.	Réglages des hooks non sûrs ; vérifier leur propriétaire, les permissions du dossier et les liens symboliques.
+Invalid hook settings; fix the JSON object before retrying.	Réglages des hooks invalides ; corriger l’objet JSON avant de réessayer.
+Hook settings contain unsupported JSON numbers; edit them before retrying.	Les réglages des hooks contiennent des nombres JSON non pris en charge ; les modifier avant de réessayer.
+Hook settings could not be inspected; run loomy hooks status.	Les réglages des hooks n’ont pas pu être inspectés ; lancer loomy hooks status.
+Loomy hooks need attention in %s	Hooks Loomy à vérifier dans %s
+Usage: loomy hooks [status | repair [--shell]] [--root DIR]	Usage : loomy hooks [status | repair [--shell]] [--root DIR]
+status is read-only; repair fills missing bindings and keeps recognized active bindings and custom settings.	status ne modifie rien ; repair complète les liaisons manquantes et conserve les liaisons actives reconnues et les réglages personnalisés.
+repair --shell restores recognized shell bindings without changing other project files.	repair --shell rétablit les liaisons shell reconnues sans modifier les autres fichiers du projet.
+Native hook registration is not available in this release.	L’enregistrement natif des hooks n’est pas disponible dans cette version.
+shell	shell
+native	natif
+mixed	mixte
+custom	personnalisé
+missing	manquant
+invalid	invalide
+ambiguous	ambigu
+unavailable	indisponible
+Invalid hook settings; correct the JSON structure, then retry.	Réglages des hooks invalides ; corriger la structure JSON, puis réessayer.
+Project directory could not be verified; check ownership and permissions, then retry.	Le dossier du projet n’a pas pu être vérifié ; vérifier son propriétaire et ses permissions, puis réessayer.
+Hook settings directory could not be verified; check its type, ownership and permissions, then retry.	Le dossier des réglages des hooks n’a pas pu être vérifié ; vérifier son type, son propriétaire et ses permissions, puis réessayer.
+Hook settings file could not be verified; use a regular file owned by you, then retry.	Le fichier des réglages des hooks n’a pas pu être vérifié ; utiliser un fichier ordinaire vous appartenant, puis réessayer.
+Another process holds the hook settings lock; retry after it finishes.	Un autre processus détient le verrou des réglages des hooks ; réessayer lorsqu’il aura terminé.
+Hook settings changed during inspection or repair; run loomy hooks status, then retry.	Les réglages des hooks ont changé pendant l’inspection ou la réparation ; lancer loomy hooks status, puis réessayer.
+Hook settings were applied, but their placement or durability could not be confirmed; run loomy hooks status before retrying.	Les réglages des hooks ont été appliqués, mais leur emplacement ou leur persistance n’a pas pu être confirmé ; lancer loomy hooks status avant de réessayer.
+Hook settings contain a number that cannot be preserved exactly; correct it, then retry.	Les réglages des hooks contiennent un nombre qui ne peut pas être conservé exactement ; le corriger, puis réessayer.
+Hook settings could not retain their group; check directory permissions, then retry.	Le groupe des réglages des hooks n’a pas pu être conservé ; vérifier les permissions du dossier, puis réessayer.
+Hook settings operation failed; run loomy hooks status, then retry.	L’opération sur les réglages des hooks a échoué ; lancer loomy hooks status, puis réessayer.
+changed	modifié
+unchanged	inchangé
+Other events: custom settings kept.	Autres événements : réglages personnalisés conservés.
+review this event before switching versions	vérifier cet événement avant de changer de version
+custom settings kept	réglages personnalisés conservés
+run loomy hooks repair	lancer loomy hooks repair
+no action required	aucune action requise
+Loomy hooks: conflicting registrations; review the listed events before switching.	Hooks Loomy : enregistrements en conflit ; vérifier les événements indiqués avant de changer.
+Loomy hooks: repair incomplete; run loomy hooks status.	Hooks Loomy : réparation incomplète ; lancer loomy hooks status.
+Loomy hooks: shell registration restored.	Hooks Loomy : enregistrement shell rétabli.
+Loomy hooks: registration checked.	Hooks Loomy : enregistrement vérifié.
+Loomy hooks: custom settings kept.	Hooks Loomy : réglages personnalisés conservés.
+No Loomy project in %s: run loomy init there first.	Aucun projet Loomy dans %s : lance d'abord loomy init à cet endroit.
+not used by this project; skipped	non utilisé par ce projet ; ignoré
+fix: edit the conflicting events in %s by hand (loomy hooks status lists them)	correctif : modifie à la main les événements en conflit dans %s (loomy hooks status les liste)
+Before going back to an older Loomy: loomy hooks status, then loomy hooks repair --shell, then loomy hooks status again.	Avant de revenir à un Loomy plus ancien : loomy hooks status, puis loomy hooks repair --shell, puis à nouveau loomy hooks status.

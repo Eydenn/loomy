@@ -2641,6 +2641,11 @@ if [[ "${1:-}" == --section ]]; then
     'Live growth') section 'Live growth'; run 'checkpoint growth/recovery' bash "$HERE/live-growth.sh" ;;
     'W2/W3 resume and session-only') section 'W2/W3 resume and session-only'; run 'resume regressions' bash "$HERE/resume-app.sh" ;;
     'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
+    'Hooks repair')
+      section 'Hooks repair'
+      run 'shared hook engine' bash "$HERE/hooks-repair.sh"
+      run 'scoped hook consumers and rollback' bash "$HERE/hooks-cli.sh"
+      ;;
     *) model_section=0 ;;
   esac
   if (( model_section )); then suite_summary; (( FAIL == 0 )); exit $?; fi
@@ -2721,6 +2726,10 @@ for content_test in "$HERE"/content-*.sh; do
   # TAP failures are printed early; the failure tail alone does not name them.
   grep -a '^not ok' "$OUT" | head -20 | sed 's/^/      │ /' || true
 done
+
+section "Hooks repair"
+run "shared hook engine" bash "$HERE/hooks-repair.sh"
+run "scoped hook consumers and rollback" bash "$HERE/hooks-cli.sh"
 
 section "Syntax and static analysis"
 w47_static_tests
@@ -4929,7 +4938,8 @@ d["hooks"].pop("UserPromptSubmit", None)
 json.dump(d, open(p, "w"))
 PY
 run "doctor with an older settings.json" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
-has "doctor: missing prompt hook, with the fix" "hooks missing in \.claude/settings\.json.*prompt"
+has "doctor: missing prompt binding" 'Loomy hooks need attention in \.claude/settings\.json.*UserPromptSubmit \(missing\)'
+has "doctor: scoped hook repair" 'fix: loomy hooks repair'
 rm -f "$SG/.claude/agents/explorer.md"
 run "doctor with a missing subagent" bash "$REPO/scripts/loomy-doctor.sh" --root "$SG"
 has "doctor: names the missing subagent" "subagents missing in \.claude/agents/.*explorer"
@@ -5027,7 +5037,30 @@ has "rename: said in the start context" "Loomy has just completed this project's
 [[ -x "$SR/.loomy/scripts/loomy-route.sh" && ! -e "$SR/.loomy/scripts/ai-route.sh" && ! -e "$SR/.loomy/scripts/delegate-to-codex.sh" ]] && ok "rename: new relays added, old relays removed" || ko "rename: relays $(ls "$SR/.loomy/scripts" | tr '\n' ' ')"
 [[ -f "$SR/.loomy/scripts/ai-mine.sh" ]] && ok "rename: a script of the project with an old-looking name is kept" || ko "rename: project script removed"
 [[ -f "$SR/.loomy/scripts/ai-log.sh" ]] && ok "rename: a customised relay is kept" || ko "rename: customised relay removed"
-grep -q 'loomy-context.sh." --hook start' "$SR/.claude/settings.json" && ! grep -q 'ai-context.sh' "$SR/.claude/settings.json" && ok "rename: hooks rewritten" || ko "rename: hooks: $(grep -o 'scripts/[a-z-]*' "$SR/.claude/settings.json" | sort -u | tr '\n' ' ')"
+run "rename: exact historical hooks converted, custom variants kept" perl -MJSON::PP -e '
+  my ($helper,$path)=@ARGV; require $helper;
+  open my $in,"<",$path or die $!; local $/; my $data=decode_json(<$in>);
+  my $facts=Loomy::Hooks::inspect("claude",$data);
+  die "not ready" unless $facts->{ready};
+  for my $slot (@{$facts->{slots}}) {
+    my $event=$slot->{event};
+    die "wrong owned count: $event" unless $slot->{owned}==1 && $slot->{shell}==1;
+    my $expected_custom=$event =~ /\A(?:PreToolUse|PostToolUse|PostToolUseFailure)\z/ ? 1 : 0;
+    die "custom variant lost: $event" unless $slot->{custom}==$expected_custom;
+    for my $group (@{$data->{hooks}{$event}}) {
+      for my $hook (@{$group->{hooks}}) {
+        my $kind=Loomy::Hooks::classify_command("claude",$event,$hook);
+        if ($kind eq "shell") {
+          die "historical binding not converted" if $hook->{command} =~ /ai-context\.sh/;
+        } else {
+          die "custom historical variant changed" unless $expected_custom && $hook->{command} =~ /ai-context\.sh/;
+        }
+      }
+    }
+  }
+  die "statusLine not converted" unless $facts->{status_line}{owned}==1
+    && $data->{statusLine}{command} !~ /ai-statusline\.sh/;
+' "$REPO/scripts/lib/hooks.pl" "$SR/.claude/settings.json"
 printf 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.\n' >>"$SR/CLAUDE.md"; rm -f "$SR/.loomy/scripts/loomy-route.sh"
 bash "$REPO/scripts/loomy-context.sh" --root "$SR" >/dev/null 2>&1
 grep -q 'Other: vendor/ai-review.sh and .loomy/scripts/ai-review.sh.bak stay.' "$SR/CLAUDE.md" && ok "rename: other paths and suffixes untouched" || ko "rename: $(grep 'Other:' "$SR/CLAUDE.md")"
@@ -5120,6 +5153,46 @@ SKL="$WORK/skills-lien"; cp -R "$WORK/_tpl-skills" "$SKL"
 rm -rf "$SKL/.claude/skills"; mkdir -p "$WORK/dehors"; ln -s "$WORK/dehors" "$SKL/.claude/skills"
 skf skills_install "$SKL" frontend-design "test" force >/dev/null 2>&1; [[ -z "$(ls "$WORK/dehors")" ]] && ok "skills: never written through a symbolic link" || ko "skills: written through a link"
 [[ -z "$(skf skills_suggest "$WORK/aucun" "Fix the build and improve precision of the crossword solver" 3 2>/dev/null)" ]] && ok "skills suggest: whole words only (build, precision, crossword)" || ko "skills suggest: $(skf skills_suggest "$SKP" "Fix the build and improve precision of the crossword solver" 3)"
+# Safety (security hotfix): skills.lock is versioned, so a cloned repository controls it. A hostile source such as
+# x[$(cmd)] must never reach an indirect expansion: no command, no fetch; invalid rows are skipped, valid ones sync.
+SKH="$WORK/skills-hostile"; SKM="$WORK/skills-marker"; SKC="$WORK/skills-curl-called"; mkdir -p "$WORK/skills-shim"
+printf '#!/bin/sh\ntouch "%s"\nexit 22\n' "$SKC" >"$WORK/skills-shim/curl"; chmod +x "$WORK/skills-shim/curl"
+skills_hostile() {  # <source> : a lock holding one hostile row and one valid row, then every entry point
+  local src="$1" c
+  rm -rf "$SKH" "$SKM" "$SKC"; cp -R "$WORK/_tpl-skills" "$SKH"
+  rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+  printf '%s\n' "evil|$src|skills/evil|$(printf 'a%.0s' {1..40})|MIT|2026-01-01|r|an" \
+    "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+  # Offline (curl is a recording shim) and without fixtures, so a hostile source would reach the real fetch path.
+  (cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/config.sh"; source "$1/scripts/lib/journal.sh"; source "$1/scripts/lib/skills.sh"; skills_sync "$2"; skills_install "$2" evil r force lock' _ "$REPO" "$SKH") >/dev/null 2>&1 || true
+  for c in sync list update; do (cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" "$LOOMY" skills $c) >/dev/null 2>&1 || true; done
+  [[ ! -e "$SKM" && ! -e "$SKH/.claude/skills/evil" ]]
+}
+for hs in 'x[$(touch '"$SKM"')]' '$(touch '"$SKM"')' '`touch '"$SKM"'`' 'a[0]' 'x y' 'anthropic[$(touch '"$SKM"')]' 'a/../b' 'unknown'; do
+  skills_hostile "$hs" && ok "skills lock: hostile source '${hs:0:14}' runs nothing and installs nothing" || ko "skills lock: hostile source '$hs' had an effect"
+done
+# The only fetch allowed in that run is the valid row's (the shim stands for it); an invalid row never triggers one on its own.
+rm -rf "$SKH" "$SKC" "$SKM"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "evil|x[\$(touch $SKM)]|skills/evil|$(printf 'a%.0s' {1..40})|MIT|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && env -u LOOMY_SKILLS_FIXTURES PATH="$WORK/skills-shim:$PATH" "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKC" && ! -e "$SKM" ]] && ok "skills lock: a hostile-only lock triggers no fetch" || ko "skills lock: hostile-only lock fetched or ran"
+rm -rf "$SKH"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ -f "$SKH/.claude/skills/frontend-design/SKILL.md" ]] && ok "skills lock: a valid row still syncs" || ko "skills lock: valid row not synced"
+printf '%s\n' "frontend-design|anthropic|skills/../x|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"; rm -rf "$SKH/.claude/skills"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKH/.claude/skills/frontend-design" ]] && ok "skills lock: a row with a path escape is skipped" || ko "skills lock: path escape installed"
+# Lock rows are bound to the catalog (source, path, licence), and nothing outside the project is written through planted links.
+rm -rf "$SKH" "$SKM"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf '%s\n' "pdf|anthropic|skills/pdf|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" \
+  "frontend-design|openai|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ ! -e "$SKH/.claude/skills/pdf" && ! -e "$SKH/.claude/skills/frontend-design" ]] && ok "skills lock: a row differing from the catalog (licence, source) is skipped" || ko "skills lock: catalog mismatch installed"
+rm -rf "$SKH"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"
+printf 'frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r\033]0;PWNED\007x|a\033[2Jb\n' >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills list) >"$OUT" 2>&1; ! grep -q "$(printf '\033')\]0;PWNED" "$OUT" && ! grep -q "$(printf '\033')\[2J" "$OUT" && ok "skills list: control characters of the lock are stripped" || ko "skills list: escape sequences printed"
+SKV="$WORK/skills-victim"; rm -rf "$SKH" "$SKV"; cp -R "$WORK/_tpl-skills" "$SKH"; rm -rf "$SKH/.claude/skills" "$SKH/.agents/skills"; echo keep >"$SKV"
+grep -q '^# >>> Loomy: local history' "$SKH/.gitignore" || printf '\n# >>> Loomy: local history\n.loomy/x\n# <<< Loomy\n' >>"$SKH/.gitignore"
+for ((pid=$$; pid<$$+3000; pid++)); do ln -s "$SKV" "$SKH/.gitignore.loomy-$pid"; done
+printf '%s\n' "frontend-design|anthropic|skills/frontend-design|683bc88e56f3e09ba94f7055977f3d3aa499f202|Apache-2.0|2026-01-01|r|an" >"$SKH/.loomy/skills.lock"
+(cd "$SKH" && "$LOOMY" skills sync) >/dev/null 2>&1; [[ "$(cat "$SKV")" == keep ]] && grep -q 'skills/frontend-design' "$SKH/.gitignore" && ok "skills gitignore: planted temp-file links are never followed" || ko "skills gitignore: link followed or entry missing"
 skf skills_install "$SKP" xlsx "auto" >/dev/null 2>&1; [[ ! -d "$SKP/.claude/skills/xlsx" ]] && ok "skills: proprietary licence never installed on its own" || ko "skills: proprietary installed"
 (cd "$SKP" && "$LOOMY" skills add xlsx) >/dev/null 2>&1; [[ -d "$SKP/.claude/skills/xlsx" && ! -d "$SKP/.agents/skills/xlsx" ]] && ok "skills: proprietary on request, for Claude only" || ko "skills: proprietary add"
 "$LOOMY" config set skills off >/dev/null 2>&1

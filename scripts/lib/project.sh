@@ -10,6 +10,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/memory.sh"
 
 LP_DONE=()   # what the last repair did (one short line each)
+LP_HOOKS_CLAUDE=unchecked
+LP_HOOKS_CODEX=unchecked
 LP_RENAME_MAP="'ai-assess'=>'loomy-assess', 'ai-audit'=>'loomy-audit', 'ai-catalog-check'=>'loomy-catalog-check', 'ai-context'=>'loomy-context', 'ai-doctor'=>'loomy-doctor', 'ai-effort'=>'loomy-effort', 'ai-feedback'=>'loomy-feedback', 'ai-home'=>'loomy-home', 'ai-local-writer'=>'loomy-local-writer', 'ai-log'=>'loomy-log', 'ai-models'=>'loomy-models', 'ai-privacy'=>'loomy-privacy', 'ai-report'=>'loomy-report', 'ai-review'=>'loomy-review', 'ai-route'=>'loomy-route', 'ai-start'=>'loomy-start', 'ai-stats'=>'loomy-stats', 'ai-status'=>'loomy-status', 'ai-statusline'=>'loomy-statusline', 'ai-task'=>'loomy-task', 'ai-tree'=>'loomy-tree', 'delegate-to-claude'=>'loomy-delegate-claude', 'delegate-to-codex'=>'loomy-delegate-codex', 'detect-ai-tools'=>'loomy-detect-tools', 'init-wizard'=>'loomy-init-wizard', 'install-into-project'=>'loomy-install-project', 'install-security-audit'=>'loomy-install-security-audit', 'create-hybrid-worktrees'=>'loomy-worktrees'"
 
 # ---- History and work files: never versioned in the project repository (whatever the AI-files mode). One list,
@@ -217,8 +219,8 @@ loomy_project_migrate() {
 # Old script names (before Loomy 0.10) → loomy-* names, for the references in the project's files.
 LP_RENAME_PERL='my %m = (__MAP__); my $re = join("|", map { quotemeta } sort { length($b) <=> length($a) } keys %m); s{(?:(?<=scripts/)|(?<![\w./-]))($re)\.sh(?![\w.-])}{$m{$1}.sh}g; s{(?<![\w-])delegate-to-(?=<|\*)}{loomy-delegate-}g;'
 
-# loomy_project_rename_scripts <root>: relays under the loomy-* names, and the old names replaced in the hooks and the
-# agents' files. The old relays stay (they keep working through the installed Loomy's compatibility scripts until 1.0).
+# loomy_project_rename_scripts <root>: relays under the loomy-* names and document references updated. Hook JSON is
+# migrated only by the exact shared catalog; a script name in a custom command never establishes ownership.
 loomy_project_rename_scripts() {
   local r="$1" f n m base did=0
   [[ -f "$r/.loomy/scripts/_loomy.sh" ]] || return 0
@@ -229,8 +231,8 @@ loomy_project_rename_scripts() {
       && chmod +x "$r/.loomy/scripts/$n" 2>/dev/null && did=1
   done
   command -v perl >/dev/null 2>&1 || return 0
-  for f in "$r/AGENTS.md" "$r/CLAUDE.md" "$r/PROJECT.md" "$r/ARCHITECTURE.md" "$r/START.md" "$r/.claude/settings.json" \
-           "$r/.codex/hooks.json" "$r"/.claude/agents/*.md "$r"/.loomy/docs/*.md; do
+  for f in "$r/AGENTS.md" "$r/CLAUDE.md" "$r/PROJECT.md" "$r/ARCHITECTURE.md" "$r/START.md" \
+           "$r"/.claude/agents/*.md "$r"/.loomy/docs/*.md; do
     [[ -f "$f" && ! -L "$f" ]] || continue
     grep -qE '(ai-[a-z-]+|delegate-to-[a-z<*]+|detect-ai-tools|init-wizard|install-into-project|install-security-audit|create-hybrid-worktrees)(\.sh|>|\*)' "$f" 2>/dev/null || continue
     cp "$f" "$f.loomy-tmp" 2>/dev/null || continue
@@ -253,6 +255,78 @@ loomy_project_rename_scripts() {
   done
   (( did )) && LP_DONE+=("scripts → loomy-*")
   return 0
+}
+
+# loomy_hooks_provider_in_use <root> <claude|codex>: the provider's registration file already exists, or the project
+# routes work to it (lead or any role resolved by the brief and routing). Read-only; nothing is created or probed.
+loomy_hooks_provider_in_use() {
+  local r="$1" provider="$2" file
+  case "$provider" in
+    claude) file="$r/.claude/settings.json" ;;
+    codex) file="$r/.codex/hooks.json" ;;
+    *) return 1 ;;
+  esac
+  [[ -e "$file" || -L "$file" ]] && return 0
+  [[ -f "$r/.loomy/brief.md" ]] || return 1
+  (
+    ai_detect_env "$r" readonly >/dev/null 2>&1 || exit 1
+    for role in $AI_ROLES; do
+      ai_resolve "$role" "$AI_ENV" "$AI_PROFILE" >/dev/null 2>&1 || continue
+      [[ "$R_FAMILY" == "$provider" ]] && exit 0
+    done
+    exit 1
+  )
+}
+
+# Installer and automatic repair consume the same typed result. Failed providers
+# remain independent, so a safe retry can finish either file without a fallback.
+_lp_hooks_repair() {
+  local r="$1" provider="$2" file result="" status=failed rc=0
+  case "$provider" in
+    claude) file=.claude/settings.json ;;
+    codex) file=.codex/hooks.json ;;
+    *) return 1 ;;
+  esac
+  # shellcheck source=hooks.sh
+  if source "$(dirname "${BASH_SOURCE[0]}")/hooks.sh" 2>/dev/null; then
+    result="$(loomy_hooks_repair "$r" "$provider" 2>/dev/null)" || rc=$?
+    status="$(printf '%s' "$result" | perl -MJSON::PP -e '
+      local $/; my $data=eval {decode_json(<STDIN>)};
+      my ($rc,$provider)=@ARGV;
+      if (ref($data) ne "HASH") { print "failed"; exit }
+      if ($rc || !$data->{ok}) {
+        my $code=$data->{code}//"";
+        print $code =~ /\A(?:busy|conflict|parent_changed|invalid_settings|unsafe_project|unsafe_parent|unsafe_settings|unsupported_number|gid_preservation_failed|applied_unconfirmed)\z/ ? $code : "failed";
+        exit;
+      }
+      my $facts=$data->{facts};
+      if (ref($facts) ne "HASH" || ($facts->{provider}//"") ne $provider) { print "failed"; exit }
+      if (($facts->{state}//"") eq "ambiguous") { print "ambiguous"; exit }
+      if (!$facts->{ready}) { print "failed"; exit }
+      my @slots=@{$facts->{slots}//[]};
+      push @slots,$facts->{status_line} if ref($facts->{status_line}) eq "HASH";
+      if (grep {$_->{custom}} @slots) { print "custom"; exit }
+      print $data->{changed} ? "changed" : "unchanged";
+    ' "$rc" "$provider" 2>/dev/null)" || status=failed
+  fi
+  case "$provider" in claude) LP_HOOKS_CLAUDE="$status" ;; codex) LP_HOOKS_CODEX="$status" ;; esac
+  case "$status" in
+    changed|unchanged) return 0 ;;
+    custom) return 0 ;;
+    ambiguous) t "Loomy hooks in %s: conflicting registrations kept; run loomy hooks status." "$file" >&2 ;;
+    busy) t "Loomy hooks in %s: another process holds the settings lock; retry loomy hooks repair." "$file" >&2 ;;
+    conflict|parent_changed) t "Loomy hooks in %s: settings changed during repair; retry loomy hooks repair." "$file" >&2 ;;
+    invalid_settings) t "Loomy hooks in %s: invalid settings; review the JSON file, then run loomy hooks repair." "$file" >&2 ;;
+    unsafe_project) t "Loomy hooks in %s: unsafe project folder; check directory type, ownership and permissions, and use a dedicated project folder distinct from your home and global configuration folders." "$file" >&2 ;;
+    unsafe_parent) t "Loomy hooks in %s: unsafe settings folder; check ownership, permissions and symlinks, then run loomy hooks repair." "$file" >&2 ;;
+    unsafe_settings) t "Loomy hooks in %s: unsafe settings file; use a regular file owned by your current user, then run loomy hooks repair." "$file" >&2 ;;
+    unsupported_number) t "Loomy hooks in %s: a JSON number cannot be preserved exactly; edit it before retrying loomy hooks repair." "$file" >&2 ;;
+    gid_preservation_failed) t "Loomy hooks in %s: the file's group could not be preserved; check its group, then retry loomy hooks repair." "$file" >&2 ;;
+    applied_unconfirmed) t "Loomy hooks in %s: settings applied, but placement or durability is unconfirmed; run loomy hooks status before retrying." "$file" >&2 ;;
+    *) t "Loomy hooks in %s: repair incomplete; run loomy hooks status." "$file" >&2 ;;
+  esac
+  echo >&2
+  return 1
 }
 
 # _lp_review_tried_rule <root>: the shared review rule, in the project's document language.
@@ -360,13 +434,14 @@ _lp_ensure_block() {
 loomy_project_repair() {
   local r="$1" tpl docs f route lead tmpd n u dest
   LP_DONE=()
+  LP_HOOKS_CLAUDE=unchecked; LP_HOOKS_CODEX=unchecked
   [[ -f "$r/.loomy/brief.md" ]] || return 0
   loomy_project_migrate "$r"
   loomy_project_rename_scripts "$r"
-  # Existing projects gain missing native-agent hooks without rewriting user settings.
-  # shellcheck source=hooks.sh
-  source "$(dirname "${BASH_SOURCE[0]}")/hooks.sh"
-  loomy_claude_hooks_merge "$r" || true
+  # Each provider is repaired independently; failures never enter LP_DONE.
+  # A provider the project does not use (no registration file, nothing routed to it) is never created here.
+  if loomy_hooks_provider_in_use "$r" claude; then _lp_hooks_repair "$r" claude || true; fi
+  if loomy_hooks_provider_in_use "$r" codex; then _lp_hooks_repair "$r" codex || true; fi
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
   route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
   mkdir -p "$docs"

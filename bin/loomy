@@ -14,6 +14,10 @@ _realpath() {
 }
 LOOMY_HOME="$(cd "$(dirname "$(_realpath "${BASH_SOURCE[0]}")")/.." && pwd)"
 S="$LOOMY_HOME/scripts"
+
+# Registration inspection/rollback must not enter upkeep or project repair.
+if [[ "${1:-}" == hooks ]]; then shift; exec bash "$S/loomy-hooks.sh" "$@"; fi
+
 LOOMY_REPO="${LOOMY_REPO:-Eydenn/loomy}"
 VERSION="$(cat "$LOOMY_HOME/VERSION" 2>/dev/null || echo "?")"
 
@@ -177,6 +181,7 @@ usage() {
   _h_cmd log "[-n N] [-f] [--raw]" "$(t "Readable log of phases, delegations and sessions (--raw: JSON)")"
   _h_cmd feedback "[\"message\"]" "$(t "Reports a bug or an idea: prefilled GitHub issue (versions, anonymized project state), sent only after your approval")"
   _h_group "$(t "MACHINE")"
+  _h_cmd hooks "[status|repair [--shell]]" "$(t "Inspects hook registration; repair fills missing bindings, --shell restores recognized shell bindings")"
   _h_cmd shell-hook "[install|remove]" "$(t "Optional: in a Loomy project, claude or codex typed alone goes through loomy start (session and live tracking side by side)")"
   _h_cmd doctor "[--fix] [--live]" "$(t "Checks the prerequisites; --fix fixes, --live tests every model")"
   _h_cmd config "[list|get|set]" "$(t "Preferences: Claude and Codex plans")"

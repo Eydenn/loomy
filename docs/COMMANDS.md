@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-Every command with its variants and what it does in detail. Reference for Loomy **0.17.7**. In the terminal: `loomy help <command>`.
+Every command with its variants and what it does in detail. Reference for Loomy **0.17.9**. In the terminal: `loomy help <command>`.
 
 ## Project
 
@@ -66,7 +66,7 @@ loomy privacy content structural
 loomy privacy content legacy-excerpts
 ```
 
-Shows the effective policy, source and project scope, or changes future journal writes. In 0.17.7, new journal entries and fresh rotation snapshots contain allowlisted structure by default, on new and upgraded projects. Existing files and archives are unchanged.
+Shows the effective policy, source and project scope, or changes future journal writes. In 0.17.8, new journal entries and fresh rotation snapshots contain allowlisted structure by default, on new and upgraded projects. Existing files and archives are unchanged.
 
 `legacy-excerpts` is a separate, explicit project grant. It permits only bounded top-level `task` (200 Unicode characters), `excerpt` (60), `why` (200), `nickname` (40) and `cwd_relative` (256, inside the project). It does not enable full task/result retention.
 
@@ -116,7 +116,7 @@ Read-only metadata inventory of known storage locations: counts, bytes, retentio
 
 `--git-history` checks local project/companion index and history path metadata, without fetching or rewriting history. `--host` adds known Loomy host and temporary-file locations; a matching name does not prove a file is abandoned. Provider transcripts, remote clones, backups and arbitrary export locations remain outside proven coverage. An inventory is not proof that files contain no sensitive text.
 
-The 0.17.7 repair covers new journal writes/rotation snapshots, receipts and automatic feedback staging. Native checkpoints/cursors, execution/display temporary files and diagnostics can still retain text or paths. `log --raw` and explicit `report --md` exports retain their existing behavior. Older files, Git history and provider-managed transcripts are not purged or sanitized by these controls.
+The 0.17.8 repair covers new journal writes/rotation snapshots, receipts and automatic feedback staging. Native checkpoints/cursors, execution/display temporary files and diagnostics can still retain text or paths. `log --raw` and explicit `report --md` exports retain their existing behavior. Older files, Git history and provider-managed transcripts are not purged or sanitized by these controls.
 
 ## Sessions and work
 
@@ -248,7 +248,7 @@ loomy log --since YYYY-MM-DD
 loomy log --csv
 ```
 
-Readable journal in local time, optionally streamed, with authorized labels resolved for new entries. `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs. In 0.17.7, `--raw` still emits original JSON, including any text in older or compatibility records; it is not a sanitized export.
+Readable journal in local time, optionally streamed, with authorized labels resolved for new entries. `--since YYYY-MM-DD` reaches into monthly archives; `--csv` exports costs. In 0.17.8, `--raw` still emits original JSON, including any text in older or compatibility records; it is not a sanitized export.
 
 ### `loomy stats`
 
@@ -268,7 +268,7 @@ loomy report --md [dir]
 loomy report --all
 ```
 
-Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` writes Markdown in `docs/reports/` or the chosen directory; `--all` every project. Plain `report` creates no Markdown file. In 0.17.7, an explicit Markdown report can still contain the project name and task titles; review it before sharing.
+Project figures: bootstrap, tasks, delegations by role and model, tokens, cost; `--md [dir]` writes Markdown in `docs/reports/` or the chosen directory; `--all` every project. Plain `report` creates no Markdown file. In 0.17.8, an explicit Markdown report can still contain the project name and task titles; review it before sharing.
 
 ### `loomy memory`
 
@@ -364,6 +364,18 @@ loomy audit --fixes report|plan|branch
 Security audit of an existing Git repository, a mission rather than a project (see below): `--resume`, `--print`, `--yes`, `--scope`, `--depth quick|standard|deep`, `--fixes report|plan|branch`
 
 ## Maintenance and help
+
+### `loomy hooks [status|repair [--shell]]`
+
+```bash
+loomy hooks status
+loomy hooks repair
+loomy hooks repair --shell
+```
+
+Scoped inspection and repair of the Loomy hook registrations in `.claude/settings.json` and `.codex/hooks.json`; no other project file, content grant or provider call is involved. `status` is read-only and lists, per provider and event, `shell`, `native`, `mixed`, `custom`, `missing`, `invalid` or `ambiguous`, and whether action is needed. `repair` fills missing registrations and keeps recognized active ones and your own hooks, matchers, status line and file permissions; it reports `changed` or `unchanged` per file. `repair --shell` restores recognized shell registrations and is the step to run before going back to an older Loomy. `repair` acts only in a Loomy project and only for the providers it uses (the other is reported as skipped); `--root DIR` targets another project. Nothing is rewritten when the file is invalid, unsafe or changed meanwhile, and your own commands are never echoed. Native registration is not available in this release (`--native` is refused).
+
+Rollback before an older Loomy, while this version is installed: `loomy hooks status`, then `loomy hooks repair --shell`, then `loomy hooks status` again; resolve any conflicting event it lists by hand, and only then install the older version. Repeating the upgrade and the repair does not duplicate registrations.
 
 ### `loomy doctor`
 

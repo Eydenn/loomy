@@ -233,7 +233,7 @@ check('none found' in plain.stdout and 'legacy content possible' not in plain.st
       'P16 empty locations say "none found", not "legacy content possible"')
 french = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', empty, '--git-history', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
 check('inconnu chemin' not in french.stdout and 'inconnus' in french.stdout, 'P16 FR unknown Git counts use a dedicated grammatical form')
-# Zero-byte stores are "none found"; label/policy stores (0.17.7 format) never claim legacy text.
+# Zero-byte stores are "none found"; label/policy stores (0.17.8 format) never claim legacy text.
 zero = work / 'zero-byte'
 put(zero / '.loomy/logs/events.jsonl', '')
 new_stores = work / 'new-stores'

@@ -77,8 +77,10 @@ case "$ACTION" in
   list)
     ui_section "$(t "SKILLS")" "$(t "official only · policy %s" "$(skills_policy)")"
     if [[ -s "$ROOT/.loomy/skills.lock" ]]; then
-      while IFS='|' read -r n src _ _ lic day reason an; do
-        [[ -n "$n" ]] || continue
+      while IFS= read -r row || [[ -n "$row" ]]; do
+        _sk_row_ok "$row" lock || continue
+        IFS='|' read -r n src _ _ lic day reason an <<<"$row"
+        reason="$(_sk_clean "$reason")"; an="$(_sk_clean "$an")"
         ui_kv "$n" "$reason ${C_DIM}· $src · $lic · $day${C_RESET}"
         ui_rail "   ${C_DIM}$(t "analysis: %s" "$an")${C_RESET}"
       done <"$ROOT/.loomy/skills.lock"

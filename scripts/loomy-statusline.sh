@@ -74,16 +74,35 @@ if [[ -n "$R" && -f "$R/.loomy/failover" ]]; then
     seg="${seg:+$seg · }⇄ $fa$relay_suffix"
   fi
 fi
-user_cmd="$(cat "$CFG/statusline-user" 2>/dev/null || true)"
+# The user's own line is chained once: a nested Loomy status line (a custom command that itself runs this script)
+# sees the marker and skips it, so a self-referencing command can never fork a chain.
+user_cmd=""
+[[ -n "${LOOMY_STATUSLINE_NESTED:-}" ]] || user_cmd="$(cat "$CFG/statusline-user" 2>/dev/null || true)"
 if [[ -n "$user_cmd" ]]; then
   tmpo="$(mktemp "${TMPDIR:-/tmp}/loomy-sl.XXXXXX" 2>/dev/null)" || tmpo=""
+  tmpi="$(mktemp "${TMPDIR:-/tmp}/loomy-sl-in.XXXXXX" 2>/dev/null)" || tmpi=""
   out=""
-  if [[ -n "$tmpo" ]]; then
-    ( printf '%s' "$INPUT" | bash -c "$user_cmd" >"$tmpo" 2>/dev/null ) & upid=$!
+  if [[ -n "$tmpo" && -n "$tmpi" ]]; then
+    # Braces with stderr discarded: the shell's own "Terminated" job notice must never reach the status line.
+    {
+    printf '%s' "$INPUT" >"$tmpi"
+    # Own process group (perl setpgrp, bash 3.2 has no portable setsid) so the timeout reaches every descendant.
+    if command -v perl >/dev/null 2>&1; then
+      LOOMY_STATUSLINE_NESTED=1 perl -e 'setpgrp(0, 0); exec @ARGV or exit 127' bash -c "$user_cmd" <"$tmpi" >"$tmpo" 2>/dev/null &
+      upid=$!; ugroup=1
+    else
+      LOOMY_STATUSLINE_NESTED=1 bash -c "$user_cmd" <"$tmpi" >"$tmpo" 2>/dev/null &
+      upid=$!; ugroup=0
+    fi
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 "$upid" 2>/dev/null || break; sleep 0.1; done
-    if kill -0 "$upid" 2>/dev/null; then kill "$upid" 2>/dev/null; else out="$(cat "$tmpo" 2>/dev/null)"; fi
-    rm -f "$tmpo"
+    if kill -0 "$upid" 2>/dev/null; then
+      if (( ugroup )); then kill -TERM -- "-$upid" 2>/dev/null; sleep 0.1; kill -KILL -- "-$upid" 2>/dev/null; fi
+      kill -KILL "$upid" 2>/dev/null
+    else out="$(cat "$tmpo" 2>/dev/null)"; fi
+    wait "$upid"
+    } 2>/dev/null
   fi
+  rm -f "$tmpo" "$tmpi"
   if [[ -n "$seg" ]]; then printf '%s · Loomy %s\n' "$out" "$seg"; else printf '%s\n' "$out"; fi
   exit 0
 fi

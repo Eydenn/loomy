@@ -17,6 +17,10 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/usage.sh"
 # shellcheck source=lib/repair.sh
 source "$SCRIPT_DIR/lib/repair.sh"
+# shellcheck source=lib/hooks.sh
+source "$SCRIPT_DIR/lib/hooks.sh"
+# shellcheck source=lib/project.sh
+source "$SCRIPT_DIR/lib/project.sh"
 
 usage() {
   i18n_lines >&2 <<'EOF'
@@ -114,6 +118,69 @@ loomy_doctor_tracking() {
   done < <(perl "$SCRIPT_DIR/lib/watch-health.pl" "$ROOT" "${CODEX_HOME:-$HOME/.codex}" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" 2>/dev/null)
 }
 loomy_doctor_tracking
+
+# All readiness decisions come from H1's exact catalog; command text stays private.
+loomy_doctor_hooks() {
+  local provider="$1" label file facts rows kind event state ready=0 code="" issues="" amb=0 other=0
+  if [[ "$provider" == claude ]]; then
+    label="$(t "Claude Code hooks")"; file=".claude/settings.json"
+  else
+    label="$(t "Codex hooks")"; file=".codex/hooks.json"
+  fi
+  facts="$(loomy_hooks_inspect "$ROOT" "$provider" 2>/dev/null)" || true
+  if ! rows="$(printf '%s' "$facts" | perl -MJSON::PP -e '
+    local $/; my $r=eval {decode_json(<STDIN>)};
+    exit 1 unless ref($r) eq "HASH";
+    unless ($r->{ok}) {
+      my $code=$r->{code}//"operation_failed";
+      $code="operation_failed" unless $code =~ /\A[a-z_]+\z/;
+      print "error\t$code\n"; exit;
+    }
+    my $f=$r->{facts}; exit 1 unless ref($f) eq "HASH" && ref($f->{slots}) eq "ARRAY";
+    print "ready\t",($f->{ready} ? 1 : 0),"\n";
+    for my $s (@{$f->{slots}}, $f->{status_line} ? ($f->{status_line}) : ()) {
+      next if $s->{owned} && !$s->{ambiguous};
+      next if !exists($s->{event}) && $s->{state} eq "custom" && !$s->{ambiguous};
+      my $event=$s->{event}//"statusLine"; my $state=$s->{state}//"invalid";
+      exit 1 unless $event =~ /\A[A-Za-z]+\z/ && $state =~ /\A(?:shell|native|mixed|custom|missing|invalid|ambiguous)\z/;
+      print "slot\t$event\t$state\n";
+    }
+  ' 2>/dev/null)"; then
+    code="operation_failed"
+  else
+    while IFS=$'\t' read -r kind event state; do
+      case "$kind" in
+        ready) ready="$event" ;;
+        error) code="$event" ;;
+        slot) issues="${issues:+$issues, }$event ($(t "$state"))"
+              if [[ "$state" == ambiguous ]]; then amb=1; else other=1; fi ;;
+      esac
+    done <<<"$rows"
+  fi
+  if [[ -n "$code" ]]; then
+    case "$code" in
+      unsafe_project|unsafe_parent)
+        state="$(t 'Hook settings are unsafe; check ownership, directory permissions and symlinks.')" ;;
+      invalid_settings)
+        state="$(t 'Invalid hook settings; fix the JSON object before retrying.')" ;;
+      unsupported_number)
+        state="$(t 'Hook settings contain unsupported JSON numbers; edit them before retrying.')" ;;
+      *) state="$(t 'Hook settings could not be inspected; run loomy hooks status.')" ;;
+    esac
+    ui_warn "$label" "$file · $state"
+    ui_info "$(t "fix: %s" "loomy hooks status")"
+  elif [[ "$ready" != 1 ]]; then
+    ui_warn "$(t 'Loomy hooks need attention in %s' "$file")" "$issues"
+    # Repair keeps conflicting registrations: an ambiguous event can only be resolved by editing the file.
+    if (( amb )); then ui_info "$(t 'fix: edit the conflicting events in %s by hand (loomy hooks status lists them)' "$file")"; fi
+    if (( other || ! amb )); then ui_info "$(t "fix: %s" "loomy hooks repair")"; fi
+  else
+    if [[ "$provider" == claude ]]; then ui_ok "$label" "$(t "in .claude/settings.json")"
+    else ui_ok "$label" "$(t "in .codex/hooks.json")"; fi
+    return 0
+  fi
+  missing_ideal "$label"; p_gaps=$(( p_gaps + 1 ))
+}
 
 # Read policy/health without _context so that the unsafe-directory cause stays visible. Reuse its
 # directory/file checks and closed parser; never create identities, locks or stores (effective_policy
@@ -391,25 +458,11 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     else
       ui_ok "$(t "Claude subagents")" "$(t "every routed role has its .claude/agents/ file")"
     fi
-    p_hmiss=""
-    for h in start end stop subagent; do grep -qF -- "--hook $h" "$ROOT/.claude/settings.json" 2>/dev/null || p_hmiss="${p_hmiss:+$p_hmiss, }$h"; done
-    [[ "$AI_MODE" == "ORCHESTRATED" ]] && ! grep -qF -- "--hook prompt" "$ROOT/.claude/settings.json" 2>/dev/null && p_hmiss="${p_hmiss:+$p_hmiss, }prompt"
-    if [[ -n "$p_hmiss" ]]; then
-      ui_warn "$(t "Loomy hooks missing in .claude/settings.json")" "$p_hmiss"
-      ui_info "$(t "fix: %s" "loomy init --update")"
-      missing_ideal "$(t "Claude Code hooks")"; p_gaps=$(( p_gaps + 1 ))
-    else
-      ui_ok "$(t "Claude Code hooks")" "$(t "in .claude/settings.json")"
-    fi
-  elif [[ "$p_lead" == "codex" ]]; then
-    if ! grep -qF -- "--hook start" "$ROOT/.codex/hooks.json" 2>/dev/null; then
-      ui_warn "$(t "Loomy hooks missing in .codex/hooks.json")" "SessionStart"
-      ui_info "$(t "fix: %s" "loomy init --update")"
-      missing_ideal "$(t "Codex hooks")"; p_gaps=$(( p_gaps + 1 ))
-    else
-      ui_ok "$(t "Codex hooks")" "$(t "in .codex/hooks.json")"
-    fi
   fi
+  # Only the providers the project uses (registration file present, or work routed to them).
+  for p_prov in claude codex; do
+    if loomy_hooks_provider_in_use "$ROOT" "$p_prov"; then loomy_doctor_hooks "$p_prov"; fi
+  done
   # Orchestration rule where the agents read it (managed block, kept by Loomy).
   if [[ -f "$ROOT/AGENTS.md" || -f "$ROOT/CLAUDE.md" ]]; then
     if grep -qs '<!-- loomy:orchestration:start' "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ui_ok "$(t "orchestration rule")" "AGENTS.md / CLAUDE.md"

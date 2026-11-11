@@ -170,97 +170,78 @@ RELAIS
   loomy_gitignore_sync "$TARGET"
 }
 
-# Project Claude Code hooks: at each session opening, the Loomy context (phase, expectations, delegations) is
-# added automatically; on closing, the session is recorded. Merged with an existing .claude/settings.json, overwriting nothing.
-LOOMY_HOOK_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook start'
-LOOMY_HOOK_END='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook end'
-# End of a lead agent turn and end of a subagent: real cost read from the session transcript.
-LOOMY_HOOK_STOP='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook stop'
-LOOMY_HOOK_AGENT_START='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook agent-start'
-LOOMY_HOOK_SUB='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook subagent'
-# Before each prompt: a one-line routing reminder, silent unless the project is ORCHESTRATED (long sessions forget it).
-LOOMY_HOOK_PROMPT='bash "${CLAUDE_PROJECT_DIR}/.loomy/scripts/loomy-context.sh" --hook prompt'
-
-# Claude Code status line (Loomy's, which saves the subscription quota, then shows the user's own status line).
-LOOMY_STATUSLINE="sh -c 'd=\${CLAUDE_PROJECT_DIR:-\$PWD}; while [ \"\$d\" != / ] && [ ! -f \"\$d/.loomy/scripts/loomy-statusline.sh\" ]; do d=\$(dirname \"\$d\"); done; [ -f \"\$d/.loomy/scripts/loomy-statusline.sh\" ] && exec bash \"\$d/.loomy/scripts/loomy-statusline.sh\"'"
-
-# _hooks_json: Loomy's "hooks" block, as JSON.
-_hooks_json() {
-  local s e t u w a
-  s="$(printf '%s' "$LOOMY_HOOK_START" | sed 's/"/\\"/g')"; e="$(printf '%s' "$LOOMY_HOOK_END" | sed 's/"/\\"/g')"
-  t="$(printf '%s' "$LOOMY_HOOK_STOP" | sed 's/"/\\"/g')"; u="$(printf '%s' "$LOOMY_HOOK_SUB" | sed 's/"/\\"/g')"
-  w="$(printf '%s' "$LOOMY_HOOK_PROMPT" | sed 's/"/\\"/g')"
-  a="$(printf '%s' "$LOOMY_HOOK_AGENT_START" | sed 's/"/\\"/g')"
-  local sl; sl="$(printf '%s' "$LOOMY_STATUSLINE" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{\n  "statusLine": { "type": "command", "command": "%s", "padding": 0 },\n' "$sl"
-  printf '  "hooks": {\n    "SessionStart": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] }\n    ],\n    "SessionEnd": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] }\n    ],\n    "Stop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "SubagentStop": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 10 } ] }\n    ],\n    "UserPromptSubmit": [\n      { "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ],\n    "PreToolUse": [\n      { "matcher": "Agent|Task", "hooks": [ { "type": "command", "command": "%s", "timeout": 5 } ] }\n    ]\n  }\n}\n' "$s" "$e" "$t" "$u" "$w" "$a"
-}
-
-# Codex runs its hooks from the session folder: the command walks up to the Loomy project.
-codex_hook_cmd() {
-  printf '%s' "sh -c 'd=\$PWD; while [ \"\$d\" != / ] && [ ! -f \"\$d/.loomy/scripts/loomy-context.sh\" ]; do d=\$(dirname \"\$d\"); done; [ -f \"\$d/.loomy/scripts/loomy-context.sh\" ] && exec bash \"\$d/.loomy/scripts/loomy-context.sh\" --hook $1 --tool codex'"
-}
-
-# install_codex_hooks: the project's .codex/hooks.json (same format as Claude Code). Codex asks to approve them on first launch.
+# Project settings are committed independently through the shared typed engine.
+# A failed Claude repair must not suppress a safe Codex repair, or vice versa.
 install_codex_hooks() {
-  local f="$TARGET/.codex/hooks.json" start end merger
-  start="$(codex_hook_cmd start)"; end="$(codex_hook_cmd end)"
-  mkdir -p "$TARGET/.codex"
-  if [[ -f "$f" ]] && grep -q 'loomy-context.sh' "$f"; then return 0; fi
-  merger='import json, os, sys
-path, start, end = sys.argv[1:4]
-data = json.load(open(path)) if os.path.exists(path) else {}
-hooks = data.setdefault("hooks", {})
-hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": start, "timeout": 20}]})
-hooks.setdefault("SessionEnd", []).append({"hooks": [{"type": "command", "command": end, "timeout": 3}]})
-import os
-tmp = path + ".loomy-tmp"
-with open(tmp, "w") as out:
-    json.dump(data, out, indent=2, ensure_ascii=False); out.write("\n")
-os.replace(tmp, path)'
-  if command -v python3 >/dev/null 2>&1 && python3 -c "$merger" "$f" "$start" "$end" 2>/dev/null; then return 0; fi
-  if [[ ! -f "$f" ]]; then
-    local s e
-    s="$(printf '%s' "$start" | sed 's/\\/\\\\/g; s/"/\\"/g')"; e="$(printf '%s' "$end" | sed 's/\\/\\\\/g; s/"/\\"/g')"
-    printf '{\n  "hooks": {\n    "SessionStart": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 20 } ] } ],\n    "SessionEnd": [ { "hooks": [ { "type": "command", "command": "%s", "timeout": 3 } ] } ]\n  }\n}\n' "$s" "$e" >"$f"
-    return 0
-  fi
-  ui_warn "$(t "existing .codex/hooks.json left unchanged")" "$(t "add the Loomy hooks to it by hand (see .loomy/scripts/loomy-context.sh)")"
+  _lp_hooks_repair "$TARGET" codex || true
   return 0
 }
 
-# remember_user_statusline: the user's own status line (~/.claude/settings.json), shown by Loomy's.
+# Only custom global status lines are chained. Exact current, historical and
+# trusted native forms share the settings engine's classifier, never a substring.
 remember_user_statusline() {
-  command -v python3 >/dev/null 2>&1 || return 0
   local cfg="${XDG_CONFIG_HOME:-$HOME/.config}/loomy"
-  mkdir -p "$cfg" 2>/dev/null || return 0
-  python3 - "$HOME/.claude/settings.json" "$cfg/statusline-user" <<'PYS' 2>/dev/null || true
-import json, os, sys
-src, dst = sys.argv[1:3]
-try:
-    cmd = (json.load(open(src)).get("statusLine") or {}).get("command", "")
-except Exception:
-    cmd = ""
-if cmd and "loomy-statusline.sh" not in cmd:
-    open(dst, "w").write(cmd)
-elif not cmd and os.path.exists(dst):
-    os.remove(dst)
-PYS
+  # shellcheck source=lib/hooks.sh
+  source "$LOOMY_ROOT/scripts/lib/hooks.sh" 2>/dev/null || return 0
+  perl - "$_LOOMY_HOOKS_HELPER" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" "$cfg" <<'PERL' 2>/dev/null || true
+use strict;
+use warnings;
+use Encode qw(encode decode FB_CROAK);
+use File::Path qw(make_path);
+use File::Temp qw(tempfile);
+use JSON::PP ();
+my ($helper,$source,$cfg)=@ARGV;
+require $helper;
+exit if -l $cfg || (-e $cfg && !-d $cfg);
+my $dest="$cfg/statusline-user";
+# Bad global input must not erase a cached customization. Only an exact owned
+# cache entry is removed in that case, so it cannot recurse through Loomy.
+my $prune_owned=sub {
+    if (-l $dest) { unlink $dest; return }
+    return unless -f $dest && open(my $in,'<:raw',$dest);
+    local $/;
+    my $bytes=<$in>;
+    close $in;
+    my $command=eval {decode('UTF-8',$bytes,FB_CROAK)};
+    return if $@ || !defined($command);
+    my $kind=Loomy::Hooks::classify_command('claude','statusLine',
+        {type=>'command',command=>$command},Loomy::Hooks::production_descriptors());
+    unlink $dest if $kind ne 'custom';
+};
+if (!-e $source && !-l $source) { unlink $dest if -f $dest || -l $dest; exit }
+my $data;
+if (-f $source && open(my $in,'<:raw',$source)) {
+    local $/;
+    $data=eval {JSON::PP->new->utf8->decode(<$in>)};
+    close $in;
+}
+if (ref($data) ne 'HASH') { $prune_owned->(); exit }
+if (!exists($data->{statusLine}) || !defined($data->{statusLine})) {
+    unlink $dest if -f $dest || -l $dest;
+    exit;
+}
+my $line=$data->{statusLine};
+if (ref($line) ne 'HASH' || ($line->{type}//'') ne 'command'
+    || !defined($line->{command}) || ref($line->{command})
+    || JSON::PP->new->allow_nonref->encode($line->{command}) !~ /\A"/) { $prune_owned->(); exit }
+if (!length($line->{command})) { unlink $dest if -f $dest || -l $dest; exit }
+if (Loomy::Hooks::classify_command('claude','statusLine',$line,
+    Loomy::Hooks::production_descriptors()) ne 'custom') { $prune_owned->(); exit }
+# Any command that mentions Loomy's own status line could chain back into it (a near-match form the exact
+# classifier calls custom): never cached. Other custom commands are kept.
+if (index($line->{command},'loomy-statusline.sh')>=0 || index($line->{command},'ai-statusline.sh')>=0) { $prune_owned->(); exit }
+make_path($cfg,{mode=>0700}) unless -d $cfg;
+my ($out,$temp)=tempfile('.statusline-user.XXXXXX',DIR=>$cfg,UNLINK=>1);
+binmode $out,':raw' or exit;
+print {$out} encode('UTF-8',$line->{command}) or exit;
+close $out or exit;
+rename $temp,$dest or exit;
+PERL
 }
 
-# install_claude_hooks: the project's .claude/settings.json: Loomy hooks and status line, merged with an existing
-# file (nothing removed, an existing status line kept); an unreadable file is left as is.
 install_claude_hooks() {
-  local f="$TARGET/.claude/settings.json"
-  mkdir -p "$TARGET/.claude"
   remember_user_statusline
-  # The same idempotent merge is available to session-start project repair.
-  # shellcheck source=lib/hooks.sh
-  source "$LOOMY_ROOT/scripts/lib/hooks.sh"
-  if loomy_claude_hooks_merge "$TARGET"; then return 0; fi
-  if [[ ! -f "$f" ]]; then _hooks_json >"$f"; return 0; fi
-  _hooks_json >"$L/claude-hooks.json"
-  ui_warn "$(t "existing .claude/settings.json left unchanged")" "$(t "add the hooks from .loomy/claude-hooks.json to it")"
+  _lp_hooks_repair "$TARGET" claude || true
   return 0
 }
 

@@ -2,7 +2,22 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.17.7 — 2026-10-27
+## 0.17.9 — 2026-11-11
+
+### Hook registration repair
+
+- Claude Code and Codex hook registrations are read and written by one shared engine (`scripts/lib/hooks.pl`). It recognizes every historical Loomy hook form exactly, converts those to the current shell form, and keeps your own hooks, matchers, status line, key order, formatting and file permissions. Settings are replaced atomically with no-follow checks and refused when they changed meanwhile; invalid or unsafe files are left untouched.
+- New `loomy hooks status`: read-only, per provider and event, whether anything needs action. `loomy hooks repair` fills missing bindings; `loomy hooks repair --shell` restores recognized shell bindings, which is the supported way to revert before using an older Loomy. It reports changed, unchanged, custom, ambiguous or failed per file, never echoes your own commands, and changes no other project file. Rollback procedure: [README](README.md#kept-up-to-date-by-itself).
+- Repair is scoped: it acts only inside a Loomy project (`.loomy/` present) and only for the providers the project uses. `loomy init` and `loomy init --update` still write both providers, as before, because they are explicit actions. Automatic project repair, `loomy hooks repair`, `--shell` and `loomy doctor` follow the provider-in-use rule.
+- `loomy doctor` names the provider, event and missing or conflicting registration, and suggests `loomy hooks repair`. The status line is chained with a bounded, nested-safe wrapper (marker and process group) so a custom status line still runs once.
+- `loomy help hooks` and `docs/COMMANDS.md` document the command.
+
+### Not in this release
+
+- No native hook registration: it stays unavailable (`loomy hooks --native` says so), and no latency or native handler claim is made. This release only establishes the shell-form repair that a later native step must build on.
+- Unchanged: watch display, keys and captures.
+
+## 0.17.8 — 2026-11-11
 
 ### Changed defaults
 
@@ -24,6 +39,17 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 - Release 1 still has content sinks: native checkpoints/backups/shards and usage cursors; bridge temporary output spools and other execution/viewer temporary files; desktop-resume and skill-install logs; original journal bytes from `loomy log --raw`; task/project titles in explicit `loomy report --md` exports; tasks passed in bridge/provider argv and environment (a handover task in the next bridge's argv; `LOOMY_RESUME_DESCRIPTOR` with its why and task label in the bridge environment, removed before the provider starts); repair logs in `~/.config/loomy/logs/repair-*.log`; and the text that `loomy task` writes to `.loomy/skills.lock` with the automatic skills policy: the task title (`task #N: TITLE`) and the reason/analysis text. `.loomy/skills.lock` is versioned and pushed until a later release. Label/result stores, explicit task/review/audit documents, terminal output, legacy files and provider transcripts can also contain sensitive text. Raw/export and checkpoint/scratch changes belong to a later release.
 - No historical purge or Git history rewrite is performed. Private permissions and Git exclusions provide neither encryption nor secure erasure. The human terminal guard covers supported command/managed contexts; agents running as the same OS user can still edit files. It is not an OS security boundary.
+
+## 0.17.7 — 2026-11-11
+Security hotfix; no other changes.
+
+### Security
+- Fix a command-execution flaw in skills handling. Before 0.17.7, a versioned `.loomy/skills.lock` with a crafted source field was expanded indirectly by the shell (`_sk_fetch`), so any loomy command run inside a freshly cloned malicious repository could execute arbitrary commands.
+- Source names are now allowlisted (`anthropic`, `openai`); lock rows are validated and bound to the catalog; `.gitignore` updates use an exclusive temporary file; control characters are stripped from lock output.
+
+### Advisory
+- Affected: 0.17.6 and earlier. Upgrade now.
+- If you ran any loomy command inside a repository you did not trust (cloned from someone else), check that repository's `.loomy/skills.lock` for a source other than `anthropic` or `openai`. If one is present, treat that machine as possibly compromised.
 
 ## 0.17.6 — 2026-10-20
 - `loomy stats`, `loomy log` and `loomy status` now flag reviewer and security answers that report no findings without a `TRIED` section ("review without TRIED"); the answer's own status is never rewritten, and older journals still display as before. Empty findings are recognised in their common forms (`None.`, `No findings`, `aucun`, bold field names).

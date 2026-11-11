@@ -16,6 +16,85 @@ my $metadata_bytes=0;
 use Errno qw(EPERM);
 use IO::Handle;
 use Digest::SHA qw(sha256_hex);
+use Scalar::Util qw(refaddr);
+
+# ---- Collector guard and validated source union (shared with the Claude adapter) ----
+# Only the command lifetime elects (L3). A caller passes {owner=>$guard,context=>$ctx};
+# the adapter never elects when given one. A bare call (no options) is the pre-LOCK
+# compatibility entry: it keeps its single-root, idx.lock-serialized behavior and passes
+# no guard to any mutator. Setting $Loomy::CodexNative::bare_election=1 makes the bare
+# call take a transient election for that one call instead (a non-owner then returns undef
+# without mutating); it costs the L0 identity probe (about 17 ms wall, 28 ms in a Git
+# repository) per cold call, so it is off until the lead decides the integration policy.
+our $bare_election=0;
+# The owner library loads only when a guard is used: a bare call pays no startup for it.
+sub load_owner { require "$live_lib/collector-owner.pl"; 1 }
+# Set when a poll returned undef because storage refused mutation (read-only reason).
+our $refusal='';
+my (%scope_seen,%guard_of,%roots_of);
+sub build_id {
+    my $v=''; if (open my $h,'<',"$live_lib/../../VERSION") { $v=<$h>//''; close $h }
+    $v =~ s/\s+\z//; return $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.:+-]{0,100}\z/ ? "native-$v" : 'native';
+}
+sub scope_roots { my $set=$_[0]; return [grep { defined $_ && m{^/} } @{(ref($set) eq 'HASH' && ref($set->{roots}) eq 'ARRAY') ? $set->{roots} : []}] }
+# Longest admitted root containing PATH; empty when none does.
+sub scope_match {
+    my ($roots,$path)=@_; return '' unless defined $path && length $path;
+    my $best='';
+    for my $r (@$roots) { next unless $path eq $r || index($path,"$r/")==0; $best=$r if length($r)>length($best) }
+    return $best;
+}
+sub scope_relative {
+    my ($roots,$cwd)=@_; my $r=scope_match($roots,$cwd);
+    return $r eq '' ? '.' : $cwd eq $r ? '.' : substr($cwd,length($r)+1);
+}
+sub in_scope { my ($roots,$f)=@_; return scope_match($roots,$f->{meta}{cwd}//'') ne '' }
+# Returns undef when no work may be done, else {guard,context,store,roots,revision,transient}.
+# Dies "collector owner CODE\n" for fenced/invalid/wrong-runtime guards.
+sub begin_call {
+    my ($root,$opt,$tag)=@_;
+    load_owner() if defined $opt || $bare_election;
+    if (defined $opt) {
+        die "collector owner INVALID_GUARD\n" unless ref($opt) eq 'HASH' && defined $opt->{owner};
+        my ($guard,$ctx)=@$opt{qw(owner context)};
+        die "collector owner WRONG_RUNTIME\n" unless ref($ctx) eq 'HASH' && defined $ctx->{root} && defined $ctx->{logs};
+        # Batch start: the full check, with the target runtime context.
+        my $ok=eval { Loomy::LiveState->can('owner_check') ? Loomy::LiveState::owner_check({owner=>$guard,context=>$ctx},'batch') : Loomy::CollectorOwner::assert_owner($guard,'batch',$ctx) };
+        unless ($ok) { return if ($@//'') eq "collector owner DRAINING\n"; die $@ }
+        my $set=Loomy::CollectorOwner::scope_set($guard);
+        return {guard=>$guard,context=>$ctx,store=>$ctx->{root},roots=>scope_roots($set),revision=>scalar_text($set->{revision}),transient=>0};
+    }
+    my $abs=abs_path($root)//return;
+    return unless -d "$abs/.loomy/logs";   # adapters never scaffold runtime storage
+    return {guard=>undef,context=>undef,store=>$abs,roots=>[$abs],revision=>'bare',transient=>0,bare=>1} unless $bare_election;
+    my $ctx=eval { Loomy::RuntimePaths::resolve($abs) } or return;
+    return unless $ctx->{loomy} && $ctx->{logs};
+    my $r=Loomy::CollectorOwner::try_acquire($ctx,build_id());
+    return unless ref($r) eq 'HASH' && ($r->{status}//'') eq 'owned';
+    return {guard=>$r->{guard},context=>$ctx,store=>$ctx->{root},roots=>scope_roots($r->{scope_set}),
+        revision=>scalar_text($r->{scope_set}{revision}),transient=>1};
+}
+sub end_call { my $c=$_[0]; return unless $c && $c->{transient}; eval { Loomy::CollectorOwner::release($c->{guard}) }; $c->{guard}=undef }
+# A new guard (promotion, reacquire) must not reuse cache built under another authority.
+sub guard_changed { my ($key,$guard)=@_; my $id=refaddr($guard); my $old=$guard_of{$key}; $guard_of{$key}=$id; return defined($old) && $old!=$id }
+# Mutators receive the same pair (L1 asserts at each storage boundary).
+# FH, when given, is the open journal handle L1 flushes and syncs before it writes a checkpoint.
+# Collector-origin rotation uses L1's named guarded entries; bare calls keep the hook-origin ones.
+sub rotate { my ($call,$journal,$writer)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::journal_rotate_owned($journal,$writer,@o) : Loomy::LiveState::journal_rotate($journal,$writer) }
+sub recover { my ($call,$journal,$dir)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::recover_rotation_owned($journal,$dir,@o) : Loomy::LiveState::recover_rotation($journal,$dir) }
+sub owner_opt { my ($c,$fh)=@_; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context},flush=>(defined $fh ? [$fh] : [])} }
+sub quick {
+    my $c=$_[0]; return 1 unless ref($c) eq 'HASH' && defined $c->{guard};
+    return Loomy::LiveState->can('owner_check') ? Loomy::LiveState::owner_check({owner=>$c->{guard},context=>$c->{context}},'event') : Loomy::CollectorOwner::assert_owner_quick($c->{guard});
+}
+# Storage refusals leave the collector read-only: poll returns undef and sets $refusal.
+sub refusal_reason {
+    my $e=$_[0]//''; return $1 eq '' ? 'unsupported-format' : $1 if $e =~ /\Aunsupported checkpoint format(?:: ([a-z-]+))?\n\z/;
+    return 'checkpoint-changed' if $e eq "checkpoint changed during read\n"; return 'checkpoint-unavailable' if $e eq "checkpoint unavailable\n"; return;
+}
+sub rethrow_owner { my $e=$_[0]; die $e if defined $e && $e =~ /\Acollector owner [A-Z_]+\n\z/ }
+sub reset_caches { %cached=(); %inventory=(); %watch=(); %scope_seen=(); %guard_of=(); %roots_of=() }
+sub unsettled { my ($roots,$s)=@_; return grep { !($_->{at_eof}//0) && (!$roots || in_scope($roots,$_)) } values %{$s->{files}//{}} }
 
 sub scalar_text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
 sub identity { scalar_text($_[0]) =~ /\A[A-Za-z0-9_.:-]{1,100}\z/ ? scalar_text($_[0]) : '' }
@@ -55,9 +134,10 @@ sub input_signature {
     return $sig;
 }
 sub pending_input {
-    my ($root,$sessions,$s)=@_;
+    my ($root,$sessions,$s,$roots)=@_;
     return 1 if ($s->{journal}{read_sig}//'') ne Loomy::LiveState::file_signature("$root/.loomy/logs/events.jsonl");
     for my $path (keys %{$s->{files}//{}}) {
+        next if $roots && !in_scope($roots,$s->{files}{$path});
         return 1 if ($s->{files}{$path}{read_sig}//'') ne Loomy::LiveState::file_signature($path);
     }
     for my $dir (keys %{$inventory{$sessions}{dirs}//{}}) {
@@ -67,13 +147,21 @@ sub pending_input {
     return 0;
 }
 sub watch_changed {
-    my ($root,$sessions,$now)=@_; my $idx="$root/.loomy/logs/codex-native.idx";
+    my ($root,$sessions,$now,$opt)=@_; my $revision;
+    if (ref($opt) eq 'HASH' && defined $opt->{owner}) {
+        $root=$opt->{context}{root}//$root;
+        # A scope revision published by the owner's maintenance refresh must trigger a poll.
+        my $set=eval { Loomy::CollectorOwner::scope_set($opt->{owner}) }; $revision=ref($set) eq 'HASH' ? scalar_text($set->{revision}) : undef;
+    }
+    my $idx="$root/.loomy/logs/codex-native.idx";
     my $s=$cached{$idx} ? $cached{$idx}{state} : {};
     my $sig=input_signature($root,$sessions,$now);
     my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
     $watch{$idx}=$sig;
+    $changed=1 if defined $revision && $revision ne ($scope_seen{$idx}//'');
+    my $roots=$roots_of{$idx};
     # Continue bounded catch-up even if the producer stops appending.
-    return $changed || @{$inventory{$sessions}{queue}//[]} || pending_input($root,$sessions,$s) || grep { !($_->{at_eof}//0) } values %{$s->{files}//{}};
+    return $changed || @{$inventory{$sessions}{queue}//[]} || pending_input($root,$sessions,$s,$roots) || unsettled($roots,$s);
 }
 
 # sysread has a fixed budget; offsets stop at complete lines, including malformed ones.
@@ -151,8 +239,17 @@ sub metadata {
 
 # Directory signatures detect new names; known files are retained for old-date resumes.
 sub discover {
-    my ($s,$sessions,$root,$now)=@_;
+    my ($s,$sessions,$roots,$now,$revision)=@_;
     my $inv=$inventory{$sessions}//={dirs=>{},paths=>{},checked=>{},invalid=>{}};
+    # Eligibility was decided against one scope revision. When the admitted union
+    # changes, forget the checked/invalid marks and requeue every known rollout:
+    # checkpointed eligible sources are reused without a read, the rest are
+    # re-examined inside the usual 32-file / 2 MiB budget.
+    if (defined $revision && defined $inv->{scope_revision} && $inv->{scope_revision} ne $revision) {
+        $inv->{checked}={}; $inv->{invalid}={}; $inv->{queued}={}; $inv->{queue}=[];
+        for my $path (sort keys %{$inv->{paths}}) { push @{$inv->{queue}},$path; $inv->{queued}{$path}=1 }
+    }
+    $inv->{scope_revision}=$revision if defined $revision;
     my @queue=([$sessions,0]);
     while (my $entry=shift @queue) {
         my ($dir,$depth)=@$entry; next unless safe_path($dir) && -d $dir;
@@ -204,7 +301,7 @@ sub discover {
         for my $candidate ($m->{cwd},@{delete $m->{workspace_roots}}) {
             next unless scalar_text($candidate) =~ m{^/};
             my $resolved=abs_path($candidate)//'';
-            if ($resolved eq $root || index($resolved,"$root/")==0) { $cwd=$resolved; last }
+            if (scope_match($roots,$resolved) ne '') { $cwd=$resolved; last }
         }
         next unless $cwd;
         $label_metadata{$path}={key=>$sig,meta=>{%$m}} if $m->{parent};
@@ -539,10 +636,38 @@ sub root_context {
     return $used;
 }
 
+# The idle answer needs no authority: it changes nothing and re-reads nothing. Both the
+# guarded path and the bare compatibility call use it, so an idle tick never elects.
+sub idle_cached {
+    my ($idx,$root,$sessions,$roots,$scope_rev)=@_;
+    my $c=$cached{$idx} or return; my $s=$c->{state}; return unless $s && $c->{sig} eq Loomy::LiveState::file_signature($idx);
+    my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $day=int($now/86400);
+    return $s if ($c->{pruned_day}//-1)==$day && ($c->{poll_sig}//'') eq input_signature($root,$sessions,$now)
+        && ($c->{scope_rev}//'') eq $scope_rev
+        && !unsettled($roots,$s)
+        && !@{$inventory{$sessions}{queue}//[]} && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s,$roots);
+    return;
+}
 sub poll {
-    my ($root,$sessions)=@_;
+    my ($root,$sessions,$opt)=@_;
     return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
-    $root=abs_path($root)//return;
+    if (!defined $opt && defined(my $abs=abs_path($root))) {
+        my $idx="$abs/.loomy/logs/codex-native.idx";
+        if ($roots_of{$idx} && defined $scope_seen{$idx} && safe_path($sessions)) {
+            my $idle=idle_cached($idx,$abs,$sessions,$roots_of{$idx},$scope_seen{$idx}); return $idle if $idle;
+        }
+    }
+    my $call=begin_call($root,$opt) or return;
+    $refusal='';
+    my $result=eval { poll_locked($call,$sessions) }; my $error=$@;
+    end_call($call);
+    if (my $why=refusal_reason($error)) { %cached=(); $refusal=$why; return }
+    if ($error) { %cached=() if $error =~ /\Acollector owner /; die $error }
+    return $result;
+}
+sub poll_locked {
+    my ($call,$sessions)=@_;
+    my $root=$call->{store}; my $roots=$call->{roots}; my $scope_rev=$call->{revision}; my $guard=$call->{guard};
     my $dir="$root/.loomy/logs";
     return unless safe_path($dir) && -d $dir;
     unless (safe_path($sessions)) {
@@ -552,6 +677,9 @@ sub poll {
     return unless -d $sessions;
     my $idx="$dir/codex-native.idx"; my $journal="$dir/events.jsonl";
     return unless safe_path($idx) && safe_path($journal);
+    # A promoted owner (new guard) reloads everything generation-dependent from storage.
+    if (defined $guard && !$call->{transient} && guard_changed($idx,$guard)) { delete $cached{$idx}; delete $watch{$idx}; delete $inventory{$sessions} }
+    $roots_of{$idx}=$roots;
     umask 0077;
     sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
     return unless safe_path("$idx.lock");
@@ -562,13 +690,14 @@ sub poll {
     my $s=$cached{$idx} && $cached{$idx}{sig} eq $isig ? $cached{$idx}{state} : undef;
     my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $day=int($now/86400);
     if ($s && ($cached{$idx}{pruned_day}//-1)==$day && ($cached{$idx}{poll_sig}//'') eq input_signature($root,$sessions,$now)
-        && !(grep {!($_->{at_eof}//0)} values %{$s->{files}//{}})
-        && !@{$inventory{$sessions}{queue}//[]} && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s)) {return $s}
-    $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
+        && ($cached{$idx}{scope_rev}//'') eq $scope_rev
+        && !unsettled($roots,$s)
+        && !@{$inventory{$sessions}{queue}//[]} && ($s->{journal}{at_eof}//0) && !pending_input($root,$sessions,$s,$roots)) {return $s}
+    $s=Loomy::LiveState::checkpoint_load($idx,owner_opt($call)) unless $s;
     my $dirty=prune_checkpoint($s,$now);
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
     my $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
-    Loomy::LiveState::recover_rotation($journal,$dir);
+    recover($call,$journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -662,9 +791,9 @@ sub poll {
             delete $s->{owners}{$key};
         } else { $live_owner{$group}=$key }
     }
-    if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s); return $s }
+    if ($input ne $journal || !$jc->{at_eof}) { prune_checkpoint($s,$now); save($idx,$s,owner_opt($call,(defined fileno($out) ? $out : undef))); return $s }
     $dirty=1 if ($jc->{read_bytes}//0);
-    my $discovery_bytes=discover($s,$sessions,$root,$now)//0; $dirty=1 if $discovery_bytes;
+    my $discovery_bytes=discover($s,$sessions,$roots,$now,$scope_rev)//0; $dirty=1 if $discovery_bytes;
     # One-time repair: v2 turns ended "unknown" by older builds are re-resolved from their rollout (a later real end wins).
     if (!$s->{unknown_repair_v1} && $jc->{at_eof} && $input eq $journal) {
         $s->{unknown_repair_v1}=1; $dirty=1;
@@ -718,6 +847,7 @@ sub poll {
         }
         my $line=Loomy::LiveState::journal_event_line($content_writer,{%$body,ts=>stamp($ts),type=>$type,native_key=>$key});
         return unless defined $line;
+        quick($call);
         print $out $line or die 'native journal write failed';
         $out->flush or die 'native journal flush failed';
         $s->{seen}{$key}=$now; $dirty=1;
@@ -725,6 +855,7 @@ sub poll {
         delete $jc->{active}{$body->{id}} if $type eq 'delegation';
         return 1;
         })->()};
+        rethrow_owner($@);
         warn "Codex journal event skipped; append unavailable\n" if $@;
         return $ok;
     };
@@ -765,7 +896,8 @@ sub poll {
         push @owners,{lead=>$m->{id},session=>$m->{id},ts=>$m->{ts},unbound=>1,pid=>0};
     }
     my $budget=2097152-$discovery_bytes-$probe_used;
-    my @paths=sort keys %{$s->{files}//{}};
+    # Sources of members no longer admitted get no new reads; their cursors, fences and keys stay.
+    my @paths=sort grep { in_scope($roots,$s->{files}{$_}) } keys %{$s->{files}//{}};
     my %path_slot; @path_slot{@paths}=(0..$#paths);
     my $rotation=@paths ? ($s->{read_rotation}//0)%@paths : 0;
     @paths=(@paths[$rotation..$#paths],@paths[0..$rotation-1]) if $rotation;
@@ -821,7 +953,7 @@ sub poll {
             }
             my $state=$f->{lead_state}//'unknown';
             my $ts=$f->{last_evidence_ts}//$m->{ts};
-            my $relative=($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : ($m->{cwd} eq $root ? '.' : substr($m->{cwd},length($root)+1));
+            my $relative=($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0' ? '' : scope_relative($roots,$m->{cwd});
             $emit->("session:$m->{id}:$state:".($f->{lead_turn}//'').":".($owner->{unbound} ? 'unbound' : "$owner->{pid}"),'session_observed',$ts,
                 {schema=>2,session_key=>"codex:$m->{id}",session=>$m->{id},agent_id=>$m->{id},tool=>'codex',surface=>$m->{surface},
                     state=>$state,source_active=>($f->{last_evidence_ts} ? 1 : 0),cwd_relative=>$relative,owner_pid=>$owner->{pid},evidence=>($owner->{unbound} ? 'source lease' : 'launcher')});
@@ -1053,13 +1185,14 @@ sub poll {
     unless (eval {$out->flush && $out->sync or die; 1}) {warn "Codex journal event skipped; append unavailable\n"; return $s}
     # Do not skip external owner/hooks appended between the read and our writes.
     my @end=stat($out);
-    if ($end[7]>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer)} or warn "Codex journal rotation unavailable\n"}
+    if ($end[7]>=8388608) {close $out; eval {rotate($call,$journal,$content_writer)} or do { rethrow_owner($@); warn "Codex journal rotation unavailable\n" }}
     prune_checkpoint($s,$now) if $dirty;
-    save($idx,$s) if $dirty;
-    $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day};
-    $cached{$idx}{poll_sig}=input_signature($root,$sessions,$now);
+    save($idx,$s,owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
+    $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev};
+    $cached{$idx}{poll_sig}=input_signature($root,$sessions,$now); $scope_seen{$idx}=$scope_rev;
     return $s;
 }
 
-unless (caller) { eval { poll(@ARGV) }; exit($@ ? 1 : 0) }
+# The executable entry is a product entrypoint: it elects for its one call; a non-owner mutates nothing.
+unless (caller) { $bare_election=1; eval { poll(@ARGV) }; exit($@ ? 1 : 0) }
 1;

@@ -9,7 +9,7 @@ use Time::HiRes ();
 use IO::Handle;
 my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
 require "$lib/codex-native.pl";
-my (%cache,%inventory,%watch,%diagnosed,%retry,%busy);
+my (%cache,%inventory,%watch,%diagnosed,%retry,%busy,%roots_of,%scope_seen);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
 our $content_writer;
@@ -29,9 +29,10 @@ sub input_signature {
 }
 # Signatures are committed only for bytes/inventory actually inspected during the poll.
 sub pending_input {
-    my ($root,$projects,$s)=@_;
+    my ($root,$projects,$s,$roots)=@_;
     return 1 if ($s->{journal}{read_sig}//'') ne signature("$root/.loomy/logs/events.jsonl");
     for my $path (keys %{$s->{files}//{}}) {
+        next if $roots && !Loomy::CodexNative::in_scope($roots,$s->{files}{$path});
         return 1 if ($s->{files}{$path}{read_sig}//'') ne signature($path);
     }
     for my $dir (keys %{$inventory{$projects}{dirs}//{}}) {
@@ -39,13 +40,22 @@ sub pending_input {
     }
     return 0;
 }
+sub unsettled { my ($roots,$s)=@_; return grep {!($_->{at_eof}//0) && (!$roots || Loomy::CodexNative::in_scope($roots,$_))} values %{$s->{files}//{}} }
 sub watch_changed {
-    my ($root,$projects)=@_; my $idx="$root/.loomy/logs/claude-native.idx";
+    my ($root,$projects,$opt)=@_; my $revision;
+    if (ref($opt) eq 'HASH' && defined $opt->{owner}) {
+        $root=$opt->{context}{root}//$root;
+        # A scope revision published by the owner's maintenance refresh must trigger a poll.
+        my $set=eval {Loomy::CollectorOwner::scope_set($opt->{owner})}; $revision=ref($set) eq 'HASH' ? text($set->{revision}) : undef;
+    }
+    my $idx="$root/.loomy/logs/claude-native.idx";
     my $s=$cache{$idx}{state}//{}; my $sig=input_signature($root,$projects);
     my $committed=$cache{$idx}{poll_sig};
     my $changed=!defined($committed) || $committed ne $sig; $watch{$idx}=$sig;
-    return $changed || pending_input($root,$projects,$s) || due($s) || ($s->{journal} && !($s->{journal}{at_eof}//0))
-        || grep {!($_->{at_eof}//0)} values %{$s->{files}//{}};
+    $changed=1 if defined $revision && $revision ne ($scope_seen{$idx}//'');
+    my $roots=$roots_of{$idx};
+    return $changed || pending_input($root,$projects,$s,$roots) || due($s) || ($s->{journal} && !($s->{journal}{at_eof}//0))
+        || unsettled($roots,$s);
 }
 # Only an explicit terminal envelope ends a Claude call; the reducer owns its 15-minute lease.
 sub due { return 0 }
@@ -143,7 +153,7 @@ sub hook {
 }
 # The filename owns identity; resumed heads belong to a previous session/project.
 sub metadata {
-    my ($path,$root,$parent,$bytes)=@_; my $f=Loomy::CodexNative::open_read($path) or return;
+    my ($path,$roots,$parent,$bytes)=@_; my $f=Loomy::CodexNative::open_read($path) or return;
     my $sid=$parent || ($path =~ m{/([^/]+)\.jsonl$} ? id($1) : ''); return unless $sid;
     my $size=-s $f; my $start=$size>262144 ? $size-262144 : 0;
     seek $f,$start,0 or return; my $n=sysread($f,my $buf,262144)//0;
@@ -153,7 +163,7 @@ sub metadata {
         my $e=eval {decode_json($line)}; next unless ref($e) eq 'HASH' && id($e->{sessionId}) eq $sid;
         next unless text($e->{cwd}) ne '';
         my $cwd=abs_path(text($e->{cwd}))//'';
-        return {invalid=>1} unless $cwd && ($cwd eq $root || index($cwd,"$root/")==0);
+        return {invalid=>1} unless $cwd && Loomy::CodexNative::scope_match($roots,$cwd) ne '';
         my $aid=$parent && $path =~ m{/agent-([^/]+)\.jsonl$} ? id($1) : '';
         my $entry=text($e->{entrypoint});
         return {id=>$sid,agent=>$aid,cwd=>$cwd,surface=>$entry eq 'claude-desktop' ? 'app' : $entry =~ /^(cli|claude-cli)$/ ? 'cli' : 'unknown'};
@@ -162,8 +172,14 @@ sub metadata {
     return;
 }
 sub discover {
-    my ($s,$projects,$root)=@_; return 0 unless safe($projects) && -d $projects;
-    my $inv=$inventory{$projects}//={dirs=>{},paths=>{},checked=>{},invalid=>{}}; my $prefix=slug($root);
+    my ($s,$projects,$roots,$revision)=@_; return 0 unless safe($projects) && -d $projects;
+    my $inv=$inventory{$projects}//={dirs=>{},paths=>{},checked=>{},invalid=>{}}; my %prefix=map {slug($_)=>1} @$roots;
+    # A changed admitted union voids every eligibility decision; the traversal below
+    # rebuilds the candidate paths and discovery re-examines them inside its byte budget.
+    if (defined $revision && defined $inv->{scope_revision} && $inv->{scope_revision} ne $revision) {
+        $inv->{checked}={}; $inv->{invalid}={}; $inv->{paths}={};
+    }
+    $inv->{scope_revision}=$revision if defined $revision;
     my @q=([$projects,0,'']);
     while (my $item=shift @q) {
         my ($dir,$depth,$parent)=@$item; next unless safe($dir) && -d $dir;
@@ -175,7 +191,7 @@ sub discover {
         }
         for my $name (@{$d->{names}}) {
             my $path="$dir/$name";
-            if ($depth==0) {push @q,[$path,1,''] if $name eq $prefix || index($name,"$prefix-")==0}
+            if ($depth==0) {push @q,[$path,1,''] if grep {$name eq $_ || index($name,"$_-")==0} keys %prefix}
             elsif ($depth==1) {
                 if ($name =~ /^([A-Za-z0-9_.:-]{1,100})\.jsonl$/) {$inv->{paths}{$path}=''}
                 elsif (id($name) && -d $path) {push @q,[$path,2,$name]}
@@ -192,11 +208,11 @@ sub discover {
         my $sig=signature($path); my $bad=$inv->{invalid}{$path};
         next if $bad && ($bad->{permanent} ? $bad->{key} eq $key && $st[7]>=$bad->{size} : $bad->{sig} eq $sig);
         last if $bytes+($st[7]<262144 ? $st[7] : 262144)>2097152;
-        my $m=metadata($path,$root,$inv->{paths}{$path},\$bytes);
+        my $m=metadata($path,$roots,$inv->{paths}{$path},\$bytes);
         unless ($m && !$m->{invalid}) {$inv->{invalid}{$path}={sig=>$sig,key=>$key,size=>$st[7],permanent=>($m && $m->{invalid} ? 1 : 0)}; next}
         delete $inv->{invalid}{$path}; $inv->{checked}{$path}=$key;
         $s->{files}{$path}={meta=>$m,offset=>0,key=>$key};
-        my $lead=session($s,$m->{id}); $lead->{cwd_relative}=$m->{cwd} eq $root ? '.' : substr($m->{cwd},length($root)+1);
+        my $lead=session($s,$m->{id}); $lead->{cwd_relative}=Loomy::CodexNative::scope_relative($roots,$m->{cwd});
         $lead->{surface}=$m->{surface} if $m->{surface} ne 'unknown';
     }
     return $bytes;
@@ -370,10 +386,32 @@ sub prune {
         delete $s->{sessions}{$sid}; delete $s->{sent}{"session:$sid"}; delete $s->{sent}{"context:$sid"}; $$dirty=1;
     }
 }
+sub idle_cached {
+    my ($idx,$root,$projects,$roots,$scope_rev)=@_; my $day=int(($ENV{LOOMY_NATIVE_NOW}//time)/86400);
+    my $c=$cache{$idx} or return;
+    return $c->{state} if ($c->{pruned_day}//-1)==$day && ($c->{poll_sig}//'') eq input_signature($root,$projects) && !due($c->{state})
+        && ($c->{scope_rev}//'') eq $scope_rev
+        && !pending_input($root,$projects,$c->{state},$roots)
+        && ($c->{state}{journal}{at_eof}//0) && !unsettled($roots,$c->{state});
+    return;
+}
 sub poll {
-    my $root=abs_path($_[0])//$_[0]; my $idx="$root/.loomy/logs/claude-native.idx";
+    my ($root,$projects,$opt)=@_;
+    return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
+    my $store=ref($opt) eq 'HASH' && ref($opt->{context}) eq 'HASH' && defined $opt->{context}{root} ? $opt->{context}{root} : (abs_path($root)//$root);
+    my $idx="$store/.loomy/logs/claude-native.idx";
     return if ($retry{$idx}//0)>Time::HiRes::time();
-    my $result=eval {poll_locked(@_)}; my $error=$@;
+    # An idle answer changes nothing and needs no authority: an idle tick never elects.
+    if (!defined $opt && $roots_of{$idx} && defined $scope_seen{$idx} && safe($projects)) {
+        my $idle=idle_cached($idx,$store,$projects,$roots_of{$idx},$scope_seen{$idx}); return $idle if $idle;
+    }
+    # A refused election or a draining guard is not a source failure: no retry backoff.
+    my $call=Loomy::CodexNative::begin_call($root,$opt) or return;
+    $idx="$call->{store}/.loomy/logs/claude-native.idx";
+    $Loomy::CodexNative::refusal='';
+    my $result=eval {poll_locked($call,$projects)}; my $error=$@;
+    Loomy::CodexNative::end_call($call);
+    if (my $why=Loomy::CodexNative::refusal_reason($error)) {delete $cache{$idx}; $Loomy::CodexNative::refusal=$why; return}
     # A busy events.lock is transient (a hook or bridge append): the watch retries on its next tick.
     if (!defined $result) {$retry{$idx}=Time::HiRes::time()+5 unless delete $busy{$idx}}
     else {delete $retry{$idx}}
@@ -381,21 +419,26 @@ sub poll {
     return $result;
 }
 sub poll_locked {
-    my ($root,$projects)=@_; return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
-    $root=abs_path($root)//return; my $dir="$root/.loomy/logs"; return unless safe($dir) && -d $dir;
+    my ($call,$projects)=@_; return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
+    my $root=$call->{store}; my $roots=$call->{roots}; my $scope_rev=$call->{revision}; my $guard=$call->{guard};
+    my $dir="$root/.loomy/logs"; return unless safe($dir) && -d $dir;
     unless (safe($projects)) {warn "Claude project path contains a symlink; tracking unavailable\n" unless $diagnosed{$projects}++; return}
     my $idx="$dir/claude-native.idx"; my $journal="$dir/events.jsonl"; return unless safe($idx) && safe($journal);
+    # A promoted owner (new guard) reloads everything generation-dependent from storage.
+    if (defined $guard && !$call->{transient} && Loomy::CodexNative::guard_changed($idx,$guard)) {delete $cache{$idx}; delete $watch{$idx}; delete $inventory{$projects}}
+    $roots_of{$idx}=$roots;
     my $day=int(($ENV{LOOMY_NATIVE_NOW}//time)/86400);
     if ($cache{$idx} && ($cache{$idx}{pruned_day}//-1)==$day && ($cache{$idx}{poll_sig}//'') eq input_signature($root,$projects) && !due($cache{$idx}{state})
-        && !pending_input($root,$projects,$cache{$idx}{state})
-        && ($cache{$idx}{state}{journal}{at_eof}//0) && !grep {!($_->{at_eof}//0)} values %{$cache{$idx}{state}{files}//{}}) {return $cache{$idx}{state}}
+        && ($cache{$idx}{scope_rev}//'') eq $scope_rev
+        && !pending_input($root,$projects,$cache{$idx}{state},$roots)
+        && ($cache{$idx}{state}{journal}{at_eof}//0) && !unsettled($roots,$cache{$idx}{state})) {return $cache{$idx}{state}}
     umask 0077;
     sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
     return unless safe("$idx.lock");
     sysopen my $lock,"$idx.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($lock,LOCK_EX|LOCK_NB) or return; chmod 0600,$lock or return;
     my $sig=signature($idx); my $s=$cache{$idx} && defined $cache{$idx}{sig} && $cache{$idx}{sig} eq $sig ? $cache{$idx}{state} : undef;
-    $s=Loomy::LiveState::checkpoint_load($idx) unless $s;
+    $s=Loomy::LiveState::checkpoint_load($idx,Loomy::CodexNative::owner_opt($call)) unless $s;
     my $dirty=($s->{version}//0)!=2; $s->{version}=2;
     if (($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0') {
         for my $saved (values %{$s->{sent}//{}}) {
@@ -405,7 +448,7 @@ sub poll_locked {
     }
     $!=0; my $journal_lock=Loomy::LiveState::journal_lock($dir) or do {$busy{$idx}=1 if $!{EWOULDBLOCK} || $!{EAGAIN}; return};
     local $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
-    Loomy::LiveState::recover_rotation($journal,$dir);
+    Loomy::CodexNative::recover($call,$journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($out,LOCK_EX|LOCK_NB) or return; chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -436,13 +479,13 @@ sub poll_locked {
         }
         hook($s,$e);
     }
-    if ($input ne $journal || !$jc->{at_eof}) {prune($s,\$dirty); Loomy::LiveState::checkpoint_save($idx,$s); return $s}
+    if ($input ne $journal || !$jc->{at_eof}) {prune($s,\$dirty); Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call,(defined fileno($out) ? $out : undef))); return $s}
 
     if ($s->{reconstructing}) {delete $s->{reconstructing}; $dirty=1}
-    my $discovered=discover($s,$projects,$root);
+    my $discovered=discover($s,$projects,$roots,$scope_rev);
     $dirty=1 if $discovered || ($jc->{read_bytes}//0);
     my $budget=2097152-$discovered;
-    my @paths=sort keys %{$s->{files}//{}}; my $rotation=$s->{rotation}//0;
+    my @paths=sort grep {Loomy::CodexNative::in_scope($roots,$s->{files}{$_})} keys %{$s->{files}//{}}; my $rotation=$s->{rotation}//0;
     for my $slot (0..$#paths) {
         last if $budget<=0; my $path=$paths[($rotation+$slot)%@paths]; my $f=$s->{files}{$path};
         # Discovery also pays metadata and initial lifecycle projection costs.
@@ -479,16 +522,20 @@ sub poll_locked {
             $row{label_ref}=$ref if $ref;
         }
         my $line=Loomy::LiveState::journal_event_line($content_writer,\%row); return 1 unless defined $line;
+        Loomy::CodexNative::quick($call);
         print $out $line or die 'Claude journal write failed';
         $out->flush or die 'Claude journal flush failed';
         $s->{sent}{$key}=$encoded; $dirty=1;
         return 1;
         })->()};
+        Loomy::CodexNative::rethrow_owner($@);
         warn "Claude journal event skipped; append unavailable\n" if $@;
         return $ok;
     };
     for my $sid (sort keys %{$s->{sessions}//{}}) {
         my $lead=$s->{sessions}{$sid}; next unless epoch($lead->{seen});
+        # A session whose transcripts all belong to removed members gets no new events.
+        { my @own=grep {$_->{meta}{id} eq $sid} values %{$s->{files}//{}}; next if @own && !grep {Loomy::CodexNative::in_scope($roots,$_)} @own }
         my $catchup=grep {$_->{meta}{id} eq $sid && !$_->{meta}{agent} && !$_->{at_eof}} values %{$s->{files}//{}};
         for my $cid (keys %{$lead->{calls}}) {
             my $c=$lead->{calls}{$cid};
@@ -520,10 +567,10 @@ sub poll_locked {
     }
     unless (eval {$out->flush && $out->sync or die; 1}) {warn "Claude journal event skipped; append unavailable\n"; return $s}
     # Keep the consumed offset: hooks appended during source collection must be replayed next poll.
-    if (-s $journal>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer)} or warn "Claude journal rotation unavailable\n"}
+    if (-s $journal>=8388608) {close $out; eval {Loomy::CodexNative::rotate($call,$journal,$content_writer)} or do {Loomy::CodexNative::rethrow_owner($@); warn "Claude journal rotation unavailable\n"}}
     prune($s,\$dirty);
-    Loomy::LiveState::checkpoint_save($idx,$s) if $dirty;
-    $cache{$idx}={sig=>signature($idx),state=>$s,pruned_day=>$day}; $cache{$idx}{poll_sig}=input_signature($root,$projects); $watch{$idx}=$cache{$idx}{poll_sig}; return $s;
+    Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
+    $cache{$idx}={sig=>signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev}; $scope_seen{$idx}=$scope_rev; $cache{$idx}{poll_sig}=input_signature($root,$projects); $watch{$idx}=$cache{$idx}{poll_sig}; return $s;
 }
-unless (caller) {my ($root,$projects)=@ARGV; poll($root,$projects//"$ENV{HOME}/.claude/projects")}
+unless (caller) {no warnings "once"; $Loomy::CodexNative::bare_election=1; my ($root,$projects)=@ARGV; poll($root,$projects//"$ENV{HOME}/.claude/projects")}
 1;

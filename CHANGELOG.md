@@ -2,6 +2,17 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.17.7 — 2026-11-11
+Security hotfix; no other changes.
+
+### Security
+- Fix a command-execution flaw in skills handling. Before 0.17.7, a versioned `.loomy/skills.lock` with a crafted source field was expanded indirectly by the shell (`_sk_fetch`), so any loomy command run inside a freshly cloned malicious repository could execute arbitrary commands.
+- Source names are now allowlisted (`anthropic`, `openai`); lock rows are validated and bound to the catalog; `.gitignore` updates use an exclusive temporary file; control characters are stripped from lock output.
+
+### Advisory
+- Affected: 0.17.6 and earlier. Upgrade now.
+- If you ran any loomy command inside a repository you did not trust (cloned from someone else), check that repository's `.loomy/skills.lock` for a source other than `anthropic` or `openai`. If one is present, treat that machine as possibly compromised.
+
 ## 0.17.6 — 2026-10-20
 - `loomy stats`, `loomy log` and `loomy status` now flag reviewer and security answers that report no findings without a `TRIED` section ("review without TRIED"); the answer's own status is never rewritten, and older journals still display as before. Empty findings are recognised in their common forms (`None.`, `No findings`, `aucun`, bold field names).
 - The Dead ends reminder is no longer repeated at every session start when `AGENTS.md` / `CLAUDE.md` already carry the rule; the latest dead ends themselves are still shown.

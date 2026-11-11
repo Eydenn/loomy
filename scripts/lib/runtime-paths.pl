@@ -3,9 +3,7 @@ package Loomy::RuntimePaths;
 use strict;
 use warnings;
 use Cwd qw(abs_path getcwd);
-use Digest::SHA qw(sha256_hex);
 use Fcntl qw(:DEFAULT :mode O_NOFOLLOW O_NONBLOCK F_GETFD F_SETFD FD_CLOEXEC);
-use POSIX ();
 use Time::HiRes qw(stat lstat);
 
 my $GIT_BYTES = 1048576;
@@ -83,6 +81,7 @@ sub _git_run {
     if (!$pid) {
         Loomy::CollectorOwner::after_fork_child() if defined(&Loomy::CollectorOwner::after_fork_child);
         delete @ENV{grep {/\AGIT_/} keys %ENV};
+        require POSIX;
         open STDERR,'>','/dev/null' or POSIX::_exit(1);
         exec('git','-C',$root,@args) or POSIX::_exit(1);
     }
@@ -355,7 +354,7 @@ sub scope_set {
     assert_current($c);
     my %seen; @roots=sort grep {!$seen{$_}++} @roots;
     # Length framing is unambiguous even when a valid path contains punctuation.
-    my $revision=sha256_hex(join('',map {length($_).":$_"} @roots));
+    require Digest::SHA; my $revision=Digest::SHA::sha256_hex(join('',map {length($_).":$_"} @roots));
     return {roots=>\@roots,revision=>$revision,skipped=>$skipped};
 }
 1;

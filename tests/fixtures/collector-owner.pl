@@ -425,7 +425,7 @@ for my $pid (999999999,$$) {
 }
 # Restore the original owner's immutable record so its normal release can validate.
 my $r=record($stopped); $r->{pid}=$stopped_pid;
-my $probe=Loomy::CollectorOwner::_probe_identity($stopped_pid); $r->{birth}=$probe->{birth};
+my $probe=Loomy::CollectorOwner::_probe_identity($stopped_pid,1); $r->{birth}=$probe->{birth};
 store_record($stopped,$r);
 kill 'CONT',$stopped_pid or die; send_byte($cw); close $cw; reap($stopped_pid,'stopped owner');
 
@@ -509,6 +509,23 @@ if ($^O eq 'linux') {
     my $gate_busy=do {open my $g,'<',"$lazy/.loomy" or die; flock($g,LOCK_EX|LOCK_NB) or die; my $r=acquire($lazy); close $g; $r};
     is($gate_busy->{reason},'bootstrap-busy','a held gate stays a retry'); is($probes,0,'a gate-busy attempt never probes identity');
     Loomy::CollectorOwner::release($won->{guard});
+}
+
+# Election skips the slow diagnostic probes; enrich_identity supplies them later.
+{
+    no warnings 'redefine'; my @calls;
+    local *Loomy::CollectorOwner::_probe_identity=sub {push @calls,$_[1]?'fast':'full'; return $_[1] ? {host=>'h'} : {host=>'h',boot=>'b-1',birth=>'s-1'}};
+    my $root=project('enrich',1); my $r=acquire($root);
+    is_deeply(\@calls,['fast'],'election asks only for the fast probe');
+    my $epoch=record($root)->{epoch};
+    is(Loomy::CollectorOwner::enrich_identity($r->{guard}),1,'enrichment succeeds');
+    is_deeply(\@calls,['fast','full'],'enrichment runs the full probe once');
+    my $rec=record($root);
+    is_deeply([@$rec{qw(host boot birth)}],['h','b-1','s-1'],'enrichment publishes boot and birth');
+    is($rec->{epoch},$epoch,'enrichment keeps the acquisition epoch');
+    is(Loomy::CollectorOwner::assert_owner_quick($r->{guard}),1,'the guard survives enrichment');
+    Loomy::CollectorOwner::enrich_identity($r->{guard}); is(scalar(@calls),2,'enrichment is idempotent');
+    Loomy::CollectorOwner::release($r->{guard});
 }
 
 # Invalid or unsafe record: a typed reason names the file; nothing is repaired or removed.

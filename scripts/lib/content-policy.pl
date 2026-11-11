@@ -172,22 +172,28 @@ sub _identity_ignorable {
     return 0 if $parent_found && ($rel !~ m{\A[A-Za-z0-9._/-]+\z} || grep {/\A#/} split m{/},$rel);
     return 1;
 }
+# The identity a reader or writer would derive while no project-id file exists.
+sub _derived_id {
+    my ($root)=@_;
+    my $id='p'.sha256_hex(utf8::is_utf8($root) ? _encode_utf8($root) : $root);
+    # A project may already have moved since the path-based writer ran.
+    # Only a private, schema-valid local label record can supply its old ID.
+    my $old=eval {(sub {
+        my ($raw)=_read('logs/display-context-v1.jsonl',1048576);
+        for (split /\n/,$raw//'') {
+            my $r=eval {$JSON->decode($_)};
+            return $r->{project_id} if ref($r) eq 'HASH'
+                && ($r->{project_id}//'') =~ /\Ap[0-9a-f]{64}\z/ && _valid_label($r,$r->{project_id});
+        }
+        return;
+    })->()};
+    $id=$old if defined $old;
+    return $id;
+}
 sub _project_id {
     my ($root,$create)=@_; my $name='project-id';
     unless (lstat($name)) {
-        my $id='p'.sha256_hex(utf8::is_utf8($root) ? _encode_utf8($root) : $root);
-        # A project may already have moved since the path-based writer ran.
-        # Only a private, schema-valid local label record can supply its old ID.
-        my $old=eval {(sub {
-            my ($raw)=_read('logs/display-context-v1.jsonl',1048576);
-            for (split /\n/,$raw//'') {
-                my $r=eval {$JSON->decode($_)};
-                return $r->{project_id} if ref($r) eq 'HASH'
-                    && ($r->{project_id}//'') =~ /\Ap[0-9a-f]{64}\z/ && _valid_label($r,$r->{project_id});
-            }
-            return;
-        })->()};
-        $id=$old if defined $old;
+        my $id=_derived_id($root);
         # Readers derive the identity without storing it. A writer pins it only where it cannot show up as an
         # untracked file (projects whose managed .gitignore block predates it are repaired first).
         return $id unless $create && _identity_ignorable($root);
@@ -384,6 +390,10 @@ sub _snapshot_context {
         # Retain R1's bounded wait for a writer between O_EXCL and its first
         # durable identity write. create=0 never pins the fallback namespace.
         $c->{project_id}=_project_id($c->{root},0) if $mode eq 'effective';
+        # The file may have appeared between the sample above and the derivation, which
+        # then returned its bytes. An identity absent at the start is accepted only
+        # through _concurrent_pin: equal to the id derived without the file.
+        $c->{project_id}=_derived_id($c->{root}) if $mode eq 'effective' && !$present && lstat('project-id');
         ($raw,$identity_stat)=_read_identity($c,$present);
         die "content identity changed\n" if $mode eq 'effective'
             && ($present && !defined($raw) || defined($raw) && $raw ne "$c->{project_id}\n");

@@ -35,6 +35,16 @@ sub _facts {
     my ($status,$reason,%other) = @_;
     return {status=>$status, reason=>$reason, %other};
 }
+# Reasons that name the runtime file the user must inspect or remove. Relative to
+# the project's .loomy; the primitive never deletes or repairs either file.
+my %REASON_FILE=('unsafe-record'=>'logs/collector-owner-v1.json','invalid-record'=>'logs/collector-owner-v1.json',
+    'unsupported-schema'=>'logs/collector-owner-v1.json','unsupported-protocol'=>'logs/collector-owner-v1.json',
+    'unsafe-lock'=>'logs/collector.lock','missing-lock'=>'logs/collector.lock');
+sub _refusal {
+    my ($reason)=@_;
+    my $status=$reason =~ /\Aunsupported-/ ? 'incompatible' : $reason eq 'io-error' ? 'unavailable' : 'unsafe';
+    return _facts($status,$reason,exists($REASON_FILE{$reason}) ? (file=>$REASON_FILE{$reason}) : ());
+}
 sub _scalar { defined($_[0]) && !ref($_[0]) }
 sub _build { _scalar($_[0]) && $_[0] =~ /\A[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}\z/ }
 sub _diagnostic {
@@ -140,6 +150,8 @@ sub _scope_copy {
     _abort('unsafe-runtime') unless ref($scope) eq 'HASH' && ref($scope->{roots}) eq 'ARRAY'
         && @{$scope->{roots}} && @{$scope->{roots}} <= 1024
         && _scalar($scope->{revision}) && $scope->{revision} =~ /\A[0-9a-f]{64}\z/;
+    my $skipped=$scope->{skipped}//0;
+    _abort('unsafe-runtime') unless _scalar($skipped) && $skipped =~ /\A[0-9]{1,6}\z/;
     my ($previous,@roots);
     for my $root (@{$scope->{roots}}) {
         _abort('unsafe-runtime') unless _scalar($root) && $root =~ m{\A/}
@@ -147,7 +159,7 @@ sub _scope_copy {
             && (!defined($previous) || $previous lt $root);
         push @roots,"$root"; $previous = $root;
     }
-    return {roots=>\@roots,revision=>"$scope->{revision}"};
+    return {roots=>\@roots,revision=>"$scope->{revision}",skipped=>0+$skipped};
 }
 sub _read_probe_file {
     my ($path,$limit) = @_;
@@ -324,6 +336,23 @@ sub _storage_here {
     _abort('invalid-record') unless _record_equal($current,$state->{record});
     return 1;
 }
+# Crash leftovers between create and rename. Only the lock winner calls this,
+# under the .loomy gate and inside logs: aged (> 10 min), owner-only, regular,
+# no-follow entries of the exact temp-name shape. No PID probe, no signal.
+sub _clean_stale_tmp {
+    opendir(my $dir,'.') or return 0;
+    my ($seen,$removed,$now)=(0,0,time);
+    while (defined(my $name=readdir $dir)) {
+        last if ++$seen > 4096 || $removed >= 64;
+        next unless $name =~ /\A\.collector-owner-v1\.[A-Za-z0-9._-]{1,200}\.tmp\z/;
+        my @s=lstat($name);
+        next unless @s && S_ISREG($s[2]) && $s[4]==$< && !($s[2]&077) && $now-$s[9] > 600;
+        my @again=lstat($name);
+        $removed++ if _same_inode(\@s,\@again) && unlink($name);
+    }
+    closedir($dir);
+    return $removed;
+}
 sub _write_record {
     my ($state,$next) = @_;
     my $raw = $JSON->encode($next)."\n";
@@ -356,6 +385,9 @@ sub _write_record {
                 $state->{ctx}{logs}->sync or _abort('io-error');
                 _current($state->{ctx});
                 _storage_here($state);
+                my @written = lstat($RECORD);
+                _abort('unsafe-record') unless _private_file(\@written);
+                $state->{record_stat} = \@written;
                 1;
             };
             $error = $@;
@@ -400,7 +432,6 @@ sub try_acquire {
     $protocol //= 1;
     return _facts('unsafe','invalid-build') unless _build($build);
     return _facts('incompatible','unsupported-protocol') unless _scalar($protocol) && $protocol eq '1';
-    my $identity = _identity();
     my ($ctx,$lock,$state,$guard,$facts,$gate);
     my ($ok,$error);
     {
@@ -434,13 +465,18 @@ sub try_acquire {
                 last ACQUIRE;
             }
             _current($ctx);
+            _in_dir($ctx->{logs},sub { _clean_stale_tmp() });
             my $record = _in_dir($ctx->{logs},sub { _read_record_here() });
+            # Computed under the gate, after the lock is won: followers' busy
+            # retries stay cheap. Process identity (sysctl/ps) is probed here too.
             my $scope = _scope_copy(Loomy::RuntimePaths::scope_set($ctx));
+            my $identity = _identity();
             my $epoch = _epoch();
             my $opaque;
             $guard = bless \$opaque,'Loomy::CollectorOwner::Guard';
             $state = {guard=>$guard,ctx=>$ctx,fh=>$lock->{fh},lock_stat=>$lock->{stat},
-                pid=>$$,epoch=>$epoch,scope=>$scope,record=>$record,phase=>'collecting',published=>0};
+                pid=>$$,epoch=>$epoch,scope=>$scope,record=>$record,phase=>'collecting',published=>0,
+                lock_path=>"$ctx->{root}/.loomy/logs/$LOCK",record_path=>"$ctx->{root}/.loomy/logs/$RECORD"};
             weaken($state->{guard}); $AUTH{refaddr($guard)}=$state;
             my $next = {schema=>1,protocol=>1,build=>"$build",implementation=>'perl',
                 %$identity,pid=>0+$$,epoch=>$epoch,scope_revision=>$scope->{revision},state=>'collecting'};
@@ -461,7 +497,7 @@ sub try_acquire {
     }
     return $facts if $ok;
     my $reason = _reason($error,'unsafe-runtime');
-    return _facts($reason =~ /\Aunsupported-/ ? 'incompatible' : $reason eq 'io-error' ? 'unavailable' : 'unsafe',$reason);
+    return _refusal($reason);
 }
 
 sub inspect {
@@ -507,7 +543,7 @@ sub inspect {
     _close_context($ctx);
     return $facts if $ok;
     my $reason = _reason($error,'unsafe-runtime');
-    return _facts($reason =~ /\Aunsupported-/ ? 'incompatible' : $reason eq 'io-error' ? 'unavailable' : 'unsafe',$reason);
+    return _refusal($reason);
 }
 
 sub assert_owner {
@@ -535,6 +571,28 @@ sub assert_owner {
         };
         die "collector owner WRONG_RUNTIME\n" unless $matches;
     }
+    return 1;
+}
+# Cheap revalidation for use between full assert_owner checks: fstat of the held
+# lock plus lstat of the named lock and the record this owner last wrote. It does
+# not re-pin directories or read the record, so call assert_owner at every batch
+# or storage boundary and this between events inside a batch.
+sub assert_owner_quick {
+    my ($guard,$phase) = @_;
+    $phase //= 'write';
+    my $state = _auth($guard);
+    die "collector owner INVALID_PHASE\n" unless $phase eq 'write' || $phase eq 'batch';
+    die "collector owner DRAINING\n" if $phase eq 'batch' && $state->{phase} eq 'draining';
+    my $ok = eval {
+        _abort('invalid-record') unless $state->{published} && $state->{record_stat};
+        my @held = stat($state->{fh}); my @named = lstat($state->{lock_path});
+        _abort('unsafe-lock') unless _private_file(\@held) && _private_file(\@named)
+            && _same_inode($state->{lock_stat},\@held) && _same_inode(\@held,\@named);
+        my @record = lstat($state->{record_path});
+        _abort('unsafe-record') unless @record && _same_file($state->{record_stat},\@record);
+        1;
+    };
+    unless ($ok) { _close_state($state,'FENCED'); die "collector owner FENCED\n" }
     return 1;
 }
 sub begin_drain {

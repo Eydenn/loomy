@@ -823,4 +823,137 @@ for my $pair ([$whole,'.loomy',$whole_ctx],[$logs,'.loomy/logs',$logs_ctx]) {
 }
 scopes($owner_ctx,[$owner],'retargeted aliases leave original source scope');
 
+# L0 fix round: symlinked roots, reader git cost, old Git, odd siblings, identity race.
+# 1. A symlinked project root or Git top is exactly as valid as at the R1 base for
+#    ordinary readers; only registered-alias layouts check the caller's spelling.
+{
+    my $real=project('symlink-plain',1,1); labels($real);
+    my $link="$work/symlink-plain-link"; symlink $real,$link or die;
+    my $top="$work/symlink-top"; repository($top); my $sub=project('symlink-top/sub',1,1);
+    my $top_link="$work/symlink-top-link"; symlink $top,$top_link or die;
+    my $git_real=project('symlink-git-plain',1,1); repository($git_real);
+    my $git_link="$work/symlink-git-plain-link"; symlink $git_real,$git_link or die;
+    readonly('symlinked ordinary roots',$work,sub {
+        for my $pair ([$link,$real,'a symlinked project root'],["$link/",$real,'a symlinked root with a trailing slash'],
+            ["$link/.",$real,'a symlinked root with a trailing dot'],["$top_link/sub",$sub,'a project below a symlinked Git top'],
+            [$git_link,$git_real,'a symlinked Git project root']) {
+            my ($path,$canonical,$name)=@$pair;
+            my $e=Loomy::ContentPolicy::effective_policy($path);
+            is($e->{valid},1,"$name is a valid effective policy root");
+            is($e->{journal_enabled},1,"$name keeps journal collection enabled");
+            is(Loomy::ContentPolicy::load_policy($path)->{valid},1,"$name keeps stored-policy inspection valid");
+            is(Loomy::ContentPolicy::label_health($path),'ok',"$name keeps label health");
+            is(Loomy::ContentPolicy::policy_snapshot($path)->{identity_state},'present',"$name keeps a present strict identity");
+            is_deeply(Loomy::ContentPolicy::effective_policy($canonical),$e,"$name equals its canonical root");
+            is(Loomy::RuntimePaths::resolve($path)->{root},$canonical,"$name resolves to the canonical root");
+        }
+    });
+}
+
+# 2-4. Git shim: count processes, refuse -z like Git < 2.36, forge odd and excess entries.
+my $real_git=''; for my $dir (split /:/,$ENV{PATH}) {if (-x "$dir/git") {$real_git="$dir/git"; last}}
+die "git not found\n" unless length $real_git;
+my $shim_dir="$work.shim"; make_path($shim_dir,{mode=>0700});
+put("$shim_dir/git",<<'SHIM',0700);
+#!/bin/bash
+printf '%s\n' "$*" >> "$SHIM_LOG"
+list=0; z=0
+for a in "$@"; do [[ $a == worktree ]] && list=1; [[ $a == -z ]] && z=1; done
+mode="${SHIM_MODE:-}"
+if (( list )) && [[ $mode == noz || $mode == odd ]] && (( z )); then
+  echo "error: unknown switch 'z'" >&2; exit 129
+fi
+if (( list )) && [[ $mode == odd ]]; then
+  "$SHIM_REAL_GIT" "$@" || exit $?
+  printf '\nworktree %s/odd\tpath\nHEAD 0000\n' "$SHIM_WORK"
+  printf '\nworktree %s/dup\nHEAD 0000\nHEAD 1111\n' "$SHIM_WORK"
+  printf '\ngarbage line\nworktree %s/garbage\n' "$SHIM_WORK"
+  for i in $(seq 1 300); do printf '\nworktree /nonexistent/l0d-%s\nHEAD 0000\n' "$i"; done
+  exit 0
+fi
+exec "$SHIM_REAL_GIT" "$@"
+SHIM
+sub shim_log {open my $h,'<',"$shim_dir/shim.log" or return (); my @l=<$h>; chomp @l; return @l}
+sub shim_reset {unlink "$shim_dir/shim.log"; open my $h,'>',"$shim_dir/shim.log" or die; close $h}
+my $gmain=project('l0d-main',1,1); repository($gmain); labels($gmain);
+my @gtops;
+for my $n (1..4) {
+    my $wt=worktree($gmain,"l0d-wt$n"); push @gtops,$wt;
+    if ($n%2) {symlink "$gmain/.loomy","$wt/.loomy" or die}
+    else {mkdir "$wt/.loomy",0700 or die; symlink "$gmain/.loomy/logs","$wt/.loomy/logs" or die}
+}
+my @gall=sort($gmain,@gtops);
+{
+    local $ENV{PATH}="$shim_dir:$ENV{PATH}"; local $ENV{SHIM_LOG}="$shim_dir/shim.log";
+    local $ENV{SHIM_REAL_GIT}=$real_git; local $ENV{SHIM_WORK}=$work;
+    my $alias=$gtops[0];
+    shim_reset();
+    my $reads=readonly('alias-layout readers under the Git shim',$work,sub {
+        return [Loomy::ContentPolicy::effective_policy($alias),Loomy::ContentPolicy::load_policy($alias),
+            Loomy::ContentPolicy::label_health($alias),Loomy::ContentPolicy::resolve_label($alias,$ref),
+            Loomy::ContentPolicy::policy_snapshot($alias),Loomy::ContentPolicy::policy_snapshot($alias,'effective')];
+    });
+    my @log=shim_log();
+    ok(@log>0,'the Git shim observes the alias-layout reader processes');
+    is(scalar(grep {/\bworktree\b/} @log),0,'R1 readers never spawn git worktree list');
+    is(scalar(grep {/ rev-parse /} @log),12,'each alias reader costs the base two relation probes');
+    is($reads->[0]{valid},1,'alias-layout readers remain valid without registration probing');
+
+    my $c=Loomy::RuntimePaths::resolve($alias); shim_reset();
+    my $scope=readonly('scope under the Git shim',$work,sub {Loomy::RuntimePaths::scope_set($c)});
+    @log=shim_log();
+    is_deeply($scope->{roots},\@gall,'shimmed scope contains every registered alias exactly once');
+    is($scope->{skipped},0,'a clean registration reports no skipped sibling');
+    is(scalar(grep {/\bworktree list\b/} @log),1,'scope_set takes one worktree listing');
+    ok(scalar(grep {/rev-parse/} @log)<=2,'scope_set spawns no Git process per sibling');
+    is(scalar(grep {my $l=$_; grep {index($l,"-C $_ ")>=0} @gtops[1..3]} @log),0,'siblings are compared from their files, not by Git');
+
+    # Git older than 2.36 has no -z: parse the plain porcelain, never die.
+    {
+        local $ENV{SHIM_MODE}='noz'; shim_reset();
+        my $old=readonly('scope under a Git without -z',$work,sub {Loomy::RuntimePaths::scope_set($c)});
+        is_deeply($old->{roots},\@gall,'a Git that refuses -z yields the same registered union');
+        is($old->{revision},$scope->{revision},'the plain porcelain parse gives the same revision');
+        is($old->{skipped},0,'plain porcelain with ordinary entries skips nothing');
+        @log=shim_log();
+        ok(scalar(grep {/worktree list --porcelain -z/} @log)<=1 && scalar(grep {/worktree list --porcelain\z/} @log)>=1,
+            'the listing falls back from -z to plain porcelain');
+        my $r=Loomy::ContentPolicy::effective_policy($alias);
+        is($r->{valid},1,'readers are unaffected by a Git without -z');
+    }
+    # Odd entries and entries beyond the cap are skipped and counted, never fatal.
+    {
+        local $ENV{SHIM_MODE}='odd'; shim_reset();
+        my $odd=readonly('scope with odd and excess registrations',$work,sub {Loomy::RuntimePaths::scope_set($c)});
+        is_deeply($odd->{roots},\@gall,'odd and excess siblings leave the admitted union unchanged');
+        is($odd->{revision},$scope->{revision},'odd siblings do not change the revision');
+        # 3 malformed records, plus 5 real and 300 forged entries against a cap of 256.
+        is($odd->{skipped},3+(5+300-256),'odd records and the excess beyond 256 are counted visibly');
+        my $own=Loomy::RuntimePaths::scope_set(Loomy::RuntimePaths::resolve($gmain));
+        is_deeply($own->{roots},\@gall,'the owner keeps itself when excess siblings are skipped');
+    }
+}
+
+# 9. An identity absent at the start is accepted only when equal to the derived id.
+{
+    my $race=project('l0d-identity-race',0,1);
+    my $derived=Loomy::ContentPolicy::effective_policy($race)->{project_id};
+    like($derived,qr/\Ap[0-9a-f]{64}\z/,'race fixture derives an unstored namespace');
+    my $orig=\&Loomy::ContentPolicy::_project_id; my $other='p'.('c'x64);
+    for my $case ([$other,0,'a foreign identity appearing during derivation'],
+        [$derived,1,'the derived identity appearing during derivation']) {
+        my ($bytes,$accepted,$name)=@$case; my $calls=0;
+        no warnings 'redefine';
+        local *Loomy::ContentPolicy::_project_id=sub {
+            put("$race/.loomy/project-id","$bytes\n") unless $calls++;
+            return $orig->(@_);
+        };
+        my $p=Loomy::ContentPolicy::effective_policy($race);
+        is($p->{valid},$accepted,"$name is ".($accepted ? 'accepted through the concurrent pin' : 'refused'));
+        is($p->{project_id},$derived,"$name never selects another namespace") if $accepted;
+        ok(!defined($p->{project_id}),"$name supplies no adopted identity") unless $accepted;
+        unlink "$race/.loomy/project-id";
+    }
+}
+
 done_testing();

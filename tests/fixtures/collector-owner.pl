@@ -494,5 +494,135 @@ if ($^O eq 'linux') {
         ok(!defined($unavailable->{boot}) && !defined($unavailable->{birth}),'failed Mac probes remain explicitly unknown');
     }
 }
+# L0 fix round: identity only after the lock is won, named corruption, stale temp
+# cleanup, the cheap between-checks assertion and skipped-sibling visibility.
+{
+    no warnings 'redefine';
+    my $probes=0;
+    local *Loomy::CollectorOwner::_probe_identity=sub {$probes++; return {host=>'fixture-host',boot=>undef,birth=>undef}};
+    my $lazy=project('lazy-identity',1);
+    my $won=acquire($lazy);
+    is($won->{status},'owned','identity fixture elects an owner'); is($probes,1,'the lifetime lock winner probes identity once');
+    $probes=0;
+    is(acquire($lazy)->{reason},'locked','a busy attempt stays busy'); is($probes,0,'a busy attempt never forks the identity probes');
+    inspect($lazy); is($probes,0,'inspection never probes identity');
+    my $gate_busy=do {open my $g,'<',"$lazy/.loomy" or die; flock($g,LOCK_EX|LOCK_NB) or die; my $r=acquire($lazy); close $g; $r};
+    is($gate_busy->{reason},'bootstrap-busy','a held gate stays a retry'); is($probes,0,'a gate-busy attempt never probes identity');
+    Loomy::CollectorOwner::release($won->{guard});
+}
+
+# Invalid or unsafe record: a typed reason names the file; nothing is repaired or removed.
+for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record','logs/collector-owner-v1.json'],
+    ['world-readable',sub {put($_[0],"{}\n",0644)},'unsafe','unsafe-record','logs/collector-owner-v1.json'],
+    ['unknown schema',sub {put($_[0],'{"schema":"2","protocol":"1"}'."\n")},'incompatible','unsupported-schema','logs/collector-owner-v1.json'],
+    ['extra keys',sub {put($_[0],'{"schema":"1","protocol":"1","x":"y"}'."\n")},'unsafe','invalid-record','logs/collector-owner-v1.json']) {
+    my ($name,$corrupt,$status,$reason,$file)=@$case;
+    my $root=project("corrupt-record-".($name =~ s/\W+/-/gr),1);
+    my $first=acquire($root); Loomy::CollectorOwner::release($first->{guard});
+    my $record="$root/.loomy/logs/collector-owner-v1.json"; $corrupt->($record);
+    my $before=manifest($root);
+    for my $api (['election',sub {acquire($root)}],['inspection',sub {inspect($root)}]) {
+        my $answer=$api->[1]->();
+        is_deeply([@$answer{qw(status reason file)}],[$status,$reason,$file],"$name record: $api->[0] names the file in a typed reason");
+        ok(!exists($answer->{guard}),"$name record: $api->[0] grants no authority");
+    }
+    is_deeply(manifest($root),$before,"$name record: refusal neither repairs nor removes anything");
+    unlink $record or die;
+    is(acquire($root)->{status},'owned',"$name record: deleting the named file recovers election");
+}
+{
+    my $root=project('named-lock',1); my $r=acquire($root); Loomy::CollectorOwner::release($r->{guard});
+    chmod 0644,"$root/.loomy/logs/collector.lock" or die;
+    my $answer=acquire($root);
+    is_deeply([@$answer{qw(status reason file)}],['unsafe','unsafe-lock','logs/collector.lock'],'an unsafe lock is named too');
+    my $busy_root=project('busy-has-no-file',1); my $holder=acquire($busy_root);
+    ok(!exists(acquire($busy_root)->{file}),'ordinary busy results name no file');
+    Loomy::CollectorOwner::release($holder->{guard});
+}
+
+# Stale temp files from a crash between create and rename: aged, owner-only, regular, exact shape.
+{
+    my $root=project('stale-temp',1); my $logs="$root/.loomy/logs";
+    my $old=time-3600; my $old_stamp=POSIX::strftime('%Y%m%d%H%M',localtime($old));
+    my %tmp=(stale=>'.collector-owner-v1.4242.aaaa.1.tmp',fresh=>'.collector-owner-v1.4243.bbbb.1.tmp',
+        wide=>'.collector-owner-v1.4244.cccc.1.tmp',shape=>'.collector-owner-v1.4245.dddd.1.tmpx',
+        other=>'unrelated.tmp',linked=>'.collector-owner-v1.4246.eeee.1.tmp',dir=>'.collector-owner-v1.4247.ffff.1.tmp');
+    put("$logs/$tmp{$_}",'x') for qw(stale fresh wide shape other);
+    chmod 0644,"$logs/$tmp{wide}" or die;
+    utime $old,$old,"$logs/$tmp{$_}" for qw(stale wide shape other);
+    put("$work/stale-temp-target",'keep'); symlink "$work/stale-temp-target","$logs/$tmp{linked}" or die;
+    system('touch','-h','-t',$old_stamp,"$logs/$tmp{linked}")==0 or die;
+    mkdir "$logs/$tmp{dir}",0700 or die; utime $old,$old,"$logs/$tmp{dir}";
+    readonly('inspection with stale temp files',$root,sub {inspect($root)});
+    ok(-e "$logs/$tmp{stale}",'inspection never cleans stale temp files');
+    my $r=acquire($root); is($r->{status},'owned','election succeeds beside stale temp files');
+    ok(!-e "$logs/$tmp{stale}",'an aged owner-only regular temp file is removed under the gate');
+    ok(-e "$logs/$tmp{$_}","$_ temp entry is kept") for qw(fresh wide shape other dir);
+    ok(-l "$logs/$tmp{linked}" && -e "$work/stale-temp-target",'a symlink temp entry is never followed or removed');
+    Loomy::CollectorOwner::release($r->{guard});
+}
+
+# Cheap revalidation between full checks.
+{
+    my $root=project('quick-assert',1); my $r=acquire($root); my $g=$r->{guard};
+    is(Loomy::CollectorOwner::assert_owner_quick($g),1,'the cheap assertion accepts the owner');
+    is(Loomy::CollectorOwner::assert_owner_quick($g,'batch'),1,'the cheap batch phase accepts a collecting owner');
+    dies_code('the cheap assertion validates its phase',sub {Loomy::CollectorOwner::assert_owner_quick($g,'bogus')},'INVALID_PHASE');
+    dies_code('a copied guard is invalid for the cheap assertion',sub {Loomy::CollectorOwner::assert_owner_quick(bless({},'Loomy::CollectorOwner::Guard'))},'INVALID_GUARD');
+    Loomy::CollectorOwner::refresh_scope($g);
+    is(Loomy::CollectorOwner::assert_owner_quick($g),1,'a legitimate scope publication keeps the cheap assertion valid');
+    Loomy::CollectorOwner::begin_drain($g);
+    is(Loomy::CollectorOwner::assert_owner_quick($g),1,'the cheap write phase survives draining');
+    dies_code('the cheap batch phase refuses new work while draining',sub {Loomy::CollectorOwner::assert_owner_quick($g,'batch')},'DRAINING');
+    Loomy::CollectorOwner::release($g);
+    dies_code('a released guard fails the cheap assertion',sub {Loomy::CollectorOwner::assert_owner_quick($g)},'RELEASED');
+
+    for my $kind (qw(record lock)) {
+        my $victim=project("quick-fence-$kind",1); my $e=acquire($victim); my $guard=$e->{guard};
+        my $path="$victim/.loomy/logs/".($kind eq 'record' ? 'collector-owner-v1.json' : 'collector.lock');
+        put("$path.new",bytes($path)); rename "$path.new",$path or die;
+        dies_code("a replaced $kind fences the cheap assertion",sub {Loomy::CollectorOwner::assert_owner_quick($guard)},'FENCED');
+        dies_code("the fence from the cheap assertion is final for $kind",sub {Loomy::CollectorOwner::assert_owner($guard)},'FENCED');
+    }
+    my $forked=project('quick-fork',1); my $fe=acquire($forked);
+    my $kid=child(sub {my $ok=eval {Loomy::CollectorOwner::assert_owner_quick($fe->{guard}); 1}; die unless !$ok && $@ eq "collector owner FORKED\n"});
+    reap($kid,'cheap assertion fork'); Loomy::CollectorOwner::release($fe->{guard});
+    my $perf=project('quick-perf',1); my $pe=acquire($perf);
+    my ($t1,$full,$quick); $t1=time; Loomy::CollectorOwner::assert_owner($pe->{guard}) for 1..300; $full=time-$t1;
+    $t1=time; Loomy::CollectorOwner::assert_owner_quick($pe->{guard}) for 1..300; $quick=time-$t1;
+    ok($quick<$full,'the cheap assertion costs less than the full assertion');
+    Loomy::CollectorOwner::release($pe->{guard});
+}
+
+# Skipped registrations stay visible in the owner's scope.
+{
+    my $main=project('skipped-visible',1); git($main,'init','--quiet');
+    git($main,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','--allow-empty','-m','fixture');
+    my $wt="$work/skipped-visible-wt"; git($main,'worktree','add','--quiet','--detach',$wt); chmod 0700,$wt or die;
+    symlink "$main/.loomy","$wt/.loomy" or die;
+    my $real_git=''; for my $dir (split /:/,$ENV{PATH}) {if (-x "$dir/git") {$real_git="$dir/git"; last}}
+    my $shim="$work/skipped-shim"; mkdir $shim,0700 or die;
+    put("$shim/git",<<'SHIM',0700);
+#!/bin/bash
+list=0; z=0
+for a in "$@"; do [[ $a == worktree ]] && list=1; [[ $a == -z ]] && z=1; done
+if (( list )); then
+  (( z )) && { echo "error: unknown switch 'z'" >&2; exit 129; }
+  "$SHIM_REAL_GIT" "$@" || exit $?
+  printf '\nworktree %s/odd\tpath\nHEAD 0000\n' "$SHIM_WORK"
+  exit 0
+fi
+exec "$SHIM_REAL_GIT" "$@"
+SHIM
+    local $ENV{PATH}="$shim:$ENV{PATH}"; local $ENV{SHIM_REAL_GIT}=$real_git; local $ENV{SHIM_WORK}=$work;
+    my $r=acquire($main);
+    is($r->{status},'owned','election survives an odd unrelated registration under a Git without -z');
+    is_deeply($r->{scope_set}{roots},[sort($main,$wt)],'the admitted union is unaffected by the odd sibling');
+    is($r->{scope_set}{skipped},1,'the skipped sibling is counted in the election result');
+    is(Loomy::CollectorOwner::scope_set($r->{guard})->{skipped},1,'the owner scope accessor keeps the count');
+    is(Loomy::CollectorOwner::refresh_scope($r->{guard})->{skipped},1,'a scope refresh keeps the count');
+    Loomy::CollectorOwner::release($r->{guard});
+}
+
 alarm 0;
 done_testing();

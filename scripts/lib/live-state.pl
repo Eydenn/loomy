@@ -10,7 +10,7 @@ use Cwd qw(abs_path);
 use Time::HiRes ();
 use IO::Handle;
 use POSIX qw(strftime);
-use Scalar::Util qw(blessed);
+use Scalar::Util qw(blessed refaddr weaken);
 # Direct CLI migration can load an adapter which requires this same module.
 $INC{abs_path(__FILE__)}=1;
 my $content_lib=abs_path(__FILE__); $content_lib =~ s{/[^/]+$}{/content-policy.pl};
@@ -170,6 +170,27 @@ sub _fence {
     my ($opts,$path,$legacy_ok)=@_; my $guard=_owner_of($opts,$legacy_ok); return unless $guard;
     return owner_check($opts,'write',$path);
 }
+# Batch cadence: checkpoint_load runs the full fence and remembers it for that guard and
+# context object; a checkpoint_save in the same poll (within 5 s) then needs only the quick
+# check plus the same-objects test. Missing, stale or mismatched marker, or a failing quick
+# check, falls back to the full fence. Destructive steps and migrate always run the full one.
+my %batch;
+sub _fence_load {
+    my ($opts,$path)=@_; my $guard=_owner_of($opts,0); return unless $guard;
+    delete $batch{refaddr($guard)};
+    owner_check($opts,'write',$path);
+    my $m=$batch{refaddr($guard)}={guard=>$guard,context=>$opts->{context},at=>Time::HiRes::time()};
+    weaken($m->{guard}); weaken($m->{context});
+    return 1;
+}
+sub _fence_save {
+    my ($opts,$path)=@_; my $guard=_owner_of($opts,0); return unless $guard;
+    my $m=delete $batch{refaddr($guard)};
+    if (!$opts->{full} && $m && ref($m->{guard}) && $m->{guard}==$guard && ref($m->{context}) && ref($opts->{context})
+        && $m->{context}==$opts->{context} && Time::HiRes::time()-$m->{at}<=5
+        && _in_context($path,$opts->{context}) && eval {Loomy::CollectorOwner::assert_owner_quick($guard,'write'); 1}) {return 1}
+    return owner_check($opts,'write',$path);
+}
 # Flush and sync appended journal bytes before the matching durable watermark is saved.
 sub _flush_handles {
     my ($opts)=@_; return unless ref($opts) eq 'HASH';
@@ -319,7 +340,7 @@ sub follower_read {
 # A supported-format failure is corruption; an unknown or future format is refused unchanged.
 sub checkpoint_load {
     my ($path,$opts)=@_; my $exists=0;
-    _fence($opts,$path,0);
+    ref($opts) eq q(HASH) && $opts->{full} ? _fence($opts,$path,0) : _fence_load($opts,$path);
     my ($pk,$p)=_checkpoint_read($path); ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
     die "unsupported checkpoint format: $pk\n" if $pk =~ /^unsupported-/;
     my ($bk,$b);
@@ -400,7 +421,7 @@ sub atomic_file {
 sub checkpoint_save {
     my ($path,$s,$opts)=@_;
     # Fence first: nothing is flushed, written, backed up or pruned without live ownership.
-    _fence($opts,$path,0);
+    _fence_save($opts,$path);
     die "collector owner INVALID_GUARD\n" if defined($opts) && ref($opts->{flush}) ne 'ARRAY';
     _flush_handles($opts);
     $s->{version}=2;
@@ -623,6 +644,7 @@ sub migrate_checkpoints {
             my ($k)=_checkpoint_read($candidate); return 'refused' if $k =~ /^unsupported-/;
         }
     }
+    my $full=defined $opts ? {%$opts,full=>1} : undef; # migration keeps the full fence everywhere
     my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
     require "$lib/codex-native.pl"; require "$lib/claude-native.pl";
     for my $tool (qw(codex claude)) {
@@ -630,11 +652,11 @@ sub migrate_checkpoints {
         die 'unsafe migration lock' unless safe_path("$idx.lock");
         sysopen my $lock,"$idx.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or die;
         flock($lock,LOCK_EX|LOCK_NB) or return 'deferred';
-        my $s=checkpoint_load($idx,$opts); next if ($s->{version}//0)==2;
+        my $s=checkpoint_load($idx,$full); next if ($s->{version}//0)==2;
         my $dirty=1;
         if ($tool eq 'codex') {Loomy::CodexNative::prune_checkpoint($s,$ENV{LOOMY_NATIVE_NOW}//time)}
         else {Loomy::ClaudeNative::prune($s,\$dirty)}
-        checkpoint_save($idx,$s,$opts);
+        checkpoint_save($idx,$s,$full);
     }
     _fence($opts,"$dir/checkpoint-v2",0);
     atomic_file("$dir/checkpoint-v2","2\n");

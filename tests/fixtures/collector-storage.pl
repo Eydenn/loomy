@@ -358,6 +358,47 @@ for my $case (['future version',sub {+{version=>3,files=>{},extra=>'x'}},'unsupp
     refuses('fenced guard stays fenced',$r,sub {Loomy::LiveState::checkpoint_load($ridx,$o)},'FENCED');
 }
 
+# Batch cadence (L1c): load runs the one full fence, a save in the same batch only the quick check.
+{
+    my $r=project('cadence'); my $ridx=logs($r)."/codex-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);
+    put_cp($ridx,cp(2));
+    my ($full,$quick)=(0,0);
+    {
+        no warnings 'redefine';
+        my $fa=\&Loomy::CollectorOwner::assert_owner; my $qa=\&Loomy::CollectorOwner::assert_owner_quick;
+        local *Loomy::CollectorOwner::assert_owner=sub {$full++; $fa->(@_)};
+        local *Loomy::CollectorOwner::assert_owner_quick=sub {$quick++; $qa->(@_)};
+        my $s=Loomy::LiveState::checkpoint_load($ridx,$o); Loomy::LiveState::checkpoint_save($ridx,$s,$o);
+        is("$full/$quick",'1/1','load takes one full fence, the same-batch save one quick check');
+        ($full,$quick)=(0,0);
+        Loomy::LiveState::checkpoint_save($ridx,$s,$o);
+        is("$full/$quick",'1/0','a save without a batch-start full check runs the full fence');
+        ($full,$quick)=(0,0);
+        Loomy::LiveState::checkpoint_load($ridx,$o); Loomy::LiveState::checkpoint_save($ridx,$s,{%$o,context=>context($r)});
+        is("$full/$quick",'2/0','a different context object forces the full fence');
+        ($full,$quick)=(0,0);
+        Loomy::LiveState::checkpoint_load($ridx,{%$o,full=>1}); Loomy::LiveState::checkpoint_save($ridx,$s,{%$o,full=>1});
+        is("$full/$quick",'2/0','explicit full option keeps both fences');
+    }
+    # A fence lost between load and save is still caught.
+    my $s=Loomy::LiveState::checkpoint_load($ridx,$o);
+    rename logs($r).'/collector.lock',logs($r).'/collector.lock.moved' or die;
+    put(logs($r).'/collector.lock','',0600);
+    my $before=manifest($r);
+    refuses('lock replaced between load and save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(9),$o)},'FENCED');
+}
+{
+    my $r=project('cadence-record'); my $ridx=logs($r)."/codex-native.idx"; my $gr=elect($r); my $o=opts($gr,$r); put_cp($ridx,cp(2));
+    Loomy::LiveState::checkpoint_load($ridx,$o);
+    my $rec=logs($r).'/collector-owner-v1.json'; my $raw=bytes($rec); put($rec,$raw." \n");
+    refuses('record replaced between load and save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(9),$o)},'FENCED');
+}
+{
+    my $r=project('cadence-released'); my $ridx=logs($r)."/codex-native.idx"; my $gr=elect($r); my $o=opts($gr,$r); put_cp($ridx,cp(2));
+    Loomy::LiveState::checkpoint_load($ridx,$o); Loomy::CollectorOwner::release($gr);
+    refuses('release between load and save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(9),$o)},'RELEASED');
+}
+
 # Interruption at every step of save: old or new generation survives, v2 schema preserved.
 for my $sharded (0,1) {
     my $r=project("interrupt$sharded"); my $ridx=logs($r)."/codex-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);

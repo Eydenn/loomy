@@ -1,5 +1,6 @@
 source [file join [file dirname [info script]] watchdog.exp]
 source [file join [file dirname [info script]] time-scale.exp]
+source [file join [file dirname [info script]] content-decline.exp]
 # Synthetic desktop schema, twenty randomized-phase screen latency trials in both default views.
 set timeout [expr {int(ceil([test_time_budget 10]))}]
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
@@ -19,6 +20,7 @@ set result [catch {
     exec perl $fixture seed $root $sessions [pid] 2>@1
     exec perl $fixture app $root $sessions [pid] 2>@1
     exec perl $fixture second-lead $root $sessions [pid] 2>@1
+    content_decline $repo $work $root
     spawn env HOME=$work/home XDG_CONFIG_HOME=$work/config CODEX_HOME=$work/codex LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin NO_COLOR=1 COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full
     set child [exp_pid]
     expect {

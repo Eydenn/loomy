@@ -120,6 +120,7 @@ loomy_doctor_tracking() {
 loomy_doctor_tracking
 
 # All readiness decisions come from H1's exact catalog; command text stays private.
+DOCTOR_HOOKS_RETRY=0; DOCTOR_HOOKS_DONE=()
 loomy_doctor_hooks() {
   local provider="$1" label file facts rows kind event state ready=0 code="" issues="" amb=0 other=0
   if [[ "$provider" == claude ]]; then
@@ -170,6 +171,13 @@ loomy_doctor_hooks() {
     ui_warn "$label" "$file · $state"
     ui_info "$(t "fix: %s" "loomy hooks status")"
   elif [[ "$ready" != 1 ]]; then
+    # --fix repairs what Loomy owns before reporting, so a fixed provider shows no stale gap or fix line.
+    if (( FIX && other && ! DOCTOR_HOOKS_RETRY )) && _lp_hooks_repair "$ROOT" "$provider" 2>/dev/null; then
+      DOCTOR_HOOKS_RETRY=1
+      if loomy_doctor_hooks "$provider"; then DOCTOR_HOOKS_RETRY=0; DOCTOR_HOOKS_DONE+=("hooks: $file"); return 0; fi
+      DOCTOR_HOOKS_RETRY=0
+      return 1
+    fi
     ui_warn "$(t 'Loomy hooks need attention in %s' "$file")" "$issues"
     # Repair keeps conflicting registrations: an ambiguous event can only be resolved by editing the file.
     if (( amb )); then ui_info "$(t 'fix: edit the conflicting events in %s by hand (loomy hooks status lists them)' "$file")"; fi
@@ -180,6 +188,7 @@ loomy_doctor_hooks() {
     return 0
   fi
   missing_ideal "$label"; p_gaps=$(( p_gaps + 1 ))
+  return 1
 }
 
 # Read policy/health without _context so that the unsafe-directory cause stays visible. Reuse its
@@ -461,7 +470,7 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
   fi
   # Only the providers the project uses (registration file present, or work routed to them).
   for p_prov in claude codex; do
-    if loomy_hooks_provider_in_use "$ROOT" "$p_prov"; then loomy_doctor_hooks "$p_prov"; fi
+    if loomy_hooks_provider_in_use "$ROOT" "$p_prov"; then loomy_doctor_hooks "$p_prov" || true; fi
   done
   # Orchestration rule where the agents read it (managed block, kept by Loomy).
   if [[ -f "$ROOT/AGENTS.md" || -f "$ROOT/CLAUDE.md" ]]; then
@@ -494,10 +503,12 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     fi
   fi
   # --fix: what Loomy owns is completed right away (routing documents, role subagents, orchestration rule).
-  if (( FIX && p_gaps )); then
+  if (( FIX && (p_gaps || ${#DOCTOR_HOOKS_DONE[@]}) )); then
     # shellcheck source=lib/project.sh
     source "$SCRIPT_DIR/lib/project.sh"
-    loomy_project_repair "$ROOT" 2>/dev/null || true
+    LP_DONE=()
+    if (( p_gaps )); then loomy_project_repair "$ROOT" 2>/dev/null || true; fi
+    if (( ${#DOCTOR_HOOKS_DONE[@]} )); then LP_DONE=("${DOCTOR_HOOKS_DONE[@]}" ${LP_DONE[@]+"${LP_DONE[@]}"}); fi
     if (( ${#LP_DONE[@]} )); then ui_ok "$(t "project completed")" "$(printf '%s · ' "${LP_DONE[@]}" | sed 's/ · $//')"; fi
   fi
 fi

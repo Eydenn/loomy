@@ -269,7 +269,10 @@ loomy_hooks_provider_in_use() {
   [[ -e "$file" || -L "$file" ]] && return 0
   [[ -f "$r/.loomy/brief.md" ]] || return 1
   (
-    ai_detect_env "$r" readonly >/dev/null 2>&1 || exit 1
+    # loomy_project_repair detects the environment once and shares it (LP_ENV_ROOT); other callers detect here.
+    [[ "${LP_ENV_ROOT:-}" == "$r" ]] || ai_detect_env "$r" readonly >/dev/null 2>&1 || exit 1
+    # A single-family environment routes every role to that family: no per-role resolution needed.
+    case "$AI_ENV" in claude|codex) [[ "$AI_ENV" == "$provider" ]]; exit ;; esac
     for role in $AI_ROLES; do
       ai_resolve "$role" "$AI_ENV" "$AI_PROFILE" >/dev/null 2>&1 || continue
       [[ "$R_FAMILY" == "$provider" ]] && exit 0
@@ -280,36 +283,33 @@ loomy_hooks_provider_in_use() {
 
 # Installer and automatic repair consume the same typed result. Failed providers
 # remain independent, so a safe retry can finish either file without a fallback.
+# _lp_hooks_repair <root> <provider>...: one hooks.pl process repairs every listed provider and prints one
+# "provider<TAB>status" line each (no result decoding in further processes).
 _lp_hooks_repair() {
-  local r="$1" provider="$2" file result="" status=failed rc=0
-  case "$provider" in
-    claude) file=.claude/settings.json ;;
-    codex) file=.codex/hooks.json ;;
-    *) return 1 ;;
-  esac
+  local r="$1" provider status failed=0 seen=" "; shift
   # shellcheck source=hooks.sh
   if source "$(dirname "${BASH_SOURCE[0]}")/hooks.sh" 2>/dev/null; then
-    result="$(loomy_hooks_repair "$r" "$provider" 2>/dev/null)" || rc=$?
-    status="$(printf '%s' "$result" | perl -MJSON::PP -e '
-      local $/; my $data=eval {decode_json(<STDIN>)};
-      my ($rc,$provider)=@ARGV;
-      if (ref($data) ne "HASH") { print "failed"; exit }
-      if ($rc || !$data->{ok}) {
-        my $code=$data->{code}//"";
-        print $code =~ /\A(?:busy|conflict|parent_changed|invalid_settings|unsafe_project|unsafe_parent|unsafe_settings|unsupported_number|gid_preservation_failed|applied_unconfirmed)\z/ ? $code : "failed";
-        exit;
-      }
-      my $facts=$data->{facts};
-      if (ref($facts) ne "HASH" || ($facts->{provider}//"") ne $provider) { print "failed"; exit }
-      if (($facts->{state}//"") eq "ambiguous") { print "ambiguous"; exit }
-      if (!$facts->{ready}) { print "failed"; exit }
-      my @slots=@{$facts->{slots}//[]};
-      push @slots,$facts->{status_line} if ref($facts->{status_line}) eq "HASH";
-      if (grep {$_->{custom}} @slots) { print "custom"; exit }
-      print $data->{changed} ? "changed" : "unchanged";
-    ' "$rc" "$provider" 2>/dev/null)" || status=failed
+    while IFS=$'\t' read -r provider status; do
+      case "$provider" in claude|codex) ;; *) continue ;; esac
+      case "$status" in
+        changed|unchanged|custom|ambiguous|busy|conflict|parent_changed|invalid_settings|unsafe_project|unsafe_parent|unsafe_settings|unsupported_number|gid_preservation_failed|applied_unconfirmed) ;;
+        *) status=failed ;;
+      esac
+      seen="$seen$provider "
+      _lp_hooks_report "$provider" "$status" || failed=1
+    done < <(perl "$_LOOMY_HOOKS_HELPER" repair-status "$r" "$@" 2>/dev/null)
   fi
-  case "$provider" in claude) LP_HOOKS_CLAUDE="$status" ;; codex) LP_HOOKS_CODEX="$status" ;; esac
+  # A provider the helper never answered for counts as failed.
+  for provider in "$@"; do
+    case "$seen" in *" $provider "*) continue ;; esac
+    _lp_hooks_report "$provider" failed || failed=1
+  done
+  return "$failed"
+}
+
+_lp_hooks_report() {
+  local provider="$1" status="$2" file
+  case "$provider" in claude) file=.claude/settings.json; LP_HOOKS_CLAUDE="$status" ;; *) file=.codex/hooks.json; LP_HOOKS_CODEX="$status" ;; esac
   case "$status" in
     changed|unchanged) return 0 ;;
     custom) return 0 ;;
@@ -440,8 +440,13 @@ loomy_project_repair() {
   loomy_project_rename_scripts "$r"
   # Each provider is repaired independently; failures never enter LP_DONE.
   # A provider the project does not use (no registration file, nothing routed to it) is never created here.
-  if loomy_hooks_provider_in_use "$r" claude; then _lp_hooks_repair "$r" claude || true; fi
-  if loomy_hooks_provider_in_use "$r" codex; then _lp_hooks_repair "$r" codex || true; fi
+  local hook_providers=()
+  ai_detect_env "$r" 2>/dev/null || true
+  LP_ENV_ROOT="$r"
+  if loomy_hooks_provider_in_use "$r" claude; then hook_providers+=(claude); fi
+  if loomy_hooks_provider_in_use "$r" codex; then hook_providers+=(codex); fi
+  LP_ENV_ROOT=""
+  if (( ${#hook_providers[@]} )); then _lp_hooks_repair "$r" "${hook_providers[@]}" || true; fi
   tpl="$(_lp_templates "$r")"; docs="$r/.loomy/docs"
   route="$(dirname "${BASH_SOURCE[0]}")/../loomy-route.sh"
   mkdir -p "$docs"
@@ -460,7 +465,6 @@ loomy_project_repair() {
   # Role subagents for a Claude lead: the missing ones are added; an untouched one follows the routing (new model,
   # loomy effort). Untouched: same text as generated apart from its model and effort lines, and a model Loomy routes
   # (a hand-written "model: opus" or "inherit", or any other change, keeps the subagent as it is).
-  ai_detect_env "$r" 2>/dev/null || true
   lead="${AI_ENV#hybrid-}"
   if [[ "$lead" == claude ]]; then
     tmpd="$(mktemp -d "${TMPDIR:-/tmp}/loomy-agents.XXXXXX")" || tmpd=""

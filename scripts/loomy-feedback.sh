@@ -36,7 +36,6 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
-[[ -z "$ROOT" ]] && ROOT="$(ai_project_root 2>/dev/null || pwd)"
 
 # ---------------------------------------------------------------- follow-up and triage (gh)
 # Feedback issues: title "Feedback: …" (any author), label "feedback" when the maintainer has set it.
@@ -119,6 +118,8 @@ if [[ -n "$SUB" ]]; then
   esac
   exit 0
 fi
+# Resolved only for the report: follow-up subcommands (and their --print refusal) never look up a project or Git.
+[[ -z "$ROOT" ]] && ROOT="$(ai_project_root 2>/dev/null || pwd)"
 IN_PROJECT=0; [[ -f "$ROOT/.loomy/brief.md" ]] && IN_PROJECT=1
 
 ver() {

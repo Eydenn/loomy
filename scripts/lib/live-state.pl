@@ -10,6 +10,7 @@ use Cwd qw(abs_path);
 use Time::HiRes ();
 use IO::Handle;
 use POSIX qw(strftime);
+use Scalar::Util qw(blessed);
 # Direct CLI migration can load an adapter which requires this same module.
 $INC{abs_path(__FILE__)}=1;
 my $content_lib=abs_path(__FILE__); $content_lib =~ s{/[^/]+$}{/content-policy.pl};
@@ -126,6 +127,56 @@ sub safe_path {
     my $p=$_[0]; return 0 unless defined $p && $p =~ m{^/};
     while ($p ne '') { return 0 if -l $p; $p =~ s{/[^/]*$}{} } return 1;
 }
+
+# LOCK L1 storage boundary. Collector-origin mutators take a trailing options hash
+# {owner=>$guard, context=>$ctx} (guard from Loomy::CollectorOwner, elected by L3;
+# this module never elects). Hook-origin appends and rotation pass no options and keep
+# their independent events lock. require_owner(1) makes the checkpoint mutators refuse a
+# call without options; L3 enables it once every collector call site passes a guard.
+our $REQUIRE_OWNER=0;
+sub require_owner { $REQUIRE_OWNER=$_[0] ? 1 : 0 }
+sub _owner_lib {
+    my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{/collector-owner.pl};
+    require $lib; return 1;
+}
+# Returns the validated guard, or undef for a legacy/hook-origin call without options.
+sub _owner_of {
+    my ($opts,$legacy_ok)=@_;
+    unless (defined $opts) {die "collector owner INVALID_GUARD\n" if $REQUIRE_OWNER && !$legacy_ok; return}
+    die "collector owner INVALID_GUARD\n" unless ref($opts) eq 'HASH' && blessed($opts->{owner});
+    _owner_lib();
+    die "collector owner INVALID_GUARD\n" unless $opts->{owner}->isa('Loomy::CollectorOwner::Guard');
+    return $opts->{owner};
+}
+# Every file this module mutates lives in the logs directory the target context pins.
+sub _in_context {
+    my ($path,$ctx)=@_;
+    return 0 unless ref($ctx) eq 'HASH' && ref($ctx->{ds}) eq 'ARRAY';
+    my $dir=$path; $dir =~ s{/[^/]+$}{}; my @s=stat($dir);
+    return @s && $s[0]==$ctx->{ds}[0] && $s[1]==$ctx->{ds}[1];
+}
+# kind: batch (before a batch; refused after begin_drain), write (storage boundary; allowed
+# while draining), event (cheap per-event check between boundaries; no directory re-pin).
+sub owner_check {
+    my ($opts,$kind,$path)=@_; my $guard=_owner_of($opts,0);
+    return Loomy::CollectorOwner::assert_owner_quick($guard,'write') if ($kind//'') eq 'event';
+    die "collector owner INVALID_PHASE\n" unless ($kind//'') =~ /^(?:batch|write)$/;
+    Loomy::CollectorOwner::assert_owner($guard,$kind,$opts->{context});
+    die "collector owner WRONG_RUNTIME\n" if defined($path) && !_in_context($path,$opts->{context});
+    return 1;
+}
+# Mutator gate: validates the guard before any storage is touched.
+sub _fence {
+    my ($opts,$path,$legacy_ok)=@_; my $guard=_owner_of($opts,$legacy_ok); return unless $guard;
+    return owner_check($opts,'write',$path);
+}
+# Flush and sync appended journal bytes before the matching durable watermark is saved.
+sub _flush_handles {
+    my ($opts)=@_; return unless ref($opts) eq 'HASH';
+    for my $h (@{ref($opts->{flush}) eq 'ARRAY' ? $opts->{flush} : []}) {
+        die "journal flush failed\n" unless defined($h) && defined(fileno($h)) && $h->flush && $h->sync;
+    }
+}
 # One stable lock protects rotation and every writer, including native collectors.
 sub journal_lock {
     my ($dir,$blocking)=@_; return unless safe_path("$dir/events.lock");
@@ -144,27 +195,128 @@ sub file_signature {
         return $json;
     }
 }
-sub checkpoint_load {
-    my ($path)=@_; my $exists=0;
-    checkpoint_prune_invalid($path);
-    for my $candidate ($path,"$path.bak") {
-        next unless -e $candidate; $exists=1;
-        next unless safe_path($candidate) && -f $candidate && -s $candidate<=33554432;
-        sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW or next;
-        my $raw=''; while (1) {my $n=sysread($f,my $b,262144); last unless $n; $raw.=$b; last if length($raw)>33554432}
-        next if !length($raw) || length($raw)>33554432;
-        my $s=eval {checkpoint_json()->decode($raw)};
-        next unless ref($s) eq 'HASH' && (!exists $s->{version} || text($s->{version}) =~ /^(1|2)$/);
-        # Reject broken containers rather than silently discarding saved deduplication.
-        next if grep {exists $s->{$_} && ref($s->{$_}) ne 'HASH'} qw(files seen sent journal sessions owners);
-        if (exists $s->{source_shards}) {
-            my $ok=eval {load_shards($path,$s); 1}; next unless $ok;
+# Pure classification of one parsed container: undef when supported, else a peek reason.
+# A future version or an unknown shard kind is an unsupported format, never corruption.
+sub _checkpoint_kind {
+    my ($s)=@_;
+    return 'invalid' unless ref($s) eq 'HASH';
+    return 'unsupported-version' if exists $s->{version} && text($s->{version}) !~ /^(1|2)$/;
+    if (exists $s->{source_shards}) {
+        return 'invalid' unless ref($s->{source_shards}) eq 'ARRAY' && @{$s->{source_shards}}<=64;
+        for my $name (@{$s->{source_shards}}) {
+            my $n=text($name); next if $n =~ /^files-[0-9a-f]{64}$/;
+            return 'unsupported-extension' if $n =~ /^[a-z][a-z0-9]*-[0-9a-f]{64}$/;
+            return 'invalid';
         }
-        warn "Native checkpoint recovered from backup\n" if $candidate ne $path;
-        return $s;
     }
+    return 'invalid' if grep {exists $s->{$_} && ref($s->{$_}) ne 'HASH'} qw(files seen sent journal sessions owners);
+    return;
+}
+# Read-only: never chmod, rename, prune or create. Returns (kind,state) with kind one of
+# valid missing invalid unsafe unsupported-version unsupported-extension changed io-error.
+sub _checkpoint_read {
+    my ($candidate)=@_;
+    my @l=lstat($candidate); return ($!{ENOENT}||$!{ENOTDIR} ? 'missing' : 'io-error') unless @l;
+    return 'unsafe' unless -f _ && safe_path($candidate);
+    return 'invalid' if !$l[7] || $l[7]>33554432;
+    sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW or return 'io-error';
+    my @a=stat($f); return 'io-error' unless @a;
+    my $raw=''; while (1) {my $n=sysread($f,my $b,262144); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
+    my @z=stat($f);
+    return 'changed' unless @z && length($raw)==$a[7] && $a[7]==$z[7] && $a[9]==$z[9];
+    my $s=eval {checkpoint_json()->decode($raw)};
+    return 'invalid' unless ref($s) eq 'HASH';
+    my $kind=_checkpoint_kind($s); return $kind if defined $kind;
+    if (exists $s->{source_shards}) {
+        my $path=$candidate; $path =~ s{\.bak$}{} if $candidate =~ /\.bak$/;
+        # Shards are named from the primary path; the backup refers to the same shard family.
+        my $ok=eval {load_shards($path,$s); 1}; return 'invalid' unless $ok;
+    }
+    return ('valid',$s);
+}
+# Pure bounded reader for followers. Never acquires ownership, repairs, chmods, prunes,
+# quarantines or creates. status: valid (supported primary), stale (supported backup or
+# the caller's last valid snapshot), unsupported (unknown format somewhere: the whole
+# manifest is untouched; a supported backup may still be shown as stale), unavailable.
+sub checkpoint_peek {
+    my ($path,$last)=@_;
+    my $r=eval {_checkpoint_peek($path,$last)};
+    return $r // {status=>'unavailable',checkpoint=>undef,reason=>'io-error'};
+}
+sub _checkpoint_peek {
+    my ($path,$last)=@_;
+    my ($pk,$p)=_checkpoint_read($path);
+    ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
+    return {status=>'valid',checkpoint=>$p,reason=>'primary'} if $pk eq 'valid';
+    my ($bk,$b)=_checkpoint_read("$path.bak");
+    ($bk,$b)=_checkpoint_read("$path.bak") if $bk eq 'changed';
+    $last=undef unless ref($last) eq 'HASH';
+    my $stale=$bk eq 'valid' ? $b : undef;
+    return {status=>'unsupported',checkpoint=>$stale//$last,reason=>$pk} if $pk =~ /^unsupported-/;
+    return {status=>'unsupported',checkpoint=>$last,reason=>$bk} if $bk =~ /^unsupported-/;
+    return {status=>'stale',checkpoint=>$b,reason=>'backup'} if $bk eq 'valid';
+    return {status=>'stale',checkpoint=>$last,reason=>'last-valid'} if $last;
+    my ($worst)=grep {$_ ne 'missing'} ($pk,$bk);
+    return {status=>'unavailable',checkpoint=>undef,reason=>$worst//'missing'};
+}
+# Bounded current-source evidence for a followed checkpoint: refreshes in memory only the
+# source mtime of up to $limit recently active sources, so silent agents keep their lease
+# without journal heartbeats. Paths are validated as real absolute same-UID regular files.
+sub stat_evidence {
+    my ($tool,$cp,$limit)=@_; return 0 unless ref($cp) eq 'HASH' && ref($cp->{files}) eq 'HASH';
+    $limit//=256; my $now=$ENV{LOOMY_NATIVE_NOW}//time; my $done=0;
+    my @paths=sort {($cp->{files}{$b}{source_mtime}//0)<=>($cp->{files}{$a}{source_mtime}//0) || $a cmp $b}
+        grep {ref($cp->{files}{$_}) eq 'HASH'} keys %{$cp->{files}};
+    for my $path (@paths) {
+        last if $done>=$limit; $done++;
+        next unless $path =~ m{^/} && $path !~ /[\x00-\x1f\x7f]/ && safe_path($path);
+        my @st=lstat($path); next unless @st && -f _ && $st[4]==$< && $st[9]<=$now+1;
+        my $f=$cp->{files}{$path};
+        $f->{source_mtime}=$st[9] if $tool eq 'codex' && $st[9]>($f->{source_mtime}//0);
+        next unless $tool eq 'claude' && ref($f->{meta}) eq 'HASH' && defined($f->{meta}{agent}) && length($f->{meta}{agent});
+        my $lead=ref($cp->{sessions}) eq 'HASH' ? $cp->{sessions}{text($f->{meta}{id})} : undef; next unless ref($lead) eq 'HASH';
+        my $aid=text($f->{meta}{agent}); my $c=ref($lead->{calls}) eq 'HASH' ? $lead->{calls}{(ref($lead->{aliases}) eq 'HASH' ? $lead->{aliases}{$aid} : undef)//"agent:$aid"} : undef;
+        $c->{source_mtime}=$st[9] if ref($c) eq 'HASH' && $st[9]>($c->{source_mtime}//0);
+    }
+    return $done;
+}
+# Explicit read-only reducer entry for followers: journal projection plus peeked checkpoint
+# evidence. Takes no guard, loads nothing through a mutator and writes nothing. $last holds
+# the caller's last valid snapshots ({codex=>..,claude=>..}) and is updated in memory only.
+sub follower_read {
+    my ($self,$root,$last)=@_; $last//={}; my $dir="$root/.loomy/logs"; my %peek;
+    for my $tool (qw(codex claude)) {
+        my $p=checkpoint_peek("$dir/$tool-native.idx",$last->{$tool});
+        $last->{$tool}=$p->{checkpoint} if $p->{status} eq 'valid';
+        stat_evidence($tool,$p->{checkpoint}) if $p->{status} =~ /^(?:valid|stale)$/;
+        $peek{$tool}=$p;
+    }
+    $self->read_journal("$dir/events.jsonl");
+    $self->source_evidence($peek{codex}{checkpoint}) if $peek{codex}{status} =~ /^(?:valid|stale)$/;
+    $self->claude_evidence($peek{claude}{checkpoint}) if $peek{claude}{status} =~ /^(?:valid|stale)$/;
+    return \%peek;
+}
+# Collector-origin load: may quarantine damaged evidence and prune, so it needs the guard.
+# A supported-format failure is corruption; an unknown or future format is refused unchanged.
+sub checkpoint_load {
+    my ($path,$opts)=@_; my $exists=0;
+    _fence($opts,$path,0);
+    my ($pk,$p)=_checkpoint_read($path); ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
+    die "unsupported checkpoint format\n" if $pk =~ /^unsupported-/;
+    my ($bk,$b);
+    if ($pk ne 'valid') {
+        ($bk,$b)=_checkpoint_read("$path.bak"); ($bk,$b)=_checkpoint_read("$path.bak") if $bk eq 'changed';
+        die "unsupported checkpoint format\n" if $bk =~ /^unsupported-/;
+        die "checkpoint changed during read\n" if $pk eq 'changed' || $bk eq 'changed';
+        die "checkpoint unavailable\n" if $pk eq 'io-error' || $bk eq 'io-error';
+    }
+    checkpoint_prune_invalid($path,$opts);
+    return $p if $pk eq 'valid';
+    return do {warn "Native checkpoint recovered from backup\n"; $b} if $bk eq 'valid';
+    $exists=1 if -e $path || -e "$path.bak";
     if ($exists) {
         # Keep damaged evidence untouched while bounded journal replay rebuilds a separate generation.
+        _fence($opts,$path,0);
         for my $candidate ($path,"$path.bak") {
             next unless -e $candidate;
             die 'unsafe damaged checkpoint' unless safe_path($candidate) && -f $candidate;
@@ -172,7 +324,7 @@ sub checkpoint_load {
             die 'unsafe checkpoint quarantine' unless safe_path($saved) && !-e $saved;
             rename $candidate,$saved or die 'checkpoint preservation failed'; chmod 0600,$saved or die;
         }
-        checkpoint_prune_invalid($path);
+        checkpoint_prune_invalid($path,$opts);
         my $dir=$path; $dir =~ s{/[^/]+$}{};
         my @segments;
         if (safe_path("$dir/archive") && -d "$dir/archive") {
@@ -189,7 +341,8 @@ sub checkpoint_load {
     return {};
 }
 sub checkpoint_prune_invalid {
-    my ($path)=@_; my $dir=$path; $dir =~ s{/[^/]+$}{};
+    my ($path,$opts)=@_; _owner_of($opts,0);
+    my $dir=$path; $dir =~ s{/[^/]+$}{};
     my $base=$path; $base =~ s{.*/}{};
     return unless safe_path($dir);
     opendir my $h,$dir or return;
@@ -199,7 +352,7 @@ sub checkpoint_prune_invalid {
     return if @old<=2;
     splice @old,0,2;
     # Only obsolete quarantine evidence is removed; live checkpoints and symlinks are untouched.
-    if (@old) {unlink $_ or die 'checkpoint quarantine pruning failed' for @old}
+    if (@old) {_fence($opts,$path,0); unlink $_ or die 'checkpoint quarantine pruning failed' for @old}
 }
 sub load_shards {
     my ($path,$s)=@_; my $refs=delete $s->{source_shards};
@@ -225,8 +378,20 @@ sub atomic_file {
     unless ($ok) {unlink $tmp; die 'atomic write failed'}
 }
 sub checkpoint_save {
-    my ($path,$s)=@_; $s->{version}=2;
+    my ($path,$s,$opts)=@_;
+    # Fence first: nothing is flushed, written, backed up or pruned without live ownership.
+    _fence($opts,$path,0);
+    _flush_handles($opts);
+    $s->{version}=2;
     my $json=checkpoint_json(); my %snapshot=%$s;
+    # An unsupported on-disk primary is preserved; saving would replace it and its backup.
+    my ($prior_raw,$prior_state);
+    if (-s $path && -s $path<=33554432 && safe_path($path)) {
+        sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
+        local $/; $prior_raw=<$old>; $prior_state=eval {$json->decode($prior_raw)};
+        my $kind=ref($prior_state) eq 'HASH' ? _checkpoint_kind($prior_state) : undef;
+        die "unsupported checkpoint format\n" if defined($kind) && $kind =~ /^unsupported-/;
+    }
     my $raw=$json->encode(\%snapshot);
     if (length($raw)>2097152 && keys %{$s->{files}//{}}) {
         my (%part,@shards); my $size=2; my $total=0;
@@ -247,12 +412,11 @@ sub checkpoint_save {
     die "Native checkpoint exceeds 2 MiB; active state preserved in memory\n" if length($raw)>2097152;
     my $unchanged=0;
     # Preserve the last valid generation; an invalid primary must not replace a usable backup.
-    if (-s $path && -s $path<=33554432 && safe_path($path)) {
-        sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
-        local $/; my $prior=<$old>; my $valid=eval {$json->decode($prior)};
+    if (defined $prior_raw) {
+        my $prior=$prior_raw; my $valid=$prior_state;
         my $ok=ref($valid) eq 'HASH' && eval {load_shards($path,$valid) if exists $valid->{source_shards}; 1};
         $unchanged=$ok && $prior eq $raw;
-        chmod 0600,$old or die 'checkpoint permissions failed' if $unchanged;
+        if ($unchanged) {sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed'; chmod 0600,$old or die 'checkpoint permissions failed'}
         atomic_file("$path.bak",$prior) if $ok && !$unchanged;
     }
     atomic_file($path,$raw) unless $unchanged;
@@ -260,7 +424,7 @@ sub checkpoint_save {
     my %keep=map {text($_)=>1} @{$snapshot{source_shards}//[]};
     if (-f "$path.bak" && safe_path("$path.bak")) {
         sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $old=eval {$json->decode(<$b>)};
-        $keep{text($_)}=1 for @{ref($old) eq 'HASH' ? ($old->{source_shards}//[]) : []};
+        $keep{text($_)}=1 for @{ref($old) eq 'HASH' && ref($old->{source_shards}) eq 'ARRAY' ? $old->{source_shards} : []};
     }
     my $dir=$path; $dir =~ s{/[^/]+$}{}; my $base=$path; $base =~ s{.*/}{};
     opendir my $h,$dir or return; my @names=readdir $h;
@@ -271,9 +435,11 @@ sub checkpoint_save {
     }
 }
 # Rotation keeps structural snapshots, never usage; archives are immutable size-bounded segments.
+# Dual origin: hooks pass no options (events lock only); a collector passes its guard.
 sub recover_rotation {
-    my ($path,$dir)=@_; return unless -e "$dir/rotation";
+    my ($path,$dir,$opts)=@_; return unless -e "$dir/rotation";
     die 'unsafe rotation marker' unless safe_path("$dir/rotation") && -s "$dir/rotation"<=4096;
+    _fence($opts,$path,1) if defined $opts;
     sysopen my $f,"$dir/rotation",O_RDONLY|O_NOFOLLOW or die; local $/;
     my $r=decode_json(<$f>);
     die 'invalid rotation marker' unless ref($r) eq 'HASH' && text($r->{archive}) =~ /^events-\d{4}-\d{2}-\d+-\d+\.jsonl$/
@@ -292,10 +458,10 @@ sub recover_rotation {
     atomic_file("$dir/month","$r->{month}\n"); unlink "$dir/rotation" or die 'rotation marker removal failed';
 }
 sub journal_rotate {
-    my ($path,$writer)=@_; return unless safe_path($path);
+    my ($path,$writer,$opts)=@_; return unless safe_path($path);
     $writer//=content_writer(content_root($path)); return unless $writer;
     my $dir=$path; $dir =~ s{/[^/]+$}{};
-    recover_rotation($path,$dir); return unless -s $path;
+    recover_rotation($path,$dir,$opts); return unless -s $path;
     my $now=strftime('%Y-%m',gmtime($ENV{LOOMY_NATIVE_NOW}//time));
     my $month='';
     if (safe_path("$dir/month") && -f "$dir/month") {sysopen my $m,"$dir/month",O_RDONLY|O_NOFOLLOW or die; $month=text(<$m>); $month =~ s/\s+$//}
@@ -307,6 +473,7 @@ sub journal_rotate {
     }
     if ($month eq $now && -s $path<8388608) {atomic_file("$dir/month","$now\n") unless -f "$dir/month"; return}
     my $archive="$dir/archive"; die 'unsafe archive' unless safe_path($archive);
+    _fence($opts,$path,1) if defined $opts;
     mkdir $archive,0700 unless -d $archive; chmod 0700,$archive or die;
     my (%last,%open,%activity,%closed); my $reader=__PACKAGE__->new;
     while (1) {
@@ -343,7 +510,8 @@ sub journal_rotate {
     atomic_file("$dir/events.next",$snapshot);
     my $name=$dest; $name =~ s{.*/}{};
     atomic_file("$dir/rotation",encode_json({archive=>$name,month=>$now,key=>"$st[0]:$st[1]"}));
-    recover_rotation($path,$dir);
+    _fence($opts,$path,1) if defined $opts;
+    recover_rotation($path,$dir,$opts);
 }
 sub journal_append {
     my $ok=eval {_journal_append(@_)};
@@ -411,22 +579,26 @@ sub recovery_path {
     return $path;
 }
 sub migrate_checkpoints {
-    my ($root)=@_; return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
+    my ($root,$opts)=@_; return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
     my $dir="$root/.loomy/logs"; return unless safe_path($dir) && -d $dir;
     return if -f "$dir/checkpoint-v2";
+    _fence($opts,"$dir/checkpoint-v2",0);
     my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
     require "$lib/codex-native.pl"; require "$lib/claude-native.pl";
     for my $tool (qw(codex claude)) {
         my $idx="$dir/$tool-native.idx"; next unless -e $idx;
+        # Pure refusal first: even the lock file is not created beside an unknown format.
+        die "unsupported checkpoint format\n" if checkpoint_peek($idx)->{status} eq 'unsupported';
         die 'unsafe migration lock' unless safe_path("$idx.lock");
         sysopen my $lock,"$idx.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or die;
         flock($lock,LOCK_EX|LOCK_NB) or return;
-        my $s=checkpoint_load($idx); next if ($s->{version}//0)==2;
+        my $s=checkpoint_load($idx,$opts); next if ($s->{version}//0)==2;
         my $dirty=1;
         if ($tool eq 'codex') {Loomy::CodexNative::prune_checkpoint($s,$ENV{LOOMY_NATIVE_NOW}//time)}
         else {Loomy::ClaudeNative::prune($s,\$dirty)}
-        checkpoint_save($idx,$s);
+        checkpoint_save($idx,$s,$opts);
     }
+    _fence($opts,"$dir/checkpoint-v2",0);
     atomic_file("$dir/checkpoint-v2","2\n");
 }
 sub valid_event {

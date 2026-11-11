@@ -307,7 +307,7 @@ fi
 t "- Phase change: announce it on one line \"Phase n/10 · Name\", then what you are doing and what you expect from the user."; echo
 # Official skills of the project (the agents load them from their folders): names only, and how to add more.
 if [[ -s "$ROOT/.loomy/skills.lock" ]]; then
-  t "- Official skills installed (.claude/skills/, .agents/skills/): %s. For another kind of work: loomy skills suggest \"…\", then loomy skills add <name> (official sources only)." "$(cut -d'|' -f1 "$ROOT/.loomy/skills.lock" | paste -sd ',' - | sed 's/,/, /g')"; echo
+  t "- Official skills installed (.claude/skills/, .agents/skills/): %s. For another kind of work: loomy skills suggest \"…\", then loomy skills add <name> (official sources only)." "$(cut -d'|' -f1 "$ROOT/.loomy/skills.lock" | grep -E '^[a-z0-9][a-z0-9-]{0,63}$' | paste -sd ',' - | sed 's/,/, /g')"; echo
 fi
 # Live tracking not open (session started outside loomy start): one line for the user, at the start only.
 if [[ "$HOOK" == "start" && "${src:-startup}" == "startup" ]] && ! ps -axo command 2>/dev/null | grep -vF grep | grep -qF -- "--root $ROOT --watch"; then

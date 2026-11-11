@@ -2,7 +2,7 @@
 
 [← README](../README.fr.md)
 
-Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.7**. Dans le terminal : `loomy help <commande>`.
+Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.8**. Dans le terminal : `loomy help <commande>`.
 
 ## Projet
 
@@ -66,7 +66,7 @@ loomy privacy content structural
 loomy privacy content legacy-excerpts
 ```
 
-Affiche la politique effective, sa source et son périmètre projet, ou modifie les futures écritures du journal. En 0.17.7, les nouvelles entrées et les nouveaux instantanés de rotation ne contiennent par défaut que la structure autorisée, sur les projets nouveaux comme mis à jour. Les fichiers et archives existants restent inchangés.
+Affiche la politique effective, sa source et son périmètre projet, ou modifie les futures écritures du journal. En 0.17.8, les nouvelles entrées et les nouveaux instantanés de rotation ne contiennent par défaut que la structure autorisée, sur les projets nouveaux comme mis à jour. Les fichiers et archives existants restent inchangés.
 
 `legacy-excerpts` est une autorisation explicite distincte pour le projet. Elle permet uniquement les champs de premier niveau bornés `task` (200 caractères Unicode), `excerpt` (60), `why` (200), `nickname` (40) et `cwd_relative` (256, à l'intérieur du projet). Elle n'active pas la conservation des tâches/résultats complets.
 
@@ -116,7 +116,7 @@ Inventaire en lecture seule des métadonnées des emplacements connus : nombres 
 
 `--git-history` vérifie les métadonnées de chemins dans l'index et l'historique locaux du projet/compagnon, sans récupération distante ni réécriture. `--host` ajoute les emplacements connus de Loomy sur l'hôte et les fichiers temporaires ; un nom correspondant ne prouve pas qu'un fichier est abandonné. Les transcriptions des fournisseurs, clones distants, sauvegardes et exports à d'autres emplacements restent hors de la couverture démontrée. Un inventaire ne prouve pas l'absence de texte sensible.
 
-Le correctif 0.17.7 couvre les nouvelles écritures et instantanés de rotation du journal, les reçus et la préparation automatique des retours. Les checkpoints/curseurs natifs, fichiers temporaires d'exécution/affichage et diagnostics peuvent encore conserver du texte ou des chemins. `log --raw` et les exports explicites `report --md` gardent leur comportement existant. Ces contrôles ne purgent ni n'assainissent les anciens fichiers, l'historique Git ou les transcriptions gérées par les fournisseurs.
+Le correctif 0.17.8 couvre les nouvelles écritures et instantanés de rotation du journal, les reçus et la préparation automatique des retours. Les checkpoints/curseurs natifs, fichiers temporaires d'exécution/affichage et diagnostics peuvent encore conserver du texte ou des chemins. `log --raw` et les exports explicites `report --md` gardent leur comportement existant. Ces contrôles ne purgent ni n'assainissent les anciens fichiers, l'historique Git ou les transcriptions gérées par les fournisseurs.
 
 ## Sessions et travail
 
@@ -248,7 +248,7 @@ loomy log --since AAAA-MM-JJ
 loomy log --csv
 ```
 
-Journal lisible, à l'heure locale, éventuellement en continu, avec résolution des libellés autorisés pour les nouvelles entrées. `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts. En 0.17.7, `--raw` émet toujours le JSON original, y compris le texte des anciennes entrées ou du mode compatible ; ce n'est pas un export assaini.
+Journal lisible, à l'heure locale, éventuellement en continu, avec résolution des libellés autorisés pour les nouvelles entrées. `--since AAAA-MM-JJ` remonte dans les archives mensuelles ; `--csv` exporte les coûts. En 0.17.8, `--raw` émet toujours le JSON original, y compris le texte des anciennes entrées ou du mode compatible ; ce n'est pas un export assaini.
 
 ### `loomy stats`
 
@@ -268,7 +268,7 @@ loomy report --md [dossier]
 loomy report --all
 ```
 
-Chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` écrit du Markdown dans `docs/reports/` ou le dossier choisi ; `--all` tous les projets. Sans option, `report` ne crée aucun fichier Markdown. En 0.17.7, un rapport Markdown explicite peut encore contenir le nom du projet et les titres des tâches ; relis-le avant de le partager.
+Chiffres du projet : démarrage, tâches, délégations par rôle et par modèle, tokens, coût ; `--md [dossier]` écrit du Markdown dans `docs/reports/` ou le dossier choisi ; `--all` tous les projets. Sans option, `report` ne crée aucun fichier Markdown. En 0.17.8, un rapport Markdown explicite peut encore contenir le nom du projet et les titres des tâches ; relis-le avant de le partager.
 
 ### `loomy memory`
 

@@ -528,6 +528,21 @@ if ($^O eq 'linux') {
     Loomy::CollectorOwner::release($r->{guard});
 }
 
+# The hand-written record codec stays byte-compatible and keeps JSON::PP off the election path.
+{
+    my $root=project('codec',1); my $r=acquire($root); my $file="$root/.loomy/logs/collector-owner-v1.json";
+    is(bytes($file),$json->encode(record($root))."\n",'the record bytes equal canonical JSON::PP output');
+    Loomy::CollectorOwner::release($r->{guard});
+    is(bytes($file),$json->encode(record($root))."\n",'the released record keeps canonical bytes');
+    my $rec=record($root); put($file,JSON::PP->new->utf8->canonical->pretty->encode($rec));
+    is(inspect($root)->{record}{epoch},$rec->{epoch},'a spaced record is still read through the general decoder');
+    put($file,$json->encode({%$rec,pid=>'7'})."\n");
+    is(inspect($root)->{record}{pid},'7','a stringly typed pid is read like before');
+    my $probe=project('codec-fresh',1);
+    my $out=`$^X -e 'require "$repo/scripts/lib/collector-owner.pl"; my \$c=Loomy::RuntimePaths::resolve("$probe"); my \$r=Loomy::CollectorOwner::try_acquire(\$c,"b"); Loomy::CollectorOwner::release(\$r->{guard}); print \$INC{"JSON/PP.pm"} ? "json" : "none", " ", \$INC{"POSIX.pm"} ? "posix" : "noposix"'`;
+    is($out,'none noposix','election and release load neither JSON::PP nor POSIX');
+}
+
 # Invalid or unsafe record: a typed reason names the file; nothing is repaired or removed.
 for my $case (['garbage',sub {put($_[0],"not json\n")},'unsafe','invalid-record','logs/collector-owner-v1.json'],
     ['world-readable',sub {put($_[0],"{}\n",0644)},'unsafe','unsafe-record','logs/collector-owner-v1.json'],

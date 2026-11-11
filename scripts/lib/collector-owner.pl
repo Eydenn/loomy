@@ -6,15 +6,37 @@ use Cwd qw(abs_path);
 use Errno qw(EAGAIN EWOULDBLOCK ENOENT);
 use Fcntl qw(:DEFAULT :flock :mode O_NOFOLLOW O_NONBLOCK F_GETFD F_SETFD FD_CLOEXEC);
 use IO::Handle;
-use JSON::PP ();
-use POSIX ();
 use Scalar::Util qw(blessed refaddr weaken);
-use Sys::Hostname ();
 use Time::HiRes qw(stat lstat);
 
 my $LIB = abs_path(__FILE__); $LIB =~ s{/[^/]+$}{};
 require "$LIB/runtime-paths.pl";
-my $JSON = JSON::PP->new->utf8->canonical;
+# JSON::PP is loaded only for records the exact fast parser cannot read; the
+# writer's own flat, canonical format is encoded and decoded by hand.
+my $JSON;
+sub _json { $JSON //= do { require JSON::PP; JSON::PP->new->utf8->canonical } }
+sub _encode_record {
+    my ($r) = @_;
+    return '{'.join(',',map {
+        my ($k,$v) = ($_,$r->{$_});
+        qq("$k":).(!defined($v) ? 'null' : $k =~ /\A(?:schema|protocol|pid)\z/ && $v =~ /\A[0-9]+\z/ ? 0+$v
+            : '"'.($v =~ s/(["\\])/\\$1/gr).'"')
+    } sort keys %$r).'}';
+}
+# Exact writer format only; undef means "use the general decoder".
+sub _decode_record_fast {
+    my ($raw) = @_;
+    return undef unless $raw =~ /\A\{(.*)\}\n?\z/s;
+    my $body = $1; my %r; my $n = 0;
+    pos($body) = 0;
+    while (pos($body) < length($body)) {
+        return undef unless $body =~ /\G(,?)"([a-z_]{1,32})":(null|[0-9]{1,16}|"[A-Za-z0-9_.: +\/-]{0,256}")/gc;
+        my ($comma,$k,$v) = ($1,$2,$3);
+        return undef if exists $r{$k} || ($comma ne '') != ($n++ > 0);
+        $r{$k} = $v eq 'null' ? undef : $v =~ /\A"(.*)"\z/s ? $1 : 0+$v;
+    }
+    return \%r;
+}
 my $LOCK = 'collector.lock';
 my $RECORD = 'collector-owner-v1.json';
 my $MAX_RECORD = 4096;
@@ -47,6 +69,7 @@ sub _refusal {
 }
 sub _scalar { defined($_[0]) && !ref($_[0]) }
 sub _build { _scalar($_[0]) && $_[0] =~ /\A[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}\z/ }
+sub _hostname { return $INC{'POSIX.pm'} ? (POSIX::uname())[1] : do { require Sys::Hostname; Sys::Hostname::hostname() } }
 sub _diagnostic {
     return undef unless _scalar($_[0]) && length($_[0]) && length($_[0]) <= 256
         && $_[0] =~ /\A[A-Za-z0-9][A-Za-z0-9_.: +\/-]*\z/;
@@ -186,6 +209,7 @@ sub _command_probe {
     return undef unless defined($pid);
     if (!$pid) {
         after_fork_child();
+        require POSIX;
         open STDERR,'>','/dev/null' or POSIX::_exit(1);
         exec {$command[0]} @command or POSIX::_exit(1);
     }
@@ -205,7 +229,7 @@ sub _command_probe {
 # inaccessible birth/boot evidence. None of these diagnostics can steal a lock.
 sub _probe_identity {
     my ($pid,$fast) = @_;
-    my $identity = {host=>_diagnostic(eval { Sys::Hostname::hostname() })};
+    my $identity = {host=>_diagnostic(eval { _hostname() })};
     if ($^O eq 'linux') {
         my $boot = _read_probe_file('/proc/sys/kernel/random/boot_id',128);
         if (defined($boot)) { $boot =~ s/\s+\z//; $identity->{boot} = _diagnostic($boot) }
@@ -259,7 +283,7 @@ sub _validate_record {
     # Values in this schema are scalar, so each object-key token must be unique.
     my %seen;
     while ($raw =~ /("(?:[^"\\]|\\.)*")\s*:/g) {
-        my $key = eval { $JSON->decode($1) };
+        my $quoted = $1; my $key = $quoted =~ /\A"([^"\\]*)"\z/ ? $1 : eval { _json()->decode($quoted) };
         _abort('invalid-record') if $@ || !defined($key) || $seen{$key}++;
     }
     _abort('invalid-record') unless _build($record->{build})
@@ -295,7 +319,8 @@ sub _read_record_here {
     my @named = lstat($RECORD);
     _abort('unsafe-record') unless length($raw) <= $MAX_RECORD
         && _same_file(\@before,\@after) && _same_file(\@after,\@named);
-    my $record = eval { $JSON->decode($raw) };
+    my $record = _decode_record_fast($raw);
+    $record = eval { _json()->decode($raw) } unless $record;
     _abort('invalid-record') if $@;
     return _validate_record($record,$raw);
 }
@@ -335,7 +360,7 @@ sub _verify_lock_here {
 sub _record_equal {
     my ($a,$b) = @_;
     return !defined($a) && !defined($b) if !defined($a) || !defined($b);
-    return $JSON->encode($a) eq $JSON->encode($b);
+    return _encode_record($a) eq _encode_record($b);
 }
 sub _storage_here {
     my ($state) = @_;
@@ -362,8 +387,8 @@ sub _clean_stale_tmp {
     return $removed;
 }
 sub _write_record {
-    my ($state,$next) = @_;
-    my $raw = $JSON->encode($next)."\n";
+    my ($state,$next,$nosync) = @_;
+    my $raw = _encode_record($next)."\n";
     _abort('invalid-record') if length($raw) > $MAX_RECORD;
     _current($state->{ctx});
     _in_dir($state->{ctx}{logs},sub {
@@ -382,7 +407,7 @@ sub _write_record {
                 _abort('unsafe-record') unless _private_file(\@temporary);
                 print {$h} $raw or _abort('io-error');
                 $h->flush or _abort('io-error');
-                $h->sync or _abort('io-error');
+                $h->sync or _abort('io-error') unless $nosync;
                 close($h) or _abort('io-error'); undef $h;
                 _current($state->{ctx});
                 _storage_here($state);
@@ -390,7 +415,7 @@ sub _write_record {
                 _abort('unsafe-record') unless _private_file(\@named) && _same_inode(\@temporary,\@named);
                 rename($tmp,$RECORD) or _abort('io-error'); $renamed=1;
                 $state->{record} = {%$next};
-                $state->{ctx}{logs}->sync or _abort('io-error');
+                $state->{ctx}{logs}->sync or _abort('io-error') unless $nosync;
                 _current($state->{ctx});
                 _storage_here($state);
                 my @written = lstat($RECORD);
@@ -656,7 +681,8 @@ sub release {
     assert_owner($guard);
     my $state = _auth($guard);
     my $next = {%{$state->{record}},state=>'released'};
-    my $ok=eval { _write_record($state,$next); 1 };
+    # Advisory record: the lock release is the authority, so no fsync here.
+    my $ok=eval { _write_record($state,$next,1); 1 };
     unless ($ok) { _close_state($state,'FENCED'); die "collector owner IO_ERROR\n" }
     # Runtime handles close first; the lifetime lock descriptor closes last.
     _close_state($state,'RELEASED');

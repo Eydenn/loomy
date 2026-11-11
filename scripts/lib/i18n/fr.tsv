@@ -2391,6 +2391,9 @@ older sensitive results	anciens résultats sensibles
 Full result unavailable: retention was off	Résultat complet indisponible : la conservation était désactivée
 Exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model.	Le code 75 indique une pause. Lire resume_at ; conserver le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options exacts. À la réinitialisation, reprendre la tâche et les options exactes depuis le contexte vivant ou une référence de tâche/résultat privé autorisée ; vérifier les modifications avant de relancer. Sinon signaler que la tâche d’origine est nécessaire, sans relancer ni poursuivre le travail dépendant. Ne jamais deviner ni choisir un modèle moins puissant.
 Selected label sources: %s	Sources de libellés sélectionnées : %s
+Selected label sources: none	Sources de libellés sélectionnées : aucune
+none selected	aucune
+current private format	format privé actuel
 Policy source: %s · scope: project · generation: %s	Source de la politique : %s · portée : projet · génération : %s
 project defaults	valeurs par défaut du projet
 project policy file	fichier de politique du projet

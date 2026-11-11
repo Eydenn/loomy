@@ -76,15 +76,31 @@ sub parse_policy {
 
 # Work relative to pinned directory descriptors. Renaming an ancestor cannot redirect
 # a write; check the registered locations again before committing. Existing modes stay intact.
+# Group write is tolerated on .loomy and .loomy/memory only when the directory
+# group is the user's private group (group name == user name, nobody else a
+# member). Shared groups such as macOS staff, and any world write, are refused.
+sub _group_info { my @g=getgrgid($_[0]); return @g ? ($g[0],$g[3]) : () }
+sub _private_group {
+    my ($gid)=@_; my @pw=getpwuid($<); my ($name,$members)=_group_info($gid);
+    return 0 unless @pw && defined($name) && $name eq $pw[0];
+    for my $m (split ' ',$members//'') { return 0 unless $m eq $pw[0] }
+    return 1;
+}
+sub _dir_unsafe {
+    my ($mode,$gid,$lenient)=@_;
+    return 1 if $mode&002;
+    return 0 unless $mode&020;
+    return $lenient && _private_group($gid) ? 0 : 1;
+}
 sub _dir {
-    my ($p,$display)=@_; $display//=$p; my $writable_mask=$p =~ m{(?:\A|/)\.loomy\z} ? 002 : 022;
+    my ($p,$display)=@_; $display//=$p; my $lenient=$p =~ m{(?:\A|/)(?:\.loomy|memory)\z} ? 1 : 0;
     my @s=lstat($p);
     die "unsafe content directory\n" unless @s && S_ISDIR($s[2]) && $s[4]==$<;
-    die "unsafe directory: $display (group/world writable)\n" if $s[2]&$writable_mask;
+    die "unsafe directory: $display (group/world writable)\n" if _dir_unsafe($s[2],$s[5],$lenient);
     sysopen my $h,$p,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die "unsafe content directory\n";
     my @f=stat($h);
     die "unsafe content directory\n" unless @f && $s[0]==$f[0] && $s[1]==$f[1] && $f[4]==$<;
-    die "unsafe directory: $display (group/world writable)\n" if $f[2]&$writable_mask;
+    die "unsafe directory: $display (group/world writable)\n" if _dir_unsafe($f[2],$f[5],$lenient);
     return ($h,\@f);
 }
 sub _same {
@@ -130,7 +146,7 @@ sub _context {
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
     chdir $loomy or die "content directory unavailable\n";
     my ($logs,$ds,$project_id); my $ok=eval {
-        $project_id=_project_id($root);
+        $project_id=_project_id($root,$create);
         if (!lstat('logs') && $create) {
             my $mask=umask 0077; my $made=mkdir 'logs',0700; umask $mask;
             die "content directory unavailable\n" unless $made || -d 'logs';
@@ -144,8 +160,19 @@ sub _context {
 # Pin the old namespace once, before any new references are made. Keeping that
 # namespace is the migration: historical journal/label/memory references need no
 # rewrite. The file lives in the shared .loomy, independently of its current path.
+# The identity file may only be stored where it cannot appear as an untracked file: outside a Git work tree, or
+# where .gitignore / .git/info/exclude already ignores it (read directly: no process on the writer path).
+sub _identity_ignorable {
+    my ($root)=@_; return 1 unless -e "$root/.git";
+    for my $f ("$root/.gitignore","$root/.git/info/exclude") {
+        next unless -f $f && !-l $f && -s _ <= 1048576; open my $h,'<',$f or next;
+        local $/; my $t=<$h>//''; close $h;
+        return 1 if $t =~ m{^/?\.loomy(?:/(?:project-id)?)?[ \t]*\r?$}m;
+    }
+    return 0;
+}
 sub _project_id {
-    my ($root)=@_; my $name='project-id';
+    my ($root,$create)=@_; my $name='project-id';
     unless (lstat($name)) {
         my $id='p'.sha256_hex(utf8::is_utf8($root) ? _encode_utf8($root) : $root);
         # A project may already have moved since the path-based writer ran.
@@ -160,6 +187,9 @@ sub _project_id {
             return;
         })->()};
         $id=$old if defined $old;
+        # Readers derive the identity without storing it. A writer pins it only where it cannot show up as an
+        # untracked file (projects whose managed .gitignore block predates it are repaired first).
+        return $id unless $create && _identity_ignorable($root);
         my $mask=umask 0077;
         if (sysopen my $h,$name,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600) {
             my $ok=eval {print {$h} "$id\n" or die; $h->flush && $h->sync or die; close $h or die; 1};
@@ -189,7 +219,7 @@ sub _assert_context {
     my ($c)=@_; my @l=lstat("$c->{root}/.loomy"); my @d=lstat("$c->{root}/.loomy/logs");
     die "content directory changed\n" unless @l && @d && S_ISDIR($l[2]) && S_ISDIR($d[2])
         && $l[4]==$< && $d[4]==$<;
-    die "unsafe directory: $c->{root}/.loomy (group/world writable)\n" if $l[2]&002;
+    die "unsafe directory: $c->{root}/.loomy (group/world writable)\n" if _dir_unsafe($l[2],$l[5],1);
     die "unsafe directory: $c->{root}/.loomy/logs (group/world writable)\n" if $d[2]&022;
     die "content directory changed\n" unless $l[0]==$c->{ls}[0] && $l[1]==$c->{ls}[1]
         && $d[0]==$c->{ds}[0] && $d[1]==$c->{ds}[1];
@@ -391,7 +421,7 @@ sub _describe {
     _say('PRIVACY', $ENV{'LOOMY_CONTENT_UI_'.($p->{journal_content} eq 'structural' ? 'STRUCTURE' : 'LEGACY')},
         $ENV{'LOOMY_CONTENT_UI_'.($p->{label_sources} eq 'none' ? 'OFF' : 'ON')},
         $ENV{'LOOMY_CONTENT_UI_'.($p->{private_results} eq 'off' ? 'OFF' : 'ON')});
-    _say('SELECTED_SOURCES',$p->{label_sources} eq 'none' ? $ENV{LOOMY_CONTENT_UI_OFF} : $p->{label_sources});
+    if ($p->{label_sources} eq 'none') {_say('SELECTED_NONE')} else {_say('SELECTED_SOURCES',$p->{label_sources})}
     _say('LOWER_LABEL_CAPS',@$p{qw(label_max_graphemes label_max_bytes codex_component_max_chars label_store_max_bytes)});
     _say('LOWER_RESULT_CAPS',@$p{qw(results_max_records results_max_record_bytes results_max_total_bytes results_max_age_days)});
 }

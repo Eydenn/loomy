@@ -233,6 +233,44 @@ check('none found' in plain.stdout and 'legacy content possible' not in plain.st
       'P16 empty locations say "none found", not "legacy content possible"')
 french = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', empty, '--git-history', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
 check('inconnu chemin' not in french.stdout and 'inconnus' in french.stdout, 'P16 FR unknown Git counts use a dedicated grammatical form')
+# Zero-byte stores are "none found"; label/policy stores (0.17.7 format) never claim legacy text.
+zero = work / 'zero-byte'
+put(zero / '.loomy/logs/events.jsonl', '')
+new_stores = work / 'new-stores'
+put(new_stores / '.loomy/logs/content-policy.conf', 'version=1\n')
+put(new_stores / '.loomy/project-id', 'p' + 'a' * 64 + '\n')
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', zero)
+check('Journal: none found' in plain.stdout, 'P17 a 0-byte journal says "none found"')
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', new_stores)
+labels_row = [l for l in plain.stdout.splitlines() if l.startswith('Task labels')]
+check(labels_row and 'legacy content possible' not in labels_row[0] and 'current private format' in labels_row[0],
+      'P17 label/policy stores of this release never say "legacy content possible"')
+# Outside a Loomy project the status shows no privacy lines or label hint.
+outside = work / 'not-a-project'
+outside.mkdir()
+status = run(repo / 'scripts/loomy-status.sh', '--root', outside)
+check('task labels' not in status.stdout and 'loomy privacy' not in status.stdout and 'Task labels off' not in status.stdout,
+      'P17 status outside a Loomy project has no privacy lines or labels hint')
+# A project whose managed .gitignore block predates project-id: read-only commands leave Git clean.
+legacy = work / 'gitignore-0176'
+(legacy / '.loomy/logs').mkdir(parents=True)
+(legacy / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+(legacy / '.gitignore').write_text('# >>> Loomy: local history and work files, never versioned\n.loomy/logs/\n.loomy/memory/\n.loomy/*.state\n# <<< Loomy: local history and work files\n')
+run('git', '-C', legacy, 'init', '-q', '-b', 'main')
+run('git', '-C', legacy, 'add', '-A')
+run('git', '-C', legacy, 'commit', '-q', '-m', 'init')
+before = run('git', '-C', legacy, 'status', '--porcelain').stdout
+run(repo / 'scripts/loomy-status.sh', '--root', legacy)
+run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content')
+after = run('git', '-C', legacy, 'status', '--porcelain').stdout
+check(before == '' and after == '' and not (legacy / '.loomy/project-id').exists(),
+      'P17 loomy status / privacy content leave git status clean in a 0.17.6 project (no project-id yet)')
+# French wording for no label source: feminine agreement.
+french = run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
+check('Sources de libellés sélectionnées : aucune' in french.stdout and 'sélectionnées : désactivés' not in french.stdout,
+      'P17 FR label_sources=none reads "aucune"')
+english = run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content')
+check('Selected label sources: none' in english.stdout, 'P17 EN label_sources=none reads "none"')
 census = work / 'census'
 for name in ('events.next', 'usage.idx', 'desktop-resume.stdout', 'skill-install.log'):
     put(census / '.loomy/logs' / name, 'PRIVATE_CENSUS')

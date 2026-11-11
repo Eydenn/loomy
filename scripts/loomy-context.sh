@@ -258,7 +258,8 @@ mem_state=""; mem_dig=""; mem_on=0
 if [[ "${src:-}" != "resume" && "$(loomy_config_get memory 2>/dev/null || true)" != "off" ]]; then
   mem_on=1
   mem_state="$(loomy_memory_state "$ROOT" 40)"
-  mem_dig="$(loomy_memory_digest "$ROOT" 4 new)"
+  # No receipt store yet (nothing was delegated): skip the backend process.
+  [[ ! -d "$ROOT/.loomy/memory/receipts-v1" ]] || mem_dig="$(loomy_memory_digest "$ROOT" 4 new)"
 fi
 # Previous session in the other tool (start hook only): the start events of the same session (the launcher and the
 # hook both record one) are grouped when they are less than 5 minutes apart.

@@ -56,6 +56,7 @@ if [[ "$CMD" == inventory ]]; then
   tv LM_INV_NOTE "Content not inspected; no files copied, changed, sent or removed."
   tv LM_INV_UNKNOWN "unknown"
   tv LM_INV_LEGACY "legacy content possible"
+  tv LM_INV_CURRENT "current private format"
   tv LM_INV_GIT "%s: %s runtime index path(s), %s local history commit(s)"
   tv LM_INV_GIT_UNKNOWN "%s: runtime index paths and local history unknown"
   tv LM_INV_NONE "%s: none found"
@@ -78,7 +79,7 @@ if [[ "$CMD" == inventory ]]; then
   tv LM_INV_PROJECT_GIT "Project Git metadata"
   tv LM_INV_COMPANION_GIT "Companion Git metadata"
   export LM_INV_GIT_UNKNOWN LM_INV_NONE
-  export LM_INV_TITLE LM_INV_ROW LM_INV_PARTIAL LM_INV_COMPLETE LM_INV_NOTE LM_INV_UNKNOWN LM_INV_LEGACY LM_INV_GIT LM_INV_HOST
+  export LM_INV_TITLE LM_INV_ROW LM_INV_PARTIAL LM_INV_COMPLETE LM_INV_NOTE LM_INV_UNKNOWN LM_INV_LEGACY LM_INV_CURRENT LM_INV_GIT LM_INV_HOST
   export LM_INV_EXTERNAL
   export LM_INV_JOURNAL LM_INV_ARCHIVES LM_INV_SCRATCH LM_INV_LABELS LM_INV_DELEGATIONS LM_INV_RESULTS LM_INV_RECEIPTS LM_INV_WORK
   export LM_INV_AUTHORED LM_INV_STATE LM_INV_REPORTS LM_INV_BACKUPS LM_INV_HOST_FILES LM_INV_HOST_TMP LM_INV_PROJECT_GIT LM_INV_COMPANION_GIT
@@ -376,11 +377,12 @@ else {
       'host-repair-reports-cache'=>$ENV{LM_INV_HOST_FILES},'host-temporary-candidates'=>$ENV{LM_INV_HOST_TMP});
     print "$ENV{LM_INV_TITLE}\n";
     for my $r (@rows) {
-        if (!$r->{file_count} && !$r->{symlink_count} && !$r->{unreadable_count} && $r->{scan_complete}) {
+        if (!$r->{bytes} && !$r->{symlink_count} && !$r->{unreadable_count} && $r->{scan_complete}) {
             printf "$ENV{LM_INV_NONE}\n",$labels{$r->{category}};
         } else {
+            # Label and policy stores only exist in the private, current format: no legacy text to mention.
             printf "$ENV{LM_INV_ROW}\n",$labels{$r->{category}},$r->{file_count},$r->{bytes},$r->{symlink_count},$r->{unreadable_count},
-              $r->{content_status} eq 'legacy-possible'?$ENV{LM_INV_LEGACY}:$ENV{LM_INV_UNKNOWN};
+              $r->{content_status} eq 'legacy-possible'?($r->{category} eq 'labels-and-policy'?$ENV{LM_INV_CURRENT}:$ENV{LM_INV_LEGACY}):$ENV{LM_INV_UNKNOWN};
         }
         if ($paths) {print '  ',$json->encode($_),"\n" for @{$r->{paths}}}
     }

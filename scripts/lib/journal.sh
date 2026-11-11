@@ -25,12 +25,13 @@ ai_claude_native_poll() {
 # A Stop hook proves the lead turn is idle; it does not close the reusable session.
 ai_journal_claude_idle() {
   local sid ts
-  sid="$(printf '%s' "$2" | perl -MJSON::PP -e '
+  # One process for the session id and the timestamp: "<id> <ts>" (the id never holds a space).
+  read -r sid ts < <(printf '%s' "$2" | perl -MJSON::PP -MTime::HiRes=time -MPOSIX=strftime -e '
     local $/; my $d=eval {decode_json(<STDIN>)}; exit unless ref($d) eq "HASH";
-    my $id=$d->{session_id}; print $id if defined($id) && !ref($id) && $id =~ /\A[A-Za-z0-9_.:-]{1,100}\z/;
-  ' 2>/dev/null)"
-  [[ -n "$sid" ]] || return 0
-  ts="$(perl -MTime::HiRes=time -MPOSIX=strftime -e 'my $n=time; print strftime("%Y-%m-%dT%H:%M:%S",gmtime($n)).sprintf(".%03dZ",int(($n-int($n))*1000))')"
+    my $id=$d->{session_id}; exit unless defined($id) && !ref($id) && $id =~ /\A[A-Za-z0-9_.:-]{1,100}\z/;
+    my $n=time; print "$id ",strftime("%Y-%m-%dT%H:%M:%S",gmtime($n)).sprintf(".%03dZ",int(($n-int($n))*1000));
+  ' 2>/dev/null) || true
+  [[ -n "$sid" && -n "$ts" ]] || return 0
   ai_journal_write "$1" "\"type\":\"session_activity\",\"tool\":\"claude\",\"session\":$(ai_json_str "$sid"),\"state\":\"idle\"" "$ts"
 }
 ai_codex_native_poll() {
@@ -41,26 +42,35 @@ ai_codex_native_poll() {
 }
 
 # Private logs, including older files. Descriptor chmod never follows a symbolic link.
-ai_journal_prepare() {
-  [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/logs" ]] || return 1
-  perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e '
-    my $dir=shift; umask 0077;
-    mkdir $dir,0700 unless -e $dir; exit 1 unless -d $dir && !-l $dir;
+# The Perl is a sub shared by ai_journal_prepare and ai_journal_write (one process for both).
+AI_JOURNAL_PREPARE_PL='
+  sub journal_prepare {
+    my $dir=shift; my $old=umask 0077; my $ok=_journal_prepare($dir); umask $old; return $ok;
+  }
+  sub _journal_prepare {
+    my $dir=shift;
+    mkdir $dir,0700 unless -e $dir; return 0 unless -d $dir && !-l $dir;
     my @dirs=($dir); my @files;
     if (-e "$dir/archive" || -l "$dir/archive") {
-      exit 1 unless -d "$dir/archive" && !-l "$dir/archive"; push @dirs,"$dir/archive";
+      return 0 unless -d "$dir/archive" && !-l "$dir/archive"; push @dirs,"$dir/archive";
     }
     for my $d (@dirs) {
-      opendir my $dh,$d or exit 1;
+      opendir my $dh,$d or return 0;
       for my $n (readdir $dh) {
         next if $n eq "." || $n eq ".." || ($d eq $dir && $n eq "archive");
-        my $p="$d/$n"; exit 1 if -l $p; push @files,$p if -f $p;
+        my $p="$d/$n"; return 0 if -l $p; push @files,$p if -f $p;
       }
     }
-    for my $d (@dirs) { sysopen my $f,$d,O_RDONLY|O_NOFOLLOW or exit 1; chmod 0700,$f or exit 1 }
+    for my $d (@dirs) { sysopen my $f,$d,O_RDONLY|O_NOFOLLOW or return 0; chmod 0700,$f or return 0 }
     push @files,"$dir/events.jsonl" unless -e "$dir/events.jsonl";
-    for my $p (@files) { sysopen my $f,$p,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or exit 1; chmod 0600,$f or exit 1 }
-  ' "$1/.loomy/logs" 2>/dev/null
+    for my $p (@files) { sysopen my $f,$p,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return 0; chmod 0600,$f or return 0 }
+    return 1;
+  }
+'
+_ai_journal_guard() { [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/logs" ]]; }
+ai_journal_prepare() {
+  _ai_journal_guard "$1" || return 1
+  perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'exit(journal_prepare(shift) ? 0 : 1);' "$1/.loomy/logs" 2>/dev/null
 }
 
 # Legacy/untrusted logs can contain huge lines: bound bytes before splitting or canonicalizing.
@@ -111,9 +121,11 @@ _ai_journal_write_checked() {
   local root="$1" body="$2" file
   ai_journal_enabled "$root" || return 0
   file="$(ai_journal_file "$root")"
-  ai_journal_prepare "$root" || return 1
-  printf '%s' "$body" | perl -e '
-    my ($module,$path,$ts)=@ARGV; require $module;
+  _ai_journal_guard "$root" || return 1
+  printf '%s' "$body" | perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'
+    my ($module,$path,$ts)=@ARGV; my $dir=$path; $dir =~ s{/[^/]+\z}{};
+    exit 2 unless journal_prepare($dir);
+    require $module;
     local $/; my $body=<STDIN>;
     exit(Loomy::LiveState::journal_append($path,$body,$ts) ? 0 : 1);
   ' "$AI_LIVE_STATE_LIB" "$file" "${3:-}"

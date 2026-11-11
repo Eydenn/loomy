@@ -203,12 +203,25 @@ for my $part ('.loomy','.loomy/logs') {
     system('git','-C',$a,'init','-q','-b','main')==0 or die 'umask fixture git init';
     my $mask=umask 0002; mkdir "$a/.loomy" or die $!; umask $mask;
     is((stat("$a/.loomy"))[2]&0777,0775,'mkdir .loomy under umask 002 produces expected 0775 mode');
-    is(policy($a)->{valid},1,'P16 user-owned group-writable .loomy still has a valid policy');
-    my $ctx=Loomy::ContentPolicy::_context($a,1);
-    is((stat("$a/.loomy/logs"))[2]&0777,0700,'logs stay private under umask 002');
-    seed($a,label_sources=>'claude-description');
-    my $ref=label($a,'umask label');
-    is(Loomy::ContentPolicy::resolve_label($a,$ref)->{text},'umask label','label storage works with group-writable .loomy');
+    # Group write is accepted only for the user's private group (Linux user-private groups). Simulate that
+    # group on any host, then check the real one: a shared group such as macOS staff is refused by name.
+    my $user=(getpwuid($<))[0];
+    {
+        no warnings 'redefine';
+        local *Loomy::ContentPolicy::_group_info=sub {($user,'')};
+        is(policy($a)->{valid},1,'P16 user-owned group-writable .loomy with a private group has a valid policy');
+        my $ctx=Loomy::ContentPolicy::_context($a,1);
+        is((stat("$a/.loomy/logs"))[2]&0777,0700,'logs stay private under umask 002');
+        seed($a,label_sources=>'claude-description');
+        my $ref=label($a,'umask label');
+        is(Loomy::ContentPolicy::resolve_label($a,$ref)->{text},'umask label','label storage works with a private-group group-writable .loomy');
+        local *Loomy::ContentPolicy::_group_info=sub {('staff','')};
+        ok(!eval {Loomy::ContentPolicy::_assert_context($ctx); 1} && $@ =~ /\Aunsafe directory: .*\.loomy \(group\/world writable\)\n\z/,
+            'a shared group makes the same directory unsafe');
+        ok(!eval {Loomy::ContentPolicy::_context($a,0); 1} && $@ =~ /\Aunsafe directory: /,'shared group: the context is refused with the named directory');
+    }
+    my $real_private=Loomy::ContentPolicy::_private_group((stat("$a/.loomy"))[5]);
+    is(eval {Loomy::ContentPolicy::_context($a,0); 1} ? 1 : 0,$real_private ? 1 : 0,'real group: accepted only when it is the private group');
 }
 {
     my $a="$work/default-noop"; make_path("$a/.loomy",{mode=>0700});
@@ -255,7 +268,11 @@ for my $id ('.','..','_name','-name',':name') {
     is(policy($wt)->{project_id},policy($owner)->{project_id},'tracked .loomy layout shares identity through logs link');
     is(policy($wt)->{policy_generation},13,'logs link reads owner generation');
     chmod 0775,"$wt/.loomy" or die $!;
-    is(policy($wt)->{source},'project','logs link accepts a group-writable worktree .loomy parent');
+    {
+        no warnings 'redefine'; my $user=(getpwuid($<))[0];
+        local *Loomy::ContentPolicy::_group_info=sub {($user,'')};
+        is(policy($wt)->{source},'project','logs link accepts a group-writable worktree .loomy parent of the private group');
+    }
     chmod 0700,"$wt/.loomy" or die $!;
     Loomy::ContentPolicy::change_policy($wt,{results_max_records=>199});
     is(policy($owner)->{policy_generation},14,'logs link commits restrictions in owner policy');
@@ -385,10 +402,11 @@ for my $pre_move (0,1) {
     unlink "$a/.loomy/project-id" if $pre_move; # simulate old path-hash deployment
     my $moved="$a-renamed"; rename $a,$moved or die;
     is(policy($moved)->{project_id},$id,'project identity survives rename including existing legacy refs');
-    is((stat("$moved/.loomy/project-id"))[2]&0777,0600,'persistent project identity is private');
+    ok(!-e "$moved/.loomy/project-id",'a reader never stores the identity') if $pre_move;
     is(Loomy::ContentPolicy::resolve_label($moved,$ref)->{text},'Durable label','legacy label reference resolves after moving');
     my $again=label($moved,'New title');
     is($again->{project_id},$id,'new writes use the migrated namespace');
+    is((stat("$moved/.loomy/project-id"))[2]&0777,0600,'persistent project identity is private');
 }
 for my $kind (qw(symlink hardlink mode)) {
     my $a=project("identity-$kind"); my $target="$work/identity-target-$kind";
@@ -566,7 +584,10 @@ for group_root_name in umask-002-first-use umask-002-privacy; do
   mkdir -p "$group_root"
   git -C "$group_root" init -q -b main
   (umask 002; mkdir "$group_root/.loomy")
+  # A shared group (macOS staff) refuses group write: the fixture then is the safe 0755 form.
+  [[ "$(id -gn)" == "$(id -un)" ]] || chmod 0755 "$group_root/.loomy"
 done
+if [[ "$(id -gn)" == "$(id -un)" ]]; then export LOOMY_TEST_LOOMY_MODE=509; else export LOOMY_TEST_LOOMY_MODE=493; fi
 cat >"$WORK/prompt.exp" <<'TCL'
 source [file join [lindex $argv 0] tests fixtures watchdog.exp]
 log_user 0
@@ -585,6 +606,7 @@ proc check {ok name} {if {![uplevel 1 [list expr $ok]]} {error $name}; puts "ok 
 proc root {name} {
     global work
     set r [file join $work $name]; file mkdir [file join $r .loomy]
+    file attributes [file join $r .loomy] -permissions 0755   ;# whatever the umask of the run
     return $r
 }
 proc root_group_writable {name} {
@@ -659,7 +681,7 @@ foreach lang {en fr} {
     check {[string match {*private_results=off*} [policy $r]]} "labels answer does not enable results $lang"
 }
 set r [root_group_writable umask-002-first-use]
-check {([file attributes [file join $r .loomy] -permissions] & 0777) == 0775} "fresh git init creates .loomy mode 0775 under umask 002"
+check {([file attributes [file join $r .loomy] -permissions] & 0777) == $::env(LOOMY_TEST_LOOMY_MODE)} "fresh git init creates the expected .loomy mode under umask 002"
 set id [start $r en first-use]; question en labels; send "y\r"; question en results; send "y\r"
 check {[finish $id]==0} "first-use grant works with group-writable .loomy"
 check {([file attributes [file join $r .loomy logs] -permissions] & 0777) == 0700} "first-use keeps logs mode 0700 under umask 002"
@@ -772,6 +794,7 @@ question en labels; send "n\r"; question en results; send "n\r"; finish $id
 set r [root pane-pending]; set id [start $r en watch-pane]
 see {Task labels off}; see {[q]}
 file mkdir [file join $r .loomy logs]
+file attributes [file join $r .loomy logs] -permissions 0700
 set f [open [file join $r .loomy logs display-context-full] w]; puts $f {display context full; label not saved}; close $f
 file attributes [file join $r .loomy logs display-context-full] -permissions 0600
 see {display context full; label not saved}
@@ -809,6 +832,7 @@ for unsafe_part in .loomy logs; do
     chmod 0777 "$unsafe_root/.loomy"
     unsafe_path="$unsafe_root/.loomy"
   else
+    chmod 0755 "$unsafe_root/.loomy"
     mkdir -m 0700 "$unsafe_root/.loomy/logs"
     chmod 0775 "$unsafe_root/.loomy/logs"
     unsafe_path="$unsafe_root/.loomy/logs"
@@ -847,7 +871,7 @@ LOOMY_LANG=fr LOOMY_UI_LANG=fr bash "$WORK/entry.sh" "$REPO" "$WORK/default-fr" 
 grep -q 'Sources de libellés sélectionnées' "$WORK/privacy-fr.out"
 grep -q 'portée : projet · génération' "$WORK/privacy-fr.out"
 if grep -qE '^(journal_content|label_sources|private_results|source|scope|policy_generation|grant_prompt_version)=' "$WORK/privacy-fr.out"; then exit 1; fi
-mkdir -p "$WORK/invalid-policy/.loomy/logs"
+mkdir -p "$WORK/invalid-policy/.loomy/logs"; chmod 0755 "$WORK/invalid-policy/.loomy"; chmod 0700 "$WORK/invalid-policy/.loomy/logs"
 printf 'not a valid policy\n' >"$WORK/invalid-policy/.loomy/logs/content-policy.conf"
 chmod 600 "$WORK/invalid-policy/.loomy/logs/content-policy.conf"
 if bash "$WORK/entry.sh" "$REPO" "$WORK/invalid-policy" privacy labels off >"$WORK/invalid-policy.out" 2>&1; then exit 1; fi
@@ -861,7 +885,7 @@ cat >"$WORK/hints.sh" <<'SH'
 set -euo pipefail
 repo="$1"; work="$2"; root="$work/hint-root"
 source "$repo/scripts/lib/content-policy.sh"
-mkdir -p "$root/.loomy/logs"
+mkdir -p "$root/.loomy/logs"; chmod 0755 "$root/.loomy"; chmod 0700 "$root/.loomy/logs"
 _loomy_content_ui() { echo 'hint loaded the complete screen dictionary' >&2; return 99; }
 perl() { printf 'perl\n' >>"$work/hint-calls"; command perl "$@"; }
 touch() { printf 'touch\n' >>"$work/hint-calls"; command touch "$@"; }

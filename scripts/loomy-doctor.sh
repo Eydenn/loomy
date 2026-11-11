@@ -176,7 +176,7 @@ loomy_doctor_content() {
     structural) journal="$(t 'structure only')" ;;
     legacy-excerpts) journal="$(t 'legacy excerpts (project scope)')" ;;
   esac
-  [[ "$labels" != none ]] || labels="$(t 'none')"
+  [[ "$labels" != none ]] || labels="$(t 'none selected')"
   if [[ "$state" == invalid ]]; then
     ui_info "$(t 'Safe defaults — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
   else

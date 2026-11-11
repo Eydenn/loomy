@@ -2390,6 +2390,9 @@ _t_fr() {
     'Full result unavailable: retention was off') _T='Résultat complet indisponible : la conservation était désactivée' ;;
     'Exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model.') _T='Le code 75 indique une pause. Lire resume_at ; conserver le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options exacts. À la réinitialisation, reprendre la tâche et les options exactes depuis le contexte vivant ou une référence de tâche/résultat privé autorisée ; vérifier les modifications avant de relancer. Sinon signaler que la tâche d’origine est nécessaire, sans relancer ni poursuivre le travail dépendant. Ne jamais deviner ni choisir un modèle moins puissant.' ;;
     'Selected label sources: %s') _T='Sources de libellés sélectionnées : %s' ;;
+    'Selected label sources: none') _T='Sources de libellés sélectionnées : aucune' ;;
+    'none selected') _T='aucune' ;;
+    'current private format') _T='format privé actuel' ;;
     'Policy source: %s · scope: project · generation: %s') _T='Source de la politique : %s · portée : projet · génération : %s' ;;
     'project defaults') _T='valeurs par défaut du projet' ;;
     'project policy file') _T='fichier de politique du projet' ;;

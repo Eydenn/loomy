@@ -532,6 +532,8 @@ loomy_watch_content_hint_accept() {
 # Policy wording is cached by the command/controller, never parsed by a frame.
 loomy_status_content_load() {
   local policy="structural|none|off" journal labels results
+  # Outside a Loomy project there is no policy to report.
+  if [[ ! -d "$ROOT/.loomy" ]]; then LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; return 0; fi
   if [[ -e "$ROOT/.loomy/logs/content-policy.conf" || -L "$ROOT/.loomy/logs/content-policy.conf" ]]; then
     policy="$(perl -e 'require $ARGV[0]; my $p=Loomy::ContentPolicy::effective_policy($ARGV[1]); print join("|",@$p{qw(journal_content label_sources private_results)})' "$LOOMY_CONTENT_POLICY_LIB" "$ROOT")" || policy="structural|none|off"
   fi
@@ -544,6 +546,7 @@ loomy_status_content_load() {
 }
 loomy_status_content_render() {
   local line width
+  [[ -n "$LOOMY_CONTENT_PRIVACY" ]] || return 0
   _ui_term_size; width=$(( UI_COLS - 5 )); (( width > 0 )) || width=75
   _ui_wrap "$LOOMY_CONTENT_PRIVACY" "$width"
   for line in "${UI_LINES[@]}"; do ui_rail "${C_DIM}$line${C_RESET}"; done
@@ -1160,7 +1163,7 @@ loomy_status_content_render
 # No frame renderer launches the policy backend or reads the journal for it.
 LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""; LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""
 if (( ! WATCH )) || [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then
-  _loomy_content_hint_load "$ROOT" || true
+  [[ ! -d "$ROOT/.loomy" ]] || _loomy_content_hint_load "$ROOT" || true
   loomy_status_content_load
 fi
 # Tests and the watch worker load renderers without running a command.
@@ -1172,7 +1175,7 @@ if (( ! WATCH )) && [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
 fi
 if (( WATCH )); then
   if (( ! IN_PANE )); then loomy_content_first_use "$ROOT" || true; fi
-  _loomy_content_hint_load "$ROOT" || true
+  [[ ! -d "$ROOT/.loomy" ]] || _loomy_content_hint_load "$ROOT" || true
   loomy_status_content_load
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin

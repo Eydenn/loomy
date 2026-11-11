@@ -1011,8 +1011,9 @@ cp "$work/hint-calls" "$work/hint-calls-before"
 for ((i=0; i<200; i++)); do loomy_content_hint_refresh "$root" "$LOOMY_CONTENT_HINT_SIGNATURE"; done
 cmp "$work/hint-calls-before" "$work/hint-calls"
 cp "$work/answer-en-y/.loomy/logs/content-policy.conf" "$root/.loomy/logs/content-policy.conf"
-direct_hint="$(loomy_content_status_hint "$root")"
-[[ -z "$direct_hint" && -z "$LOOMY_CONTENT_HINT" ]]
+# In this shell (not a command substitution) so the direct call also clears the cached hint.
+loomy_content_status_hint "$root" >"$work/direct-hint"
+[[ ! -s "$work/direct-hint" && -z "$LOOMY_CONTENT_HINT" ]]
 policy_sig="$(content_sig)"
 loomy_content_hint_refresh "$root" "$policy_sig"
 [[ -z "$LOOMY_CONTENT_HINT" ]]

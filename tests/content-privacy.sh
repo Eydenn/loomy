@@ -457,6 +457,18 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
                   f'doctor {lang}: stored label and results grants are visible')
         check(before_doctor == manifest(doctor_root), f'doctor {lang}: no identity, mode, content or marker mutation')
 
+# The private-group rule (content-policy.pl): group write on .loomy is tolerated only when the
+# directory group is the user's own primary group, named after the user, with no other member
+# (common on Linux); a shared group such as macOS staff is refused.
+def private_group(path):
+    import grp, pwd
+    gid = os.stat(path).st_gid; user = pwd.getpwuid(os.getuid())
+    try:
+        group = grp.getgrgid(gid)
+    except KeyError:
+        return False
+    return group.gr_name == user.pw_name and gid == user.pw_gid and all(m == user.pw_name for m in group.gr_mem)
+
 # A group/world-writable .loomy must be reported as such (never as an invalid policy file) by every command.
 for mode in (0o775, 0o777):
     unsafe_root = work / f'unsafe-{mode:o}'
@@ -465,6 +477,7 @@ for mode in (0o775, 0o777):
     os.chmod(unsafe_root / '.loomy/logs', 0o700)
     os.chmod(unsafe_root / '.loomy', mode)
     named = str(unsafe_root / '.loomy')
+    tolerated = mode == 0o775 and private_group(unsafe_root / '.loomy')
     for lang in ('en', 'fr'):
         ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}
         outs = {
@@ -474,8 +487,12 @@ for mode in (0o775, 0o777):
         }
         for name, result in outs.items():
             text = ''.join((result.stdout + result.stderr).split())  # wrapped paths: compare without whitespace
-            check(named.replace(' ', '') in text and 'chmodg-w,o-w' in text,
-                  f'{name} {lang}: unsafe .loomy ({mode:o}) names the directory and the chmod remedy')
+            if tolerated:
+                check('chmodg-w,o-w' not in text,
+                      f'{name} {lang}: .loomy ({mode:o}) in the private group is accepted without a chmod remedy')
+            else:
+                check(named.replace(' ', '') in text and 'chmodg-w,o-w' in text,
+                      f'{name} {lang}: unsafe .loomy ({mode:o}) names the directory and the chmod remedy')
             check('Invalidcontentpolicy' not in text and 'Politiquedecontenuinvalide' not in text and 'Corrigezousupprimez' not in text,
                   f'{name} {lang}: unsafe .loomy ({mode:o}) is never reported as an invalid policy file')
     check(oct(os.stat(unsafe_root / '.loomy').st_mode & 0o777) == oct(mode), f'unsafe .loomy ({mode:o}) is never chmodded by a diagnostic')
@@ -485,7 +502,8 @@ for odd in ('with space', 'semi;colon', "it's $(x)"):
     odd_root = work / f'unsafe {odd}'
     (odd_root / '.loomy/logs').mkdir(parents=True)
     (odd_root / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
-    os.chmod(odd_root / '.loomy/logs', 0o700); os.chmod(odd_root / '.loomy', 0o775)
+    os.chmod(odd_root / '.loomy/logs', 0o700)
+    os.chmod(odd_root / '.loomy', 0o777 if private_group(odd_root / '.loomy') else 0o775)
     quoted = "'" + str(odd_root / '.loomy').replace("'", "'\\''") + "'"
     for lang, first in (('en', 'unsafe directory: '), ('fr', 'dossier non sûr : ')):
         ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}

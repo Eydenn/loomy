@@ -1,5 +1,6 @@
 source [file join [file dirname [info script]] watchdog.exp]
 source [file join [file dirname [info script]] time-scale.exp]
+source [file join [file dirname [info script]] content-decline.exp]
 set timeout [expr {int(ceil([test_time_budget 10]))}]
 set visible_budget [test_time_budget 1000]
 set settled_budget [test_time_budget 1500]
@@ -60,6 +61,7 @@ proc settled {labels started} {
 }
 set result [catch {
     exec perl $events $work seed 2>@1
+    content_decline $repo $work $root
     spawn env TERM=xterm-256color tmux -S $socket new-session -x 170 -y 70 -s replay bash [file join $repo scripts loomy-status.sh] --root $root --watch --full
     set child [exp_pid]
     # Without a controlling terminal (CI) the PTY is 80x24 and tmux would shrink the window to it: size it explicitly.

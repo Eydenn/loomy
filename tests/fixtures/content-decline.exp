@@ -1,0 +1,5 @@
+# A PTY watch on a fresh project opens the first-use questions in a plain terminal (CI, no agent
+# ancestor). Answer them No through the real transaction first: the frame keeps today's defaults.
+proc content_decline {repo work root} {
+    exec env WORK=$work bash [file join $repo tests lib content-grant.sh] --decline $repo $root 2>@1
+}

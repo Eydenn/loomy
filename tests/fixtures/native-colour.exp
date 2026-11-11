@@ -1,4 +1,5 @@
 source [file join [file dirname [info script]] watchdog.exp]
+source [file join [file dirname [info script]] content-decline.exp]
 # Colour regression: the native list and tree rows keep their SGR colours in a real PTY (no NO_COLOR, no LOOMY_FORCE_COLOR).
 set timeout 20
 set repo [file normalize [file join [file dirname [info script]] .. ..]]
@@ -10,6 +11,7 @@ set sessions [file join $work codex sessions]
 file mkdir $home [file join $work config]
 set fixture [file join $repo tests fixtures codex-native.pl]
 exec perl $fixture seed $root $sessions [pid]
+content_decline $repo $work $root
 log_user 0
 log_file -noappend [file join $work native-colour.log]
 spawn env -u NO_COLOR -u LOOMY_FORCE_COLOR HOME=$home XDG_CONFIG_HOME=$work/config CODEX_HOME=$work/codex LOOMY_HOME=$repo LOOMY_LANG=en LOOMY_UI_LANG=en LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 PATH=$repo/tests/stubs:/usr/bin:/bin:/usr/sbin:/sbin LOOMY_TREE=list COLUMNS=170 LINES=65 TERM=xterm-256color bash $repo/scripts/loomy-status.sh --root $root --watch --full

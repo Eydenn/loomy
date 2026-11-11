@@ -316,7 +316,9 @@ case "$cmd" in
     fi
     exec bash "$S/loomy-init-wizard.sh" "$root" "$@" ;;
   start|resume) exec bash "$S/loomy-start.sh" --root "$(project_root)" "$@" ;;
-  privacy) exec bash "$S/loomy-privacy.sh" --root "$(project_root)" "$@" ;;
+  # loomy-privacy.sh resolves the default root itself, only when --root is absent: an explicit
+  # inventory root must not start a Git lookup from the caller's folder.
+  privacy) exec bash "$S/loomy-privacy.sh" "$@" ;;
   route|routing) exec bash "$S/loomy-route.sh" --root "$(project_root)" "$@" ;;
   effort) exec bash "$S/loomy-effort.sh" --root "$(project_root)" "$@" ;;
   feedback) exec bash "$S/loomy-feedback.sh" "$@" ;;

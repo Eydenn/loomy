@@ -7,6 +7,8 @@ export LOOMY_TEST_TIME_SCALE
 WORK="$(mktemp -d /tmp/loomy-s5-w6.XXXXXX)"
 # shellcheck source=lib/guard.sh
 source "$REPO/tests/lib/guard.sh"
+# shellcheck source=lib/content-grant.sh
+source "$REPO/tests/lib/content-grant.sh"
 export HOME="$WORK/home" CODEX_HOME="$WORK/codex" CLAUDE_CONFIG_DIR="$WORK/claude" XDG_CONFIG_HOME="$WORK/config"
 export LOOMY_LANG=en LOOMY_UI_LANG=en NO_COLOR=1 LOOMY_NO_AUTOUPDATE=1 LOOMY_CATALOG_CHECK=0 LOOMY_JOURNAL=1
 unset LOOMY_NATIVE_NOW LOOMY_SCREEN_OWNER LOOMY_PAGE_OUT
@@ -35,6 +37,8 @@ check perl "$REPO/tests/fixtures/s5-quota.pl" "$REPO" "$WORK" "$now"
 if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then
   printf 'SKIP S5/W6 failing reducer and 60s idle CPU PTY (LOOMY_TEST_NATIVE_PTY=0)\n'
 elif command -v expect >/dev/null 2>&1; then
+  # A plain terminal (CI) would otherwise open the first-use questions before the watch frame.
+  check test_content_decline "$REPO" "$WORK/project"
   check expect "$REPO/tests/fixtures/watch-error.exp" "$REPO" "$WORK"
   check expect "$REPO/tests/fixtures/watch-idle.exp" "$REPO" "$WORK"
 else

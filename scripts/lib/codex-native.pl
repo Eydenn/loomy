@@ -79,14 +79,17 @@ sub end_call { my $c=$_[0]; return unless $c && $c->{transient}; eval { Loomy::C
 sub guard_changed { my ($key,$guard)=@_; my $id=refaddr($guard); my $old=$guard_of{$key}; $guard_of{$key}=$id; return defined($old) && $old!=$id }
 # Mutators receive the same pair (L1 asserts at each storage boundary).
 # FH, when given, is the open journal handle L1 flushes and syncs before it writes a checkpoint.
-sub owner_opt { my ($c,$fh)=@_; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context},(defined $fh ? (flush=>[$fh]) : ())} }
+# Collector-origin rotation uses L1's named guarded entries; bare calls keep the hook-origin ones.
+sub rotate { my ($call,$journal,$writer)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::journal_rotate_owned($journal,$writer,@o) : Loomy::LiveState::journal_rotate($journal,$writer) }
+sub recover { my ($call,$journal,$dir)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::recover_rotation_owned($journal,$dir,@o) : Loomy::LiveState::recover_rotation($journal,$dir) }
+sub owner_opt { my ($c,$fh)=@_; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context},flush=>(defined $fh ? [$fh] : [])} }
 sub quick {
     my $c=$_[0]; return 1 unless ref($c) eq 'HASH' && defined $c->{guard};
     return Loomy::LiveState->can('owner_check') ? Loomy::LiveState::owner_check({owner=>$c->{guard},context=>$c->{context}},'event') : Loomy::CollectorOwner::assert_owner_quick($c->{guard});
 }
 # Storage refusals leave the collector read-only: poll returns undef and sets $refusal.
 sub refusal_reason {
-    my $e=$_[0]//''; return 'unsupported-format' if $e eq "unsupported checkpoint format\n";
+    my $e=$_[0]//''; return $1 eq '' ? 'unsupported-format' : $1 if $e =~ /\Aunsupported checkpoint format(?:: ([a-z-]+))?\n\z/;
     return 'checkpoint-changed' if $e eq "checkpoint changed during read\n"; return 'checkpoint-unavailable' if $e eq "checkpoint unavailable\n"; return;
 }
 sub rethrow_owner { my $e=$_[0]; die $e if defined $e && $e =~ /\Acollector owner [A-Z_]+\n\z/ }
@@ -694,7 +697,7 @@ sub poll_locked {
     my $dirty=prune_checkpoint($s,$now);
     my $journal_lock=Loomy::LiveState::journal_lock($dir) or return;
     my $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
-    Loomy::LiveState::recover_rotation($journal,$dir,owner_opt($call));
+    recover($call,$journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -1182,7 +1185,7 @@ sub poll_locked {
     unless (eval {$out->flush && $out->sync or die; 1}) {warn "Codex journal event skipped; append unavailable\n"; return $s}
     # Do not skip external owner/hooks appended between the read and our writes.
     my @end=stat($out);
-    if ($end[7]>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer,owner_opt($call))} or do { rethrow_owner($@); warn "Codex journal rotation unavailable\n" }}
+    if ($end[7]>=8388608) {close $out; eval {rotate($call,$journal,$content_writer)} or do { rethrow_owner($@); warn "Codex journal rotation unavailable\n" }}
     prune_checkpoint($s,$now) if $dirty;
     save($idx,$s,owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
     $cached{$idx}={sig=>Loomy::LiveState::file_signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev};

@@ -448,7 +448,7 @@ sub poll_locked {
     }
     $!=0; my $journal_lock=Loomy::LiveState::journal_lock($dir) or do {$busy{$idx}=1 if $!{EWOULDBLOCK} || $!{EAGAIN}; return};
     local $content_writer=Loomy::LiveState::content_writer($root); return unless $content_writer;
-    Loomy::LiveState::recover_rotation($journal,$dir,Loomy::CodexNative::owner_opt($call));
+    Loomy::CodexNative::recover($call,$journal,$dir);
     sysopen my $out,$journal,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock($out,LOCK_EX|LOCK_NB) or return; chmod 0600,$out or return;
     my $jc=$s->{journal}//={};
@@ -567,7 +567,7 @@ sub poll_locked {
     }
     unless (eval {$out->flush && $out->sync or die; 1}) {warn "Claude journal event skipped; append unavailable\n"; return $s}
     # Keep the consumed offset: hooks appended during source collection must be replayed next poll.
-    if (-s $journal>=8388608) {close $out; eval {Loomy::LiveState::journal_rotate($journal,$content_writer,Loomy::CodexNative::owner_opt($call))} or do {Loomy::CodexNative::rethrow_owner($@); warn "Claude journal rotation unavailable\n"}}
+    if (-s $journal>=8388608) {close $out; eval {Loomy::CodexNative::rotate($call,$journal,$content_writer)} or do {Loomy::CodexNative::rethrow_owner($@); warn "Claude journal rotation unavailable\n"}}
     prune($s,\$dirty);
     Loomy::LiveState::checkpoint_save($idx,$s,Loomy::CodexNative::owner_opt($call,(defined fileno($out) ? $out : undef))) if $dirty;
     $cache{$idx}={sig=>signature($idx),state=>$s,pruned_day=>$day,scope_rev=>$scope_rev}; $scope_seen{$idx}=$scope_rev; $cache{$idx}{poll_sig}=input_signature($root,$projects); $watch{$idx}=$cache{$idx}{poll_sig}; return $s;

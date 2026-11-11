@@ -296,7 +296,7 @@ SKIP: {
         put("$r/.loomy/logs/$t->[0]",'{"version":3,"future":true}'); my $before=bytes("$r/.loomy/logs/$t->[0]");
         my $j=-s "$r/.loomy/logs/events.jsonl"//0; my $got=eval {$t->[1]->()};
         ok(!defined $got && !$@,"$t->[0]: an unsupported primary yields a refusal, not a die");
-        is($Loomy::CodexNative::refusal,'unsupported-format',"$t->[0]: the read-only reason is surfaced");
+        like($Loomy::CodexNative::refusal,qr/\Aunsupported-(?:format|version)\z/,"$t->[0]: the read-only reason is surfaced");
         is(bytes("$r/.loomy/logs/$t->[0]"),$before,"$t->[0]: the unsupported primary is never rewritten");
     }
     Loomy::CollectorOwner::release($g);

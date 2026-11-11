@@ -16,7 +16,7 @@ my $metadata_bytes=0;
 use Errno qw(EPERM);
 use IO::Handle;
 use Digest::SHA qw(sha256_hex);
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(refaddr weaken);
 
 # ---- Collector guard and validated source union (shared with the Claude adapter) ----
 # Only the command lifetime elects (L3). A caller passes {owner=>$guard,context=>$ctx};
@@ -31,7 +31,8 @@ our $bare_election=0;
 sub load_owner { require "$live_lib/collector-owner.pl"; 1 }
 # Set when a poll returned undef because storage refused mutation (read-only reason).
 our $refusal='';
-my (%scope_seen,%guard_of,%roots_of);
+my (%scope_seen,%guard_of,%roots_of,%refused);
+our $active;   # the running poll's call, for per-write owner checks
 sub build_id {
     my $v=''; if (open my $h,'<',"$live_lib/../../VERSION") { $v=<$h>//''; close $h }
     $v =~ s/\s+\z//; return $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.:+-]{0,100}\z/ ? "native-$v" : 'native';
@@ -76,12 +77,30 @@ sub begin_call {
 }
 sub end_call { my $c=$_[0]; return unless $c && $c->{transient}; eval { Loomy::CollectorOwner::release($c->{guard}) }; $c->{guard}=undef }
 # A new guard (promotion, reacquire) must not reuse cache built under another authority.
-sub guard_changed { my ($key,$guard)=@_; my $id=refaddr($guard); my $old=$guard_of{$key}; $guard_of{$key}=$id; return defined($old) && $old!=$id }
+# A guard object is one acquisition epoch. It is tracked by a weak reference, so a freed guard
+# is never mistaken for a later one through address reuse.
+sub guard_changed {
+    my ($key,$guard)=@_; my $seen=exists $guard_of{$key}; my $old=$guard_of{$key};
+    my $same=defined($old) && refaddr($old)==refaddr($guard);
+    $guard_of{$key}=$guard; weaken($guard_of{$key});
+    return $seen && !$same;
+}
+# A refused (unsupported/future) checkpoint is remembered per index against the primary+backup
+# stat signature: until it changes the same refusal is returned without reading anything.
+sub manifest_sig { my $idx=$_[0]; return join(';',map { my @s=Time::HiRes::stat($_); @s ? join(':',@s[0,1,7,9]) : '-' } $idx,"$idx.bak") }
+sub refused_now {
+    my ($idx)=@_; my $r=$refused{$idx} or return 0;
+    if ($r->{sig} eq manifest_sig($idx)) { $refusal=$r->{reason}; return 1 }
+    delete $refused{$idx}; return 0;
+}
+sub remember_refusal { my ($idx,$why)=@_; $refused{$idx}={sig=>manifest_sig($idx),reason=>$why} if $why =~ /\Aunsupported-/ }
+# Label-store writes are guarded like journal appends.
+sub owned_label { quick($active); return Loomy::LiveState::content_label(@_) }
 # Mutators receive the same pair (L1 asserts at each storage boundary).
 # FH, when given, is the open journal handle L1 flushes and syncs before it writes a checkpoint.
 # Collector-origin rotation uses L1's named guarded entries; bare calls keep the hook-origin ones.
 sub rotate { my ($call,$journal,$writer)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::journal_rotate_owned($journal,$writer,@o) : Loomy::LiveState::journal_rotate($journal,$writer) }
-sub recover { my ($call,$journal,$dir)=@_; my @o=owner_opt($call); return @o ? Loomy::LiveState::recover_rotation_owned($journal,$dir,@o) : Loomy::LiveState::recover_rotation($journal,$dir) }
+sub recover { my ($call,$journal,$dir)=@_; return unless -e "$dir/rotation"; my @o=owner_opt($call); return @o ? Loomy::LiveState::recover_rotation_owned($journal,$dir,@o) : Loomy::LiveState::recover_rotation($journal,$dir) }
 sub owner_opt { my ($c,$fh)=@_; return () unless defined $c->{guard}; return {owner=>$c->{guard},context=>$c->{context},flush=>(defined $fh ? [$fh] : [])} }
 sub quick {
     my $c=$_[0]; return 1 unless ref($c) eq 'HASH' && defined $c->{guard};
@@ -93,7 +112,7 @@ sub refusal_reason {
     return 'checkpoint-changed' if $e eq "checkpoint changed during read\n"; return 'checkpoint-unavailable' if $e eq "checkpoint unavailable\n"; return;
 }
 sub rethrow_owner { my $e=$_[0]; die $e if defined $e && $e =~ /\Acollector owner [A-Z_]+\n\z/ }
-sub reset_caches { %cached=(); %inventory=(); %watch=(); %scope_seen=(); %guard_of=(); %roots_of=() }
+sub reset_caches { %cached=(); %inventory=(); %watch=(); %scope_seen=(); %guard_of=(); %roots_of=(); %refused=() }
 sub unsettled { my ($roots,$s)=@_; return grep { !($_->{at_eof}//0) && (!$roots || in_scope($roots,$_)) } values %{$s->{files}//{}} }
 
 sub scalar_text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
@@ -125,7 +144,8 @@ sub input_signature {
     my ($root,$sessions,$now)=@_;
     my $idx="$root/.loomy/logs/codex-native.idx";
     my $s=$cached{$idx} ? $cached{$idx}{state} : {};
-    my %paths=map { $_=>1 } ($idx,"$root/.loomy/logs/events.jsonl",keys %{$s->{files}//{}},
+    my $roots=$roots_of{$idx};
+    my %paths=map { $_=>1 } ($idx,"$root/.loomy/logs/events.jsonl",(grep { !$roots || in_scope($roots,$s->{files}{$_}) } keys %{$s->{files}//{}}),
         keys %{$inventory{$sessions}{dirs}//{}},keys %{$inventory{$sessions}{invalid}//{}});
     my $day=strftime('%Y/%m/%d',gmtime($now));
     $paths{$sessions}=1;
@@ -154,6 +174,7 @@ sub watch_changed {
         my $set=eval { Loomy::CollectorOwner::scope_set($opt->{owner}) }; $revision=ref($set) eq 'HASH' ? scalar_text($set->{revision}) : undef;
     }
     my $idx="$root/.loomy/logs/codex-native.idx";
+    return 0 if refused_now($idx);   # nothing to collect until the manifest changes
     my $s=$cached{$idx} ? $cached{$idx}{state} : {};
     my $sig=input_signature($root,$sessions,$now);
     my $changed=!defined($watch{$idx}) || $watch{$idx} ne $sig;
@@ -657,11 +678,13 @@ sub poll {
             my $idle=idle_cached($idx,$abs,$sessions,$roots_of{$idx},$scope_seen{$idx}); return $idle if $idle;
         }
     }
-    my $call=begin_call($root,$opt) or return;
     $refusal='';
+    my $store=ref($opt) eq 'HASH' && ref($opt->{context}) eq 'HASH' && defined $opt->{context}{root} ? $opt->{context}{root} : (abs_path($root)//$root);
+    return if refused_now("$store/.loomy/logs/codex-native.idx");
+    my $call=begin_call($root,$opt) or return;
     my $result=eval { poll_locked($call,$sessions) }; my $error=$@;
     end_call($call);
-    if (my $why=refusal_reason($error)) { %cached=(); $refusal=$why; return }
+    if (my $why=refusal_reason($error)) { %cached=(); $refusal=$why; remember_refusal("$call->{store}/.loomy/logs/codex-native.idx",$why); return }
     if ($error) { %cached=() if $error =~ /\Acollector owner /; die $error }
     return $result;
 }
@@ -679,7 +702,12 @@ sub poll_locked {
     return unless safe_path($idx) && safe_path($journal);
     # A promoted owner (new guard) reloads everything generation-dependent from storage.
     if (defined $guard && !$call->{transient} && guard_changed($idx,$guard)) { delete $cached{$idx}; delete $watch{$idx}; delete $inventory{$sessions} }
-    $roots_of{$idx}=$roots;
+    $roots_of{$idx}=$roots; local $active=$call;
+    # A refused poll creates nothing: before idx.lock exists, look at the manifest with the pure peek.
+    if (defined $guard && !-e "$idx.lock" && Loomy::LiveState->can('checkpoint_peek')) {
+        my $peek=Loomy::LiveState::checkpoint_peek($idx);
+        die "unsupported checkpoint format: $peek->{reason}\n" if ($peek->{status}//'') eq 'unsupported';
+    }
     umask 0077;
     sysopen my $directory,$dir,O_RDONLY|O_NOFOLLOW or return; chmod 0700,$directory or return;
     return unless safe_path("$idx.lock");
@@ -983,7 +1011,7 @@ sub poll_locked {
             my $raw=$entry->{meta};
             if ($raw) {
                 for my $component ([task=>'codex-path-slug','slug'],[nickname=>'codex-nickname','nickname'],[role=>'codex-role','role']) {
-                    my $saved=Loomy::LiveState::content_label($content_writer,'agent',$m->{id},$m->{id},$component->[1],$raw->{$component->[0]});
+                    my $saved=owned_label($content_writer,'agent',$m->{id},$m->{id},$component->[1],$raw->{$component->[0]});
                     $native_label_ref//=$saved;
                     $native_label_refs{$component->[2]}=$saved if $saved;
                 }

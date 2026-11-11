@@ -1,7 +1,7 @@
 # Local Claude hooks/transcripts adapter; content-free output shared by watch and one-shot views.
 package Loomy::ClaudeNative;
 use strict;
-use warnings;
+use warnings; no warnings 'once';
 use JSON::PP qw(decode_json encode_json);
 use Fcntl qw(O_RDONLY O_RDWR O_APPEND O_CREAT O_NOFOLLOW LOCK_EX LOCK_NB);
 use Cwd qw(abs_path);
@@ -23,8 +23,8 @@ sub signature { my @s=Time::HiRes::stat($_[0]); return @s ? join(':',@s[0,1,7,9]
 sub slug { my $p=$_[0]; $p =~ s/[^A-Za-z0-9]/-/g; return $p }
 sub input_signature {
     my ($root,$projects)=@_; my $idx="$root/.loomy/logs/claude-native.idx";
-    my $s=$cache{$idx}{state}//{}; my $inv=$inventory{$projects}//{};
-    my %p=map {$_=>1} ($projects,$idx,"$root/.loomy/logs/events.jsonl",keys %{$s->{files}//{}},keys %{$inv->{dirs}//{}},keys %{$inv->{invalid}//{}});
+    my $s=$cache{$idx}{state}//{}; my $inv=$inventory{$projects}//{}; my $roots=$roots_of{$idx};
+    my %p=map {$_=>1} ($projects,$idx,"$root/.loomy/logs/events.jsonl",(grep {!$roots || Loomy::CodexNative::in_scope($roots,$s->{files}{$_})} keys %{$s->{files}//{}}),keys %{$inv->{dirs}//{}},keys %{$inv->{invalid}//{}});
     return join(';',map {$_ . ':' . signature($_)} sort keys %p);
 }
 # Signatures are committed only for bytes/inventory actually inspected during the poll.
@@ -49,6 +49,7 @@ sub watch_changed {
         my $set=eval {Loomy::CollectorOwner::scope_set($opt->{owner})}; $revision=ref($set) eq 'HASH' ? text($set->{revision}) : undef;
     }
     my $idx="$root/.loomy/logs/claude-native.idx";
+    return 0 if Loomy::CodexNative::refused_now($idx);   # nothing to collect until the manifest changes
     my $s=$cache{$idx}{state}//{}; my $sig=input_signature($root,$projects);
     my $committed=$cache{$idx}{poll_sig};
     my $changed=!defined($committed) || $committed ne $sig; $watch{$idx}=$sig;
@@ -267,7 +268,7 @@ sub transcript_record {
             # The deliberate description is the only transcript title source.
             # Structural capture keeps text only in the granted label store;
             # explicit legacy mode retains its existing task excerpt semantics.
-            Loomy::LiveState::content_label($content_writer,'delegation',id($b->{id}),$lead->{id},
+            Loomy::CodexNative::owned_label($content_writer,'delegation',id($b->{id}),$lead->{id},
                 'claude-description',$in->{description}) if $content_writer;
             notify($lead,id($b->{id}));
             $lead->{waits}{id($b->{id})}=1 unless $c->{background} || $c->{ended} || $c->{returned};
@@ -401,6 +402,8 @@ sub poll {
     my $store=ref($opt) eq 'HASH' && ref($opt->{context}) eq 'HASH' && defined $opt->{context}{root} ? $opt->{context}{root} : (abs_path($root)//$root);
     my $idx="$store/.loomy/logs/claude-native.idx";
     return if ($retry{$idx}//0)>Time::HiRes::time();
+    $Loomy::CodexNative::refusal='';
+    return if Loomy::CodexNative::refused_now($idx);
     # An idle answer changes nothing and needs no authority: an idle tick never elects.
     if (!defined $opt && $roots_of{$idx} && defined $scope_seen{$idx} && safe($projects)) {
         my $idle=idle_cached($idx,$store,$projects,$roots_of{$idx},$scope_seen{$idx}); return $idle if $idle;
@@ -408,10 +411,9 @@ sub poll {
     # A refused election or a draining guard is not a source failure: no retry backoff.
     my $call=Loomy::CodexNative::begin_call($root,$opt) or return;
     $idx="$call->{store}/.loomy/logs/claude-native.idx";
-    $Loomy::CodexNative::refusal='';
     my $result=eval {poll_locked($call,$projects)}; my $error=$@;
     Loomy::CodexNative::end_call($call);
-    if (my $why=Loomy::CodexNative::refusal_reason($error)) {delete $cache{$idx}; $Loomy::CodexNative::refusal=$why; return}
+    if (my $why=Loomy::CodexNative::refusal_reason($error)) {delete $cache{$idx}; $Loomy::CodexNative::refusal=$why; Loomy::CodexNative::remember_refusal($idx,$why); return}
     # A busy events.lock is transient (a hook or bridge append): the watch retries on its next tick.
     if (!defined $result) {$retry{$idx}=Time::HiRes::time()+5 unless delete $busy{$idx}}
     else {delete $retry{$idx}}
@@ -426,7 +428,11 @@ sub poll_locked {
     my $idx="$dir/claude-native.idx"; my $journal="$dir/events.jsonl"; return unless safe($idx) && safe($journal);
     # A promoted owner (new guard) reloads everything generation-dependent from storage.
     if (defined $guard && !$call->{transient} && Loomy::CodexNative::guard_changed($idx,$guard)) {delete $cache{$idx}; delete $watch{$idx}; delete $inventory{$projects}}
-    $roots_of{$idx}=$roots;
+    $roots_of{$idx}=$roots; local $Loomy::CodexNative::active=$call;
+    if (defined $guard && !-e "$idx.lock" && Loomy::LiveState->can('checkpoint_peek')) {
+        my $peek=Loomy::LiveState::checkpoint_peek($idx);
+        die "unsupported checkpoint format: $peek->{reason}\n" if ($peek->{status}//'') eq 'unsupported';
+    }
     my $day=int(($ENV{LOOMY_NATIVE_NOW}//time)/86400);
     if ($cache{$idx} && ($cache{$idx}{pruned_day}//-1)==$day && ($cache{$idx}{poll_sig}//'') eq input_signature($root,$projects) && !due($cache{$idx}{state})
         && ($cache{$idx}{scope_rev}//'') eq $scope_rev
@@ -518,7 +524,7 @@ sub poll_locked {
         $event_signature//=$signature->($encoded);
         my %row=(%$body,($body->{turn_id} ? (agent_type=>$body->{role}) : ()),ts=>$ts,type=>$type,checkpoint_key=>$key,checkpoint_value=>$event_signature,source_ts=>$ts,schema=>2,tool=>'claude',family=>'claude',bridge=>'claude-native');
         if ($body->{turn_id}) {
-            my $ref=Loomy::LiveState::content_label($content_writer,'delegation',$body->{turn_id},$body->{session},'claude-description');
+            my $ref=Loomy::CodexNative::owned_label($content_writer,'delegation',$body->{turn_id},$body->{session},'claude-description');
             $row{label_ref}=$ref if $ref;
         }
         my $line=Loomy::LiveState::journal_event_line($content_writer,\%row); return 1 unless defined $line;

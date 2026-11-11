@@ -233,13 +233,13 @@ for my $first (qw(main whole logs)) {
     my %shape;
     {
         no warnings 'redefine'; no strict 'refs';
-        for my $name (qw(checkpoint_load checkpoint_save recover_rotation)) {
+        for my $name (qw(checkpoint_load checkpoint_save)) {
             my $orig=\&{"Loomy::LiveState::$name"};
             *{"Loomy::LiveState::$name"}=sub {my @a=@_; push @{$shape{$name}},$a[-1]; return $orig->(@_)};
         }
         both($r,$g,$c);
     }
-    for my $name (qw(checkpoint_load checkpoint_save recover_rotation)) {
+    for my $name (qw(checkpoint_load checkpoint_save)) {
         ok($shape{$name} && !grep({ref($_) ne 'HASH' || !defined $_->{owner} || $_->{owner} != $g || $_->{context} != $c} @{$shape{$name}}),"$name receives the trailing {owner,context} pair");
     }
     # Interruption after append, before the checkpoint: replay must not duplicate any native key.
@@ -300,5 +300,56 @@ SKIP: {
         is(bytes("$r/.loomy/logs/$t->[0]"),$before,"$t->[0]: the unsupported primary is never rewritten");
     }
     Loomy::CollectorOwner::release($g);
+}
+# ---------------------------------------------------------------- L2d: refusal memo, nothing created, label guard, signature, guard identity
+SKIP: {
+    skip 'storage without the L1 fence API',16 unless Loomy::LiveState->can('owner_check');
+    for my $tool (qw(codex claude)) {
+        my $r=project("memo-$tool",0); codex_source($r); claude_source($r,"claude-memo-$tool"); my ($g,$c)=elect($r);
+        my $idx="$r/.loomy/logs/$tool-native.idx"; put($idx,'{"version":3}');
+        my $poll=$tool eq 'codex' ? sub {Loomy::CodexNative::poll($r,$sessions,{owner=>$g,context=>$c})} : sub {Loomy::ClaudeNative::poll($r,$projects,{owner=>$g,context=>$c})};
+        my $watch=$tool eq 'codex' ? sub {Loomy::CodexNative::watch_changed($r,$sessions,$NOW,{owner=>$g,context=>$c})} : sub {Loomy::ClaudeNative::watch_changed($r,$projects,{owner=>$g,context=>$c})};
+        ok(!-e "$idx.lock",'$tool: the refused manifest has no lock yet');
+        my $reads=0; no warnings 'redefine';
+        my ($lo,$po)=(\&Loomy::LiveState::checkpoint_load,\&Loomy::LiveState::checkpoint_peek);
+        local *Loomy::LiveState::checkpoint_load=sub {++$reads; $lo->(@_)}; local *Loomy::LiveState::checkpoint_peek=sub {++$reads; $po->(@_)};
+        ok(!defined $poll->(),"$tool: first poll is refused"); ok(!-e "$idx.lock","$tool: a refused poll creates no idx.lock");
+        my $first=$reads; cmp_ok($first,'>=',1,"$tool: the refusal read the manifest once");
+        ok(!defined $poll->() && !defined $poll->(),"$tool: repeated polls stay refused"); is($reads,$first,"$tool: repeated polls read nothing");
+        ok(!$watch->(),"$tool: watch_changed is false while the manifest is unchanged");
+        like($Loomy::CodexNative::refusal,qr/\Aunsupported-/,"$tool: the same reason is returned");
+        unlink $idx; ok(defined $poll->(),"$tool: a changed manifest is read again and collected");
+        Loomy::CollectorOwner::release($g);
+    }
+    # Label writes are owner-checked like appends.
+    my $r=project('labels',0); my $f="$projects/".slug($r)."/lead.jsonl";
+    rows($f,{type=>'user',sessionId=>'lead',cwd=>$r,timestamp=>ts(-20),entrypoint=>'cli',message=>{role=>'user',content=>'x'}},
+        {type=>'assistant',sessionId=>'lead',cwd=>$r,timestamp=>ts(-19),message=>{role=>'assistant',model=>'claude-sonnet-5-5',stop_reason=>undef,
+            content=>[map {{type=>'tool_use',id=>"call$_",name=>'Agent',input=>{subagent_type=>'developer',description=>"d$_"}}} 1..3]}});
+    my ($g,$c)=elect($r); my $n=0;
+    {
+        no warnings 'redefine'; my $orig=\&Loomy::LiveState::content_label;
+        local *Loomy::LiveState::content_label=sub {
+            if (++$n==1) {rename "$r/.loomy/logs/collector.lock","$r/.loomy/logs/collector.lock.old" or die; put("$r/.loomy/logs/collector.lock",''); chmod 0600,"$r/.loomy/logs/collector.lock"}
+            return $orig->(@_);
+        };
+        dies_code('a lock replaced during label writes',sub {Loomy::ClaudeNative::poll($r,$projects,{owner=>$g,context=>$c})},'FENCED');
+    }
+    is($n,1,'no label write after the fence');
+    # A removed member's growth does not make the input signature change.
+    my $fam=family('sigfam'); my $own=codex_source($fam->{main}); my $gone=codex_source($fam->{whole});
+    my ($g2,$c2)=elect($fam->{main}); my $o={owner=>$g2,context=>$c2};
+    Loomy::CodexNative::poll($fam->{main},$sessions,$o) for 1..3;
+    unlink "$fam->{whole}/.loomy" or die; Loomy::CollectorOwner::refresh_scope($g2);
+    Loomy::CodexNative::poll($fam->{main},$sessions,$o) for 1..10;
+    Loomy::CodexNative::watch_changed($fam->{main},$sessions,$NOW,$o);
+    rows($gone->{path},{timestamp=>ts(9),type=>'event_msg',payload=>{type=>'task_complete',turn_id=>'tz'}});
+    ok(!Loomy::CodexNative::watch_changed($fam->{main},$sessions,$NOW,$o),'growth of a removed member does not trigger a poll');
+    # Guard identity: a new acquisition is a change, the same guard is not, even after the old one is freed.
+    my $r3=project('identity',0); my ($ga,$ca)=elect($r3);
+    ok(!Loomy::CodexNative::guard_changed('k',$ga),'first guard is not a change'); ok(!Loomy::CodexNative::guard_changed('k',$ga),'the same guard is not a change');
+    Loomy::CollectorOwner::release($ga); undef $ga; my ($gb)=elect($r3);
+    ok(Loomy::CodexNative::guard_changed('k',$gb),'a reacquired guard is a change');
+    Loomy::CollectorOwner::release($gb); Loomy::CollectorOwner::release($g2);
 }
 done_testing;

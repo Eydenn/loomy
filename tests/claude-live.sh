@@ -137,7 +137,7 @@ done
 for finding in R1 R2 R3 R4 R6 R7 R5 R8 R9 R10; do
  check "$finding Round 2 regression" perl "$REPO/tests/fixtures/claude-round2.pl" "$REPO" "$WORK/round2" "$finding"
 done
-for finding in N1 N2 N3 N3-shot N4; do
+for finding in N1 N2 N3 N3-shot N3-elect N4; do
  check "$finding Round 3 regression" perl "$REPO/tests/fixtures/claude-round3.pl" "$REPO" "$WORK/round3" "$finding"
 done
 if [[ "${LOOMY_TEST_NATIVE_PTY:-1}" == 0 ]]; then

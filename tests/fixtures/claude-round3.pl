@@ -82,8 +82,10 @@ if ($finding eq 'N1') {
     # File activity itself renews the child's lease even with no complete new record.
     utime($clock+990,$clock+990,$child) or die $!; $s=poll();
     die 'own file mtime did not renew lease' unless grep {/^N\|A\|claude:lead:call\|.*\|running\|/} projection($s,$clock+1000);
-} elsif ($finding =~ /^N3(?:-shot)?(?:-bench)?$/) {
-    my $benchmark=$finding=~/-bench$/; my $oneshot=$finding=~/-shot/;
+} elsif ($finding =~ /^N3(?:-shot|-elect)?(?:-bench)?$/) {
+    my $benchmark=$finding=~/-bench$/; my $oneshot=$finding=~/-(?:shot|elect)/;
+    # N3-elect: the product CLI path, where the one-shot takes a transient collector election.
+    $ENV{LOOMY_N3_ELECT}=1 if $finding =~ /-elect/;
     $ENV{LOOMY_NATIVE_NOW}=$clock+4000;
     launch('early',1); returned('early',3); child_record('user',2); child_record('assistant',4);
     for my $i (2..18) {
@@ -112,7 +114,7 @@ if ($finding eq 'N1') {
                 'use Time::HiRes qw(clock_gettime CLOCK_PROCESS_CPUTIME_ID);
                  my ($startup,$load,$save)=(0,0,0);
                  END {printf "%.9f %.9f %.9f %.9f\n",clock_gettime(CLOCK_PROCESS_CPUTIME_ID),$startup,$load,$save}
-                 require shift @ARGV;
+                 require shift @ARGV; $Loomy::CodexNative::bare_election=1 if $ENV{LOOMY_N3_ELECT};
                  $startup=clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
                  my $loader=\&Loomy::LiveState::checkpoint_load; my $saver=\&Loomy::LiveState::checkpoint_save;
                  {no warnings "redefine";

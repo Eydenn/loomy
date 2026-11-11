@@ -12,6 +12,7 @@ use Time::Local qw(timegm);
 use Time::HiRes qw(stat lstat sleep);
 
 my $LIB = abs_path(__FILE__); $LIB =~ s{/[^/]+$}{};
+require "$LIB/runtime-paths.pl";
 my $JSON = JSON::PP->new->utf8->canonical;
 my @SOURCES = qw(explicit-user explicit-lead claude-description codex-path-slug codex-nickname codex-role);
 my @KEYS = qw(version journal_content policy_generation label_sources label_max_graphemes label_max_bytes
@@ -88,21 +89,10 @@ sub _private_group {
     return 1;
 }
 sub _dir_unsafe {
-    my ($mode,$gid,$lenient)=@_;
-    return 1 if $mode&002;
-    return 0 unless $mode&020;
-    return $lenient && _private_group($gid) ? 0 : 1;
+    return Loomy::RuntimePaths::dir_unsafe(@_,\&_private_group);
 }
 sub _dir {
-    my ($p,$display)=@_; $display//=$p; my $lenient=$p =~ m{(?:\A|/)(?:\.loomy|memory)\z} ? 1 : 0;
-    my @s=lstat($p);
-    die "unsafe content directory\n" unless @s && S_ISDIR($s[2]) && $s[4]==$<;
-    die "unsafe directory: $display (group/world writable)\n" if _dir_unsafe($s[2],$s[5],$lenient);
-    sysopen my $h,$p,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die "unsafe content directory\n";
-    my @f=stat($h);
-    die "unsafe content directory\n" unless @f && $s[0]==$f[0] && $s[1]==$f[1] && $f[4]==$<;
-    die "unsafe directory: $display (group/world writable)\n" if _dir_unsafe($f[2],$f[5],$lenient);
-    return ($h,\@f);
+    my ($p,$display)=@_; return Loomy::RuntimePaths::dir($p,$display,\&_private_group);
 }
 sub _same {
     my ($a,$b)=@_; return @$a && @$b && $a->[0]==$b->[0] && $a->[1]==$b->[1]
@@ -110,53 +100,25 @@ sub _same {
         && $a->[9]==$b->[9] && $a->[10]==$b->[10];
 }
 sub _shared_owner {
-        my ($root,$suffix)=@_;
-        my $target=abs_path("$root/$suffix") // die "unsafe content directory\n";
-        die "unsafe content directory\n" unless $target =~ m{\A(.+)/\Q$suffix\E\z};
-        my $owner=$1; my (@common,@relative);
-        for my $r ($root,$owner) {
-            my $pid=open my $g,'-|'; die "content project unavailable\n" unless defined $pid;
-            if (!$pid) {
-                delete @ENV{grep {/\AGIT_/} keys %ENV};
-                open STDERR,'>','/dev/null' or POSIX::_exit(1);
-                exec('git','-C',$r,'rev-parse','--path-format=absolute','--git-common-dir','--show-toplevel') or POSIX::_exit(1);
-            }
-            my ($line,$top)=(scalar(<$g>),scalar(<$g>)); close $g or die "unsafe content directory\n";
-            $line//=''; $top//=''; chomp($line,$top); push @common,abs_path($line)//'';
-            $top=abs_path($top)//die "unsafe content directory\n";
-            die "unsafe content directory\n" unless $r eq $top || index($r,"$top/")==0;
-            push @relative,substr($r,length($top));
-        }
-        die "unsafe content directory\n" unless length($common[0]) && $common[0] eq $common[1] && $relative[0] eq $relative[1];
-        return $owner;
+    my ($root,$suffix)=@_; return Loomy::RuntimePaths::shared_owner($root,$suffix,\&_private_group);
 }
 sub _context {
     my ($root,$create)=@_;
-    $root=abs_path($root//'') // die "content project unavailable\n";
-    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
-    # Both worktree layouts share the owner's identity, pinned directories and
-    # policy. Never accept an arbitrary logs symlink or trust inherited GIT_*.
-    if (-l "$root/.loomy") {
-        $root=_shared_owner($root,'.loomy');
-    } elsif (-l "$root/.loomy/logs") {
-        _dir("$root/.loomy"); # The worktree's real parent must also be private to its owner.
-        $root=_shared_owner($root,'.loomy/logs');
-    }
-    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
-    my ($loomy,$ls)=_dir("$root/.loomy");
+    my $c=Loomy::RuntimePaths::resolve($root,\&_private_group);
+    die "unsafe content directory\n" unless $c->{loomy}; $root=$c->{root};
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
-    chdir $loomy or die "content directory unavailable\n";
+    chdir $c->{loomy} or die "content directory unavailable\n";
     my ($logs,$ds,$project_id); my $ok=eval {
         $project_id=_project_id($root,$create);
         if (!lstat('logs') && $create) {
             my $mask=umask 0077; my $made=mkdir 'logs',0700; umask $mask;
             die "content directory unavailable\n" unless $made || -d 'logs';
         }
-        ($logs,$ds)=_dir('logs',"$root/.loomy/logs") if lstat('logs'); 1;
+        ($logs,$ds)=_dir('logs',"$root/.loomy/logs") if lstat('logs');
+        @$c{qw(logs ds)}=($logs,$ds); Loomy::RuntimePaths::assert_current($c); 1;
     }; my $err=$@;
     chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
-    return {root=>$root, project_id=>$project_id, loomy=>$loomy, ls=>$ls,
-        logs=>$logs, ds=>$ds};
+    $c->{project_id}=$project_id; return $c;
 }
 # Pin the old namespace once, before any new references are made. Keeping that
 # namespace is the migration: historical journal/label/memory references need no
@@ -255,13 +217,17 @@ sub _in_context {
     return $result;
 }
 sub _assert_context {
-    my ($c)=@_; my @l=lstat("$c->{root}/.loomy"); my @d=lstat("$c->{root}/.loomy/logs");
-    die "content directory changed\n" unless @l && @d && S_ISDIR($l[2]) && S_ISDIR($d[2])
-        && $l[4]==$< && $d[4]==$<;
-    die "unsafe directory: $c->{root}/.loomy (group/world writable)\n" if _dir_unsafe($l[2],$l[5],1);
-    die "unsafe directory: $c->{root}/.loomy/logs (group/world writable)\n" if $d[2]&022;
-    die "content directory changed\n" unless $l[0]==$c->{ls}[0] && $l[1]==$c->{ls}[1]
-        && $d[0]==$c->{ds}[0] && $d[1]==$c->{ds}[1];
+    my ($c)=@_;
+    # Doctor's existing read-only caller carries stat pins rather than handles.
+    if (!exists($c->{requested_root})) {
+        my $current=Loomy::RuntimePaths::resolve($c->{root},\&_private_group);
+        die "content directory changed\n" unless $current->{logs} && $c->{ls} && $c->{ds}
+            && $current->{ls}[0]==$c->{ls}[0] && $current->{ls}[1]==$c->{ls}[1]
+            && $current->{ds}[0]==$c->{ds}[0] && $current->{ds}[1]==$c->{ds}[1];
+        return Loomy::RuntimePaths::assert_current($current);
+    }
+    die "content directory changed\n" unless $c->{logs};
+    return Loomy::RuntimePaths::assert_current($c);
 }
 sub _private_stat {
     my ($name)=@_; my @s=lstat($name); return \@s unless @s;
@@ -334,9 +300,12 @@ sub _stored {
     return {policy=>defaults(),source=>'invalid',valid=>0,stat=>$stat//[]};
 }
 sub load_policy {
-    my ($root)=@_; my $c=eval {_context($root,0)};
-    return {policy=>defaults(),source=>'invalid',valid=>0} unless $c;
-    return $c->{logs} ? _in_context($c,sub {_stored($c)}) : _stored($c);
+    my ($root)=@_;
+    # Stored-policy inspection is also the first-use writer's preflight. Its
+    # validity describes parsing, not an effective grant or attested identity.
+    return _snapshot_read($root,'effective',sub {
+        my ($c,$stored)=@_; return $c->{loomy} ? $stored : undef;
+    })->{value} // {policy=>defaults(),source=>'invalid',valid=>0};
 }
 
 # Supported managed paths retain parent/attempt markers even when launch.sh removes
@@ -399,51 +368,34 @@ sub _effective {
     return \%p;
 }
 sub effective_policy {
-    my ($root)=@_; my $c=eval {_context($root,0)};
-    return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0} unless $c;
-    return $c->{logs} ? _in_context($c,sub {_effective($c,_stored($c))}) : _effective($c,_stored($c));
+    return policy_snapshot($_[0],'effective');
 }
 
-# Export/read-only callers must not use _context: even its create=0 branch pins
-# an absent project-id. This reader only opens existing, pinned directories.
-# File checks are shared with the writer, but there is no lock, retrying identity
-# initialization, migration, permission repair or fallback to a path-derived ID.
+# Both modes share pinned paths and never store identity. R1 readers retain the
+# unstored namespace; strict R2 exports require an existing project-id file.
 sub _snapshot_context {
-    my ($root)=@_;
-    $root=abs_path($root//'') // die "content project unavailable\n";
-    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
-    my @entry=lstat("$root/.loomy");
-    return {root=>$root} unless @entry;
-    if (S_ISLNK($entry[2])) {$root=_shared_owner($root,'.loomy')}
-    elsif (-l "$root/.loomy/logs") {
-        _dir("$root/.loomy");
-        $root=_shared_owner($root,'.loomy/logs');
-    }
-    die "unsafe content project\n" if $root =~ /[\x00-\x1f\x7f]/;
-    my ($loomy,$ls)=_dir("$root/.loomy");
+    my ($root,$mode)=@_; my $c=Loomy::RuntimePaths::resolve($root,\&_private_group);
+    $c->{identity_mode}=$mode;
+    return $c unless $c->{loomy};
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
-    chdir $loomy or die "content directory unavailable\n";
-    my ($logs,$ds,$raw,$identity_stat); my $ok=eval {
+    chdir $c->{loomy} or die "content directory unavailable\n";
+    my ($raw,$identity_stat); my $ok=eval {
+        my $present=lstat('project-id') ? 1 : 0;
+        # Retain R1's bounded wait for a writer between O_EXCL and its first
+        # durable identity write. create=0 never pins the fallback namespace.
+        $c->{project_id}=_project_id($c->{root},0) if $mode eq 'effective';
         ($raw,$identity_stat)=_read('project-id',128);
-        ($logs,$ds)=_dir('logs',"$root/.loomy/logs") if lstat('logs');
+        die "content identity changed\n" if $mode eq 'effective'
+            && ($present && !defined($raw) || defined($raw) && $raw ne "$c->{project_id}\n");
         1;
     }; my $err=$@;
     chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
-    return {root=>$root,loomy=>$loomy,ls=>$ls,logs=>$logs,ds=>$ds,
-        identity_raw=>$raw,identity_stat=>$identity_stat,
-        (defined($raw) && $raw =~ /\A(p[0-9a-f]{64})\n\z/ ? (project_id=>$1) : ())};
+    @$c{qw(identity_raw identity_stat)}=($raw,$identity_stat);
+    $c->{project_id}=$1 if defined($raw) && $raw =~ /\A(p[0-9a-f]{64})\n\z/;
+    return $c;
 }
 sub _assert_snapshot_context {
-    my ($c)=@_; my @l=lstat("$c->{root}/.loomy");
-    if (!$c->{loomy}) {die "content directory changed\n" if @l; return}
-    die "content directory changed\n" unless @l && S_ISDIR($l[2]) && $l[4]==$<
-        && !($l[2]&002) && $l[0]==$c->{ls}[0] && $l[1]==$c->{ls}[1];
-    my @d=lstat("$c->{root}/.loomy/logs");
-    if (!$c->{logs}) {die "content directory changed\n" if @d}
-    else {
-        die "content directory changed\n" unless @d && S_ISDIR($d[2]) && $d[4]==$<
-            && !($d[2]&022) && $d[0]==$c->{ds}[0] && $d[1]==$c->{ds}[1];
-    }
+    my ($c)=@_; Loomy::RuntimePaths::assert_current($c); return unless $c->{loomy};
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
     chdir $c->{loomy} or die "content directory unavailable\n";
     my $ok=eval {
@@ -452,29 +404,35 @@ sub _assert_snapshot_context {
     }; my $err=$@;
     chdir $cwd or die "content directory unavailable\n"; die $err unless $ok;
 }
-sub policy_snapshot {
-    my ($root)=@_; my $c=eval {_snapshot_context($root)};
-    return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0,
-        identity_state=>'invalid',policy_state=>'invalid'} unless $c;
-    my $identity=$c->{project_id} ? 'present' : $c->{loomy} && defined($c->{identity_raw}) ? 'invalid' : 'missing';
-    my ($p,$stored); my $ok=eval {
+# The optional callback is private reader plumbing; it sees the same pinned
+# policy/identity snapshot, and its result is released only after revalidation.
+sub _snapshot_read {
+    my ($root,$mode,$reader)=@_;
+    die "invalid content identity mode\n" unless _scalar($mode) && $mode =~ /\A(?:effective|strict)\z/;
+    my $c=eval {_snapshot_context($root,$mode)};
+    my $invalid=sub {return {policy=>{%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0,
+        identity_state=>'invalid',policy_state=>'invalid'}}};
+    return $invalid->() unless $c;
+    my $identity=!defined($c->{identity_raw}) ? 'missing' : defined($c->{project_id}) ? 'present' : 'invalid';
+    my ($p,$stored,$value); my $ok=eval {
         $stored=$c->{logs} ? _in_context($c,sub {_stored($c)}) : _stored($c);
         _assert_snapshot_context($c);
         $p=_effective($c,$stored);
-        1;
+        $p->{identity_state}=$identity; $p->{policy_state}=$stored->{source};
+        if (!$c->{loomy} || $identity eq 'invalid' || ($mode eq 'strict' && ($identity ne 'present' || !$stored->{valid}))) {
+            # Keep origin diagnostics, not a usable grant or invented identity.
+            $p={%{defaults()},project=>$p->{project},source=>'invalid',valid=>0,journal_enabled=>0,
+                identity_state=>$identity,policy_state=>$stored->{source},
+                ($identity eq 'present' ? (project_id=>$c->{project_id}) : ())};
+            $p->{source}='tasks-veto' if ($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0';
+        }
+        $value=$reader->($c,$stored,$p) if $reader;
+        _assert_snapshot_context($c); 1;
     };
-    return {%{defaults()},source=>'invalid',valid=>0,journal_enabled=>0,
-        identity_state=>'invalid',policy_state=>'invalid'} unless $ok;
-    $p->{identity_state}=$identity; $p->{policy_state}=$stored->{source};
-    if ($identity ne 'present' || !$stored->{valid}) {
-        # Keep origin diagnostics, not a usable grant or invented identity.
-        $p={%{defaults()},project=>$p->{project},source=>'invalid',valid=>0,journal_enabled=>0,
-            identity_state=>$identity,policy_state=>$stored->{source},
-            ($identity eq 'present' ? (project_id=>$c->{project_id}) : ())};
-        $p->{source}='tasks-veto' if ($ENV{LOOMY_JOURNAL_TASKS}//'1') eq '0';
-    }
-    return $p;
+    return $invalid->() unless $ok;
+    return {policy=>$p,stored=>$stored,value=>$value};
 }
+sub policy_snapshot {return _snapshot_read($_[0],$_[1]//'strict')->{policy}}
 
 # Explicit output selection is narrower than journal compatibility. Consume an
 # existing same-project grant only; a flag/environment never persists consent.
@@ -751,16 +709,21 @@ sub save_label {
     });
 }
 sub resolve_label {
-    my ($root,$ref)=@_; my $c=eval {_context($root,0)}; return unless $c && $c->{logs};
-    return unless _scope($ref,$c->{project_id}) && keys(%$ref)==6 && ($ref->{version}//'') eq '1' && _id($ref->{label_id});
-    return eval {_in_context($c,sub {
-        return _find_label($c,{(map {$_=>$ref->{$_}} qw(label_id target_kind target_id attempt_id)),
-            needle=>'"label_id":'.substr($JSON->encode([$ref->{label_id}]),1,-1)});
-    })};
+    my ($root,$ref)=@_; return _snapshot_read($root,'effective',sub {
+        my ($c)=@_; return unless $c->{logs};
+        return _in_context($c,sub {
+            my $project=$c->{project_id};
+            return unless _scope($ref,$project) && keys(%$ref)==6 && ($ref->{version}//'') eq '1' && _id($ref->{label_id});
+            return _find_label($c,{(map {$_=>$ref->{$_}} qw(label_id target_kind target_id attempt_id)),
+                needle=>'"label_id":'.substr($JSON->encode([$ref->{label_id}]),1,-1)});
+        });
+    })->{value};
 }
 sub label_health {
-    my ($root)=@_; my $c=eval {_context($root,0)}; return 'unavailable' unless $c; return 'ok' unless $c->{logs};
-    return eval {_in_context($c,sub {my ($raw)=_read($FULL,128); return defined($raw) ? 'full' : 'ok'})} // 'unavailable';
+    my ($root)=@_; return _snapshot_read($root,'effective',sub {
+        my ($c)=@_; return unless $c->{loomy}; return 'ok' unless $c->{logs};
+        return _in_context($c,sub {my ($raw)=_read($FULL,128); return defined($raw) ? 'full' : 'ok'});
+    })->{value} // 'unavailable';
 }
 
 # Public manifest integrity is shared by the real loader and mutation canaries.

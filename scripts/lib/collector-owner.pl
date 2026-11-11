@@ -204,7 +204,7 @@ sub _command_probe {
 # Localize this subroutine in a hermetic test to supply missing, reused, or
 # inaccessible birth/boot evidence. None of these diagnostics can steal a lock.
 sub _probe_identity {
-    my ($pid) = @_;
+    my ($pid,$fast) = @_;
     my $identity = {host=>_diagnostic(eval { Sys::Hostname::hostname() })};
     if ($^O eq 'linux') {
         my $boot = _read_probe_file('/proc/sys/kernel/random/boot_id',128);
@@ -215,7 +215,9 @@ sub _probe_identity {
             $identity->{birth} = "linux-start-ticks:$fields[18]"
                 if defined($fields[18]) && $fields[18] =~ /\A[0-9]+\z/;
         }
-    } elsif ($^O eq 'darwin') {
+    } elsif ($^O eq 'darwin' && !$fast) {
+        # sysctl and ps are forks (about 15 ms): election skips them ($fast) and
+        # enrich_identity supplies them later. Diagnostic only; flock is the authority.
         my $boot = _command_probe('/usr/sbin/sysctl','-n','kern.boottime');
         $identity->{boot} = "darwin-boottime:$1:$2"
             if defined($boot) && $boot =~ /\bsec\s*=\s*([0-9]+),\s*usec\s*=\s*([0-9]+)/;
@@ -229,7 +231,8 @@ sub _probe_identity {
     return $identity;
 }
 sub _identity {
-    my $probe = eval { _probe_identity($$) };
+    my ($fast) = @_;
+    my $probe = eval { _probe_identity($$,$fast) };
     $probe = {} unless ref($probe) eq 'HASH';
     return {map { $_=>_diagnostic($probe->{$_}) } qw(host boot birth)};
 }
@@ -475,12 +478,13 @@ sub try_acquire {
             # Computed under the gate, after the lock is won: followers' busy
             # retries stay cheap. Process identity (sysctl/ps) is probed here too.
             my $scope = _scope_copy(Loomy::RuntimePaths::scope_set($ctx));
-            my $identity = _identity();
+            my $identity = _identity(1);
             my $epoch = _epoch();
             my $opaque;
             $guard = bless \$opaque,'Loomy::CollectorOwner::Guard';
             $state = {guard=>$guard,ctx=>$ctx,fh=>$lock->{fh},lock_stat=>$lock->{stat},
                 pid=>$$,epoch=>$epoch,scope=>$scope,record=>$record,phase=>'collecting',published=>0,
+                identity_pending=>(defined($identity->{boot}) && defined($identity->{birth}) ? 0 : 1),
                 lock_path=>"$ctx->{root}/.loomy/logs/$LOCK",record_path=>"$ctx->{root}/.loomy/logs/$RECORD"};
             weaken($state->{guard}); $AUTH{refaddr($guard)}=$state;
             my $next = {schema=>1,protocol=>1,build=>"$build",implementation=>'perl',
@@ -598,6 +602,22 @@ sub assert_owner_quick {
         1;
     };
     unless ($ok) { _close_state($state,'FENCED'); die "collector owner FENCED\n" }
+    return 1;
+}
+# Fills the diagnostic boot/birth fields that election leaves null on macOS to
+# avoid two forks on the latency path. Call once from an idle moment (not from a
+# one-shot command). Never affects authority; same epoch; returns 1 or dies like
+# assert_owner. A no-op when nothing is pending.
+sub enrich_identity {
+    my ($guard) = @_;
+    assert_owner($guard,'write');
+    my $state = _auth($guard);
+    return 1 unless delete $state->{identity_pending};
+    my $identity = _identity();
+    my $next = {%{$state->{record}},map { $_=>$identity->{$_} } qw(host boot birth)};
+    return 1 if _record_equal($next,$state->{record});
+    my $ok = eval { _write_record($state,$next); 1 };
+    unless ($ok) { _close_state($state,'FENCED'); die "collector owner IO_ERROR\n" }
     return 1;
 }
 sub begin_drain {

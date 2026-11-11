@@ -285,6 +285,22 @@ sub assert_current {
     } else {die "content directory changed\n" unless $c->{root} eq $c->{requested_root}}
     return 1;
 }
+# Election latency path, ordinary layout only: true when no Git repository encloses
+# the root (the answer Git would give), or when the enclosing repository's own
+# `.git` directory registers no linked worktree, so the single workspace is the
+# whole union. Read from files; no Git process. Anything else uses Git.
+sub _single_workspace {
+    my ($root,$private_group)=@_;
+    my $top=$root; $top =~ s{/[^/]*\z}{} until $top eq '' || lstat("$top/.git");
+    return 1 if $top eq '';
+    my @s=lstat("$top/.git"); return 0 unless @s && S_ISDIR($s[2]) && $s[4]==$<;
+    return 0 unless (abs_path($top)//'') eq $top;
+    return 0 if lstat("$top/.git/commondir") || lstat("$top/.git/gitdir");
+    if (opendir(my $d,"$top/.git/worktrees")) {
+        my @e=grep {$_ ne '.' && $_ ne '..'} readdir $d; closedir $d; return 0 if @e;
+    } elsif (lstat("$top/.git/worktrees")) {return 0}
+    return eval {_source($root,$top,$private_group); 1} ? 1 : 0;
+}
 # Cost: one Git relation probe and one worktree listing (plus one probe for an
 # alias requester), then file reads per registered sibling; no Git process per
 # sibling. Refresh at maintenance cadence; 62 siblings take a few milliseconds.
@@ -292,8 +308,10 @@ sub scope_set {
     my ($c)=@_; assert_current($c);
     my (@roots,$skipped); $skipped=0;
     if ($c->{loomy}) {
-        my $relation=_relation($c->{root});
-        if (!$relation) {push @roots,$c->{root}}
+        my $quick=$c->{_alias} ? undef : _single_workspace($c->{root},$c->{_private_group});
+        my $relation=$quick ? undef : _relation($c->{root});
+        if ($quick) {push @roots,$c->{root}}
+        elsif (!$relation) {push @roots,$c->{root}}
         else {
             my $list=_registered($c->{root}); $skipped+=$list->{skipped};
             my %known=map {$_=>1} @{$list->{paths}};

@@ -233,6 +233,45 @@ check('none found' in plain.stdout and 'legacy content possible' not in plain.st
       'P16 empty locations say "none found", not "legacy content possible"')
 french = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', empty, '--git-history', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
 check('inconnu chemin' not in french.stdout and 'inconnus' in french.stdout, 'P16 FR unknown Git counts use a dedicated grammatical form')
+# Zero-byte stores are "none found"; label/policy stores (0.17.7 format) never claim legacy text.
+zero = work / 'zero-byte'
+put(zero / '.loomy/logs/events.jsonl', '')
+new_stores = work / 'new-stores'
+put(new_stores / '.loomy/logs/content-policy.conf', 'version=1\n')
+put(new_stores / '.loomy/project-id', 'p' + 'a' * 64 + '\n')
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', zero)
+check('Journal: none found' in plain.stdout, 'P17 a 0-byte journal says "none found"')
+plain = run(repo / 'scripts/loomy-privacy.sh', 'inventory', '--root', new_stores)
+labels_row = [l for l in plain.stdout.splitlines() if l.startswith('Task labels')]
+check(labels_row and 'legacy content possible' not in labels_row[0] and 'current private format' in labels_row[0],
+      'P17 label/policy stores of this release never say "legacy content possible"')
+# Outside a Loomy project the status shows no privacy lines or label hint.
+outside = work / 'not-a-project'
+outside.mkdir()
+status = run(repo / 'scripts/loomy-status.sh', '--root', outside)
+check('task labels' not in status.stdout and 'loomy privacy' not in status.stdout and 'Task labels off' not in status.stdout,
+      'P17 status outside a Loomy project has no privacy lines or labels hint')
+# A project whose managed .gitignore block predates project-id: read-only commands leave Git clean.
+legacy = work / 'gitignore-0176'
+(legacy / '.loomy/logs').mkdir(parents=True)
+os.chmod(legacy / '.loomy', 0o755); os.chmod(legacy / '.loomy/logs', 0o700)  # explicit modes whatever the umask
+(legacy / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+(legacy / '.gitignore').write_text('# >>> Loomy: local history and work files, never versioned\n.loomy/logs/\n.loomy/memory/\n.loomy/*.state\n# <<< Loomy: local history and work files\n')
+run('git', '-C', legacy, 'init', '-q', '-b', 'main')
+run('git', '-C', legacy, 'add', '-A')
+run('git', '-C', legacy, 'commit', '-q', '-m', 'init')
+before = run('git', '-C', legacy, 'status', '--porcelain').stdout
+run(repo / 'scripts/loomy-status.sh', '--root', legacy)
+run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content')
+after = run('git', '-C', legacy, 'status', '--porcelain').stdout
+check(before == '' and after == '' and not (legacy / '.loomy/project-id').exists(),
+      'P17 loomy status / privacy content leave git status clean in a 0.17.6 project (no project-id yet)')
+# French wording for no label source: feminine agreement.
+french = run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content', overrides={'LOOMY_LANG': 'fr', 'LOOMY_UI_LANG': 'fr'})
+check('Sources de libellés sélectionnées : aucune' in french.stdout and 'sélectionnées : désactivés' not in french.stdout,
+      'P17 FR label_sources=none reads "aucune"')
+english = run(repo / 'scripts/loomy-privacy.sh', '--root', legacy, 'content')
+check('Selected label sources: none' in english.stdout, 'P17 EN label_sources=none reads "none"')
 census = work / 'census'
 for name in ('events.next', 'usage.idx', 'desktop-resume.stdout', 'skill-install.log'):
     put(census / '.loomy/logs' / name, 'PRIVATE_CENSUS')
@@ -381,6 +420,7 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
     doctor_root = work / f'doctor-{state}'
     doctor_logs = doctor_root / '.loomy/logs'
     doctor_logs.mkdir(parents=True)
+    os.chmod(doctor_root / '.loomy', 0o755); os.chmod(doctor_logs, 0o700)  # explicit modes whatever the umask
     conf = doctor_logs / 'content-policy.conf'
     marker = doctor_logs / 'display-context-full'
     if state == 'valid':
@@ -416,6 +456,55 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
             check('explicit-user,explicit-lead' in combined and ('private results: on' in combined if lang == 'en' else 'résultats privés : activés' in combined),
                   f'doctor {lang}: stored label and results grants are visible')
         check(before_doctor == manifest(doctor_root), f'doctor {lang}: no identity, mode, content or marker mutation')
+
+# A group/world-writable .loomy must be reported as such (never as an invalid policy file) by every command.
+for mode in (0o775, 0o777):
+    unsafe_root = work / f'unsafe-{mode:o}'
+    (unsafe_root / '.loomy/logs').mkdir(parents=True)
+    (unsafe_root / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+    os.chmod(unsafe_root / '.loomy/logs', 0o700)
+    os.chmod(unsafe_root / '.loomy', mode)
+    named = str(unsafe_root / '.loomy')
+    for lang in ('en', 'fr'):
+        ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}
+        outs = {
+            'privacy content': run(repo / 'scripts/loomy-privacy.sh', '--root', unsafe_root, 'content', overrides=ov, success=False),
+            'doctor': run(repo / 'scripts/loomy-doctor.sh', '--compact', '--root', unsafe_root, overrides=ov, success=False),
+            'status': run(repo / 'scripts/loomy-status.sh', '--root', unsafe_root, overrides=ov, success=False),
+        }
+        for name, result in outs.items():
+            text = ''.join((result.stdout + result.stderr).split())  # wrapped paths: compare without whitespace
+            check(named.replace(' ', '') in text and 'chmodg-w,o-w' in text,
+                  f'{name} {lang}: unsafe .loomy ({mode:o}) names the directory and the chmod remedy')
+            check('Invalidcontentpolicy' not in text and 'Politiquedecontenuinvalide' not in text and 'Corrigezousupprimez' not in text,
+                  f'{name} {lang}: unsafe .loomy ({mode:o}) is never reported as an invalid policy file')
+    check(oct(os.stat(unsafe_root / '.loomy').st_mode & 0o777) == oct(mode), f'unsafe .loomy ({mode:o}) is never chmodded by a diagnostic')
+
+# The remedy is a pasteable command: the path is single-quoted, whatever it contains (space, ;, quote).
+for odd in ('with space', 'semi;colon', "it's $(x)"):
+    odd_root = work / f'unsafe {odd}'
+    (odd_root / '.loomy/logs').mkdir(parents=True)
+    (odd_root / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+    os.chmod(odd_root / '.loomy/logs', 0o700); os.chmod(odd_root / '.loomy', 0o775)
+    quoted = "'" + str(odd_root / '.loomy').replace("'", "'\\''") + "'"
+    for lang, first in (('en', 'unsafe directory: '), ('fr', 'dossier non sûr : ')):
+        ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}
+        result = run(repo / 'scripts/loomy-privacy.sh', '--root', odd_root, 'content', overrides=ov, success=False)
+        combined = result.stdout + result.stderr
+        check(first in combined and f'chmod g-w,o-w {quoted} ' in combined,
+              f'privacy content {lang}: first line translated and the remedy path is single-quoted ({odd!r})')
+    doctor = run(repo / 'scripts/loomy-doctor.sh', '--compact', '--root', odd_root, success=False)
+    check(f'chmod g-w,o-w {quoted} ' in doctor.stdout + doctor.stderr, f'doctor: the remedy path is single-quoted ({odd!r})')
+
+# Creators of .loomy set an explicit mode, so a group-writable umask cannot make a new project unusable.
+for umask_value in ('002', '077'):
+    for creator_name, creator_args in (('status', ('loomy-status.sh', 'set', 'build')),):
+        creator = work / f'creator-{creator_name}-{umask_value}'
+        creator.mkdir()
+        run('bash', '-c', 'umask "$1"; cd "$2" && bash "$3/scripts/$4" --root "$2" "${@:5}"',
+            '_', umask_value, creator, repo, *creator_args, success=False)
+        mode = os.stat(creator / '.loomy').st_mode & 0o777
+        check(mode == 0o755, f'loomy {creator_name} creates .loomy 0755 under umask {umask_value} (got {mode:o})')
 
 print(f'1..{passed}')
 PY

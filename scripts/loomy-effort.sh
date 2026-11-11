@@ -41,7 +41,8 @@ label() {
 # set_effort <role> <level|"">: writes (or removes) the role's setting.
 set_effort() {
   local role="$1" level="$2" tmp
-  mkdir -p "$ROOT/.loomy"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$ROOT/.loomy"
   tmp="$(mktemp)"
   { grep -v "^$role=" "$FILE" 2>/dev/null || true; [[ -n "$level" ]] && echo "$role=$level"; } >"$tmp"
   if [[ -s "$tmp" ]]; then mv "$tmp" "$FILE"; else rm -f "$tmp" "$FILE"; fi

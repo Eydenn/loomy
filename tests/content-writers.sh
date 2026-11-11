@@ -293,6 +293,7 @@ def rows(root):
     return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
 def seed_policy(root, **changes):
     directory = root/'.loomy/logs'; directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    (root/'.loomy').chmod(0o755)  # parents follow the umask: explicit mode, as Loomy creates it
     raw = run(['perl', '-e', 'require $ARGV[0]; my $p=Loomy::ContentPolicy::defaults(); print "$_=$p->{$_}\\n" for sort keys %$p;', str(repo/'scripts/lib/content-policy.pl')])
     policy = dict(x.split('=',1) for x in raw.splitlines()); policy.update({k:str(v) for k,v in changes.items()})
     path = directory/'content-policy.conf'; path.write_text(''.join(f'{k}={v}\n' for k,v in policy.items())); path.chmod(0o600)
@@ -755,3 +756,18 @@ for tool in ('codex','claude'):
         print(f'PASS {tool} {sig.name}: exactly one interrupted terminal event with start metadata')
 
 PY
+
+# The journal under umask 002: logs stay private, and the event is written where group write is accepted
+# (the user's private group on Linux; macOS's shared staff group only when .loomy is not group-writable).
+(
+  # shellcheck source=../scripts/lib/journal.sh
+  source "$REPO/scripts/lib/journal.sh"
+  P="$WORK/umask-journal"; mkdir -p "$P/.loomy"
+  if [[ "$(id -gn)" == "$(id -un)" ]]; then chmod 0775 "$P/.loomy"; else chmod 0755 "$P/.loomy"; fi
+  (umask 002; ai_journal_write "$P" '"type":"phase","phase":"build"')
+  grep -q '"phase":"build"' "$P/.loomy/logs/events.jsonl"
+  grep -q '"content_policy":"structural-v1"' "$P/.loomy/logs/events.jsonl"
+  [[ "$(stat -f %Lp "$P/.loomy/logs" 2>/dev/null || stat -c %a "$P/.loomy/logs")" == 700 ]]
+  [[ "$(stat -f %Lp "$P/.loomy/logs/events.jsonl" 2>/dev/null || stat -c %a "$P/.loomy/logs/events.jsonl")" == 600 ]]
+)
+printf 'ok journal under umask 002 writes a structural event with private logs\n'

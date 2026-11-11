@@ -70,7 +70,8 @@ if (( ! RESUME )); then
     ui_choose "$(t "Task #%s is not finished (%s). Start the new one anyway?" "$(state_get id)" "$(loomy_phase_label "$cur_phase")")" 1 "$(t "Yes, start it")" "$(t "Cancel")"
     [[ "$UI_INDEX" == "0" ]] || { UI_NO_DUMP=1; _ui_restore; exit 0; }
   fi
-  mkdir -p "$TASKS_DIR" "$ROOT/.loomy/logs"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$ROOT/.loomy"; mkdir -p "$TASKS_DIR"; mkdir -m 0700 "$ROOT/.loomy/logs" 2>/dev/null || true
   n=1; for f in "$TASKS_DIR"/*.md; do [[ -f "$f" ]] || continue; k="$(basename "$f" | sed 's/-.*//; s/^0*//')"; [[ "$k" =~ ^[0-9]+$ ]] && (( k >= n )) && n=$(( k + 1 )); done
   ID="$n"
   TITLE="$(printf '%s' "$DESC" | tr '\n\t' '  ' | LC_ALL=C tr -d '\000-\037' | cut -c1-120)"

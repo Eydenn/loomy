@@ -65,7 +65,8 @@ for (( i=0; i<COUNT; i++ )); do
     link=/.loomy
     if (( SHARE_LOGS )); then
       link=/.loomy/logs
-      mkdir -p "$SHARED/logs"; mkdir -p "${DIRS[i]}/.loomy"
+      # shellcheck disable=SC2174 # -m on the final directory only is intended
+      mkdir -m 0700 "$SHARED/logs" 2>/dev/null || true; mkdir -m 0755 "${DIRS[i]}/.loomy" 2>/dev/null || true
       ln -s "$SHARED/logs" "${DIRS[i]}/.loomy/logs"
     else
       ln -s "$SHARED" "${DIRS[i]}/.loomy"

@@ -252,7 +252,8 @@ report() {
 case "$MODE" in
   print) report ;;
   *)
-    mkdir -p "$ROOT/.loomy"
+    # shellcheck disable=SC2174 # -m on the final directory only is intended
+    mkdir -p -m 0755 "$ROOT/.loomy"
     report >"$ROOT/.loomy/assessment.md"
     summary="$(t "%s files · %s · tests: %s · CI: %s · risk %s" "$N_FILES" "${MAIN_LANG:-?}" "$N_TESTS" "$( [[ -n "$CI" ]] && t "yes" || t "no")" "$RISK")"
     if [[ "$MODE" == "quiet" ]]; then echo "$summary"

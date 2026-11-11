@@ -25,7 +25,7 @@ PASS=0; FAIL=0; OUT="$WORK/out"
 ok() { PASS=$((PASS+1)); printf 'ok %s\n' "$1"; }
 check() { local title="$1"; shift; if "$@" >"$OUT" 2>&1; then ok "$title"; else FAIL=$((FAIL+1)); printf 'not ok %s\n' "$title"; cat "$OUT"; fi; }
 project() {
-  P="$WORK/$1"; mkdir -p "$P/.loomy/logs"
+  P="$WORK/$1"; mkdir -p "$P/.loomy/logs"; chmod 0755 "$P/.loomy"; chmod 0700 "$P/.loomy/logs"   # whatever the umask
   printf '%s\n' '---' 'ai_mode: SOLO' 'ai_lead: codex' 'budget: equilibre' 'delegation_format: structured' '---' >"$P/.loomy/brief.md"
 }
 policy() {
@@ -79,7 +79,7 @@ policy
 LOOMY_JOURNAL_TASKS=0 save veto
 check 'TASKS=0 vetoes capture despite grant' test ! -f "$P/.loomy/memory/private-results-v1/veto.json"
 check 'STATE mtime dedupe and rank/show share newest-first order' bash -c 'source "$1/scripts/lib/memory.sh"; d="$2/.loomy/memory"; printf "# Work state\n" >"$d/STATE.md"; touch -t 209901010000 "$d/STATE.md"; [[ -z "$(loomy_memory_digest "$2" 10 new)" ]]; [[ "$(loomy_memory_show "$2" 1)" == *"veto"* ]]; [[ "$(loomy_memory_digest "$2" 1)" == *"veto"* ]]' _ "$REPO" "$P"
-mkdir "$P/.loomy/memory/delegations"
+mkdir "$P/.loomy/memory/delegations"; chmod 0755 "$P/.loomy/memory/delegations"
 printf '# legacy sensitive\nlegacy task\n' >"$P/.loomy/memory/delegations/old.md"
 chmod 644 "$P/.loomy/memory/delegations/old.md"
 cp -p "$P/.loomy/memory/delegations/old.md" "$WORK/legacy-before"
@@ -127,7 +127,7 @@ PY
 save fresh
 check 'age retention prunes only new unpinned records' bash -c 'd="$1/.loomy/memory/private-results-v1"; [[ ! -e "$d/old.json" && -f "$d/pin.json" && -f "$d/fresh.json" ]]' _ "$P"
 project unsafe; policy
-mkdir -p "$P/.loomy/memory" "$WORK/outside"
+mkdir -p "$P/.loomy/memory" "$WORK/outside"; chmod 0755 "$P/.loomy/memory"
 ln -s "$WORK/outside" "$P/.loomy/memory/private-results-v1"
 refusal="$(save denied 2>&1)"
 check 'symlink store is refused, target unchanged, receipt retained' bash -c '[[ -z "$(ls -A "$1")" && "$2" == *"result not saved"* && -f "$3/.loomy/memory/receipts-v1/denied.json" ]]' _ "$WORK/outside" "$refusal" "$P"
@@ -438,7 +438,7 @@ state_save active running "$$" "$now" 0 >"$OUT" 2>&1
 check 'digest keeps meaningful running/paused summaries and absolute show rank' bash -c 'source "$1/scripts/lib/memory.sh"; d=$(loomy_memory_digest "$2"); [[ "$d" == *"active: running"* && "$d" == *"paused until"* && "$d" == *"resumable: loomy memory show 2"* ]]' _ "$REPO" "$P"
 # A legacy-only upgrader gets an actionable read command.
 project legacy-only
-mkdir -p "$P/.loomy/memory/delegations"
+mkdir -p "$P/.loomy/memory/delegations"; chmod 0755 "$P/.loomy/memory" "$P/.loomy/memory/delegations"
 printf 'old full result\n' >"$P/.loomy/memory/delegations/old.md"
 check 'legacy-only show points to legacy command' bash -c 's=$(bash "$1/scripts/loomy-memory.sh" --root "$2" show); [[ "$s" == *"loomy memory show legacy"* && "$s" != *"No delegation result yet"* ]]' _ "$REPO" "$P"
 # Invalid environment descriptors are rejected, rather than trusted as options.
@@ -581,6 +581,134 @@ for ordered in (False, True):
             '_', str(repo), str(root)], text=True)
         assert output == expected, (ordered, rows, output, expected)
 PYSESSION
+# Fractional seconds keep their weight in the 300 s grouping, and a nested object's "tool" is not the row's tool.
+project session-fractions
+check 'session continuity keeps fractional seconds and reads only the top-level tool' python3 - "$REPO" "$P" <<'PYFRAC'
+import json, pathlib, subprocess, sys
+repo, root = map(pathlib.Path, sys.argv[1:])
+journal = root/'.loomy/logs/events.jsonl'
+def start(tool, ts, **extra):
+    return dict(ts=ts, type='session', event='start', tool=tool, session=tool, **extra)
+def previous(rows):
+    journal.write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    return subprocess.check_output(['bash', '-c', 'source "$1/scripts/lib/memory.sh"; loomy_memory_previous_tool "$2"',
+                                    '_', str(repo), str(root)], text=True)
+claude = start('claude', '2026-10-01T10:00:00Z')
+a = start('codex', '2026-10-01T10:30:00.100Z')
+b_far = start('codex', '2026-10-01T10:35:00.900Z')   # 300.8 s after a: a separate session
+b_near = start('codex', '2026-10-01T10:35:00.050Z')  # 299.95 s after a: the same session
+assert previous([claude, a, b_far]) == 'codex'
+assert previous([claude, a, b_near]) == 'claude'
+nested = start('codex', '2026-10-01T10:40:00Z', meta=dict(tool='claude'))
+assert previous([claude, a, nested]) == 'codex'
+other = start('codex', '2026-10-01T10:41:00Z')
+other['tool'] = 'gemini'; other['meta'] = dict(tool='claude')   # unknown top-level tool: the row does not count
+assert previous([claude, a, other]) == 'claude'
+PYFRAC
+# Group-writable parents (umask 002). Private group = group name equals the user name and nobody else
+# is a member; shared groups (macOS staff) and world write are always refused.
+check 'directory group rule: private group accepted, shared group, other members and world write refused' perl -e '
+  require shift; no warnings "redefine"; my $u=(getpwuid($<))[0];
+  my %g=(private=>[$u,""],alone=>[$u,$u],shared=>["staff",""],crowd=>[$u,"$u other"]);
+  my $cur; local *Loomy::ContentPolicy::_group_info=sub {@{$g{$cur}}};
+  my $gid=(getpwuid($<))[3];
+  my $bad=sub {my ($mode,$name,$lenient,$g)=@_; $cur=$name; return Loomy::ContentPolicy::_dir_unsafe($mode,$g//$gid,$lenient)};
+  die "private group refused" if $bad->(0775,"private",1) || $bad->(0775,"alone",1);
+  die "shared group accepted" unless $bad->(0775,"shared",1);
+  die "extra member accepted" unless $bad->(0775,"crowd",1);
+  die "world write accepted" unless $bad->(0777,"private",1) && $bad->(0757,"private",1);
+  die "foreign primary gid accepted" unless $bad->(0775,"private",1,$gid+4242);
+  die "strict directory accepted group write" unless $bad->(0775,"private",0);
+  die "private mode refused" if $bad->(0755,"shared",1) || $bad->(0700,"shared",0);
+' "$REPO/scripts/lib/content-policy.pl"
+mode_of() { python3 -c 'import os,sys;print(oct(os.stat(sys.argv[1]).st_mode&0o777))' "$1"; }
+if [[ "$(id -gn)" == "$(id -un)" ]]; then group_kind=private; else group_kind=shared; fi
+project umask-group; policy
+chmod 0700 "$P/.loomy/logs"; rm -rf "$P/.loomy/memory"
+(umask 002; loomy_memory_state_init "$P")
+check 'memory directory is created private under umask 002' test "$(mode_of "$P/.loomy/memory")" = 0o700
+chmod 0775 "$P/.loomy"
+(umask 002; save group-one) >"$OUT" 2>&1
+if [[ "$group_kind" == private ]]; then
+  check 'umask 002 with the private group: bridge save, count, digest and show work' bash -c '
+    source "$1/scripts/lib/memory.sh"; [[ -f "$2/.loomy/memory/receipts-v1/group-one.json" ]] \
+      && [[ "$(umask 002; loomy_memory_count "$2")" == 1 ]] && [[ "$(umask 002; loomy_memory_digest "$2")" == *group-one* ]] \
+      && [[ "$(umask 002; loomy_memory_show "$2" 1)" == *"private summary"* ]]' _ "$REPO" "$P"
+  chmod 0775 "$P/.loomy/memory"
+  check 'a 0.17.6 group-writable memory directory stays usable with the private group' bash -c '
+    source "$1/scripts/lib/memory.sh"; [[ "$(loomy_memory_count "$2")" == 1 ]]' _ "$REPO" "$P"
+  chmod 0700 "$P/.loomy/memory"
+else
+  check 'umask 002 with a shared group: group-writable .loomy is refused, nothing is saved' bash -c '
+    source "$1/scripts/lib/memory.sh"; [[ ! -e "$2/.loomy/memory/receipts-v1/group-one.json" ]] && ! loomy_memory_count "$2" >/dev/null 2>&1' _ "$REPO" "$P"
+  check 'shared group: the content backend names the unsafe directory' bash -c '
+    s=$(perl "$1/scripts/lib/content-policy.pl" results "$2" off 2>&1); [[ "$s" == *"unsafe directory: "*".loomy (group/world writable)"* ]]' _ "$REPO" "$P"
+  chmod 0755 "$P/.loomy"
+  (umask 002; save group-one) >"$OUT" 2>&1
+  check 'shared group: once .loomy is not group-writable, umask 002 saves, counts and digests' bash -c '
+    source "$1/scripts/lib/memory.sh"; [[ -f "$2/.loomy/memory/receipts-v1/group-one.json" ]] \
+      && [[ "$(umask 002; loomy_memory_count "$2")" == 1 ]] && [[ "$(umask 002; loomy_memory_digest "$2")" == *group-one* ]]' _ "$REPO" "$P"
+  chmod 0775 "$P/.loomy/memory"
+  check 'shared group: a group-writable memory directory is refused' bash -c '
+    source "$1/scripts/lib/memory.sh"; ! loomy_memory_count "$2" >/dev/null 2>&1' _ "$REPO" "$P"
+  chmod 0700 "$P/.loomy/memory"
+fi
+chmod 0777 "$P/.loomy"
+check 'world-writable .loomy is always refused' bash -c 'source "$1/scripts/lib/memory.sh"; ! loomy_memory_count "$2" >/dev/null 2>&1' _ "$REPO" "$P"
+check 'unsafe .loomy: the memory backend names the absolute directory and the chmod remedy' bash -c '
+  source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
+  [[ "$s" == *"Unsafe directory: $2/.loomy (group or world writable)"* && "$s" == *"chmod g-w,o-w '"'"'$2/.loomy'"'"'"* && "$s" != *"Content operation failed"* ]]' _ "$REPO" "$P"
+chmod 0755 "$P/.loomy"; chmod 0777 "$P/.loomy/memory"
+check 'unsafe memory directory: the backend names it with its absolute path, not the relative name' bash -c '
+  source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
+  [[ "$s" == *"Unsafe directory: $2/.loomy/memory (group or world writable)"* ]]' _ "$REPO" "$P"
+chmod 0700 "$P/.loomy/memory"
+
+# A resume descriptor's free-text reason must survive clean_text unchanged: C1 controls and bidi are refused at storage.
+project descriptor-why; policy
+valid_why="$(printf '%s\0' reviewer codex gpt-6.1-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
+for why in 'a\u009bb' 'a\u009db' 'a\u202eb' 'a\u009b2J \u009d52;c;x\u202e'; do
+  bad="$(printf '%s' "$valid_why" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["options"]["why"]=json.loads("\""+sys.argv[1]+"\""); print(json.dumps(d))' "$why")"
+  check "stored descriptor with a reason containing $why is refused" bash -c '
+    source "$1/scripts/lib/memory.sh"; ! { printf "%s\0" "$3" reviewer codex | _lm_backend descriptor-env "$2"; } >/dev/null 2>&1' _ "$REPO" "$P" "$bad"
+done
+check 'descriptor still accepts a clean reason' bash -c '
+  source "$1/scripts/lib/memory.sh"; printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "plain reason" "" "" "" | _lm_backend descriptor "$2" >/dev/null' _ "$REPO" "$P"
+# A raw --why over 200 characters is cut after trimming: the stored reason must be stable under a second clean_text.
+for kind in ws200 pairs cjk exact200 len201 len201ws; do
+  why="$(python3 -c '
+import sys
+k=sys.argv[1]
+print({"ws200":"a"*199+" b b b b b","pairs":"a "*150,"cjk":"日本語 "*80,"exact200":"x"*200,"len201":"y"*201,"len201ws":"z"*199+"  q"}[k],end="")' "$kind")"
+  check "descriptor is built from a long raw reason ($kind) and is stable" bash -c '
+    source "$1/scripts/lib/memory.sh"; d=$(printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "$3" "" "" "" | _lm_backend descriptor "$2") || exit 1
+    w=$(printf "%s" "$d" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"options\"][\"why\"],end=\"\")"); [[ -n "$w" && "${#w}" -le 200 && "$w" != *" " ]] || exit 1
+    printf "%s\0" "$d" reviewer codex | _lm_backend descriptor-env "$2" >/dev/null' _ "$REPO" "$P" "$why"
+done
+
+# memory show prints agent-written text: terminal controls never reach the user's terminal.
+project show-escape; policy
+save esc ok $'task \033]52;c;SECRET\a \033[31mred\033[0m \xc2\x9b2J \xe2\x80\xaerev\x01' $'SUMMARY: ok\nFINDINGS:\n- result \033]8;;http://x\033\\link\033]8;;\033\\ \x07 bell\ttab'
+check 'memory show strips ANSI/OSC/bidi and escapes other C0/C1 in task and result' python3 - "$REPO" "$P" <<'PYSHOW'
+import subprocess, sys
+repo, root = sys.argv[1:]
+out = subprocess.check_output(['bash', '-c', 'source "$1/scripts/lib/memory.sh"; loomy_memory_show "$2" 1', '_', repo, root])
+text = out.decode('utf-8')
+task, result = text.split('## Task')[1].split('## Result')
+assert not any(c in task + result for c in '\x1b\x07\x9b‮\x01'), repr(text)
+assert 'red' in task and 'rev' in task and '\\x01' in task, repr(task)
+assert 'link' in result and '\\x07' in result and 'bell\ttab' in result and 'http://x' not in result, repr(result)
+PYSHOW
+mkdir -p "$P/.loomy/memory/delegations"; chmod 0700 "$P/.loomy/memory/delegations"
+printf 'legacy \033]0;title\007 \033[2J \302\233' >"$P/.loomy/memory/delegations/2026-01-01-legacy.md"
+printf '31m ok\n' >>"$P/.loomy/memory/delegations/2026-01-01-legacy.md"
+check 'legacy memory output is escaped too' python3 - "$REPO" "$P" <<'PYLEGACY'
+import subprocess, sys
+repo, root = sys.argv[1:]
+out = subprocess.check_output(['bash', '-c', 'source "$1/scripts/lib/memory.sh"; loomy_memory_legacy "$2" 1', '_', repo, root]).decode('utf-8')
+assert '\x1b' not in out and '\x07' not in out and '\x9b' not in out and 'legacy' in out and 'ok' in out, repr(out)
+PYLEGACY
+
 printf '\nContent memory: %s passed, %s failed\n' "$PASS" "$FAIL"
 test_guard_gate || FAIL=$((FAIL+1))
 ((FAIL==0))

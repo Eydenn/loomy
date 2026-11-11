@@ -174,6 +174,8 @@ skip source collection. Native tree/list ownership and fitted-row inputs are ind
 on deltas; warm timers update elapsed text without decoding unchanged wire rows or
 spawning row helpers. Duration-width transitions still refit the original row inputs.
 Captured lines are joined once per frame, avoiding repeated multibyte concatenation.
+An active agent's rows fitted for the live block are replayed in the recap rather than
+refitted; timer frames redraw both through the same fitted-row inputs.
 The viewport reuses them rather than splitting the entire frame again;
 state counts are reused until the projection sequence changes. Config/brief/models
 are loaded at startup or when their signatures change, not on native timer frames.

@@ -4,7 +4,9 @@
 # Automatic text lives only in the opted-in, bounded private-results-v1 store.
 # Historical delegations are read-only and never migrated, chmodded or pruned.
 # shellcheck source=content-policy.sh
-source "$(dirname "${BASH_SOURCE[0]}")/content-policy.sh"
+_loomy_mem_dir="${BASH_SOURCE[0]}"; [[ "$_loomy_mem_dir" == */* ]] && _loomy_mem_dir="${_loomy_mem_dir%/*}" || _loomy_mem_dir=.
+source "$_loomy_mem_dir/content-policy.sh"
+unset _loomy_mem_dir
 
 loomy_memory_dir() { printf '%s/.loomy/memory' "$1"; }
 
@@ -12,21 +14,29 @@ loomy_memory_dir() { printf '%s/.loomy/memory' "$1"; }
 # projections and legacy rows have different key orders; only JSON values count.
 loomy_memory_previous_tool() {
   [[ -s "$1/.loomy/logs/events.jsonl" ]] || return 0
-  perl -e '
-    require shift @ARGV;
-    my @starts;
-    while (<>) {
-      my $e=eval {JSON::PP::decode_json($_)};
-      next unless ref($e) eq "HASH" && ($e->{type}//"") eq "session" && ($e->{event}//"") eq "start";
-      next unless ($e->{tool}//"") =~ /\A(?:claude|codex)\z/;
-      my $at=Loomy::LiveState::epoch($e->{ts}); next unless $at;
-      push @starts, [$at,$e->{tool}];
-    }
-    exit unless @starts>1;
-    my $last=pop @starts;
-    pop @starts while @starts && $starts[-1][1] eq $last->[1] && $last->[0]-$starts[-1][0]<=300;
-    print $starts[-1][1] if @starts;
-  ' "$(dirname "${BASH_SOURCE[0]}")/live-state.pl" "$1/.loomy/logs/events.jsonl" 2>/dev/null || true
+  # Order-independent prefilter: only session-start candidates reach the JSON decoder.
+  local starts
+  starts="$(grep -E '"type" *: *"session"' "$1/.loomy/logs/events.jsonl" 2>/dev/null | grep -E '"event" *: *"start"' || true)"
+  [[ "$starts" == *$'\n'* ]] || return 0   # fewer than two starts: no previous session
+  # Only values of the real keys count: JSON text inside a string value has its quotes escaped and never matches.
+  # Fractional seconds count; nested objects are removed first so that only top-level keys are read (a brace
+  # inside a string value can still confuse that removal: such a row simply keeps the nested key, a documented
+  # difference from a full JSON decode that real flat start rows never show).
+  printf '%s\n' "$starts" | awk '
+    function ep(ts,   y, m, d, f) { y = substr(ts, 1, 4) + 0; m = substr(ts, 6, 2) + 0; d = substr(ts, 9, 2) + 0
+      f = 0; if (substr(ts, 20, 1) == ".") { f = substr(ts, 20); sub(/Z$/, "", f); f += 0 }
+      if (m <= 2) { y--; m += 12 }
+      return (365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + d - 719469) * 86400 + substr(ts, 12, 2) * 3600 + substr(ts, 15, 2) * 60 + substr(ts, 18, 2) + f }
+    { ts = ""; tool = ""; x = substr($0, 1, 1) == "{" ? substr($0, 2) : $0
+      while (match(x, /\{[^{}]*\}/)) x = substr(x, 1, RSTART - 1) substr(x, RSTART + RLENGTH)
+      if (match(x, /"ts" *: *"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9](\.[0-9]+)?Z"/)) { ts = substr(x, RSTART, RLENGTH); sub(/^"ts" *: *"/, "", ts) }
+      if (match(x, /"tool" *: *"(claude|codex)"/)) { tool = substr(x, RSTART, RLENGTH); sub(/^"tool" *: *"/, "", tool); sub(/"$/, "", tool) }
+      if (ts == "" || tool == "") next
+      n++; E[n] = ep(ts); T[n] = tool }
+    END { if (n < 2) exit
+      i = n - 1
+      while (i >= 1 && T[i] == T[n] && E[n] - E[i] <= 300) i--
+      if (i >= 1) printf "%s", T[i] }' 2>/dev/null || true
 }
 
 # loomy_memory_state_init <root>: create STATE.md, or append its missing Dead ends section without rewriting it.
@@ -34,7 +44,8 @@ loomy_memory_state_init() {
   local d f
   d="$(loomy_memory_dir "$1")"; f="$d/STATE.md"
   [[ -L "$d" || -L "$f" ]] && return 0
-  mkdir -p "$d" 2>/dev/null || return 0
+  # Private by construction, whatever the umask (umask 002 would make it 0775).
+  (umask 077; mkdir -p "$d") 2>/dev/null || return 0
   # Written for the models, read by the user if they like: English (fewer tokens than other languages for every model)
   # and telegraphic, whatever the documentation language.
   if [[ ! -e "$f" ]]; then
@@ -133,10 +144,11 @@ _lm_backend() {
   tv LM_FAILED "result not saved / original task required"
   tv LM_PRIVATE "private result available"
   tv LM_ERROR "Content operation failed."
+  tv LM_UNSAFE "Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s"
   tv LM_FULL "Private result store full: wait for active tasks or resume paused tasks; review loomy memory show N, then retry."
   tv LM_PAUSED "paused until %s · resumable: loomy memory show %s"
   tv LM_RUNNING "running"
-  export LM_NOT_RETAINED LM_OFF LM_ORIGINAL LM_FAILED LM_PRIVATE LM_ERROR LM_FULL LM_PAUSED LM_RUNNING
+  export LM_NOT_RETAINED LM_OFF LM_ORIGINAL LM_FAILED LM_PRIVATE LM_ERROR LM_UNSAFE LM_FULL LM_PAUSED LM_RUNNING
   perl /dev/fd/3 "$LOOMY_CONTENT_POLICY_LIB" "$@" 3<<'PERL'
 use strict;
 use warnings;
@@ -163,7 +175,19 @@ sub clean_text {
     # Reuse the policy's complete ANSI/OSC, Cc/Cf and bidi removal. Collapsing
     # whitespace afterwards also handles Unicode separators and repeated spaces.
     $text=eval {Loomy::ContentPolicy::sanitize_label($text,1048576,4194304)} // '';
-    $text=~s/\s+/ /g; return substr($text,0,$limit);
+    $text=~s/\s+/ /g; $text=substr($text,0,$limit); $text=~s/\s+\z//; return $text;
+}
+# Text shown by "loomy memory show": kept as is, but nothing in it can drive the terminal (ANSI/OSC/DCS
+# sequences and bidi controls removed; other C0/C1 controls except newline and tab shown as \xNN).
+sub safe_display {
+    my ($t)=@_; $t//='';
+    $t=~s/(?:\x1b\]|\x{9d})[^\x07\x1b\x{9c}]*(?:\x07|\x1b\\|\x{9c}|\z)//g;
+    $t=~s/(?:\x1b[PX^_]|[\x{90}\x{98}\x{9e}\x{9f}])[^\x1b\x{9c}]*(?:\x1b\\|\x{9c}|\z)//g;
+    $t=~s/(?:\x1b\[|\x{9b})[0-?]*[ -\/]*[@-~]//g;
+    $t=~s/\x1b[ -\/]*[0-~]//g;
+    $t=~s/[\x{202A}-\x{202E}\x{2066}-\x{2069}\x{200E}\x{200F}\x{061C}]//g;
+    $t=~s/([\x00-\x08\x0b-\x1f\x7f-\x9f])/sprintf('\\x%02X',ord $1)/ge;
+    return $t;
 }
 sub display_result {
     my ($text)=@_;
@@ -197,7 +221,7 @@ sub assert_dirs {
                   ["$ctx->{root}/.loomy/memory/$kind",$ds,1]) {
         my @s=lstat($pair->[0]); my $old=$pair->[1];
         die "unsafe memory directory\n" unless @s && S_ISDIR($s[2]) && $s[4]==$<
-            && $s[0]==$old->[0] && $s[1]==$old->[1] && !($s[2]&022)
+            && $s[0]==$old->[0] && $s[1]==$old->[1] && !Loomy::ContentPolicy::_dir_unsafe($s[2],$s[5],!$pair->[2])
             && (!$pair->[2] || ($s[2]&0777)==0700);
     }
 }
@@ -206,10 +230,10 @@ sub in_store {
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "memory unavailable\n";
     chdir $ctx->{loomy} or die "memory unavailable\n";
     if (!lstat('memory')) {return chdir($cwd) && undef unless $create; mkdir 'memory',0700 or die "memory unavailable\n"}
-    ($memory,$ms)=Loomy::ContentPolicy::_dir('memory');
+    ($memory,$ms)=Loomy::ContentPolicy::_dir('memory',"$ctx->{root}/.loomy/memory");
     chdir $memory or die "memory unavailable\n";
     if (!lstat($name)) {return chdir($cwd) && undef unless $create; mkdir $name,0700 or die "memory unavailable\n"}
-    ($dir,$ds)=Loomy::ContentPolicy::_dir($name);
+    ($dir,$ds)=Loomy::ContentPolicy::_dir($name,"$ctx->{root}/.loomy/memory/$name");
     die "unsafe memory directory\n" unless ($ds->[2]&0777)==0700;
     chdir $dir or die "memory unavailable\n";
     assert_dirs(); my $r=$code->(); assert_dirs();
@@ -279,7 +303,7 @@ sub resume_descriptor {
     die "invalid resume descriptor\n" unless ref($o) eq 'HASH' && keys(%$o)==5;
     for (qw(profile why task_label max_turns isolation)) {die "invalid resume descriptor\n" unless scalar_text($o->{$_})}
     die "invalid resume descriptor\n" unless $o->{profile}=~/\A(?:econome|equilibre|qualite)\z/
-        && length($o->{why})<=200 && length($o->{task_label})<=384
+        && length($o->{why})<=200 && clean_text($o->{why},200) eq $o->{why} && length($o->{task_label})<=384
         && $o->{max_turns}=~/\A(?:|[1-9][0-9]{0,8})\z/ && $o->{isolation}=~/\A(?:|off|bare|strict)\z/;
     die "invalid resume descriptor\n" unless $o->{task_label} eq ''
         || Loomy::ContentPolicy::sanitize_label($o->{task_label},96,384) eq $o->{task_label};
@@ -535,11 +559,12 @@ my $ok=eval {
             die "invalid legacy rank\n" unless $args[0]=~/\A[1-9][0-9]{0,5}\z/ && $args[0]<=@names;
             sysopen my $h,$names[-$args[0]],O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die "legacy memory unavailable\n";
             my @f=stat($h); die "unsafe legacy result\n" unless S_ISREG($f[2]) && $f[3]==1 && $f[4]==$<;
-            binmode STDOUT, ':raw';
+            my $raw='';
             while (1) {
                 my $n=sysread($h,my $b,65536); die "legacy memory unavailable\n" unless defined $n;
-                last unless $n; print $b;
+                last unless $n; $raw.=$b;
             }
+            print safe_display(decode('UTF-8',$raw));
         } else {print "  - .loomy/memory/delegations/",Loomy::ContentPolicy::display_path($_),"\n" for reverse @names} exit 0;
     }
     my $rows=rows();
@@ -550,14 +575,14 @@ my $ok=eval {
         my $r=$rows->[-$n][0]; my $b=body($r);
         my $date=strftime('%Y-%m-%d %H:%M',localtime($r->{ended_at} || $r->{started_at}));
         print '# ',join(' · ',@$r{qw(role model effort status)})," · $date · $r->{id}","\n\n",decode('UTF-8',$json->encode($r)),"\n\n";
-        if ($b) {print "$message{LM_PRIVATE} · local · private-results-v1\n\n## Task\n\n$b->{task}\n\n## Result\n\n",display_result($b->{result}),"\n";
-            print "\n## Resume descriptor\n\n",decode('UTF-8',$json->encode($b->{resume})),"\n" if $b->{resume};
+        if ($b) {print "$message{LM_PRIVATE} · local · private-results-v1\n\n## Task\n\n",safe_display($b->{task}),"\n\n## Result\n\n",safe_display(display_result($b->{result})),"\n";
+            print "\n## Resume descriptor\n\n",safe_display(decode('UTF-8',$json->encode($b->{resume}))),"\n" if $b->{resume};
             print "$message{LM_ORIGINAL}\n" if !$b->{resume} && $r->{status} eq 'paused'}
         else {
             my $task=body($r,'task_ref');
             print "$message{LM_NOT_RETAINED}\n";
             print "$message{LM_OFF}\n" if Loomy::ContentPolicy::effective_policy($root)->{private_results} eq 'off';
-            if ($task) {print "\n## Task\n\n$task->{task}\n\n## Resume descriptor\n\n",decode('UTF-8',$json->encode($task->{resume})),"\n"}
+            if ($task) {print "\n## Task\n\n",safe_display($task->{task}),"\n\n## Resume descriptor\n\n",safe_display(decode('UTF-8',$json->encode($task->{resume}))),"\n"}
             print "$message{LM_ORIGINAL}\n" if !$task && $r->{status} eq 'paused';
         }
         exit 0;
@@ -593,7 +618,17 @@ my $ok=eval {
     }
     1;
 };
-if (!$ok) {print STDERR "$message{LM_ERROR}\n"; exit 1}
+if (!$ok) {
+    my $err=$@;
+    # An unsafe directory is named (absolute path, with the remedy), never reported as a generic failure.
+    my ($bad)=$err =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+    if (defined $bad) {
+        my $shown=Loomy::ContentPolicy::display_path($bad); $shown=Loomy::ContentPolicy::_encode_utf8($shown) if utf8::is_utf8($shown);
+        (my $quoted=$shown) =~ s/'/'\\''/g;
+        print STDERR sprintf($message{LM_UNSAFE},$shown,"'$quoted'"),"\n";
+    } else {print STDERR "$message{LM_ERROR}\n"}
+    exit 1;
+}
 PERL
 }
 

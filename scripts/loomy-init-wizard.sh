@@ -56,7 +56,8 @@ fi
 [[ -d "$TARGET_INPUT" ]] || { t "Error: folder not found: %s" "$TARGET_INPUT" >&2; echo >&2; exit 1; }
 TARGET="$(cd "$TARGET_INPUT" && pwd)"
 BRIEF="$TARGET/.loomy/brief.md"
-mkdir -p "$TARGET/.loomy"
+# shellcheck disable=SC2174 # -m on the final directory only is intended
+mkdir -p -m 0755 "$TARGET/.loomy"
 
 if [[ "$UI_ASSUME_DEFAULTS" != "1" ]] && ! ui_is_interactive; then
   t "Non-interactive terminal: run again with --yes (and optionally --answers FILE)." >&2; echo >&2
@@ -653,7 +654,8 @@ plan_skills() {
   SK_PLAN=""
   [[ "$(skills_policy)" == off ]] && return 0
   tmpd="$(mktemp -d "${TMPDIR:-/tmp}/loomy-plan.XXXXXX")" || return 0
-  mkdir -p "$tmpd/.loomy"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$tmpd/.loomy"
   printf -- '---\ntype: %s\ntraits: "%s"\ndetail1: "%s"\n---\n' "$TYPE" "$TRAITS" "$DETAIL1" >"$tmpd/.loomy/brief.md"
   SK_PLAN="$(skills_auto_for "$tmpd")"
   rm -rf "$tmpd"

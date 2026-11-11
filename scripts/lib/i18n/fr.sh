@@ -2375,6 +2375,8 @@ _t_fr() {
     'legacy excerpts (project scope)') _T='extraits historiques (portée du projet)' ;;
     'Project-local journal policy, task label grants and private result retention') _T='Politique locale du journal, autorisations des libellés et conservation des résultats privés' ;;
     'Role: %s') _T='Rôle : %s' ;;
+    'manual') _T='manuel' ;;
+    'returned') _T='de retour' ;;
     'original task required') _T='tâche d’origine nécessaire' ;;
     'original task required to resume') _T='tâche d’origine nécessaire pour reprendre' ;;
     'Paused until %s · original task held by lead') _T='En pause jusqu’à %s · tâche d’origine conservée par le lead' ;;
@@ -2388,6 +2390,9 @@ _t_fr() {
     'Full result unavailable: retention was off') _T='Résultat complet indisponible : la conservation était désactivée' ;;
     'Exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model.') _T='Le code 75 indique une pause. Lire resume_at ; conserver le rôle, le fournisseur, le modèle, l’effort, la sandbox et les options exacts. À la réinitialisation, reprendre la tâche et les options exactes depuis le contexte vivant ou une référence de tâche/résultat privé autorisée ; vérifier les modifications avant de relancer. Sinon signaler que la tâche d’origine est nécessaire, sans relancer ni poursuivre le travail dépendant. Ne jamais deviner ni choisir un modèle moins puissant.' ;;
     'Selected label sources: %s') _T='Sources de libellés sélectionnées : %s' ;;
+    'Selected label sources: none') _T='Sources de libellés sélectionnées : aucune' ;;
+    'none selected') _T='aucune' ;;
+    'current private format') _T='format privé actuel' ;;
     'Policy source: %s · scope: project · generation: %s') _T='Source de la politique : %s · portée : projet · génération : %s' ;;
     'project defaults') _T='valeurs par défaut du projet' ;;
     'project policy file') _T='fichier de politique du projet' ;;
@@ -2475,5 +2480,10 @@ _t_fr() {
     'Unsupported provider output framing; execution boundary remains unverified.') _T='Format de sortie du fournisseur non pris en charge ; le périmètre d’exécution reste non vérifié.' ;;
     'Provider-created files: not verified; release gate pending.') _T='Fichiers créés par le fournisseur : non vérifiés ; validation avant publication en attente.' ;;
     '- Execution scratch may contain raw provider output until delegation cleanup.') _T='- Les fichiers temporaires d’exécution peuvent contenir la sortie brute du fournisseur jusqu’au nettoyage de la délégation.' ;;
+    'Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)') _T='Correction : chmod g-w,o-w %s (il doit vous appartenir et ne pas être modifiable par le groupe ni par tous)' ;;
+    'Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous). Correction : chmod g-w,o-w %s' ;;
+    'Unsafe content directory (group or world writable)') _T='Dossier de contenu non sûr (modifiable par le groupe ou par tous)' ;;
+    'Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous) · correction : chmod g-w,o-w %s' ;;
+    'unsafe directory: %s (group/world writable)') _T='dossier non sûr : %s (modifiable par le groupe ou par tous)' ;;
   esac
 }

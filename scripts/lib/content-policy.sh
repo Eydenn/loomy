@@ -3,7 +3,11 @@
 # prompts use a separate screen lock; the policy lock protects only the commit.
 # shellcheck source=i18n.sh
 declare -F t >/dev/null || source "$(dirname "${BASH_SOURCE[0]}")/i18n.sh"
-LOOMY_CONTENT_POLICY_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/content-policy.pl"
+# Absolute library directory without forking when the path already is (sourcing runs on every hook).
+_loomy_cp_dir="${BASH_SOURCE[0]%/*}"
+[[ "${BASH_SOURCE[0]}" == /* && "$_loomy_cp_dir" == /* ]] || _loomy_cp_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOOMY_CONTENT_POLICY_LIB="$_loomy_cp_dir/content-policy.pl"
+unset _loomy_cp_dir
 
 # These markers supplement the backend's provider/managed checks. In particular a
 # hook's local HOOK variable need not have been exported by its caller.
@@ -43,6 +47,7 @@ _loomy_content_ui() {
   tv LOOMY_CONTENT_UI_LEGACY "legacy excerpts (project scope)"
   tv LOOMY_CONTENT_UI_ON "on"; tv LOOMY_CONTENT_UI_OFF "off"
   tv LOOMY_CONTENT_UI_SELECTED_SOURCES "Selected label sources: %s"
+  tv LOOMY_CONTENT_UI_SELECTED_NONE "Selected label sources: none"
   tv LOOMY_CONTENT_UI_POLICY_STATE "Policy source: %s · scope: project · generation: %s"
   tv LOOMY_CONTENT_UI_DEFAULT_SOURCE "project defaults"
   tv LOOMY_CONTENT_UI_PROJECT_SOURCE "project policy file"
@@ -50,6 +55,8 @@ _loomy_content_ui() {
   tv LOOMY_CONTENT_UI_DENIED_SOURCE "environment request refused"
   tv LOOMY_CONTENT_UI_VETO_SOURCE "LOOMY_JOURNAL_TASKS=0 restriction"
   tv LOOMY_CONTENT_UI_INVALID_POLICY "Invalid content policy: %s. Fix or remove this file before changing the policy."
+  tv LOOMY_CONTENT_UI_UNSAFE_DIRECTORY "unsafe directory: %s (group/world writable)"
+  tv LOOMY_CONTENT_UI_UNSAFE_DIRECTORY_HINT "Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)"
   tv LOOMY_CONTENT_UI_TASKS_VETO "Task labels disabled by LOOMY_JOURNAL_TASKS=0; project grants are unchanged."
   tv LOOMY_CONTENT_UI_POLICY_CHANGED "Content policy changed while awaiting confirmation; run the command again."
   export LOOMY_CONTENT_UI_TITLE LOOMY_CONTENT_UI_CLARITY LOOMY_CONTENT_UI_SOURCES LOOMY_CONTENT_UI_SOURCES_CODEX
@@ -61,9 +68,9 @@ _loomy_content_ui() {
   export LOOMY_CONTENT_UI_HUMAN_REQUIRED LOOMY_CONTENT_UI_CONFIRMATION_ABORTED LOOMY_CONTENT_UI_OPERATION_FAILED
   export LOOMY_CONTENT_UI_AGENT_ANCESTOR
   export LOOMY_CONTENT_UI_CLARITY_LEGACY LOOMY_CONTENT_UI_EXCLUDED_LEGACY
-  export LOOMY_CONTENT_UI_SELECTED_SOURCES LOOMY_CONTENT_UI_POLICY_STATE LOOMY_CONTENT_UI_DEFAULT_SOURCE
+  export LOOMY_CONTENT_UI_SELECTED_SOURCES LOOMY_CONTENT_UI_SELECTED_NONE LOOMY_CONTENT_UI_POLICY_STATE LOOMY_CONTENT_UI_DEFAULT_SOURCE
   export LOOMY_CONTENT_UI_PROJECT_SOURCE LOOMY_CONTENT_UI_ENV_SOURCE LOOMY_CONTENT_UI_DENIED_SOURCE LOOMY_CONTENT_UI_VETO_SOURCE
-  export LOOMY_CONTENT_UI_INVALID_POLICY LOOMY_CONTENT_UI_TASKS_VETO LOOMY_CONTENT_UI_POLICY_CHANGED
+  export LOOMY_CONTENT_UI_UNSAFE_DIRECTORY LOOMY_CONTENT_UI_UNSAFE_DIRECTORY_HINT LOOMY_CONTENT_UI_INVALID_POLICY LOOMY_CONTENT_UI_TASKS_VETO LOOMY_CONTENT_UI_POLICY_CHANGED
 }
 
 # No caller-supplied confirmation token: the backend rechecks origin and reads

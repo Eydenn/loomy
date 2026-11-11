@@ -124,7 +124,8 @@ NEW_V="$(cat "$LOOMY_ROOT/VERSION")"
 # Copy of the files managed by Loomy. Brief, phase (state) and log (logs) are never touched.
 copy_loomy_files() {
   local d f name script
-  mkdir -p "$L"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$L"
   # Document templates: copied, the agents read them in the project.
   for d in templates agents skills external-skills; do
     rm -rf "${L:?}/$d"

@@ -84,6 +84,10 @@ for view in tree list; do
     loomy_live_viewport "$LV_FRAME" 170 0; _ui_page_draw 0 2>"$WORK/render-screen"
     render_check rebuild "$render_budget"
     [[ "$cached" == "$LV_FRAME" ]] || { printf 'FAIL changed %s frame differs from rebuild\n' "$view"; exit 1; }
+    [[ "$view" != list || " ${NS_DRAW_TYPE[*]} " == *" R "* ]] || { printf 'FAIL list recap refits every live row\n'; exit 1; }
+    # Without captured lines nothing is replayed: the recap memo must not change a byte.
+    NS_DRAW_KEY=""; LV_FRAME=$'\n'; loomy_native_render
+    [[ "$cached" == "${LV_FRAME#$'\n'}" ]] || { printf 'FAIL memoized %s frame differs from a full fit\n' "$view"; exit 1; }
   done
 done
 
@@ -112,6 +116,7 @@ loomy_native_accept 'N|A|claude:g:a|claude:g|claude:g|running|developer|A long t
 loomy_native_accept 'N|A|claude:g:b|claude:g|claude:g:a|idle|reviewer|Child task|claude-sonnet-5-5|high|900|999|99|partial|turn-idle|999|done|2'
 loomy_native_accept 'N|A|claude:g:c|claude:g|missing|done|executor|Unresolved parent task|claude-haiku-5-5|low|0|||unknown||999|done|0'
 loomy_native_accept 'N|A|claude:g:d|claude:g|claude:g|idle|reviewer|Idle unknown duration|claude-sonnet-5-5|high|900|999||unknown|turn-unknown|999|done|1'
+loomy_native_accept 'N|A|claude:g:e|claude:g|claude:g|waiting|executor|Waiting for approval|claude-sonnet-5-5|high|950|||unknown|turn-wait|1000|running|1'
 loomy_native_accept 'N|T|turn-idle|claude:g|claude:g:b|done|partial|900|999|99|claude-sonnet-5-5|reviewer'
 loomy_native_accept 'N|T|turn-old|claude:g|claude:g:b|failed|failed|800|899|99|claude-sonnet-5-5|reviewer'
 S5_READS=0; loomy_live_metadata
@@ -135,6 +140,8 @@ for lang in en fr; do
           (( S5_READS == 0 )) || { printf 'FAIL timer decoded unchanged rows\n'; exit 1; }
           cached="$LV_FRAME"; NS_DRAW_KEY=""; LV_FRAME=""; loomy_native_render
           [[ "$cached" == "$LV_FRAME" ]] || { printf 'FAIL timer cache %s/%s/%s/%s/%s\n' "$lang" "$view" "$cols" "$height" "$LV_NOW"; exit 1; }
+          NS_DRAW_KEY=""; LV_FRAME=$'\n'; loomy_native_render
+          [[ "$cached" == "${LV_FRAME#$'\n'}" ]] || { printf 'FAIL timer memo %s/%s/%s/%s/%s\n' "$lang" "$view" "$cols" "$height" "$LV_NOW"; exit 1; }
         done
       done
     done

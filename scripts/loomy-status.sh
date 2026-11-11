@@ -116,7 +116,8 @@ if [[ "$CMD" == "set" ]]; then
     *" $PHASE_ARG "*) ;;
     *) t "Unknown phase: \"%s\". Phases: %s" "$PHASE_ARG" "$PHASES" >&2; echo >&2; exit 2 ;;
   esac
-  mkdir -p "$ROOT/.loomy"
+  # shellcheck disable=SC2174 # -m on the final directory only is intended
+  mkdir -p -m 0755 "$ROOT/.loomy"
   now="$(date '+%Y-%m-%d %H:%M')"
   history=""; keep=""
   [[ -f "$STATE" ]] && history="$(grep '^log=' "$STATE" || true)"
@@ -139,6 +140,8 @@ if [[ "$CMD" == "set" ]]; then
   t "Phase recorded: %s (%s)" "$(loomy_phase_label "$PHASE_ARG")" "$PHASE_ARG"; echo
   exit 0
 fi
+
+ai_display_context_init "$ROOT"
 
 brief_get() {
   _ai_brief_get "$BRIEF" "$1"
@@ -178,7 +181,7 @@ use Digest::MD5 ();
 package Loomy::WatchLegacy;
 sub title { my $s=text($_[0]); $s =~ s/^\s*(?:GOAL|TASK|OBJECTIF)\s*:\s*//i; $s =~ s/\bSCOPE\s*:.*//is; $s =~ s/[\r\n].*//s; $s =~ s/([.!?])(?:\s|$).*/$1/s; $s =~ s/\s+/ /g; $s =~ s/^\s+|\s+$//g; $s }
 sub alive { my $p=text($_[0]); $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == Errno::EPERM()) }
-sub new { bless {seq=>0,rows=>[],log=>[],sessionlog=>[],starts=>[],last=>[],models=>{},phase=>{},usage=>[0,0,0,0,0,0],advisor=>[0,0,0,"-","",0],total=>[0,0,0,0,0,0,0,0,0],monthly=>{},sessions=>{},seen=>{},avg=>{},done=>{}},shift }
+sub new { bless {seq=>0,rows=>[],log=>[],starts=>[],last=>[],models=>{},phase=>{},usage=>[0,0,0,0,0,0],advisor=>[0,0,0,"-","",0],total=>[0,0,0,0,0,0,0,0,0],monthly=>{},sessions=>{},seen=>{},avg=>{},done=>{}},shift }
 sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : "" }
 # Dedup memory is bounded: 16-byte digests of the canonical event, oldest forgotten beyond the cap.
 sub once {
@@ -213,10 +216,11 @@ sub consume {
   ++$s->{lifetimes}{$owner} if $ty eq "session" && text($d->{event}) eq "end";
   $identity{owner_lifetime}=$s->{lifetimes}{$owner}//0 if $ty =~ /^(delegation_start|delegation_activity|session)$/;
   return if $ty =~ /^(delegation(?:_start|_activity)?|session(?:_observed|_context|_activity)?)$/ && $s->once("seen",\%identity);
+  my $raw={%$d}; $d=Loomy::DisplayContext::prepare($raw);
   my $ts=text($d->{ts}); my $tk=num($d->{tokens_in})+num($d->{tokens_out}); my $cost=num($d->{cost_usd});
   my $fam=text($d->{family}); my $plan=$fam eq "claude" ? $pc : $px;
   my $id=text($d->{id}); my $role=text($d->{role}); my $model=text($d->{model});
-  my $task=title($d->{task}); my $status=text($d->{status}); my $outcome=text($d->{outcome});
+  my $status=text($d->{status});
   my $bridge=text($d->{bridge}); my $duration=num($d->{duration_s});
   $s->{has_native}=1 if $bridge eq "codex-native";
   $s->phase_consume($d,$pc,$px);
@@ -225,7 +229,7 @@ sub consume {
     $u->[$i]+=$i==0 ? num($d->{messages}) : 1; $u->[$i+1]+=$cost; $u->[$i+2]+=$tk; $s->{has_usage}=1;
   }
   if ($ty eq "advisor") {my $a=$s->{advisor}; $a->[0]+=num($d->{calls}); $a->[1]+=$cost; $a->[2]+=$tk; $a->[3]=$model||"-"; $a->[4]=$ts; $a->[5]+=num($d->{tokens_in}); $s->{has_advisor}=1}
-  if ($ty eq "delegation_start") {push @{$s->{starts}},$d; shift @{$s->{starts}} while @{$s->{starts}}>20}
+  if ($ty eq "delegation_start") {push @{$s->{starts}},$raw; shift @{$s->{starts}} while @{$s->{starts}}>20}
   if ($ty eq "delegation") {
     $s->{done}{$id}=1; my $t=$s->{total}; ++$t->[0];
     ++$t->[8] if text($d->{review}) eq "incomplete";
@@ -236,21 +240,12 @@ sub consume {
       if ($status eq "paused") {++$t->[6]} elsif ($status eq "handed_over") {++$t->[7]} elsif ($status ne "ok") {++$t->[2]}
     }
     my $a=$s->{avg}{"$role|$model"}//=[0,0]; $a->[0]+=$duration; ++$a->[1];
-    push @{$s->{last}},wire($ts,$status,$role,$model,$duration,$cost,(text($d->{failover_from}) ne "" ? "⇄ " : "").substr($task,0,40),$fam,$tk,$outcome,$bridge);
+    push @{$s->{last}},$raw;
     shift @{$s->{last}} while @{$s->{last}}>5;
   }
   if ($ty =~ /^(delegation|usage)$/) {$s->{monthly}{substr($ts,0,7)."|$fam"}+=$cost}
   if ($ty =~ /^(delegation|usage|advisor)$/ && $bridge ne "subagent" && text($d->{cost_in}) ne "usage") {$s->{tokens}+=$tk}
-  my ($who,$what,$extra)=("","","");
-  if ($ty eq "delegation_start") {($who,$what,$extra)=($role,"start","$model · ".substr($task,0,52))}
-  elsif ($ty eq "delegation") {($who,$what,$extra)=($role,$status eq "ok" ? ($outcome =~ /^(partial|blocked)$/ ? $outcome : "done") : "failed",($duration>=60 ? int($duration/60)." min ".($duration%60)." s" : "$duration s")." · $model".(text($d->{failover_from}) ne "" ? " · ⇄ ".$d->{failover_from} : ""))}
-  elsif ($ty eq "advisor") {($who,$what,$extra)=("advisor","consulted",num($d->{calls})." × $model · ".int(num($d->{tokens_in})/1000)."k")}
-  elsif ($ty =~ /^(phase|task_phase|audit_phase)$/) {my $mode=$ty; $mode =~ s/_?phase$//; ($who,$what,$extra)=("phase",text($d->{phase}),$mode)}
-  elsif ($ty eq "session") {($who,$what,$extra)=("session",text($d->{event}),text($d->{tool}))}
-  elsif ($ty eq "skill") {($who,$what,$extra)=("skills",text($d->{event}),text($d->{name})." · ".substr(text($d->{reason}),0,52))}
-  elsif ($ty eq "usage" && text($d->{scope}) eq "lead") {($who,$what,$extra)=("lead","replied",num($d->{messages})." msg · $model")}
-  if ($who ne "") {push @{$s->{sessionlog}},wire($ts,$who,$what,$extra); shift @{$s->{sessionlog}} while @{$s->{sessionlog}}>400}
-  push @{$s->{log}},JSON::PP->new->canonical->encode($d); shift @{$s->{log}} while @{$s->{log}}>400; $s->{log_dirty}=1;
+  push @{$s->{log}},$raw; shift @{$s->{log}} while @{$s->{log}}>400; $s->{log_dirty}=1;
   # Legacy rows carry the same normalized fields as the one-shot Bash reducer.
   $s->{dirty}=1;
   return if $bridge eq "claude-native" && text($d->{source}) eq "hook";
@@ -262,12 +257,46 @@ sub consume {
     else {$s->{sessions}{$key}{ended}=1 if $s->{sessions}{$key}; $s->{last_end}=[$ts,$tool]}
   }
   $context=$s->{lead_context}{$tool}//$context if $ty eq "usage" && text($d->{scope}) eq "lead";
-  my %v=(%$d,tool=>$tool,task=>$task,excerpt=>title($d->{excerpt}),cost_usd=>int($cost*1000000+0.5));
+  my $row=$s->display_row($d,$raw);
+  push @{$s->{rows}},[$seq,$context,$row,$raw]; $s->{dirty}=1;
+}
+sub display_row {
+  my ($s,$d,$raw)=@_; $raw//=$d; my $ty=text($d->{type}); my $bridge=text($d->{bridge});
+  my $tool=text($d->{tool}//$d->{family}//($bridge eq "subagent" ? "claude" : ""));
+  my %v=(%$d,tool=>$tool,role=>$raw->{role},display_role=>$d->{role},display_fallback=>Loomy::DisplayContext::fallback($raw),task=>title($d->{task}),excerpt=>title($d->{excerpt}),cost_usd=>int(num($d->{cost_usd})*1000000+0.5));
   $v{pid}=$d->{owner_pid}//0 if $bridge eq "codex-native";
   $v{duration_s}="—" if $bridge eq "codex-native" && $ty eq "delegation" && !defined $d->{duration_s};
   $v{requested}=defined $d->{requested} ? ($d->{requested} ? "true" : "false") : "";
-  my $row=wire($ty,Loomy::LiveState::epoch($ts),map {$v{$_}} qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at));
-  push @{$s->{rows}},[$seq,$context,$row]; $s->{dirty}=1;
+  return wire($ty,Loomy::LiveState::epoch($d->{ts}),map {$v{$_}} qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at display_role display_fallback));
+}
+# Rebuild display fields from retained events when labels change; accounting and
+# source checkpoints never see the overlay, and idle frames do no extra work.
+sub display_refresh {
+  my ($s,$live)=@_;
+  for my $row (@{$s->{rows}}) {
+    my $raw=$row->[3]; next unless Loomy::DisplayContext::managed($raw);
+    my $d=Loomy::DisplayContext::prepare($raw); $row->[2]=$s->display_row($d,$raw);
+    next unless $live;
+    my $tool=text($d->{tool}//$d->{family}); my $id=text($d->{id}); my $aid=text($d->{agent_id}) || $id;
+    my $turn=$live->{turns}{$id}; my $agent=$live->{agents}{"$tool:$aid"};
+    if ($turn) {$turn->{$_}=$d->{$_} for grep {defined $d->{$_} && !ref($d->{$_})} qw(task role)}
+    if ($agent && (!$turn || text($agent->{latest}) eq $id)) {$agent->{$_}=$d->{$_} for grep {defined $d->{$_} && !ref($d->{$_})} qw(task role)}
+    $s->display_native($live,$raw);
+  }
+  $s->{dirty}=1; $s->{log_dirty}=1; delete $s->{selected};
+}
+sub display_native {
+  my ($s,$live,$raw)=@_; return unless text($raw->{type}) =~ /^(?:delegation(?:_start|_activity)?|agent_(?:link|alias|closed))$/;
+  my $tool=text($raw->{tool}//$raw->{family}); my $key="$tool:".(text($raw->{agent_id}) || text($raw->{id}));
+  my $agent=$live->{agents}{$key} or return;
+  return if text($raw->{type}) =~ /^delegation/ && text($agent->{latest}) ne text($raw->{id});
+  my $context=Loomy::DisplayContext::managed($raw) ? (Loomy::DisplayContext::fallback($raw) ? 1 : 2) : 0;
+  delete $live->{sent}{"A:$key"} if ($agent->{display_fallback}//0)!=$context;
+  $agent->{display_fallback}=$context;
+}
+sub display_projections {
+  my ($s,$live,$now)=@_;
+  return map {/^N\|A\|([^|]+)/ ? $_."|".($live->{agents}{$1}{display_fallback}//0) : $_} $live->projections($now);
 }
 sub snapshot {
   my ($s,$preferred,$native,$force_logs)=@_; my @out;
@@ -278,8 +307,8 @@ sub snapshot {
     my @a=@{$s->{advisor}}; $a[1]=sprintf "%.4f",$a[1]; push @out,wire("K","V",join(" ",@a));
     my @t=@{$s->{total}}; $t[1]=sprintf "%.4f",$t[1]; push @out,wire("K","S","TOTAL ".join(" ",@t));
     for my $m (sort keys %{$s->{models}}) {my @v=@{$s->{models}{$m}}; $v[1]=sprintf "%.4f",$v[1]; push @out,wire("K","M","MODEL $m ".join(" ",@v))}
-    push @out,map {"K|F|$_"} @{$s->{last}};
-    for my $d (@{$s->{starts}}) {next if $s->{done}{text($d->{id})} || text($d->{bridge}) eq "codex-native"; my $a=$s->{avg}{text($d->{role})."|".text($d->{model})}; push @out,wire("K","R",$d->{pid},$d->{ts},$d->{role},$d->{model},substr(title($d->{task}),0,60),$a && $a->[1] ? int($a->[0]/$a->[1]) : "")}
+    for my $raw (@{$s->{last}}) {local $ENV{LOOMY_DISPLAY_FORMAT}="status"; my $d=Loomy::DisplayContext::prepare($raw); push @out,wire("K","F",$d->{ts},$d->{status},$d->{role},$d->{model},num($d->{duration_s}),num($d->{cost_usd}),(text($d->{failover_from}) ne "" ? "⇄ " : "").(text($d->{display_task}) || substr(title($d->{task}),0,40)),$d->{family},num($d->{tokens_in})+num($d->{tokens_out}),$d->{outcome},$d->{bridge})}
+    for my $raw (@{$s->{starts}}) {local $ENV{LOOMY_DISPLAY_FORMAT}="status"; my $d=Loomy::DisplayContext::prepare($raw); next if $s->{done}{text($d->{id})} || text($d->{bridge}) eq "codex-native"; my $a=$s->{avg}{text($d->{role})."|".text($d->{model})}; push @out,wire("K","R",$d->{pid},$d->{ts},$d->{role},$d->{model},(text($d->{display_task}) || substr(title($d->{task}),0,60)),$a && $a->[1] ? int($a->[0]/$a->[1]) : "")}
     push @out,wire("K","H",$s->{has_usage}//0,$s->{has_advisor}//0,$t[0],$s->{has_native}//0);
     push @out,wire("K","Q",$t[0],$s->{tokens}//0);
     push @out,map {wire("K","C",split(/\|/,$_),$s->{monthly}{$_})} sort keys %{$s->{monthly}};
@@ -290,13 +319,19 @@ sub snapshot {
     push @out,wire("K","O","end","",Loomy::LiveState::epoch($s->{last_end}[0]),$s->{last_end}[1]) if $s->{last_end};
     push @out,"K|end";
     # Aggregates are re-sent only when a visible one changed (native activity alone changes none).
-    my $digest=Digest::MD5::md5_hex(join("\n",@out));
+    my $digest=Digest::MD5::md5_hex(Encode::encode("UTF-8",join("\n",@out)));
     if (($s->{agg_digest}//"") eq $digest) { @out=() } else { $s->{agg_digest}=$digest }
   }
   # The bounded logs feed the status and log views only: coalesce bursts to one batch per second, at once on l/t.
   my $now=Time::HiRes::time();
   if ($s->{log_dirty} && ($force_logs || $now-($s->{log_sent}//0)>=1)) {
-    push @out,"K|logreset",(map {"K|L|$_"} @{$s->{log}}),(map {"K|J|$_"} @{$s->{sessionlog}}),"K|logend";
+    push @out,"K|logreset";
+    for my $d (@{$s->{log}}) {
+      {local $ENV{LOOMY_DISPLAY_FORMAT}="pretty"; push @out,"K|L|".JSON::PP->new->canonical->encode(Loomy::DisplayContext::prepare($d))}
+      my %v=(%$d,task=>title($d->{task}),map {$_=>num($d->{$_})} qw(duration_s calls messages tokens_in));
+      my $row=Loomy::DisplayContext::session_row(\%v); push @out,wire("K","J",@$row) if $row;
+    }
+    push @out,"K|logend";
     $s->{log_dirty}=0; $s->{log_sent}=$now;
   }
   return @out if $native;
@@ -313,6 +348,8 @@ sub snapshot {
 }
 package main;
 PERL
+LOOMY_WATCH_LEGACY_PERL="$AI_DISPLAY_CONTEXT_PERL
+$LOOMY_WATCH_LEGACY_PERL"
 
 # One persistent sampler waits on the terminal and watches cheap local file signatures.
 # Foreground stty avoids the SIGTTIN/stty race of a background Bash read -s.
@@ -345,6 +382,9 @@ loomy_watch_feed() {
     my @files=map { "$root/.loomy/$_" } qw(state audit.state task.state failover brief.md efforts session-only);
     my @content_files=map { "$root/.loomy/logs/$_" } qw(content-policy.conf display-context-full);
     my $content_sig=$ENV{LOOMY_CONTENT_HINT_SIGNATURE}//"";
+    my @display_files=map { "$root/.loomy/logs/$_" } qw(content-policy.conf display-context-v1.jsonl);
+    my $display_signature=sub {join("|",map {my @s=stat($_); join(":",@s ? @s[0,1,7,9] : "-")} @display_files)};
+    my $display_sig=$display_signature->();
     push @files,$ENV{LOOMY_SESSION_ONLY} if ($ENV{LOOMY_SESSION_ONLY}//"") =~ /^\Q$root\E\/\.loomy\/session-only-\d+-[A-Za-z0-9]+$/;
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
@@ -360,7 +400,11 @@ loomy_watch_feed() {
     my $consume=\&Loomy::LiveState::consume;
     { no warnings "redefine";
       *Loomy::LiveState::consume=sub {
-        my ($self,$d)=@_; $legacy->consume($d,$pc,$px) if $live && $self==$live;
+        my ($self,$d)=@_;
+        if ($live && $self==$live) {
+          $legacy->consume($d,$pc,$px); my $result=$consume->($self,Loomy::DisplayContext::prepare($d));
+          $legacy->display_native($self,$d); return $result;
+        }
         return $consume->(@_);
       };
     }
@@ -389,8 +433,10 @@ loomy_watch_feed() {
       my @deltas;
       $attempt->("reducer",sub {
         return unless $live;
+        my $display_now=$display_signature->();
+        if ($display_now ne $display_sig) {Loomy::DisplayContext::refresh(); $legacy->display_refresh($live); $display_sig=$display_now}
         $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
-        $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native},$key =~ /^[ltLT]$/),$live->projections($now));
+        $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native},$key =~ /^[ltLT]$/),$legacy->display_projections($live,$now));
       });
       # Bash 3.2 file comparisons lose subsecond mtimes. Reuse this persistent
       # sampler instead of starting stat/Perl from each idle controller frame.
@@ -478,9 +524,41 @@ loomy_watch_coalesce() {
 }
 
 loomy_watch_content_hint_accept() {
-  local old="$LOOMY_CONTENT_HINT"
+  local old="$LOOMY_CONTENT_HINT" old_privacy="${LOOMY_CONTENT_PRIVACY:-}"
   loomy_content_hint_refresh "$ROOT" "$1" || true
-  if [[ "$old" != "$LOOMY_CONTENT_HINT" ]]; then force_frame=1; legacy_stamp=""; fi
+  loomy_status_content_load
+  if [[ "$old" != "$LOOMY_CONTENT_HINT" || "$old_privacy" != "$LOOMY_CONTENT_PRIVACY" ]]; then force_frame=1; legacy_stamp=""; fi
+}
+
+# Policy wording is cached by the command/controller, never parsed by a frame.
+loomy_status_content_load() {
+  local policy="structural|none|off|" journal labels results unsafe
+  # Outside a Loomy project there is no policy to report.
+  if [[ ! -d "$ROOT/.loomy" ]]; then LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; LOOMY_CONTENT_UNSAFE=""; return 0; fi
+  # An unsafe (group/world writable) directory makes the stored policy unreadable: name it, never the policy file.
+  policy="$(perl -e 'require $ARGV[0]; my ($c,$r)=@ARGV; my $p=Loomy::ContentPolicy::effective_policy($r); my $u="";
+    if (!$p->{valid}) { eval { Loomy::ContentPolicy::_context($r,0); 1 } or ($u)=$@ =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
+      $u=Loomy::ContentPolicy::_encode_utf8(Loomy::ContentPolicy::display_path($u)) if defined $u; $u//="" }
+    print join("|",@$p{qw(journal_content label_sources private_results)},$u)' "$LOOMY_CONTENT_POLICY_LIB" "$ROOT")" || policy="structural|none|off|"
+  IFS='|' read -r journal labels results unsafe <<<"$policy"
+  LOOMY_CONTENT_UNSAFE=""
+  if [[ -n "$unsafe" ]]; then tv LOOMY_CONTENT_UNSAFE "Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s" "$unsafe" "$(ui_shell_quote "$unsafe")"; fi
+  if [[ "$journal" == legacy-excerpts ]]; then tv journal "legacy excerpts (project scope)"; else tv journal "structure only"; fi
+  if [[ "$labels" == none ]]; then tv labels "off"; else tv labels "on"; fi
+  tv results "$results"
+  tv LOOMY_CONTENT_PRIVACY "Journal: %s · task labels: %s · private results: %s · checkpoint/scratch repair pending" "$journal" "$labels" "$results"
+  tv LOOMY_CONTENT_OLD_COPIES "Old copies may contain text · loomy privacy inventory"
+}
+loomy_status_content_render() {
+  local line width
+  [[ -n "$LOOMY_CONTENT_PRIVACY" ]] || return 0
+  _ui_term_size; width=$(( UI_COLS - 5 )); (( width > 0 )) || width=75
+  _ui_wrap "$LOOMY_CONTENT_PRIVACY" "$width"
+  for line in "${UI_LINES[@]}"; do ui_rail "${C_DIM}$line${C_RESET}"; done
+  _ui_wrap "$LOOMY_CONTENT_OLD_COPIES" "$width"
+  for line in "${UI_LINES[@]}"; do ui_rail "${C_DIM}$line${C_RESET}"; done
+  [[ -z "${LOOMY_CONTENT_UNSAFE:-}" ]] || { _ui_wrap "$LOOMY_CONTENT_UNSAFE" "$width"
+    for line in "${UI_LINES[@]}"; do ui_rail "${C_YELLOW}$line${C_RESET}"; done; }
 }
 
 # Keep navigation and its labels together: the tree's list is not the live-agent list.
@@ -519,7 +597,7 @@ loomy_watch_log_pretty() {
       -v T_START="$(t "starts")" -v T_IN="$(t "in ")" -v T_FAIL="$(t "failed after ")" -v T_DONE="$(t "Bootstrap done")" \
       -v T_PHASE="$(t "Phase")" -v T_REPLIES="$(t "reply(ies)")" -v T_SUB="$(t "sub-agent")" \
       -v T_REVIEW="$(t "review without TRIED")" \
-      -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" '
+      -v T_OPEN="$(t "Session opened")" -v T_CLOSED="$(t "Session closed")" "$AI_DISPLAY_FIELD_AWK"'
     BEGIN { n = split(pm, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") { split(a[i], kv, "="); split(kv[2], il, ":"); idx[kv[1]] = il[1]; lab[kv[1]] = il[2] } }
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
@@ -535,11 +613,11 @@ loomy_watch_log_pretty() {
         identity = field("session") "|" (field("turn_id") != "" ? field("turn_id") : field("id")) "|" ty
         if ((field("bridge") == "subagent" || field("bridge") == "claude-native") && seen[identity]++) next
       }
-      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, cut(field("task"), 48), Z
+      if (ty == "delegation_start") printf "%s  %s◐%s %-10s %s%-16s%s %s%s%s  %s%s%s\n", t, Y, Z, field("role"), D, field("model"), Z, D, T_START, Z, D, (display_task() != "" ? display_task() : cut(field("task"), 48)), Z
       else if (ty == "delegation") {
         ok = field("status") == "ok"; oc = field("outcome")
         mk = ok ? G "✓" Z : E "✗" Z; if (ok && oc == "partial") mk = Y "◐" Z; if (ok && oc == "blocked") mk = Y "■" Z
-        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") cut(field("task"), 36), Z, (field("review") == "incomplete" ? " · " Y T_REVIEW Z : "")
+        printf "%s  %s %-10s %s%-16s%s %s%s%s  %s%s%s  %s%s%s%s\n", t, mk, field("role"), D, field("model"), Z, (ok ? "" : E), (ok ? T_IN : T_FAIL) dur(num("duration_s")), Z, D, val(), Z, D, (field("failover_from") != "" ? "⇄ " : "") (display_task() != "" ? display_task() : cut(field("task"), 36)), Z, (field("review") == "incomplete" ? " · " Y T_REVIEW Z : "")
       }
       else if (ty == "phase") { ph = field("phase"); if (ph == "done") printf "%s  %s✦ %s%s\n", t, G B, T_DONE, Z; else printf "%s  %s▲ %s %s/10 · %s%s\n", t, P, T_PHASE, idx[ph], lab[ph], Z }
       else if (ty == "usage") {
@@ -684,6 +762,7 @@ if (( JOURNAL_VIEW )); then
   else
     ui_info "$(t "log empty for now")"
   fi
+  loomy_status_content_render
   [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "full log: loomy log")}"
   [[ -z "${LOOMY_CONTENT_HINT:-}" ]] || printf '%s\n' "$LOOMY_CONTENT_HINT"
   return 0
@@ -704,7 +783,11 @@ elif (( idx > 0 )); then note="$(t "step %s of %s" "$idx" "$N_PH")${UPDATED:+ ·
 ui_section "$(m_text section)" "$note"
 if [[ "$MISSION" == "task" ]]; then
   task_title="$(sed -n 's/^title=//p' "$TASK_STATE" | head -1)"
-  [[ -n "$task_title" ]] && ui_rail "${C_BOLD}$task_title${C_RESET}"
+  if [[ -z "$task_title" ]]; then
+    task_id="$(sed -n 's/^id=//p' "$TASK_STATE" | head -1)"
+    task_title="${task_id:+#$task_id · }$(t "context unavailable")"
+  fi
+  ui_rail "${C_BOLD}$task_title${C_RESET}"
 fi
 if [[ -z "$CURRENT" ]]; then
   if [[ -f "$ROOT/START.md" ]]; then ui_info "$(t "START.md present but brief empty: run loomy brief")"
@@ -800,13 +883,13 @@ if [[ -s "$JOURNAL" ]]; then
   # Running delegations: a start without an end (a single read of the log), whose process is still running.
   now_s="$(date +%s)"
   if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_RUNNING"; else
-  ai_journal_canonical <"$JOURNAL" | awk '
+  ai_journal_canonical <"$JOURNAL" | ai_display_context_events "$ROOT" status | awk "$AI_DISPLAY_FIELD_AWK"'
     function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
     /"bridge":"codex-native"/ { next }
     /"type":"delegation_start"/ { id = field("id"); order[++n] = id
-      line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" substr(field("task"), 1, 60); next }
-    /"type":"delegation",/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
+      line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" (display_task() != "" ? display_task() : substr(field("task"), 1, 60)); next }
+    /"type":"delegation"/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
     END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) { split(line[order[i]], f, "|"); k = f[3] "|" f[4]
             print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' ; fi |
   while IFS='|' read -r pid ts role m task est; do
@@ -930,10 +1013,10 @@ fi
     (( n_shown > last_n )) && n_shown=$last_n
     row=0
     if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_LAST" | tail -n "$last_n"; else
-    ai_journal_canonical <"$JOURNAL" | grep '"type":"delegation"' | tail -"$last_n" | awk '
+    ai_journal_canonical <"$JOURNAL" | ai_display_context_events "$ROOT" status | grep '"type":"delegation"' | tail -"$last_n" | awk "$AI_DISPLAY_FIELD_AWK"'
       function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") substr(field("task"), 1, 40), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' ; fi |
+      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") (display_task() != "" ? display_task() : substr(field("task"), 1, 40)), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' ; fi |
     while IFS='|' read -r t st role m d cost task fam tk oc bridge; do
       row=$(( row + 1 ))
       # Log in UTC, shown in local time.
@@ -1077,6 +1160,7 @@ elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 else
   ui_info "$(t "no Git repository")"
 fi
+loomy_status_content_render
 [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "start or resume: loomy start · live tracking: loomy watch")}"
 [[ -z "${LOOMY_CONTENT_HINT:-}" ]] || printf '%s\n' "$LOOMY_CONTENT_HINT"
 
@@ -1084,9 +1168,10 @@ fi
 
 # Shared renderers consume the same precomputed hint as the direct command.
 # No frame renderer launches the policy backend or reads the journal for it.
-LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""
+LOOMY_CONTENT_HINT=""; LOOMY_CONTENT_HINT_LINE=""; LOOMY_CONTENT_PRIVACY=""; LOOMY_CONTENT_OLD_COPIES=""; LOOMY_CONTENT_UNSAFE=""
 if (( ! WATCH )) || [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then
-  _loomy_content_hint_load "$ROOT" || true
+  [[ ! -d "$ROOT/.loomy" ]] || _loomy_content_hint_load "$ROOT" || true
+  loomy_status_content_load
 fi
 # Tests and the watch worker load renderers without running a command.
 if [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then return 0; fi
@@ -1097,7 +1182,8 @@ if (( ! WATCH )) && [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
 fi
 if (( WATCH )); then
   if (( ! IN_PANE )); then loomy_content_first_use "$ROOT" || true; fi
-  _loomy_content_hint_load "$ROOT" || true
+  [[ ! -d "$ROOT/.loomy" ]] || _loomy_content_hint_load "$ROOT" || true
+  loomy_status_content_load
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin
   KEY_READER=""; COALESCER=""; WATCH_PIPE=""; WATCH_STTY=""
@@ -1259,12 +1345,12 @@ if (( WATCH )); then
       if [[ "$COMPACT" == "1" ]] || { [[ -z "$COMPACT" ]] && (( UI_ROWS < 40 || UI_COLS < 90 )); }; then size="--compact"; fi
       tree_layout=list
       if [[ "$tree_mode" != list ]] && (( UI_COLS >= 124 )); then tree_layout=diagram; fi
-      watch_keys; keys="$WATCH_KEYS"
+      watch_keys; watch_key_labels="$WATCH_KEYS"
       hl_d=0; (( now < hl_deleg_until )) && hl_d=$hl_deleg_n
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Reserve the actual banner/footer before deciding how much hierarchy fits.
       loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
-      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $keys"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $watch_key_labels"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
       watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
@@ -1293,10 +1379,10 @@ if (( WATCH )); then
         loomy_live_header
         loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
-        UI_FTR_KEYS="$keys"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
+        UI_FTR_KEYS="$watch_key_labels"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
         _ui_term_size; _ui_chrome
-        (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && keys="↑↓ $scroll_word · $keys"
-        UI_FTR_KEYS="$keys"; UI_BODY_TOP=$wtop
+        (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && watch_key_labels="↑↓ $scroll_word · $watch_key_labels"
+        UI_FTR_KEYS="$watch_key_labels"; UI_BODY_TOP=$wtop
         if (( LV_PINNED )); then wtop=$LV_SCROLL_TOP; UI_BODY_TOP=0; fi
         ui_banner "$LV_HEADER" ""
         (( LV_PINNED )) || wtop=$UI_BODY_START

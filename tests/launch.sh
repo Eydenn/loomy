@@ -134,8 +134,8 @@ check perl -e '
     next if $f =~ m{scripts/loomy-shell-hook\.sh$}; # Generated user-command passthrough only.
     open my $h,"<",$f or die $!; my $n=0;
     while (<$h>) {++$n; next if /^\s*#/;
-      push @bad,"$f:$n:$_" if /(?:^\s*|[;|&]\s*)(?:exec\s+|command\s+)?(?:claude|codex)\s+(?:-p|--version|update|login|exec|--model|\"\$@\")/
-        || /(?:^|\s)\"\$(?:CODEX|codex|claude|binary|first|1)\"\s+(?:exec|--version|update|-p)/
+      push @bad,"$f:$n:$_" if /(?:^\s*|[;|&]\s*)(?:exec\s+|command\s+)?(?:claude|codex)\s+(?:-p|--version|update(?![-\w])|login|exec|--model|\"\$@\")/
+        || /(?:^|\s)\"\$(?:CODEX|codex|claude|binary|first|1)\"\s+(?:exec|--version|update(?![-\w])|-p)/
         || /ui_(?:exec|external)\s+\"\$\{AGENT_CMD\[@\]\}/;
     }
   }

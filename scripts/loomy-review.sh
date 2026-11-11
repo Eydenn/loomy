@@ -83,7 +83,8 @@ ui_kv "$(t "Reviewer")" "$tool_label · $R_MODEL ($R_EFFORT) · $(t "read-only")
 if (( PRINT )); then ui_end "$(t "run without --print to start the review")"; exit 0; fi
 ui_end "$(t "review in progress, followed in loomy watch…")"
 
-mkdir -p "$ROOT/.loomy/reviews"
+# shellcheck disable=SC2174 # -m on the final directory only is intended
+mkdir -p -m 0755 "$ROOT/.loomy"; mkdir -p "$ROOT/.loomy/reviews"
 OUTF="$ROOT/.loomy/reviews/$(date +%Y-%m-%d-%H%M)-$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-').md"
 if bash "$SCRIPT_DIR/loomy-delegate-$TOOL.sh" reviewer "$TASK" >"$OUTF.tmp"; then
   { echo "# $(t "Cross review") · $LABEL"; echo; echo "$tool_label · $R_MODEL · $(date '+%Y-%m-%d %H:%M')"; echo; cat "$OUTF.tmp"; } >"$OUTF"

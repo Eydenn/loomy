@@ -480,6 +480,22 @@ for mode in (0o775, 0o777):
                   f'{name} {lang}: unsafe .loomy ({mode:o}) is never reported as an invalid policy file')
     check(oct(os.stat(unsafe_root / '.loomy').st_mode & 0o777) == oct(mode), f'unsafe .loomy ({mode:o}) is never chmodded by a diagnostic')
 
+# The remedy is a pasteable command: the path is single-quoted, whatever it contains (space, ;, quote).
+for odd in ('with space', 'semi;colon', "it's $(x)"):
+    odd_root = work / f'unsafe {odd}'
+    (odd_root / '.loomy/logs').mkdir(parents=True)
+    (odd_root / '.loomy/brief.md').write_text('---\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n')
+    os.chmod(odd_root / '.loomy/logs', 0o700); os.chmod(odd_root / '.loomy', 0o775)
+    quoted = "'" + str(odd_root / '.loomy').replace("'", "'\\''") + "'"
+    for lang, first in (('en', 'unsafe directory: '), ('fr', 'dossier non sûr : ')):
+        ov = {'LOOMY_LANG': lang, 'LOOMY_UI_LANG': lang}
+        result = run(repo / 'scripts/loomy-privacy.sh', '--root', odd_root, 'content', overrides=ov, success=False)
+        combined = result.stdout + result.stderr
+        check(first in combined and f'chmod g-w,o-w {quoted} ' in combined,
+              f'privacy content {lang}: first line translated and the remedy path is single-quoted ({odd!r})')
+    doctor = run(repo / 'scripts/loomy-doctor.sh', '--compact', '--root', odd_root, success=False)
+    check(f'chmod g-w,o-w {quoted} ' in doctor.stdout + doctor.stderr, f'doctor: the remedy path is single-quoted ({odd!r})')
+
 # Creators of .loomy set an explicit mode, so a group-writable umask cannot make a new project unusable.
 for umask_value in ('002', '077'):
     for creator_name, creator_args in (('status', ('loomy-status.sh', 'set', 'build')),):

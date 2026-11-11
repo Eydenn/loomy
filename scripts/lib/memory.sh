@@ -175,7 +175,7 @@ sub clean_text {
     # Reuse the policy's complete ANSI/OSC, Cc/Cf and bidi removal. Collapsing
     # whitespace afterwards also handles Unicode separators and repeated spaces.
     $text=eval {Loomy::ContentPolicy::sanitize_label($text,1048576,4194304)} // '';
-    $text=~s/\s+/ /g; return substr($text,0,$limit);
+    $text=~s/\s+/ /g; $text=substr($text,0,$limit); $text=~s/\s+\z//; return $text;
 }
 # Text shown by "loomy memory show": kept as is, but nothing in it can drive the terminal (ANSI/OSC/DCS
 # sequences and bidi controls removed; other C0/C1 controls except newline and tab shown as \xNN).
@@ -624,7 +624,8 @@ if (!$ok) {
     my ($bad)=$err =~ /\Aunsafe directory: (.+) \(group\/world writable\)\n\z/s;
     if (defined $bad) {
         my $shown=Loomy::ContentPolicy::display_path($bad); $shown=Loomy::ContentPolicy::_encode_utf8($shown) if utf8::is_utf8($shown);
-        print STDERR sprintf($message{LM_UNSAFE},$shown,$shown),"\n";
+        (my $quoted=$shown) =~ s/'/'\\''/g;
+        print STDERR sprintf($message{LM_UNSAFE},$shown,"'$quoted'"),"\n";
     } else {print STDERR "$message{LM_ERROR}\n"}
     exit 1;
 }

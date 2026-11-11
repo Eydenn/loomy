@@ -2466,3 +2466,4 @@ Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)
 Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s	Dossier non sûr : %s (modifiable par le groupe ou par tous). Correction : chmod g-w,o-w %s
 Unsafe content directory (group or world writable)	Dossier de contenu non sûr (modifiable par le groupe ou par tous)
 Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s	Dossier non sûr : %s (modifiable par le groupe ou par tous) · correction : chmod g-w,o-w %s
+unsafe directory: %s (group/world writable)	dossier non sûr : %s (modifiable par le groupe ou par tous)

@@ -2464,5 +2464,6 @@ _t_fr() {
     'Unsafe directory: %s (group or world writable). Fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous). Correction : chmod g-w,o-w %s' ;;
     'Unsafe content directory (group or world writable)') _T='Dossier de contenu non sûr (modifiable par le groupe ou par tous)' ;;
     'Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s') _T='Dossier non sûr : %s (modifiable par le groupe ou par tous) · correction : chmod g-w,o-w %s' ;;
+    'unsafe directory: %s (group/world writable)') _T='dossier non sûr : %s (modifiable par le groupe ou par tous)' ;;
   esac
 }

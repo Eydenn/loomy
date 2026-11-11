@@ -657,7 +657,7 @@ chmod 0777 "$P/.loomy"
 check 'world-writable .loomy is always refused' bash -c 'source "$1/scripts/lib/memory.sh"; ! loomy_memory_count "$2" >/dev/null 2>&1' _ "$REPO" "$P"
 check 'unsafe .loomy: the memory backend names the absolute directory and the chmod remedy' bash -c '
   source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
-  [[ "$s" == *"Unsafe directory: $2/.loomy (group or world writable)"* && "$s" == *"chmod g-w,o-w $2/.loomy"* && "$s" != *"Content operation failed"* ]]' _ "$REPO" "$P"
+  [[ "$s" == *"Unsafe directory: $2/.loomy (group or world writable)"* && "$s" == *"chmod g-w,o-w '"'"'$2/.loomy'"'"'"* && "$s" != *"Content operation failed"* ]]' _ "$REPO" "$P"
 chmod 0755 "$P/.loomy"; chmod 0777 "$P/.loomy/memory"
 check 'unsafe memory directory: the backend names it with its absolute path, not the relative name' bash -c '
   source "$1/scripts/lib/memory.sh"; s=$(_lm_backend count "$2" 2>&1 >/dev/null)
@@ -674,6 +674,17 @@ for why in 'a\u009bb' 'a\u009db' 'a\u202eb' 'a\u009b2J \u009d52;c;x\u202e'; do
 done
 check 'descriptor still accepts a clean reason' bash -c '
   source "$1/scripts/lib/memory.sh"; printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "plain reason" "" "" "" | _lm_backend descriptor "$2" >/dev/null' _ "$REPO" "$P"
+# A raw --why over 200 characters is cut after trimming: the stored reason must be stable under a second clean_text.
+for kind in ws200 pairs cjk exact200 len201 len201ws; do
+  why="$(python3 -c '
+import sys
+k=sys.argv[1]
+print({"ws200":"a"*199+" b b b b b","pairs":"a "*150,"cjk":"日本語 "*80,"exact200":"x"*200,"len201":"y"*201,"len201ws":"z"*199+"  q"}[k],end="")' "$kind")"
+  check "descriptor is built from a long raw reason ($kind) and is stable" bash -c '
+    source "$1/scripts/lib/memory.sh"; d=$(printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "$3" "" "" "" | _lm_backend descriptor "$2") || exit 1
+    w=$(printf "%s" "$d" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"options\"][\"why\"],end=\"\")"); [[ -n "$w" && "${#w}" -le 200 && "$w" != *" " ]] || exit 1
+    printf "%s\0" "$d" reviewer codex | _lm_backend descriptor-env "$2" >/dev/null' _ "$REPO" "$P" "$why"
+done
 
 # memory show prints agent-written text: terminal controls never reach the user's terminal.
 project show-escape; policy

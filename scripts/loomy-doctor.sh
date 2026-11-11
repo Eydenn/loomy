@@ -178,7 +178,7 @@ loomy_doctor_content() {
       ;;
     unsafe)
       ui_warn "$(t 'Unsafe content directory (group or world writable)')" "$path"
-      ui_info "$(t 'Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)' "$path")"
+      ui_info "$(t 'Fix: chmod g-w,o-w %s (it must belong to you and not be group or world writable)' "$(ui_shell_quote "$path")")"
       missing_ideal "$(t 'Content policy health')"
       ;;
   esac

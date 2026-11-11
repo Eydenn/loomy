@@ -185,20 +185,30 @@ sub _identity_ignorable {
     return 1 if $top eq ''; # No owning Git work tree (the filesystem root itself is not one).
     my $rel=substr($root,length $top); $rel =~ s{\A/}{};
     my $q=quotemeta($rel); my $ignore=qr{\.loomy(?:/(?:project-id)?)?};
-    my @sources=(["$root/.gitignore",qr{\A/?$ignore\z}]);
-    my $anchored=length($rel) ? qr{\A(?:/?$q/$ignore|\.loomy/?)\z} : qr{\A/?$ignore\z};
-    push @sources,["$top/.gitignore",$anchored] if $top ne $root;
-    my $ex=_git_exclude_file("$top/.git"); push @sources,[$ex,$anchored] if defined $ex;
-    my $found=0;
-    for my $src (@sources) {
-        my ($f,$re)=@$src; my $t=_ignore_text($f); next unless length $t;
-        for my $line (split /\n/,$t) {
-            return 0 if $line =~ /\A!/ && $line =~ /\.loomy|project-id/;
-            my $l=$line; $l =~ s/ +\z//;
-            $found=1 if $l =~ $re;
+    # Conservative on purpose: an unpinned (path-derived) identity is the safe fallback. A nested .gitignore between the
+    # repository top and the project may re-include anything, and a parent rule matches a path only when that path
+    # carries no pattern metacharacter or comment marker.
+    if ($top ne $root) {
+        my $d=$root; while (($d =~ s{/[^/]*\z}{}) && length($d) > length($top)) {
+            return 0 if -e "$d/.gitignore" || -l "$d/.gitignore";
         }
     }
-    return $found;
+    my $anchored=length($rel) ? qr{\A(?:/?$q/$ignore|\.loomy/?)\z} : qr{\A/?$ignore\z};
+    my @sources=(["$root/.gitignore",qr{\A/?$ignore\z},0]);
+    push @sources,["$top/.gitignore",$anchored,1] if $top ne $root;
+    my $ex=_git_exclude_file("$top/.git"); push @sources,[$ex,$anchored,$top ne $root ? 1 : 0] if defined $ex;
+    my ($found,$parent_found)=(0,0);
+    for my $src (@sources) {
+        my ($f,$re,$parent)=@$src; my $t=_ignore_text($f); next unless length $t;
+        for my $line (split /\n/,$t) {
+            return 0 if $line =~ /\A!/; # Any negation, whatever it names (globs such as !* included).
+            my $l=$line; $l =~ s/ +\z//;
+            if ($l =~ $re) {$found=1; $parent_found=1 if $parent}
+        }
+    }
+    return 0 unless $found;
+    return 0 if $parent_found && ($rel !~ m{\A[A-Za-z0-9._/-]+\z} || grep {/\A#/} split m{/},$rel);
+    return 1;
 }
 sub _project_id {
     my ($root,$create)=@_; my $name='project-id';
@@ -422,6 +432,7 @@ sub _message {
     return _encode_utf8(sprintf($fmt,@args)."\n");
 }
 sub _say { print STDOUT _message(@_) }
+sub _shell_quote {my ($s)=@_; $s =~ s/'/'\\''/g; return "'$s'"}
 sub display_path {
     my ($path)=@_;
     $path=_decode_utf8($path) if !utf8::is_utf8($path) && $path =~ /[^\x00-\x7f]/;
@@ -916,8 +927,10 @@ unless (caller) {
             : $err eq "human content confirmation required\n" ? ($agent ? 'AGENT_ANCESTOR' : 'HUMAN_REQUIRED')
             : $err =~ /\Acontent confirmation/ ? 'CONFIRMATION_ABORTED' : 'OPERATION_FAILED';
         if (defined $unsafe_dir) {
-            print STDERR _encode_utf8("unsafe directory: ".display_path($unsafe_dir)." (group/world writable)\n");
-            print STDERR _message('UNSAFE_DIRECTORY_HINT',display_path($unsafe_dir)) if exists $ENV{LOOMY_CONTENT_UI_UNSAFE_DIRECTORY_HINT};
+            my $shown=display_path($unsafe_dir);
+            print STDERR exists($ENV{LOOMY_CONTENT_UI_UNSAFE_DIRECTORY}) ? _message('UNSAFE_DIRECTORY',$shown)
+                : _encode_utf8("unsafe directory: $shown (group/world writable)\n");
+            print STDERR _message('UNSAFE_DIRECTORY_HINT',_shell_quote($shown)) if exists $ENV{LOOMY_CONTENT_UI_UNSAFE_DIRECTORY_HINT};
         } else {
             print STDERR exists($ENV{"LOOMY_CONTENT_UI_$key"})
                 ? _message($key,$key eq 'INVALID_POLICY' ? display_path("$ARGV[1]/.loomy/logs/$POLICY")

@@ -542,7 +542,7 @@ loomy_status_content_load() {
     print join("|",@$p{qw(journal_content label_sources private_results)},$u)' "$LOOMY_CONTENT_POLICY_LIB" "$ROOT")" || policy="structural|none|off|"
   IFS='|' read -r journal labels results unsafe <<<"$policy"
   LOOMY_CONTENT_UNSAFE=""
-  if [[ -n "$unsafe" ]]; then tv LOOMY_CONTENT_UNSAFE "Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s" "$unsafe" "$unsafe"; fi
+  if [[ -n "$unsafe" ]]; then tv LOOMY_CONTENT_UNSAFE "Unsafe directory: %s (group or world writable) · fix: chmod g-w,o-w %s" "$unsafe" "$(ui_shell_quote "$unsafe")"; fi
   if [[ "$journal" == legacy-excerpts ]]; then tv journal "legacy excerpts (project scope)"; else tv journal "structure only"; fi
   if [[ "$labels" == none ]]; then tv labels "off"; else tv labels "on"; fi
   tv results "$results"

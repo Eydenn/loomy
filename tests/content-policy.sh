@@ -443,6 +443,72 @@ for my $pre_move (0,1) {
     is(pinned_in('sub-parent-path',undef,sub=>1,parent_ignore=>"/sub/.loomy/\n"),1,'parent rule naming the subdirectory covers it');
     is(pinned_in('sub-exclude',undef,sub=>1,exclude=>".loomy\n"),1,'parent info/exclude covers a subdirectory project');
 }
+# Pin decisions must never claim more than `git check-ignore`: pinned implies Git ignores the identity file.
+{
+    sub git_ignores {my ($dir)=@_; return system('git','-C',$dir,'check-ignore','-q','--','.loomy/project-id')==0 ? 1 : 0}
+    sub put_file {my ($p,$c)=@_; my ($d)=$p =~ m{\A(.*)/}; make_path($d); open my $f,'>',$p or die "$p: $!"; print $f $c; close $f}
+    sub pin_case {
+        my ($name,$expect,%o)=@_; my $r="$work/pin2-$name"; make_path($r);
+        my $proj=$r.(length($o{sub}//'') ? "/$o{sub}" : '');
+        system('git','-C',$r,'init','-q','-b','main')==0 or die 'pin2 git init';
+        make_path("$proj/.loomy/logs",{mode=>0700}); chmod 0755,"$proj/.loomy";
+        put_file("$r/$_",$o{files}{$_}) for keys %{$o{files}//{}};
+        put_file("$r/.git/info/exclude",$o{exclude}) if defined $o{exclude};
+        Loomy::ContentPolicy::_context($proj,1);
+        my $pinned=-e "$proj/.loomy/project-id" ? 1 : 0;
+        is($pinned,$expect,"pin2 $name: pinned=$expect");
+        ok(!$pinned || git_ignores($proj),"pin2 $name: pinned only when git check-ignore agrees");
+        return $pinned;
+    }
+    pin_case('plain',1,files=>{'.gitignore'=>".loomy\n"});
+    pin_case('glob-neg-star',0,files=>{'.gitignore'=>".loomy\n!*\n"});
+    pin_case('glob-neg-dot',0,files=>{'.gitignore'=>".loomy\n!.l*\n"});
+    pin_case('glob-neg-slash',0,files=>{'.gitignore'=>".loomy\n!/.*\n"});
+    pin_case('neg-in-exclude',0,files=>{'.gitignore'=>".loomy\n"},exclude=>"!x\n");
+    pin_case('intermediate',0,sub=>'a/b',files=>{'.gitignore'=>".loomy\n",'a/.gitignore'=>"!.loomy\n"});
+    pin_case('intermediate-harmless',0,sub=>'a/b',files=>{'.gitignore'=>".loomy\n",'a/.gitignore'=>"*.o\n"});
+    pin_case('project-gitignore-ok',1,sub=>'a/b',files=>{'a/b/.gitignore'=>"/.loomy/\n"});
+    pin_case('class-dir',0,sub=>'my[1]',files=>{'.gitignore'=>"my[1]/.loomy\n"});
+    pin_case('hash-dir',0,sub=>'#c',files=>{'.gitignore'=>"#c/.loomy\n"});
+    pin_case('plain-subdir-parent',1,sub=>'sub',files=>{'.gitignore'=>"/sub/.loomy/\n"});
+    pin_case('class-dir-own',1,sub=>'my[1]',files=>{'my[1]/.gitignore'=>"/.loomy/\n"});
+    # Registered worktree: ".git" is a file (gitdir + commondir); only the common info/exclude counts.
+    {
+        for my $case (['common',1],['private',0]) {
+            my ($kind,$expect)=@$case; my $wt="$work/pin2-wt-$kind";
+            my $main="$work/pin2-wt-main-$kind"; make_path($main);
+            my @g=('git','-C',$main,'-c','user.name=t','-c','user.email=t@example.com');
+            system(@g,'init','-q','-b','main')==0 or die; put_file("$main/f","x\n");
+            system(@g,'add','f')==0 && system(@g,'commit','-q','-m','i')==0 or die;
+            system(@g,'worktree','add','-q','-b',"wt-$kind",$wt)==0 or die;
+            my $gitdir=(`git -C "$wt" rev-parse --git-dir`)[0]; chomp $gitdir;
+            my $ex=$kind eq 'common' ? "$main/.git/info/exclude" : "$gitdir/info/exclude"; make_path($ex =~ m{\A(.*)/} ? $1 : '.');
+            open my $f,'>>',$ex or die; print $f "/.loomy/\n"; close $f;
+            make_path("$wt/.loomy/logs",{mode=>0700}); chmod 0755,"$wt/.loomy";
+            Loomy::ContentPolicy::_context($wt,1); my $pinned=-e "$wt/.loomy/project-id" ? 1 : 0;
+            is($pinned,git_ignores($wt),"pin2 worktree $kind exclude: decision agrees with git check-ignore");
+            ok(!$pinned || git_ignores($wt),"pin2 worktree $kind: never pinned when git does not ignore it");
+            is($pinned,$expect,"pin2 worktree $kind exclude: pinned=$expect");
+        }
+    }
+    # Submodule: ".git" file without commondir (gitdir: ../.git/modules/x).
+    {
+        my $sup="$work/pin2-sub-super"; my $inner="$work/pin2-sub-inner"; make_path($sup,$inner);
+        for my $r ($sup,$inner) {
+            my @g=('git','-C',$r,'-c','user.name=t','-c','user.email=t@example.com');
+            system(@g,'init','-q','-b','main')==0 or die; put_file("$r/f","x\n");
+            system(@g,'add','f')==0 && system(@g,'commit','-q','-m','i')==0 or die;
+        }
+        if (system('git','-C',$sup,'-c','protocol.file.allow=always','-c','user.name=t','-c','user.email=t@example.com','submodule','add','-q',$inner,'x')==0) {
+            my $sm="$sup/x"; my ($gd)=`git -C "$sm" rev-parse --git-dir`; chomp $gd;
+            make_path("$gd/info"); open my $f,'>>',"$gd/info/exclude" or die; print $f "/.loomy/\n"; close $f;
+            make_path("$sm/.loomy/logs",{mode=>0700}); chmod 0755,"$sm/.loomy";
+            Loomy::ContentPolicy::_context($sm,1); my $pinned=-e "$sm/.loomy/project-id" ? 1 : 0;
+            is($pinned,git_ignores($sm),'pin2 submodule: decision agrees with git check-ignore');
+            is($pinned,1,'pin2 submodule: its own info/exclude is read');
+        } else {ok(1,'pin2 submodule: skipped (git cannot add a local submodule here)'); ok(1,'pin2 submodule: skipped')}
+    }
+}
 # _private_group also needs the user's primary gid: gr_mem omits accounts that only have it as primary group.
 {
     no warnings 'redefine';

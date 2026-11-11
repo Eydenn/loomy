@@ -1106,3 +1106,6 @@ ui_copy() {
   else return 1
   fi
 }
+
+# ui_shell_quote <string>: the string as one single-quoted shell word (safe to paste into a command).
+ui_shell_quote() { local sq="'"; printf '%s' "$sq${1//$sq/$sq\\$sq$sq}$sq"; }

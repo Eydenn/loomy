@@ -4,7 +4,7 @@ use strict;
 use warnings;
 use JSON::PP qw(decode_json encode_json);
 use Time::Local qw(timegm);
-use Fcntl qw(O_RDONLY O_RDWR O_WRONLY O_CREAT O_EXCL O_APPEND O_NOFOLLOW LOCK_EX LOCK_NB);
+use Fcntl qw(O_RDONLY O_RDWR O_WRONLY O_CREAT O_EXCL O_APPEND O_NOFOLLOW O_NONBLOCK LOCK_EX LOCK_NB);
 use Errno qw(EPERM);
 use Cwd qw(abs_path);
 use Time::HiRes ();
@@ -203,25 +203,30 @@ sub _checkpoint_kind {
     return 'unsupported-version' if exists $s->{version} && text($s->{version}) !~ /^(1|2)$/;
     if (exists $s->{source_shards}) {
         return 'invalid' unless ref($s->{source_shards}) eq 'ARRAY' && @{$s->{source_shards}}<=64;
+        my $bad=0;
         for my $name (@{$s->{source_shards}}) {
             my $n=text($name); next if $n =~ /^files-[0-9a-f]{64}$/;
             return 'unsupported-extension' if $n =~ /^[a-z][a-z0-9]*-[0-9a-f]{64}$/;
-            return 'invalid';
+            $bad=1; # keep scanning: an unknown shard kind anywhere outranks malformed names
         }
+        return 'invalid' if $bad;
     }
     return 'invalid' if grep {exists $s->{$_} && ref($s->{$_}) ne 'HASH'} qw(files seen sent journal sessions owners);
     return;
 }
 # Read-only: never chmod, rename, prune or create. Returns (kind,state) with kind one of
 # valid missing invalid unsafe unsupported-version unsupported-extension changed io-error.
+sub _read_chunk {my $n=sysread($_[0],my $b,262144); return ($n,$b)}
 sub _checkpoint_read {
     my ($candidate)=@_;
     my @l=lstat($candidate); return ($!{ENOENT}||$!{ENOTDIR} ? 'missing' : 'io-error') unless @l;
     return 'unsafe' unless -f _ && safe_path($candidate);
     return 'invalid' if !$l[7] || $l[7]>33554432;
-    sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW or return 'io-error';
+    sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or return 'io-error';
     my @a=stat($f); return 'io-error' unless @a;
-    my $raw=''; while (1) {my $n=sysread($f,my $b,262144); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
+    # The handle, not the earlier lstat, is authoritative: a swapped FIFO/other file is unsafe.
+    return 'unsafe' unless -f $f && $a[4]==$< && $a[0]==$l[0] && $a[1]==$l[1];
+    my $raw=''; while (1) {my ($n,$b)=_read_chunk($f); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
     my @z=stat($f);
     return 'changed' unless @z && length($raw)==$a[7] && $a[7]==$z[7] && $a[9]==$z[9];
     my $s=eval {checkpoint_json()->decode($raw)};
@@ -233,6 +238,11 @@ sub _checkpoint_read {
         my $ok=eval {load_shards($path,$s); 1}; return 'invalid' unless $ok;
     }
     return ('valid',$s);
+}
+# A future-format backup is never replaced or ignored by a mutator: bounded read, then refuse.
+sub _backup_refusal {
+    my ($path)=@_; my ($k)=_checkpoint_read("$path.bak");
+    return $k =~ /^unsupported-/ ? $k : undef;
 }
 # Pure bounded reader for followers. Never acquires ownership, repairs, chmods, prunes,
 # quarantines or creates. status: valid (supported primary), stale (supported backup or
@@ -247,17 +257,18 @@ sub _checkpoint_peek {
     my ($path,$last)=@_;
     my ($pk,$p)=_checkpoint_read($path);
     ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
-    return {status=>'valid',checkpoint=>$p,reason=>'primary'} if $pk eq 'valid';
     my ($bk,$b)=_checkpoint_read("$path.bak");
     ($bk,$b)=_checkpoint_read("$path.bak") if $bk eq 'changed';
+    # The valid primary stays the authority; the backup's kind is exposed so L3 can explain a refusal.
+    return {status=>'valid',checkpoint=>$p,reason=>'primary',backup_kind=>$bk} if $pk eq 'valid';
     $last=undef unless ref($last) eq 'HASH';
     my $stale=$bk eq 'valid' ? $b : undef;
-    return {status=>'unsupported',checkpoint=>$stale//$last,reason=>$pk} if $pk =~ /^unsupported-/;
-    return {status=>'unsupported',checkpoint=>$last,reason=>$bk} if $bk =~ /^unsupported-/;
-    return {status=>'stale',checkpoint=>$b,reason=>'backup'} if $bk eq 'valid';
-    return {status=>'stale',checkpoint=>$last,reason=>'last-valid'} if $last;
+    return {status=>'unsupported',checkpoint=>$stale//$last,reason=>$pk,backup_kind=>$bk} if $pk =~ /^unsupported-/;
+    return {status=>'unsupported',checkpoint=>$last,reason=>$bk,backup_kind=>$bk} if $bk =~ /^unsupported-/;
+    return {status=>'stale',checkpoint=>$b,reason=>'backup',backup_kind=>$bk} if $bk eq 'valid';
+    return {status=>'stale',checkpoint=>$last,reason=>'last-valid',backup_kind=>$bk} if $last;
     my ($worst)=grep {$_ ne 'missing'} ($pk,$bk);
-    return {status=>'unavailable',checkpoint=>undef,reason=>$worst//'missing'};
+    return {status=>'unavailable',checkpoint=>undef,reason=>$worst//'missing',backup_kind=>$bk};
 }
 # Bounded current-source evidence for a followed checkpoint: refreshes in memory only the
 # source mtime of up to $limit recently active sources, so silent agents keep their lease
@@ -284,16 +295,24 @@ sub stat_evidence {
 # evidence. Takes no guard, loads nothing through a mutator and writes nothing. $last holds
 # the caller's last valid snapshots ({codex=>..,claude=>..}) and is updated in memory only.
 sub follower_read {
-    my ($self,$root,$last)=@_; $last//={}; my $dir="$root/.loomy/logs"; my %peek;
+    my ($self,$where,$last)=@_; $last//={};
+    # $where is a logs directory, or the owner's canonical root (L0 context root) so that both
+    # registered-alias layouts read the physical store; a worktree root with a symlinked
+    # .loomy or logs is refused by safe_path (unavailable/unsafe), never followed.
+    (my $dir=$where) =~ s{/+$}{};
+    $dir.="/.loomy/logs" unless $dir =~ m{/\.loomy/logs$};
+    my %peek;
     for my $tool (qw(codex claude)) {
         my $p=checkpoint_peek("$dir/$tool-native.idx",$last->{$tool});
         $last->{$tool}=$p->{checkpoint} if $p->{status} eq 'valid';
-        stat_evidence($tool,$p->{checkpoint}) if $p->{status} =~ /^(?:valid|stale)$/;
+        $p->{stale}=1 if $p->{status} =~ /^(?:stale|unsupported)$/ && $p->{checkpoint};
+        stat_evidence($tool,$p->{checkpoint}) if $p->{checkpoint} && $p->{status} =~ /^(?:valid|stale|unsupported)$/;
         $peek{$tool}=$p;
     }
     $self->read_journal("$dir/events.jsonl");
-    $self->source_evidence($peek{codex}{checkpoint}) if $peek{codex}{status} =~ /^(?:valid|stale)$/;
-    $self->claude_evidence($peek{claude}{checkpoint}) if $peek{claude}{status} =~ /^(?:valid|stale)$/;
+    my $usable=sub {$_[0]{checkpoint} && $_[0]{status} =~ /^(?:valid|stale|unsupported)$/};
+    $self->source_evidence($peek{codex}{checkpoint}) if $usable->($peek{codex});
+    $self->claude_evidence($peek{claude}{checkpoint}) if $usable->($peek{claude});
     return \%peek;
 }
 # Collector-origin load: may quarantine damaged evidence and prune, so it needs the guard.
@@ -302,11 +321,12 @@ sub checkpoint_load {
     my ($path,$opts)=@_; my $exists=0;
     _fence($opts,$path,0);
     my ($pk,$p)=_checkpoint_read($path); ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
-    die "unsupported checkpoint format\n" if $pk =~ /^unsupported-/;
+    die "unsupported checkpoint format: $pk\n" if $pk =~ /^unsupported-/;
     my ($bk,$b);
+    if ($pk eq 'valid') {my $r=_backup_refusal($path); die "unsupported checkpoint format: $r\n" if $r}
     if ($pk ne 'valid') {
         ($bk,$b)=_checkpoint_read("$path.bak"); ($bk,$b)=_checkpoint_read("$path.bak") if $bk eq 'changed';
-        die "unsupported checkpoint format\n" if $bk =~ /^unsupported-/;
+        die "unsupported checkpoint format: $bk\n" if $bk =~ /^unsupported-/;
         die "checkpoint changed during read\n" if $pk eq 'changed' || $bk eq 'changed';
         die "checkpoint unavailable\n" if $pk eq 'io-error' || $bk eq 'io-error';
     }
@@ -361,7 +381,7 @@ sub load_shards {
     for my $name (@$refs) {
         die 'invalid shard identity' unless text($name) =~ /^files-[0-9a-f]{64}$/;
         my $p="$path.$name"; die 'unsafe source shard' unless safe_path($p) && -f $p && -s $p<=262144;
-        sysopen my $f,$p,O_RDONLY|O_NOFOLLOW or die; local $/; my $raw=<$f>; $total+=length($raw);
+        sysopen my $f,$p,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die; die 'unsafe source shard' unless -f $f; local $/; my $raw=<$f>; $total+=length($raw);
         die 'source inventory exceeds 16 MiB' if $total>16777216;
         require Digest::SHA; die 'source shard checksum mismatch' unless $name eq 'files-'.Digest::SHA::sha256_hex($raw);
         my $part=checkpoint_json()->decode($raw); die 'invalid source shard' unless ref($part) eq 'HASH';
@@ -381,6 +401,7 @@ sub checkpoint_save {
     my ($path,$s,$opts)=@_;
     # Fence first: nothing is flushed, written, backed up or pruned without live ownership.
     _fence($opts,$path,0);
+    die "collector owner INVALID_GUARD\n" if defined($opts) && ref($opts->{flush}) ne 'ARRAY';
     _flush_handles($opts);
     $s->{version}=2;
     my $json=checkpoint_json(); my %snapshot=%$s;
@@ -390,8 +411,9 @@ sub checkpoint_save {
         sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
         local $/; $prior_raw=<$old>; $prior_state=eval {$json->decode($prior_raw)};
         my $kind=ref($prior_state) eq 'HASH' ? _checkpoint_kind($prior_state) : undef;
-        die "unsupported checkpoint format\n" if defined($kind) && $kind =~ /^unsupported-/;
+        die "unsupported checkpoint format: $kind\n" if defined($kind) && $kind =~ /^unsupported-/;
     }
+    {my $r=_backup_refusal($path); die "unsupported checkpoint format: $r\n" if $r}
     my $raw=$json->encode(\%snapshot);
     if (length($raw)>2097152 && keys %{$s->{files}//{}}) {
         my (%part,@shards); my $size=2; my $total=0;
@@ -513,6 +535,15 @@ sub journal_rotate {
     _fence($opts,$path,1) if defined $opts;
     recover_rotation($path,$dir,$opts);
 }
+# Named collector entries: an undefined $opts (lost election) dies instead of taking the hook path.
+sub journal_rotate_owned {
+    my ($path,$writer,$opts)=@_; die "collector owner INVALID_GUARD\n" unless ref($opts) eq 'HASH';
+    return journal_rotate($path,$writer,$opts);
+}
+sub recover_rotation_owned {
+    my ($path,$dir,$opts)=@_; die "collector owner INVALID_GUARD\n" unless ref($opts) eq 'HASH';
+    return recover_rotation($path,$dir,$opts);
+}
 sub journal_append {
     my $ok=eval {_journal_append(@_)};
     warn "journal event skipped; append unavailable\n" if $@;
@@ -578,20 +609,27 @@ sub recovery_path {
     }
     return $path;
 }
+# Returns 'done', 'deferred' (another process holds an index lock), 'refused' (an unsupported
+# primary or backup exists; nothing was touched) or 'unavailable' (disabled journal / no logs).
 sub migrate_checkpoints {
-    my ($root,$opts)=@_; return if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
-    my $dir="$root/.loomy/logs"; return unless safe_path($dir) && -d $dir;
-    return if -f "$dir/checkpoint-v2";
+    my ($root,$opts)=@_; return 'unavailable' if ($ENV{LOOMY_JOURNAL}//'1') eq '0';
+    my $dir="$root/.loomy/logs"; return 'unavailable' unless safe_path($dir) && -d $dir;
+    return 'done' if -f "$dir/checkpoint-v2";
     _fence($opts,"$dir/checkpoint-v2",0);
+    # Pure refusal pass over every tool, primary and backup, before any lock, load or save.
+    for my $tool (qw(codex claude)) {
+        my $idx="$dir/$tool-native.idx";
+        for my $candidate ($idx,"$idx.bak") {
+            my ($k)=_checkpoint_read($candidate); return 'refused' if $k =~ /^unsupported-/;
+        }
+    }
     my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
     require "$lib/codex-native.pl"; require "$lib/claude-native.pl";
     for my $tool (qw(codex claude)) {
         my $idx="$dir/$tool-native.idx"; next unless -e $idx;
-        # Pure refusal first: even the lock file is not created beside an unknown format.
-        die "unsupported checkpoint format\n" if checkpoint_peek($idx)->{status} eq 'unsupported';
         die 'unsafe migration lock' unless safe_path("$idx.lock");
         sysopen my $lock,"$idx.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or die;
-        flock($lock,LOCK_EX|LOCK_NB) or return;
+        flock($lock,LOCK_EX|LOCK_NB) or return 'deferred';
         my $s=checkpoint_load($idx,$opts); next if ($s->{version}//0)==2;
         my $dirty=1;
         if ($tool eq 'codex') {Loomy::CodexNative::prune_checkpoint($s,$ENV{LOOMY_NATIVE_NOW}//time)}
@@ -600,6 +638,7 @@ sub migrate_checkpoints {
     }
     _fence($opts,"$dir/checkpoint-v2",0);
     atomic_file("$dir/checkpoint-v2","2\n");
+    return 'done';
 }
 sub valid_event {
     my ($d)=@_; return 0 unless ref($d) eq 'HASH';

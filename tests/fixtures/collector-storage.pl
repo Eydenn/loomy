@@ -9,6 +9,7 @@ use File::Find qw(find);
 use File::Path qw(make_path);
 use IO::Handle;
 use JSON::PP ();
+use POSIX ();
 use Test::More;
 use Time::HiRes ();
 
@@ -62,7 +63,7 @@ sub refuses {
     is_deeply(manifest($root),$before,"$name leaves the whole manifest unchanged");
 }
 sub logs {"$_[0]/.loomy/logs"}
-sub opts {my ($guard,$root)=@_; return {owner=>$guard,context=>context($root)}}
+sub opts {my ($guard,$root)=@_; return {owner=>$guard,context=>context($root),flush=>[]}}
 sub cp {
     my ($files)=@_;
     my %f; $f{"/nonexistent/$_"}={meta=>{id=>"id$_"},offset=>$_} for 1..($files//3);
@@ -159,9 +160,9 @@ for my $case (['future version',sub {+{version=>3,files=>{},extra=>'x'}},'unsupp
     is($peek->{status},'unsupported',"$label is unsupported");
     is($peek->{reason},$reason,"$label reason");
     is(ref($peek->{checkpoint}) eq 'HASH' ? scalar(keys %{$peek->{checkpoint}{files}}) : -1,2,"$label offers the backup only as stale display");
-    refuses("owned load of $label",$r,sub {Loomy::LiveState::checkpoint_load($ridx,opts($gr,$r))},'unsupported checkpoint format');
-    refuses("owned save over $label",$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(5),opts($gr,$r))},'unsupported checkpoint format');
-    refuses("migration over $label",$r,sub {Loomy::LiveState::migrate_checkpoints($r,opts($gr,$r))},'unsupported checkpoint format');
+    refuses("owned load of $label",$r,sub {Loomy::LiveState::checkpoint_load($ridx,opts($gr,$r))},"unsupported checkpoint format: $reason");
+    refuses("owned save over $label",$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(5),opts($gr,$r))},"unsupported checkpoint format: $reason");
+    is(readonly("migration over $label",$r,sub {Loomy::LiveState::migrate_checkpoints($r,opts($gr,$r))}),'refused',"migration over $label is refused, not deferred or done");
     ok(!-e logs($r).'/checkpoint-v2','no migration marker written for an unsupported format');
     $peek=readonly("peek $label primary with last valid",$r,sub {Loomy::LiveState::checkpoint_peek($ridx,cp(1))});
     is($peek->{status},'unsupported',"$label precedes last-valid evidence");
@@ -172,7 +173,116 @@ for my $case (['future version',sub {+{version=>3,files=>{},extra=>'x'}},'unsupp
     put($ridx,'{broken'); put_cp("$ridx.bak",{version=>9});
     $peek=readonly('peek damaged primary and future backup',$r,sub {Loomy::LiveState::checkpoint_peek($ridx)});
     is($peek->{reason},'unsupported-version','future backup is unsupported evidence');
-    refuses('owned load keeps damaged primary beside a future backup',$r,sub {Loomy::LiveState::checkpoint_load($ridx,opts($gr,$r))},'unsupported checkpoint format');
+    refuses('owned load keeps damaged primary beside a future backup',$r,sub {Loomy::LiveState::checkpoint_load($ridx,opts($gr,$r))},'unsupported checkpoint format: unsupported-version');
+}
+
+# Review round L1b: future-format backup, whole-set migration, shard-name precedence,
+# FIFO swap, alias layouts, changed-read injection, stale display and owned rotation entries.
+{
+    my $r=project('future-bak'); my $ridx=logs($r)."/codex-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);
+    put_cp($ridx,cp(2)); put("$ridx.bak",$json->encode({version=>3,future=>'evidence'})."\n");
+    $peek=readonly('peek valid primary beside future backup',$r,sub {Loomy::LiveState::checkpoint_peek($ridx)});
+    is($peek->{status},'valid','primary stays the authority'); is($peek->{backup_kind},'unsupported-version','backup kind exposed');
+    refuses('load beside a future backup',$r,sub {Loomy::LiveState::checkpoint_load($ridx,$o)},'unsupported checkpoint format: unsupported-version');
+    refuses('save beside a future backup',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(9),$o)},'unsupported checkpoint format: unsupported-version');
+    is(readonly('migrate beside a future backup',$r,sub {Loomy::LiveState::migrate_checkpoints($r,$o)}),'refused','migrate refuses');
+    like(bytes("$ridx.bak"),qr/evidence/,'future backup bytes survive');
+    # Backup alone (primary missing) is equally protected, for the whole tool set.
+    unlink $ridx; $peek=Loomy::LiveState::checkpoint_peek($ridx); is($peek->{status},'unsupported','missing primary beside future backup is unsupported');
+    is(readonly('migrate with only a future backup',$r,sub {Loomy::LiveState::migrate_checkpoints($r,$o)}),'refused','refused'); ok(!-e logs($r).'/checkpoint-v2','no marker');
+}
+{
+    my $r=project('mixed-tools'); my $gr=elect($r); my $o=opts($gr,$r);
+    put_cp(logs($r).'/codex-native.idx',{version=>1,files=>{}}); put_cp(logs($r).'/claude-native.idx',{version=>5});
+    is(readonly('migrate codex v1 with claude future',$r,sub {Loomy::LiveState::migrate_checkpoints($r,$o)}),'refused','whole set refused before any rewrite');
+    ok(!-e logs($r).'/codex-native.idx.bak' && !-e logs($r).'/codex-native.idx.lock' && !-e logs($r).'/checkpoint-v2','codex untouched, no lock, no marker');
+}
+{
+    my $r=project('deferred'); my $gr=elect($r); my $o=opts($gr,$r); my $idxp=logs($r).'/codex-native.idx';
+    put_cp($idxp,{version=>1,files=>{}});
+    sysopen my $held,"$idxp.lock",O_RDWR|O_CREAT,0600 or die; flock($held,Fcntl::LOCK_EX|Fcntl::LOCK_NB) or die;
+    close $held; # a child holds the index lock; one process cannot conflict with itself
+    pipe(my $rd,my $wr) or die; pipe(my $rd2,my $wr2) or die;
+    my $holder=fork(); die unless defined $holder;
+    if (!$holder) {
+        Loomy::CollectorOwner::after_fork_child(); close $rd; close $wr2;
+        sysopen my $h,"$idxp.lock",O_RDWR,0600 or exit 9; flock($h,Fcntl::LOCK_EX|Fcntl::LOCK_NB) or exit 9;
+        syswrite($wr,'x',1); sysread($rd2,my $b,1); exit 0;
+    }
+    close $wr; close $rd2; sysread($rd,my $b,1);
+    is(Loomy::LiveState::migrate_checkpoints($r,$o),'deferred','lost index lock is deferred');
+    close $wr2; waitpid($holder,0);
+    is(Loomy::LiveState::migrate_checkpoints($r,$o),'done','migration completes once the lock is free');
+    is(Loomy::LiveState::migrate_checkpoints($r,$o),'done','already migrated is done');
+    is($json->decode(bytes($idxp))->{version},2,'migrated checkpoint is v2');
+}
+{
+    my $sh='ranges-'.('a' x 64);
+    for my $names ([qw(junk),$sh],[$sh,'junk'],['junk','files-'.('c' x 64)]) {
+        my $k=Loomy::LiveState::_checkpoint_kind({version=>2,source_shards=>$names});
+        is($k,($names->[0] eq 'junk' && !grep {$_ eq $sh} @$names) ? 'invalid' : 'unsupported-extension',"shard names @{[join ',', map {substr($_,0,6)} @$names]} classified");
+    }
+}
+{
+    # A FIFO swapped in between lstat and open must neither block nor be read.
+    my $r=project('fifo'); my $ridx=logs($r)."/codex-native.idx"; put_cp($ridx,cp(1));
+    {
+        my $fifo=logs($r).'/swap'; POSIX::mkfifo($fifo,0600) or die;
+        rename $ridx,"$ridx.keep" or die; rename $fifo,$ridx or die;
+        my $t=Time::HiRes::time(); $peek=Loomy::LiveState::checkpoint_peek($ridx);
+        ok(Time::HiRes::time()-$t<2,'FIFO primary does not block a follower');
+        is($peek->{reason},'unsafe','FIFO primary is unsafe');
+    }
+}
+{
+    # Alias layouts: the follower reads the owner's physical store; the sibling spelling is refused.
+    my $own=project('alias-owner'); put_cp(logs($own).'/codex-native.idx',cp(2));
+    my $s1="$work/alias-dotloomy"; make_path($s1,{mode=>0700}); symlink("$own/.loomy","$s1/.loomy") or die;
+    my $s2="$work/alias-logs"; make_path("$s2/.loomy",{mode=>0700}); symlink(logs($own),"$s2/.loomy/logs") or die;
+    my $st=Loomy::LiveState->new;
+    my $pp=readonly('follower on owner root',$own,sub {Loomy::LiveState::follower_read($st,$own,{})}); is($pp->{codex}{status},'valid','canonical owner root works');
+    $pp=Loomy::LiveState::follower_read(Loomy::LiveState->new,logs($own),{}); is($pp->{codex}{status},'valid','logs directory argument works');
+    for my $sib ($s1,$s2) {
+        $pp=Loomy::LiveState::follower_read(Loomy::LiveState->new,$sib,{});
+        is($pp->{codex}{reason},'unsafe',"sibling spelling $sib is not followed");
+    }
+    is(Loomy::LiveState::checkpoint_peek(logs($own).'/codex-native.idx')->{status},'valid','physical store valid for both layouts');
+}
+{
+    # peek 'changed' via injection: the file changes while it is being read, on both attempts.
+    my $r=project('changed'); my $ridx=logs($r)."/codex-native.idx"; put_cp($ridx,cp(2));
+    {
+        no warnings 'redefine'; my $real=\&Loomy::LiveState::_read_chunk; my $n=0;
+        local *Loomy::LiveState::_read_chunk=sub {my @v=$real->(@_); utime(1_700_000_000+(++$n),1_700_000_000+$n,$ridx); return @v};
+        $peek=Loomy::LiveState::checkpoint_peek($ridx);
+    }
+    is($peek->{status},'unavailable','unstable file is unavailable'); is($peek->{reason},'changed','changed reason');
+    $peek=Loomy::LiveState::checkpoint_peek($ridx,cp(1)); is($peek->{reason},'primary','stable again after the injection ends');
+    my $g=elect($r);
+    {
+        no warnings 'redefine'; my $real=\&Loomy::LiveState::_read_chunk; my $n=0;
+        local *Loomy::LiveState::_read_chunk=sub {my @v=$real->(@_); utime(1_700_000_100+(++$n),1_700_000_100+$n,$ridx); return @v};
+        my $before=bytes($ridx); my $ok=eval {Loomy::LiveState::checkpoint_load($ridx,opts($g,$r)); 1};
+        ok(!$ok && $@ =~ /checkpoint changed during read/,'owned load on an unstable file refuses'); is(bytes($ridx),$before,'unstable file content untouched');
+        ok(!glob("$ridx*invalid*"),'unstable file is never quarantined');
+    }
+}
+{
+    # Stale display beside an unsupported primary keeps silent agents alive.
+    my $r=project('stale-follower'); my $dir=logs($r); my $hold=elect($r);
+    my $src="$work/stale-rollout.jsonl"; put($src,"{}\n"); utime($T-10,$T-10,$src) or die;
+    put("$dir/events.jsonl",$json->encode({ts=>'2027-01-15T07:43:20Z',type=>'session_observed',tool=>'codex',session=>'abc',session_key=>'codex:abc',schema=>2,source_active=>1,state=>'running',surface=>'cli'})."\n");
+    put_cp("$dir/codex-native.idx",{version=>9}); put_cp("$dir/codex-native.idx.bak",{version=>2,files=>{$src=>{meta=>{id=>'abc'},source_mtime=>$T-1000}}});
+    my $st=Loomy::LiveState->new;
+    my $pp=readonly('follower beside future primary',$r,sub {Loomy::LiveState::follower_read($st,$r,{})});
+    is($pp->{codex}{status},'unsupported','unsupported reported'); ok($pp->{codex}{stale},'stale marker set');
+    like(join("\n",$st->projections($T)),qr/^N\|G\|codex:abc\|codex\|cli\|[^|]*\|live\|/m,'stale backup evidence keeps the lease');
+}
+{
+    my $r=project('rotate-owned'); my $go=elect($r);
+    refuses('journal_rotate_owned without options',$r,sub {Loomy::LiveState::journal_rotate_owned(logs($r).'/events.jsonl',undef,undef)},'INVALID_GUARD');
+    refuses('recover_rotation_owned without options',$r,sub {Loomy::LiveState::recover_rotation_owned(logs($r).'/events.jsonl',logs($r),undef)},'INVALID_GUARD');
+    ok(eval {Loomy::LiveState::journal_rotate_owned(logs($r).'/events.jsonl',undef,opts($go,$r)); 1},'owned rotation entry accepts a guard');
 }
 
 # Compatible v2 behavior: no version, version 1 and tolerated fields all load and save as v2.
@@ -232,6 +342,7 @@ for my $case (['future version',sub {+{version=>3,files=>{},extra=>'x'}},'unsupp
     is($json->decode(bytes($ridx))->{files}{'/nonexistent/3'}{offset},3,'drain save durable');
     open my $dead,'>',"$work/dead" or die; close $dead;
     my $kept=manifest($r);
+    refuses('guarded save without a flush list',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(8),{owner=>$gr,context=>context($r)})},'INVALID_GUARD');
     refuses('flush failure blocks the watermark',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(7),{%$o,flush=>[$dead]})},'journal flush failed');
     Loomy::CollectorOwner::release($gr);
     refuses('released guard cannot save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(9),$o)},'RELEASED');

@@ -476,6 +476,47 @@ for my $sharded (0,1) {
     is($ccp->{sessions}{lead}{calls}{'agent:a1'}{source_mtime},$T-5,'claude agent call lease evidence from stat');
 }
 
+# The exact-shape scanner behind journal, transcript and checkpoint decoding must return what
+# JSON::PP returns (same structure, same string/number flags, same failures) for every text.
+{
+    my $pp=JSON::PP->new->utf8->canonical->allow_nonref; my $diverged=0; my $texts=0;
+    my $flags=sub {require B; my $f=B::svref_2object(\$_[0])->FLAGS; return $f & (B::SVp_IOK()|B::SVp_NOK()|B::SVp_POK())};
+    my $same; $same=sub {
+        my ($x,$y)=@_; return 0 if ref($x) ne ref($y);
+        if (ref($x) eq 'HASH') {return 0 unless join("\0",sort keys %$x) eq join("\0",sort keys %$y); $same->($x->{$_},$y->{$_}) or return 0 for keys %$x; return 1}
+        if (ref($x) eq 'ARRAY') {return 0 unless @$x==@$y; $same->($x->[$_],$y->[$_]) or return 0 for 0..$#$x; return 1}
+        return $x==$y if ref($x);
+        return defined($x)==defined($y) && (!defined($x) || ($x eq $y && $flags->($x)==$flags->($y)));
+    };
+    my @texts=('{}','[]',' [1, 2 ,3] ','{"a":{"b":[1,{"c":null}],"d":true,"e":false}}','{"a":"x\\ny\\"z\\\\w\\/q\\t"}',
+        '{"a":"\\u00e9"}','{"a":1.5}','{"a":-0}','{"a":01}','{"a":1e3}','{"a":123456789012345678}',"{\"a\":\"\xc3\xa9\"}",'{"a":-5}',
+        '{"a":tru}','{"a":trueX}','{"a":1}x','{"a":1,}','[1,]','{"":1}','{"a":"\\q"}',"{\"a\":\"\x01\"}","{\"a\":\"\x7f\"}",'{"a":"b"',
+        "\t{\"a\": 1 }\n",'{"a":1,"a":2}','"str"','12','null',('[' x 70).(']' x 70),('[' x 40).(']' x 40),
+        '{"ts":"2026-10-13T02:05:04.750Z","type":"x","n":7,"z":null,"s":"a b:c.d-e_f"}',
+        $pp->encode({sent=>{'start:cl:a:b'=>'1','ctx'=>$pp->encode({model=>'m',n=>3})},files=>{'/p/q.jsonl'=>{at_eof=>0,meta=>{agent=>'',id=>'lead'},offset=>12}}}));
+    my @mutated; srand(5);
+    for my $t (@texts) {for (1..30) {my $m=$t; next unless length $m; my $i=int rand length $m; my $op=int rand 3;
+        if ($op==0) {substr($m,$i,1)=''} elsif ($op==1) {substr($m,$i,0)=substr('{}[]",:0-9nulte\\ .',int rand 19,1)} else {substr($m,$i,1)=substr('{}[]",:0-9nulte\\ .',int rand 19,1)}
+        push @mutated,$m}}
+    for my $t (@texts,@mutated) {
+        $texts++; my $a=eval {Loomy::LiveState::decode_fast($t)}; my $ea=$@ ? 1 : 0; my $b=eval {$pp->decode($t)}; my $eb=$@ ? 1 : 0;
+        $diverged++ if $ea!=$eb || (!$ea && !$same->($a,$b));
+    }
+    is($diverged,0,"fast scanner matches JSON::PP on $texts texts");
+}
+# A byte-identical supported backup is classified once; changed bytes are always classified again.
+{
+    my $r=project('kind-memo'); my $ridx=logs($r)."/claude-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);
+    put($ridx,$json->encode({version=>2,files=>{},sent=>{a=>'1'}})."\n"); put("$ridx.bak",$json->encode({version=>2,sent=>{}})."\n");
+    Loomy::LiveState::checkpoint_load($ridx,$o);
+    put("$ridx.bak",$json->encode({version=>3,sent=>{}})."\n");
+    refuses('a backup that turns unsupported after a supported load is refused on save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(5),$o)},'unsupported checkpoint format: unsupported-version');
+    put("$ridx.bak",$json->encode({version=>2,sent=>{}})."\n");
+    ok(eval {Loomy::LiveState::checkpoint_save($ridx,cp(6),$o); 1},'a supported backup saves again');
+    put($ridx,$json->encode({version=>3,files=>{}})."\n");
+    refuses('a primary that turns unsupported after a supported save is refused',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(7),$o)},'unsupported checkpoint format: unsupported-version');
+}
+
 # Disabled project: peek and follower never scaffold anything.
 {
     my $r="$work/none"; make_path($r,{mode=>0700});

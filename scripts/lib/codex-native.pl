@@ -116,16 +116,22 @@ sub reset_caches { %cached=(); %inventory=(); %watch=(); %scope_seen=(); %guard_
 sub unsettled { my ($roots,$s)=@_; return grep { !($_->{at_eof}//0) && (!$roots || in_scope($roots,$_)) } values %{$s->{files}//{}} }
 
 sub scalar_text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
-sub identity { scalar_text($_[0]) =~ /\A[A-Za-z0-9_.:-]{1,100}\z/ ? scalar_text($_[0]) : '' }
+sub identity { my $v=defined $_[0] && !ref($_[0]) ? "$_[0]" : ''; return $v =~ /\A[A-Za-z0-9_.:-]{1,100}\z/ ? $v : '' }
 sub label { my $s=scalar_text($_[0]); $s =~ s/[^A-Za-z0-9 _.-]/ /g; return substr($s,0,40) }
 sub strict_label {
     my $s=scalar_text($_[0]); return $s if length($s)<=40 && $s =~ /\A[A-Za-z0-9_.-](?:[A-Za-z0-9_. -]*[A-Za-z0-9_.-])?\z/ && $s =~ /[A-Za-z0-9]/;
     return '';
 }
 sub stamp { scalar_text($_[0]) }
+# The result depends only on the text, and the same stamps recur on every record and event.
+my (%epoch_memo,$epoch_memo_size);
 sub epoch {
-    my @t=stamp($_[0]) =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
-    return @t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0)+($t[6]//0) : 0;
+    my $text=defined $_[0] && !ref($_[0]) ? "$_[0]" : '';
+    my $hit=$epoch_memo{$text}; return $hit if defined $hit;
+    my @t=$text =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
+    my $value=@t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0)+($t[6]//0) : 0;
+    if ($epoch_memo_size++>=4096) {%epoch_memo=(); $epoch_memo_size=1}
+    return $epoch_memo{$text}=$value;
 }
 sub alive { my $p=scalar_text($_[0]); return $p =~ /^\d+$/ && $p>1 && (kill(0,$p) || $! == EPERM) }
 sub safe_path {
@@ -751,7 +757,7 @@ sub poll_locked {
     my %replay_files=map {$s->{files}{$_}{meta}{id}=>[$_,$s->{files}{$_}]} keys %{$s->{files}//{}};
     for my $record (lines($input,$jc,2097152)) {
         my $line=$record->[0];
-        my $d=eval { decode_json($line) }; next unless Loomy::LiveState::valid_event($d);
+        my $d=eval { Loomy::LiveState::decode_fast($line) }; next unless Loomy::LiveState::valid_event($d);
         $s->{seen}{identity($d->{native_key})}=epoch($d->{ts}) || $now if identity($d->{native_key});
         if ($s->{reconstructing} && ($d->{bridge}//'') eq 'codex-native' && identity($d->{agent_id})
             && scalar_text($d->{source_offset}) =~ /^\d+$/) {

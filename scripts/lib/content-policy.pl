@@ -801,84 +801,106 @@ my %ROLE=map {$_=>1} qw(lead architect debugger developer executor reviewer secu
 # Native identity() accepts 100 ASCII characters. The collectors then assemble
 # session keys, call/turn IDs and aliases from those parts; the composed value
 # must not be rejected by the single-component limit (claude-native/codex-native).
+my $ID_PART=qr/[A-Za-z0-9_.:-]{1,100}/;
 sub _journal_id {
     my ($k,$v)=@_; return 0 unless _scalar($v);
-    my $part=qr/[A-Za-z0-9_.:-]{1,100}/;
-    return 1 if $v =~ /\A$part\z/ || $v =~ /\A(?:cl|cn):$part:$part\z/;
-    return 1 if $v =~ /\A(?:claude|codex):(?:pending:)?$part\z/;
-    return 1 if $k =~ /\A(?:session|parent_session)\z/ && $v =~ /\Apending:$part\z/;
-    return $k =~ /\A(?:agent_id|alias_from)\z/ && $v =~ /\A$part:$part\z/;
+    return 1 if $v =~ /\A$ID_PART\z/ || $v =~ /\A(?:cl|cn):$ID_PART:$ID_PART\z/;
+    return 1 if $v =~ /\A(?:claude|codex):(?:pending:)?$ID_PART\z/;
+    return 1 if $k =~ /\A(?:session|parent_session)\z/ && $v =~ /\Apending:$ID_PART\z/;
+    return $k =~ /\A(?:agent_id|alias_from)\z/ && $v =~ /\A$ID_PART:$ID_PART\z/;
 }
+my (%TS_MEMO,$TS_MEMO_SIZE); # pure in the text
 sub _timestamp {
-    my ($v)=@_; return 0 unless _scalar($v) && $v =~ /\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?Z\z/;
-    return defined(eval {timegm($6,$5,$4,$3,$2-1,$1)});
+    my ($v)=@_; return 0 unless _scalar($v);
+    my $hit=$TS_MEMO{$v}; return $hit if defined $hit;
+    my $ok=$v =~ /\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,9})?Z\z/ && defined(eval {timegm($6,$5,$4,$3,$2-1,$1)}) ? 1 : 0;
+    if ($TS_MEMO_SIZE++>=4096) {%TS_MEMO=(); $TS_MEMO_SIZE=1}
+    return $TS_MEMO{$v}=$ok;
 }
 sub _number {
     my ($v)=@_; return _scalar($v) && length($v)<=32 && $v =~ /\A(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\z/
         && $v<1e308;
 }
+# Key -> check, in the order the checks have always run (the first listing wins:
+# acting, master and failover_from are enums before they are identities).
+my %VKIND;
+{
+    my $kind=0;
+    for my $keys (
+        [qw(requested background manual snapshot)], ['source_active'], [qw(task_ref label_ref)], ['label_refs'],
+        ['analysis_codes'], ['role'], ['agent_type'], ['agent'], [keys %ENUM], ['off_routing'], [qw(ts source_ts)],
+        [qw(resume_at ended_at observed_at)],
+        [qw(tokens_in tokens_out tokens_cached cost_usd duration_s calls messages pid owner_pid files_changed exit_code signal
+            source_offset source_revision context_revision used_percent)],
+        ['schema'], ['source_inode'], [qw(model requested_model)], ['name'], [qw(native_key event_key checkpoint_key)],
+        [qw(id agent_id alias_from alias_id attempt_id session session_key turn_id parent_agent_id parent_id parent_session
+            parent_delegation acting master failover_from)],
+    ) {++$kind; $VKIND{$_}//=$kind for @$keys}
+}
+my %ENUM_OK=map {my $k=$_; ($k=>{map {$_=>1} @{$ENUM{$k}}})} keys %ENUM;
 sub _value {
     my ($k,$v,$project)=@_; return undef unless defined $v; # Preserve null as unknown.
-    if ($k =~ /\A(?:requested|background|manual|snapshot)\z/) {
+    my $kind=$VKIND{$k}//0;
+    if ($kind==1) {
         die "invalid structural value\n" unless JSON::PP::is_bool($v); return $v;
     }
     # source_active is a numeric 0/1 in the existing native protocol.
-    if ($k eq 'source_active') {die "invalid structural value\n" unless _scalar($v) && $v =~ /\A[01]\z/; return 0+$v}
-    if ($k =~ /\A(?:task_ref|label_ref)\z/) {
+    if ($kind==2) {die "invalid structural value\n" unless _scalar($v) && $v =~ /\A[01]\z/; return 0+$v}
+    if ($kind==3) {
         die "invalid structural reference\n" unless _scope($v,$project) && ($v->{version}//'') eq '1'
             && keys(%$v)==($k eq 'label_ref' ? 6 : 5) && ($k ne 'label_ref' || _id($v->{label_id}));
         return {%$v};
     }
-    if ($k eq 'label_refs') {
+    if ($kind==4) {
         die "invalid structural reference\n" unless ref($v) eq 'HASH' && keys(%$v)<=3
             && !grep {!/\A(?:slug|nickname|role)\z/} keys %$v;
         return {map {$_=>_value('label_ref',$v->{$_},$project)} keys %$v};
     }
-    if ($k eq 'analysis_codes') {
+    if ($kind==5) {
         die "invalid structural value\n" unless ref($v) eq 'ARRAY' && @$v<=16;
         return [map {_value('reason_code',$_,$project)} @$v];
     }
     die "invalid structural value\n" unless _scalar($v);
-    if ($k eq 'role') {return $ROLE{$v} ? $v : 'unknown'}
-    if ($k eq 'agent_type') {return $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,39}\z/ ? $v : 'unknown'}
-    if ($k eq 'agent') {
+    if ($kind==19) {
+        die "invalid structural value\n" unless _journal_id($k,$v); return $v;
+    }
+    if ($kind==9) {
+        return $v if $ENUM_OK{$k}{$v};
+        die "invalid structural value\n" if $k eq 'multi_agent_version';
+        return 'unknown';
+    }
+    if ($kind==11) {die "invalid structural value\n" unless _timestamp($v); return $v}
+    if ($kind==6) {return $ROLE{$v} ? $v : 'unknown'}
+    if ($kind==7) {return $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.-]{0,39}\z/ ? $v : 'unknown'}
+    if ($kind==8) {
         # Native agent_type is an identity, not a Loomy role enum. Keep validated
         # tokens (including Explore) and opaque IDs stable on a second projection.
         # Unvalidated custom names get a project-scoped identity, never prose.
         return $v if _id($v) || $v =~ /\Asha256:[0-9a-f]{64}\z/;
         return 'sha256:'.sha256_hex($project."\0".(utf8::is_utf8($v) ? _encode_utf8($v) : $v));
     }
-    if ($ENUM{$k}) {
-        return $v if grep {$_ eq $v} @{$ENUM{$k}};
-        die "invalid structural value\n" if $k eq 'multi_agent_version';
-        return 'unknown';
-    }
-    if ($k eq 'off_routing') {
+    if ($kind==10) {
         die "invalid structural value\n" unless $v eq '' || $v =~ /\A(?:model|effort|sandbox|family|tool|profile)(?:,(?:model|effort|sandbox|family|tool|profile))*\z/;
         return $v;
     }
-    if ($k =~ /\A(?:ts|source_ts)\z/) {die "invalid structural value\n" unless _timestamp($v); return $v}
-    if ($k =~ /\A(?:resume_at|ended_at|observed_at)\z/) {
+    if ($kind==12) {
         die "invalid structural value\n" unless _timestamp($v) || _number($v); return _number($v) ? 0+$v : $v;
     }
-    if ($k =~ /\A(?:tokens_in|tokens_out|tokens_cached|cost_usd|duration_s|calls|messages|pid|owner_pid|files_changed|exit_code|signal|source_offset|source_revision|context_revision|used_percent)\z/) {
+    if ($kind==13) {
         die "invalid structural value\n" unless _number($v) && ($k ne 'used_percent' || $v<=100); return 0+$v;
     }
-    if ($k eq 'schema') {die "invalid structural value\n" unless $v =~ /\A[12]\z/; return 0+$v}
-    if ($k eq 'source_inode') {die "invalid structural value\n" unless $v =~ /\A[0-9]+:[0-9]+\z/ && length($v)<=64; return $v}
-    if ($k eq 'model' || $k eq 'requested_model') {
+    if ($kind==14) {die "invalid structural value\n" unless $v =~ /\A[12]\z/; return 0+$v}
+    if ($kind==15) {die "invalid structural value\n" unless $v =~ /\A[0-9]+:[0-9]+\z/ && length($v)<=64; return $v}
+    if ($kind==16) {
         # Same token alphabet as loomy-local-writer.sh, with the design's 128
         # character bound. Provider prefixes/local model IDs contain slashes.
         die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.\/:-]{0,127}\z/; return $v;
     }
-    if ($k eq 'name') {
+    if ($kind==17) {
         die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\z/; return $v;
     }
-    if ($k =~ /\A(?:native_key|event_key|checkpoint_key)\z/) {
+    if ($kind==18) {
         die "invalid structural value\n" unless $v =~ /\A[A-Za-z0-9_.:-]{1,512}\z/; return $v;
-    }
-    if ($k =~ /\A(?:id|agent_id|alias_from|alias_id|attempt_id|session|session_key|turn_id|parent_agent_id|parent_id|parent_session|parent_delegation|acting|master|failover_from)\z/) {
-        die "invalid structural value\n" unless _journal_id($k,$v); return $v;
     }
     die "unclassified structural field\n";
 }

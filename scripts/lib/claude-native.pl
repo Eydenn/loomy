@@ -13,12 +13,9 @@ my (%cache,%inventory,%watch,%diagnosed,%retry,%busy,%roots_of,%scope_seen);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
 our $content_writer;
-sub text { Loomy::CodexNative::scalar_text($_[0]) }
-sub id { my $value=$_[0]; Loomy::CodexNative::identity($value) }
-sub epoch { Loomy::CodexNative::epoch($_[0]) }
-sub safe { Loomy::CodexNative::safe_path($_[0]) }
-sub lines { Loomy::CodexNative::lines(@_) }
-sub label { Loomy::CodexNative::label($_[0]) }
+# One call layer fewer on the per-record hot path: the shared helpers, under local names.
+*text=\&Loomy::CodexNative::scalar_text; *id=\&Loomy::CodexNative::identity; *epoch=\&Loomy::CodexNative::epoch;
+*safe=\&Loomy::CodexNative::safe_path; *lines=\&Loomy::CodexNative::lines; *label=\&Loomy::CodexNative::label;
 sub signature { my @s=Time::HiRes::stat($_[0]); return @s ? join(':',@s[0,1,7,9]) : '-' }
 sub slug { my $p=$_[0]; $p =~ s/[^A-Za-z0-9]/-/g; return $p }
 sub input_signature {
@@ -461,7 +458,7 @@ sub poll_locked {
     my $input=Loomy::LiveState::recovery_path($journal,$jc);
     my %replayed_signatures; # R1 journal digests are transient, not a new sent format.
     for my $r (lines($input,$jc,2097152)) {
-        my $e=eval {decode_json($r->[0])}; next unless Loomy::LiveState::valid_event($e);
+        my $e=eval {Loomy::LiveState::decode_fast($r->[0])}; next unless Loomy::LiveState::valid_event($e);
         if (text($e->{bridge}) eq 'claude-native' && text($e->{checkpoint_key}) ne '') {
             my ($key,$value)=(text($e->{checkpoint_key}),text($e->{checkpoint_value}));
             if ($value =~ /^sha256:[0-9a-f]{64}$/) {$replayed_signatures{$key}=$value}

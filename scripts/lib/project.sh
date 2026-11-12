@@ -193,12 +193,37 @@ _lp_agent_untouched() {
   [[ "$chains" == *" $m "* ]]
 }
 
+# loomy_project_migrate_checkpoints <root>: the checkpoint-v2 upgrade under a transient collector
+# guard (LOCK L3). Sets LP_MIGRATE to done | deferred (an owner holds the slot, or an index lock was
+# lost: retried later) | refused (an unsupported/future checkpoint format: nothing was touched) |
+# unavailable | unsafe | fenced. Prints nothing: callers run inside hooks, and the views state a
+# refusal once (status/tree/watch note, doctor line), never from here.
+loomy_project_migrate_checkpoints() {
+  local r="$1" lib; lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  [[ -n "${AI_NATIVE_COLLECT_PL:-}" ]] || source "$lib/journal.sh"
+  LP_MIGRATE="$(perl -MCwd -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL$AI_NATIVE_COLLECT_PL"'
+    my ($dir,$root)=@ARGV; $root=Cwd::abs_path($root); print("unavailable\n"), exit unless defined $root;
+    my $e=eval {Loomy::NativeCollect::elect($dir,$root,3)};
+    print("unavailable\n"), exit unless ref($e) eq "HASH";
+    if ($e->{role} ne "owner") {
+        print(($e->{status} eq "busy" ? "deferred" : $e->{status} eq "unavailable" ? "unavailable" : "unsafe"),"\n"); exit;
+    }
+    my $r=eval {Loomy::LiveState::migrate_checkpoints($e->{ctx}{root},{owner=>$e->{guard},context=>$e->{ctx}})};
+    my $error=$@;
+    $r=$error =~ /\Aunsupported checkpoint format/ ? "refused" : $error =~ /\Acollector owner / ? "fenced" : "unavailable" if $error || !defined $r;
+    eval {Loomy::CollectorOwner::release($e->{guard})};
+    print "$r\n";
+  ' "$lib" "$r" 2>/dev/null)" || LP_MIGRATE=unavailable
+  return 0
+}
+
 # loomy_project_migrate <root>: .ai/ (Loomy before 0.9) → .loomy/docs/, references updated in the agents' files.
 loomy_project_migrate() {
   local r="$1" f
+  LP_MIGRATE=""
   # Upgrade native cursors once, without touching provider sources or recording new events.
   if [[ -d "$r/.loomy/logs" && ! -f "$r/.loomy/logs/checkpoint-v2" ]]; then
-    perl "$(dirname "${BASH_SOURCE[0]}")/live-state.pl" --migrate "$r" || true
+    loomy_project_migrate_checkpoints "$r"
   fi
   [[ -d "$r/.ai" && ! -e "$r/.loomy/docs" && -d "$r/.loomy" ]] || return 0
   if git -C "$r" ls-files --error-unmatch .ai >/dev/null 2>&1 || [[ -n "$(git -C "$r" ls-files .ai 2>/dev/null | head -1)" ]]; then

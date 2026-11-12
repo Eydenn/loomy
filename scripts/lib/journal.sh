@@ -12,15 +12,12 @@ ai_journal_enabled() {
   [[ "${LOOMY_JOURNAL:-1}" != "0" && -d "$1/.loomy" ]]
 }
 
-# The sampler loads the same Perl module in-process; one-shot commands use this wrapper.
+# The sampler loads the same Perl module in-process; one-shot commands collect through
+# loomy_native_collect_once (tree.sh): one transient election, one poll of each source, then
+# the pure reducer, in a single Perl process (see AI_NATIVE_COLLECT_PL below).
 AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
 AI_LIVE_STATE_LIB="${AI_CODEX_NATIVE_LIB%/*}/live-state.pl"
 AI_CLAUDE_NATIVE_LIB="${AI_CODEX_NATIVE_LIB%/*}/claude-native.pl"
-ai_claude_native_poll() {
-  ai_journal_enabled "$1" || return 0
-  ai_journal_prepare "$1" || return 0
-  perl "$AI_CLAUDE_NATIVE_LIB" "$1" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" 2>/dev/null || true
-}
 
 # A Stop hook proves the lead turn is idle; it does not close the reusable session.
 ai_journal_claude_idle() {
@@ -34,13 +31,6 @@ ai_journal_claude_idle() {
   [[ -n "$sid" && -n "$ts" ]] || return 0
   ai_journal_write "$1" "\"type\":\"session_activity\",\"tool\":\"claude\",\"session\":$(ai_json_str "$sid"),\"state\":\"idle\"" "$ts"
 }
-ai_codex_native_poll() {
-  ai_journal_enabled "$1" || return 0
-  [[ -d "${CODEX_HOME:-$HOME/.codex}/sessions" ]] || return 0
-  ai_journal_prepare "$1" || return 0
-  perl "$AI_CODEX_NATIVE_LIB" "$1" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null || true
-}
-
 # Private logs, including older files. Descriptor chmod never follows a symbolic link.
 # The Perl is a sub shared by ai_journal_prepare and ai_journal_write (one process for both).
 AI_JOURNAL_PREPARE_PL='
@@ -71,6 +61,119 @@ _ai_journal_guard() { [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/l
 ai_journal_prepare() {
   _ai_journal_guard "$1" || return 1
   perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'exit(journal_prepare(shift) ? 0 : 1);' "$1/.loomy/logs" 2>/dev/null
+}
+
+# LOCK L3: the only elector. One compound collection per command: a free slot is won for the
+# call (transient guard), the logs are prepared only then, each source is polled once with the
+# guard, the guard is released, and the returned checkpoints feed the pure reducer. A contended
+# slot is never an error: the caller follows (peeked checkpoints, no preparation, no mutation).
+# The Perl prints nothing itself; callers read the facts line and the two states.
+AI_NATIVE_COLLECT_PL='
+package Loomy::NativeCollect;
+use strict; use warnings;
+our $lib;
+# Fixed machine codes only: the lock/record file the primitive names, never a free-form path.
+sub clean { my $v=shift; $v=defined($v) && !ref($v) ? "$v" : ""; $v =~ s/[^A-Za-z0-9_.\/-]/_/g; return substr($v,0,80) }
+sub load {
+    my $dir=shift; return 1 if $lib;
+    # The adapters load their siblings by canonical path: the same spelling here, or a symlinked
+    # install would load the guard module twice and invalidate every guard it issues.
+    require Cwd; $dir=Cwd::abs_path($dir)//$dir; $lib=$dir;
+    require "$dir/live-state.pl"; require "$dir/codex-native.pl"; require "$dir/claude-native.pl";
+    require "$dir/runtime-paths.pl"; require "$dir/collector-owner.pl";
+    Loomy::LiveState::require_owner(1);   # a lost election can never take the legacy unguarded path
+    return 1;
+}
+# One election. busy/bootstrap-busy means retry (a follower inspecting holds the gate briefly),
+# never "another owner": it is retried a few times, then followed.
+sub elect {
+    my ($dir,$root,$retries)=@_; $retries||=3; load($dir);
+    my %r=(role=>"off",status=>"unavailable",reason=>"disabled",file=>"",state=>"",fenced=>"",refusal=>"");
+    return \%r if ($ENV{LOOMY_JOURNAL}//"1") eq "0" || !-d "$root/.loomy";
+    my $ctx=eval {Loomy::RuntimePaths::resolve($root)};
+    unless (ref($ctx) eq "HASH") { @r{qw(role status reason)}=("follower","unsafe","invalid-context"); return \%r }
+    my $f;
+    for my $try (1..$retries) {
+        $f=eval {Loomy::CollectorOwner::try_acquire($ctx,Loomy::CodexNative::build_id())};
+        last unless ref($f) eq "HASH" && ($f->{reason}//"") eq "bootstrap-busy" && $try<$retries;
+        select undef,undef,undef,0.02;
+    }
+    $f={status=>"unavailable",reason=>"io-error"} unless ref($f) eq "HASH";
+    $r{status}=clean($f->{status}); $r{reason}=clean($f->{reason}); $r{file}=clean($f->{file});
+    $r{state}=clean(ref($f->{record}) eq "HASH" ? $f->{record}{state} : "");
+    $r{ctx}=$ctx; $r{role}="follower";
+    if ($r{status} eq "owned") {
+        # A first bootstrap created logs after the context was resolved: pin the new directory.
+        $ctx=eval {Loomy::RuntimePaths::resolve($root)} unless ref($ctx) eq "HASH" && $ctx->{logs};
+        if (ref($ctx) eq "HASH" && $ctx->{logs}) { @r{qw(role guard ctx)}=("owner",$f->{guard},$ctx); $r{scope}=$f->{scope_set} }
+        else { eval {Loomy::CollectorOwner::release($f->{guard})}; @r{qw(status reason)}=("unsafe","unsafe-runtime") }
+    }
+    return \%r;
+}
+# Pure follower evidence from the peeked manifests: the last valid snapshot, or the stale backup.
+sub peek_state {
+    my ($logs,$tool,$e)=@_;
+    my $p=Loomy::LiveState::checkpoint_peek("$logs/$tool-native.idx");
+    $e->{refusal}||=$p->{reason} if ($p->{status}//"") eq "unsupported";
+    return unless ref($p->{checkpoint}) eq "HASH" && ($p->{status}//"") =~ /^(?:valid|stale|unsupported)$/;
+    Loomy::LiveState::stat_evidence($tool,$p->{checkpoint});
+    return $p->{checkpoint};
+}
+sub collect {
+    my ($dir,$root,$sessions,$projects)=@_;
+    my $e=elect($dir,$root); my ($native,$claude);
+    if ($e->{role} eq "owner") {
+        my $o={owner=>$e->{guard},context=>$e->{ctx}}; my $logs="$e->{ctx}{root}/.loomy/logs";
+        if (main::journal_prepare($logs)) {
+            for my $tool ($sessions ne "" && -d $sessions ? "codex" : (),"claude") {
+                my $s=eval {$tool eq "codex" ? Loomy::CodexNative::poll($root,$sessions,$o) : Loomy::ClaudeNative::poll($root,$projects,$o)};
+                if (($@//"") =~ /\Acollector owner ([A-Z_]+)\n\z/) { $e->{fenced}=$1; last }
+                if (($Loomy::CodexNative::refusal//"") =~ /\Aunsupported-/) { $e->{refusal}=$Loomy::CodexNative::refusal; $s=peek_state($logs,$tool,$e) }
+                if ($tool eq "codex") { $native=$s } else { $claude=$s }
+            }
+        } else { @$e{qw(status reason)}=("unsafe","unsafe-runtime") }
+        eval {Loomy::CollectorOwner::release($e->{guard})}; $e->{guard}=undef;
+    } elsif ($e->{role} eq "follower" && ref($e->{ctx}) eq "HASH" && $e->{ctx}{loomy}) {
+        my $logs=($e->{ctx}{root}//$root)."/.loomy/logs";
+        $native=peek_state($logs,"codex",$e); $claude=peek_state($logs,"claude",$e);
+    }
+    $e->{ctx}=undef;
+    return ($native,$claude,$e);
+}
+sub facts_line { my $e=shift; return join("|","F",map {clean($e->{$_})} qw(role status reason file state fenced refusal)) }
+package main;
+'
+# ai_owner_note <role> <status> <reason> <file> <state> <fenced> <refusal>: the one place that turns
+# collector facts into text. Sets AI_OWNER_NOTE and AI_OWNER_KIND (problem|drain|follow|"").
+# busy/bootstrap-busy mean "retry", never "another owner"; files come from the frozen L0 table.
+ai_owner_note() {
+  local role="${1:-}" status="${2:-}" reason="${3:-}" file="${4:-}" state="${5:-}" fenced="${6:-}" refusal="${7:-}"
+  AI_OWNER_NOTE=""; AI_OWNER_KIND=""
+  if [[ -n "$fenced" ]]; then
+    tv AI_OWNER_NOTE "Live tracking stopped writing after its storage changed; run loomy doctor."; AI_OWNER_KIND=problem; return 0
+  fi
+  case "$status:$reason" in
+    owned:*|off:*|unavailable:disabled|unavailable:free|unavailable:missing-runtime|busy:bootstrap-busy|:*) ;;
+    busy:locked)
+      if [[ "$state" == draining ]]; then tv AI_OWNER_NOTE "Live tracking is finishing its current batch; stored data remains available."; AI_OWNER_KIND=drain; return 0; fi
+      # A compatible owner is active: this view is current. A future checkpoint still deserves its note.
+      if [[ -z "$refusal" ]]; then tv AI_OWNER_NOTE "Live tracking is active in another view; this view follows it."; AI_OWNER_KIND=follow; return 0; fi ;;
+    *)
+      AI_OWNER_KIND=problem
+      case "$reason" in
+        unsafe-lock) tv AI_OWNER_NOTE "Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view." ".loomy/logs/collector.lock" ".loomy/logs/collector-owner-v1.json" ;;
+        invalid-record|unsafe-record|unsupported-schema|unsupported-protocol|missing-lock)
+          if [[ -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s cannot be used. Close any older watch, delete that file, then reopen this view." ".loomy/$file"
+          else tv AI_OWNER_NOTE "Showing stored data; close the older watch, then reopen it with this Loomy version."; fi ;;
+        *) if [[ "$status" == incompatible ]]; then tv AI_OWNER_NOTE "Showing stored data; close the older watch, then reopen it with this Loomy version."
+           else tv AI_OWNER_NOTE "Live tracking could not verify this project's storage; run loomy doctor."; fi ;;
+      esac
+      return 0 ;;
+  esac
+  if [[ -n "$refusal" ]]; then
+    tv AI_OWNER_NOTE "Tracking checkpoints were written by a newer Loomy version; showing stored data. Update Loomy, then reopen."; AI_OWNER_KIND=problem
+  fi
+  return 0
 }
 
 # Legacy/untrusted logs can contain huge lines: bound bytes before splitting or canonicalizing.

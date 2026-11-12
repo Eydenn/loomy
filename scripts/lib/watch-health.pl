@@ -14,6 +14,33 @@ sub safe {
     while ($path ne '') {return 0 if -l $path; $path =~ s{/[^/]*$}{} } return 1;
 }
 exit unless safe($dir) && -d $dir;
+# LOCK L3 owner facts: pure inspection (no election, no creation). Fixed machine codes and bounded,
+# charset-limited fields only, never labels, prompts or paths from the record.
+{
+    my $clean=sub { my $v=defined($_[0]) && !ref($_[0]) ? "$_[0]" : ""; $v =~ s/[^A-Za-z0-9_.:\/-]/_/g; return length($v) ? substr($v,0,64) : "-" };
+    my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
+    my $r=eval { require "$lib/runtime-paths.pl"; require "$lib/collector-owner.pl"; Loomy::CollectorOwner::inspect(Loomy::RuntimePaths::resolve($root)) };
+    $r={status=>"unsafe",reason=>"invalid-context"} unless ref($r) eq "HASH";
+    my $rec=ref($r->{record}) eq "HASH" ? $r->{record} : {};
+    print join("\t","owner",map {$clean->($_)} @$r{qw(status reason file)},@$rec{qw(state build pid boot birth epoch scope_revision)}),"\n"
+        unless ($r->{reason}//"") =~ /\A(?:disabled|missing-runtime)\z/;
+    # An unsupported (future) checkpoint format is preserved, never repaired: say so, once for both tools.
+    eval {
+        require "$lib/live-state.pl";
+        for my $tool (qw(codex claude)) {
+            my $p=Loomy::LiveState::checkpoint_peek("$dir/$tool-native.idx");
+            if (($p->{status}//"") eq "unsupported") { print "checkpoint\t".$clean->($p->{reason})."\n"; last }
+        }
+    };
+    # A clone can ship runtime files: any tracked content under .loomy/logs is named.
+    my @names;
+    if (open my $git,"-|","sh","-c",'exec git -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
+        local $/="\0"; my $n=0;
+        while (defined(my $name=<$git>)) { chomp $name; last if ++$n>1000; push @names,$name if @names<64 }
+        close $git; print "committed\t$n\t".join(", ",grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @names[0..($#names>2 ? 2 : $#names)])."\n" if $n;
+    }
+    for my $name (qw(collector-owner-v1.json collector.lock)) { print "shipped\t.loomy/logs/$name\n" if grep {$_ eq ".loomy/logs/$name"} @names }
+}
 for my $entry (['events.jsonl',8388608],['codex-native.idx',2097152],['claude-native.idx',2097152]) {
     my ($name,$bound)=@$entry; my $path="$dir/$name";
     print "bounds\t$path\t".(-s $path)."\n" if safe($path) && -f $path && -s $path>$bound;

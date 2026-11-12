@@ -959,20 +959,25 @@ loomy_live_accept() {
   done <<<"$1"
 }
 
-# loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
-loomy_live_poll() {
-  local native_line native_root="${ROOT:-${1%/.loomy/logs/events.jsonl}}"
-  ai_display_context_init "$native_root"
-  # Like ai_codex_native_poll, keep adapter diagnostics out of the fitted frame.
-  # Resolve only for this ephemeral reducer. Provider checkpoints and writers keep
-  # their original events, including during the source-evidence refresh below.
-  while IFS= read -r native_line; do loomy_native_accept "$native_line"; done < <(perl -MJSON::PP -e "$AI_DISPLAY_CONTEXT_PERL"'
-    my ($module,$root,$sessions)=@ARGV; require $module;
+# LOCK L3 one-shot collection. One Perl process per command: one transient election (a
+# contended slot is followed, never an error), one poll of each source under the guard, the
+# guard released, then the pure reducer. The first output row is the owner facts (F|...);
+# loomy_live_native_rows is the only place a command polls. Inside a watch frame
+# (LOOMY_WATCH_ID) nothing is collected: the sampler owns the lifetime guard.
+loomy_live_native_rows() {
+  local native_root="$1"
+  perl -MJSON::PP -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_DISPLAY_CONTEXT_PERL$AI_JOURNAL_PREPARE_PL$AI_NATIVE_COLLECT_PL"'
+    my ($module,$root,$sessions)=@ARGV; require Cwd;
+    # One canonical spelling for every library: a symlinked install must not load a module twice.
+    $module=Cwd::abs_path($module)//$module; require $module;
     $root=Cwd::abs_path($root)//exit 1;
     my $dir=$module; $dir =~ s{/[^/]+$}{};
     require "$dir/codex-native.pl"; require "$dir/claude-native.pl";
-    my $native=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::CodexNative::poll($root,$sessions);
-    my $claude=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::ClaudeNative::poll($root,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude")."/projects");
+    my ($native,$claude);
+    unless ($ENV{LOOMY_WATCH_ID}) {
+        my $facts; ($native,$claude,$facts)=eval {Loomy::NativeCollect::collect($dir,$root,$sessions,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude")."/projects")};
+        print Loomy::NativeCollect::facts_line($facts),"\n" if ref($facts) eq "HASH";
+    }
     my $state=Loomy::LiveState->new;
     for my $raw ($state->journal_records("$root/.loomy/logs/events.jsonl")) {
       my $d=Loomy::DisplayContext::prepare($raw); $state->consume($d);
@@ -992,7 +997,47 @@ loomy_live_poll() {
       }
       print "$row\n";
     }
-  ' "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null)
+  ' "$AI_LIVE_STATE_LIB" "$native_root" "${CODEX_HOME:-$HOME/.codex}/sessions" 2>/dev/null
+}
+# Owner facts of the last collection of this process (see ai_owner_note in journal.sh).
+loomy_native_facts() {
+  local IFS='|' f; read -r -a f <<<"${1#F|}"
+  LV_OWNER_ROLE="${f[0]:-}"; LV_OWNER_STATUS="${f[1]:-}"; LV_OWNER_REASON="${f[2]:-}"; LV_OWNER_FILE="${f[3]:-}"
+  LV_OWNER_STATE="${f[4]:-}"; LV_OWNER_FENCED="${f[5]:-}"; LV_OWNER_REFUSAL="${f[6]:-}"
+  ai_owner_note "$LV_OWNER_ROLE" "$LV_OWNER_STATUS" "$LV_OWNER_REASON" "$LV_OWNER_FILE" "$LV_OWNER_STATE" "$LV_OWNER_FENCED" "$LV_OWNER_REFUSAL"
+}
+# A problem (or a draining owner) is stated once after the view; a plain follower is current and silent.
+loomy_owner_note_line() {
+  case "${AI_OWNER_KIND:-}" in problem|drain) printf '%s\n' "$AI_OWNER_NOTE" ;; esac
+  return 0
+}
+# loomy_native_collect_once <root>: the command's single collection, taken before any view
+# reads the journal. loomy_live_poll then replays its rows instead of collecting again.
+loomy_native_collect_once() {
+  local root="$1"
+  [[ -z "${LOOMY_WATCH_ID:-}" ]] || return 0
+  ai_display_context_init "$root"
+  LV_POLL_ROWS="$(loomy_live_native_rows "$root")"; LV_POLL_DONE=1
+  local first="${LV_POLL_ROWS%%$'\n'*}"
+  if [[ "$first" == F\|* ]]; then loomy_native_facts "$first"; fi
+  return 0
+}
+
+# loomy_live_poll <journal>: inode and offset also detect rotation/truncation. An incomplete append is retried.
+loomy_live_poll() {
+  local native_line native_root="${ROOT:-${1%/.loomy/logs/events.jsonl}}"
+  ai_display_context_init "$native_root"
+  # Keep adapter diagnostics out of the fitted frame.
+  # Resolve only for this ephemeral reducer. Provider checkpoints and writers keep
+  # their original events, including during the source-evidence refresh below.
+  local rows
+  if [[ "${LV_POLL_DONE:-0}" == 1 ]]; then rows="${LV_POLL_ROWS-}"; LV_POLL_DONE=0; LV_POLL_ROWS=""
+  else rows="$(loomy_live_native_rows "$native_root")"; fi
+  while IFS= read -r native_line; do
+    [[ -n "$native_line" ]] || continue
+    if [[ "$native_line" == F\|* ]]; then loomy_native_facts "$native_line"; continue; fi
+    loomy_native_accept "$native_line"
+  done <<<"$rows"
   (( ! NS_ENABLED )) || return 0
   local legacy_line file="$1" kind ts id event sid pid tool role model effort task status duration cost outcome excerpt requested offroute bridge costin scope agentid activity freshness resume_at key off i found selection selected attributed
   while IFS= read -r legacy_line; do loomy_live_accept "$legacy_line";
@@ -2068,15 +2113,14 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
 ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || exit 1
-if [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
-  ai_codex_native_poll "$ROOT"
-  ai_claude_native_poll "$ROOT"
-fi
+# One collection per command (transient election, or follow a live owner), before any read.
+loomy_native_collect_once "$ROOT"
 J="$(ai_journal_file "$ROOT")"
 TICK="${LOOMY_TICK:-0}"
 now_s="${LOOMY_NATIVE_NOW:-$(date +%s)}"
 ai_detect_env "$ROOT"
 loomy_live_init; loomy_live_poll "$J"; LV_NOW="$now_s"; LV_CLOCK="$(date +%H:%M:%S)"; loomy_live_states; loomy_live_metadata
-if (( LIVE || NS_ENABLED )); then loomy_live_render; exit 0; fi
+if (( LIVE || NS_ENABLED )); then loomy_live_render; loomy_owner_note_line; exit 0; fi
 
 loomy_tree_classic_render
+loomy_owner_note_line

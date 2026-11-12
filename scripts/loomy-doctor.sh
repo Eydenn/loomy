@@ -108,8 +108,32 @@ fi
 # Source symlinks are deliberately not followed by the collectors.
 loomy_doctor_tracking() {
   local kind path detail
+  # Owner facts come from a pure inspection: doctor never elects, creates or repairs a runtime file.
+  local o_status o_reason o_file o_state o_build o_pid o_boot o_birth o_epoch o_scope unknown
   while IFS=$'\t' read -r kind path detail; do
     case "$kind" in
+      owner)
+        # Empty fields arrive as "-" (tab-separated, so empties would otherwise collapse).
+        IFS=$'\t' read -r o_status o_reason o_file o_state o_build o_pid o_boot o_birth o_epoch o_scope <<<"$path"$'\t'"$detail"
+        o_status="${o_status#-}"; o_reason="${o_reason#-}"; o_file="${o_file#-}"; o_state="${o_state#-}"; o_build="${o_build#-}"
+        o_pid="${o_pid#-}"; o_boot="${o_boot#-}"; o_birth="${o_birth#-}"; o_epoch="${o_epoch#-}"
+        tv unknown unknown
+        ai_owner_note owner "$o_status" "$o_reason" "$o_file" "$o_state" "" ""
+        if [[ "$o_status:$o_reason" == busy:bootstrap-busy ]]; then
+          ui_info "$(t 'Live tracking owner check was busy; run loomy doctor again.')"
+        elif [[ "$AI_OWNER_KIND" == problem ]]; then
+          ui_warn "$AI_OWNER_NOTE"
+        elif [[ -n "$o_state" ]]; then
+          o_epoch="${o_epoch:0:12}"
+          ui_info "$(t 'Live tracking owner: %s · build %s · pid %s · boot %s · birth %s · epoch %s' "$o_state" "${o_build:-$unknown}" "${o_pid:-$unknown}" "${o_boot:-$unknown}" "${o_birth:-$unknown}" "${o_epoch:-$unknown}")"
+        else
+          ui_info "$(t 'No live tracking owner.')"
+        fi ;;
+      checkpoint)
+        ai_owner_note owner owned owned "" "" "" "${path#-}"
+        ui_warn "$AI_OWNER_NOTE" ;;
+      committed) ui_warn "$(t 'Files committed under .loomy/logs (%s): %s' "$path" "$detail")" "$(t 'runtime files belong outside Git')" ;;
+      shipped) ui_warn "$path" "$(t 'shipped with this clone: delete this file, then reopen live tracking')" ;;
       symlink) ui_warn "$path" "$(t 'symlink: live tracking disabled for this source')" ;;
       bounds) ui_warn "$path" "$(t 'tracking file exceeds its bound (%s bytes)' "$detail")" ;;
       quarantine) ui_info "$(t 'damaged tracking checkpoints (files / bytes): %s' "$detail")" ;;

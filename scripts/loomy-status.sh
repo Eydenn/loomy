@@ -356,14 +356,19 @@ $LOOMY_WATCH_LEGACY_PERL"
 loomy_watch_feed() {
   umask 077
   local errors=/dev/null
-  ai_journal_enabled "$ROOT" && ai_journal_prepare "$ROOT" && errors="$ROOT/.loomy/logs/watch-errors.log" || true
-  exec perl -MIO::Select -MTime::HiRes=time,stat -MFcntl=O_RDWR,O_APPEND,O_CREAT,O_NOFOLLOW -e "$LOOMY_WATCH_LEGACY_PERL"'
+  # Nothing is prepared or created here: only the elected owner prepares the logs (LOCK L3).
+  ! ai_journal_enabled "$ROOT" || errors="$ROOT/.loomy/logs/watch-errors.log"
+  exec perl -MIO::Select -MTime::HiRes=time,stat -MFcntl=O_RDONLY,O_RDWR,O_APPEND,O_CREAT,O_NOFOLLOW -e "$LOOMY_WATCH_LEGACY_PERL$AI_JOURNAL_PREPARE_PL$AI_NATIVE_COLLECT_PL"'
     binmode STDOUT, ":encoding(UTF-8)";
     my ($root,$cfg,$terminal,$native,$sessions,$reducer,$claude,$projects,$owner,$until,$errors,$pc,$px,$preferred)=@ARGV; $|=1;
+    # One canonical spelling for every library: a symlinked install must not load a module twice.
+    require Cwd; $_=Cwd::abs_path($_)//$_ for ($native,$reducer,$claude);
     my %reported;
     my $diagnostics=$native; $diagnostics =~ s{/[^/]+$}{/watch-errors.pl};
     require $diagnostics;
     my $failed=0;
+    # A stop request only sets a flag: the batch in flight finishes, then the drain below runs.
+    my $stop=0; $SIG{INT}=$SIG{TERM}=$SIG{HUP}=$SIG{PIPE}=sub {$stop=1};
     my $attempt=sub {
       my ($stage,$action)=@_; my $result=eval {$action->()};
       if ($@) {Loomy::WatchErrors::record($errors,$stage,"exception"); $failed=1}
@@ -389,6 +394,34 @@ loomy_watch_feed() {
     push @files,map { "$cfg/$_" } qw(config claude-limits codex-limits models.conf);
     my ($last,$buf,$last_tick,$maintained,$claude_maintained)=("","",0,0,0);
     my ($state,$claude_state,$discovering);
+    # LOCK L3. The watch elects once for its lifetime. A follower never elects through the
+    # adapters: it reads the peeked checkpoints (gated by file signatures) and retries the
+    # nonblocking election once a second; it promotes only after winning the guard.
+    my $libdir=$native; $libdir =~ s{/[^/]+$}{};
+    my ($role,$guard,$opt,$canon,%fact,%refusal,$fenced,$elect_at,$scope_at,$scope_rev,$enriched,$follow_sig,%last_peek,$stat_at,$shown)=("off");
+    $fenced="";
+    my $elect=sub {
+        my ($tries)=@_; my $e=Loomy::NativeCollect::elect($libdir,$root,$tries);
+        %fact=map {$_=>$e->{$_}//""} qw(status reason file state);
+        $canon=ref($e->{ctx}) eq "HASH" && defined $e->{ctx}{root} ? $e->{ctx}{root} : $root;
+        if ($e->{role} eq "owner") {
+            unless (main::journal_prepare("$canon/.loomy/logs")) {
+                eval {Loomy::CollectorOwner::release($e->{guard})}; @fact{qw(status reason)}=("unsafe","unsafe-runtime"); $role="follower"; return;
+            }
+            ($role,$guard,$opt)=("owner",$e->{guard},{owner=>$e->{guard},context=>$e->{ctx}}); $scope_rev=ref($e->{scope}) eq "HASH" ? $e->{scope}{revision} : "";
+            # A promoted owner reloads every generation-dependent cache from storage.
+            Loomy::CodexNative::reset_caches(); $fenced=""; $enriched=0; $scope_at=0; $follow_sig=undef; %refusal=();
+        } else { $role=$e->{role} }
+    };
+    # A fence, release or drain refusal ends authority: the view keeps reading, never writes again.
+    my $fence=sub {
+        my ($error)=@_; return 0 unless ($error//"") =~ /\Acollector owner ([A-Z_]+)\n\z/;
+        $fenced=$1 unless $1 eq "DRAINING"; $guard=undef; $opt=undef; $role="follower"; $follow_sig=undef;
+        Loomy::CodexNative::reset_caches(); return 1;
+    };
+    my $errors_real=$errors;
+    $attempt->("elect",sub {Loomy::NativeCollect::load($libdir); $elect->(3); $errors="/dev/null" unless $role eq "owner"});
+    $shown="";
     my $legacy=Loomy::WatchLegacy->new;
     $attempt->("legacy-archives",sub {
       for my $file (sort glob "$root/.loomy/logs/archive/events-*.jsonl") {
@@ -409,6 +442,7 @@ loomy_watch_feed() {
       };
     }
     while (1) {
+      last if $stop;
       last unless kill 0,$owner;
       last if $until && !kill(0,$until);
       my $key="";
@@ -418,16 +452,55 @@ loomy_watch_feed() {
       elsif ($buf ne "" && $buf !~ /^\e(?:\[)?$/) { $key=substr($buf,0,1,""); $key="" if $key =~ /[\x00-\x1f|]/ }
       my $wall=time; my $now=int($ENV{LOOMY_NATIVE_NOW}//$wall);
       $attempt->("initialize",sub {require $native; require $reducer; require $claude; $live=Loomy::LiveState->new}) unless $live;
-      $attempt->("codex",sub {
-        if (Loomy::CodexNative::watch_changed($root,$sessions,$now) || int($wall)!=$maintained) {
-          $state=Loomy::CodexNative::poll($root,$sessions); $maintained=int($wall);
+      # Followers retry the nonblocking election at the maintenance cadence (at most once a second).
+      if ($role ne "owner" && $role ne "off" && int($wall)!=($elect_at//-1)) {
+        $elect_at=int($wall); $attempt->("elect",sub {$elect->(1); $errors=$errors_real if $role eq "owner"});
+      }
+      if ($role eq "owner") {
+        # Maintenance: sibling admission and removal reach the adapters through the scope revision.
+        if ($wall-($scope_at//0)>=5) {
+          $scope_at=$wall; my $set=eval {Loomy::CollectorOwner::refresh_scope($guard)}; $fence->($@);
+          # A changed revision is polled at once; otherwise the per-second maintenance poll picks it up.
+          if (ref($set) eq "HASH" && ($set->{revision}//"") ne ($scope_rev//"")) { $scope_rev=$set->{revision}; $maintained=0; $claude_maintained=0 }
         }
-      });
-      $attempt->("claude",sub {
-        if (Loomy::ClaudeNative::watch_changed($root,$projects) || int($wall)!=$claude_maintained) {
-          $claude_state=Loomy::ClaudeNative::poll($root,$projects); $claude_maintained=int($wall);
-        }
-      });
+        $attempt->("codex",sub {
+          # No sessions directory: nothing to collect, and no guarded poll per tick.
+          unless (-d $sessions) { $state=undef; delete $refusal{codex}; return }
+          if (Loomy::CodexNative::watch_changed($canon,$sessions,$now) || int($wall)!=$maintained) {
+            my $r=eval {Loomy::CodexNative::poll($root,$sessions,$opt)}; return if $fence->($@); die $@ if $@;
+            $maintained=int($wall);
+            if (($Loomy::CodexNative::refusal//"") =~ /\Aunsupported-/) {
+              $refusal{codex}=$Loomy::CodexNative::refusal; my $p=Loomy::LiveState::checkpoint_peek("$canon/.loomy/logs/codex-native.idx",$last_peek{codex}); $r=$p->{checkpoint};
+            } else { delete $refusal{codex} }
+            $state=$r;
+          }
+        }) if $role eq "owner";
+        $attempt->("claude",sub {
+          unless (-d $projects) { $claude_state=undef; delete $refusal{claude}; return }
+          if (Loomy::ClaudeNative::watch_changed($canon,$projects) || int($wall)!=$claude_maintained) {
+            my $r=eval {Loomy::ClaudeNative::poll($root,$projects,$opt)}; return if $fence->($@); die $@ if $@;
+            $claude_maintained=int($wall);
+            if (($Loomy::CodexNative::refusal//"") =~ /\Aunsupported-/) {
+              $refusal{claude}=$Loomy::CodexNative::refusal; my $p=Loomy::LiveState::checkpoint_peek("$canon/.loomy/logs/claude-native.idx",$last_peek{claude}); $r=$p->{checkpoint};
+            } else { delete $refusal{claude} }
+            $claude_state=$r;
+          }
+        }) if $role eq "owner";
+      } elsif ($role ne "off") {
+        # Follower: pure reads. The manifests are parsed only when their signature changes.
+        $attempt->("follower",sub {
+          my $dir="$canon/.loomy/logs";
+          my $sig=join(";",map {Loomy::LiveState::file_signature("$dir/$_")} qw(codex-native.idx codex-native.idx.bak claude-native.idx claude-native.idx.bak));
+          if (!defined($follow_sig) || $sig ne $follow_sig) {
+            $follow_sig=$sig; my $peek=Loomy::LiveState::follower_read($live,$canon,\%last_peek);
+            %refusal=(); for my $t (qw(codex claude)) { $refusal{$t}=$peek->{$t}{reason} if ($peek->{$t}{status}//"") eq "unsupported" }
+            $state=$peek->{codex}{checkpoint}; $claude_state=$peek->{claude}{checkpoint}; $stat_at=$wall;
+          } elsif ($wall-($stat_at//0)>=1) {
+            # Lease clarity: source mtimes are refreshed in memory, bounded, once a second.
+            $stat_at=$wall; Loomy::LiveState::stat_evidence("codex",$state) if ref($state) eq "HASH"; Loomy::LiveState::stat_evidence("claude",$claude_state) if ref($claude_state) eq "HASH";
+          }
+        });
+      }
       my $pending=$state ? ($state->{discovering}//0) : 0;
       if (!defined($discovering) || $pending!=$discovering) {print "D|$pending\n"; $discovering=$pending}
       my @deltas;
@@ -438,6 +511,17 @@ loomy_watch_feed() {
         $live->read_journal("$root/.loomy/logs/events.jsonl"); $live->source_evidence($state);
         $live->claude_evidence($claude_state); @deltas=($legacy->snapshot($preferred,$live->{native},$key =~ /^[ltLT]$/),$legacy->display_projections($live,$now));
       });
+      # Owner facts are sent only on a state transition (never every frame); a normal owner is silent.
+      {
+        my $rf=$refusal{codex}//$refusal{claude}//"";
+        my $normal=($role eq "owner" || $role eq "off") && $fenced eq "" && $rf eq "";
+        my $line=$normal ? "" : join("|","O",$role,@fact{qw(status reason file state)},$fenced,$rf);
+        if ($line ne $shown) { push @deltas,($line ne "" ? $line : "O|owner|owned|owned||||"); $shown=$line }
+      }
+      # Identity enrichment (boot/birth) runs once, from the first idle moment of the owner.
+      if ($role eq "owner" && !$enriched && !@deltas && $key eq "") {
+        $enriched=1; eval {Loomy::CollectorOwner::enrich_identity($guard); 1} or $fence->($@);
+      }
       # Bash 3.2 file comparisons lose subsecond mtimes. Reuse this persistent
       # sampler instead of starting stat/Perl from each idle controller frame.
       my $content_now=join("|",map {(stat($_))[9] // "-"} @content_files);
@@ -459,6 +543,16 @@ loomy_watch_feed() {
       }
       $last=$sig;
     }
+    # Bounded drain. No new batch is admitted; the batch in flight already flushed its journal bytes
+    # before its checkpoint (signals only set a flag), and a journal that keeps growing is not chased.
+    # The lifetime descriptor is released last. A failure is reported through the exit status.
+    my $drain=0;
+    if ($role eq "owner" && $guard) {
+      eval {Loomy::CollectorOwner::begin_drain($guard); 1} or do {$fence->($@); $drain=3};
+      if ($guard) { eval {Loomy::CollectorOwner::release($guard); 1} or do {$fence->($@); $drain=3} }
+      $guard=undef;
+    }
+    exit $drain;
   ' "$ROOT" "${XDG_CONFIG_HOME:-$HOME/.config}/loomy" "$1" "$AI_CODEX_NATIVE_LIB" "${CODEX_HOME:-$HOME/.codex}/sessions" "$AI_LIVE_STATE_LIB" "$AI_CLAUDE_NATIVE_LIB" "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" "$$" "$UNTIL" "$errors" "$PLAN_C" "$PLAN_X" "${AI_LEAD:-}" 2>/dev/null
 }
 
@@ -471,6 +565,7 @@ loomy_watch_coalesce() {
       if [[ "$feed_line" == C\|* ]]; then loomy_watch_content_hint_accept "${feed_line#C|}"; continue; fi
       if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
       if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
+      if [[ "$feed_line" == O\|* ]]; then loomy_watch_owner_accept "$feed_line"; continue; fi
       if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
       if [[ "$feed_line" == K\|* ]]; then LEGACY_VISIBLE=0; loomy_watch_legacy_accept "$feed_line"; (( ! LEGACY_VISIBLE )) || native_dirty=1; continue; fi
       if [[ "$feed_line" == N\|* ]]; then loomy_native_accept "$feed_line"; native_dirty=1; continue; fi
@@ -510,7 +605,7 @@ loomy_watch_coalesce() {
         while (($n=sysread($feed,my $char,1)) && $n==1) { $line.=$char; last if $char eq "\n" }
         last unless $line =~ /\n$/;
         chomp $line;
-        if ($line =~ /^(?:N|W|D|E|K|C)\|/) { push @deltas,$line; next }
+        if ($line =~ /^(?:N|W|D|E|K|C|O)\|/) { push @deltas,$line; next }
         my @row=split /\|/,$line,-1;
         next unless (@row==4 || @row==6) && $row[0]=~/^\d+$/ && $row[1]=~/^[01]$/;
         ($now,$key,$clock,$rows,$cols)=@row[0,2,3,4,5]; $dirty=($dirty || $row[1]) ? 1 : 0;
@@ -521,6 +616,20 @@ loomy_watch_coalesce() {
     last unless $server;
     }
   ' "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${watch_rows:-0}" "${watch_cols:-0}" "$$" "${WATCH_PIPE:-}"
+}
+
+# O|<role>|<status>|<reason>|<file>|<state>|<fenced>|<refusal>: owner facts, sent only on a transition.
+# The owner note (a problem, a draining owner, or the follower state) takes the footer note over the
+# content hint: it explains why this view does not collect. Owners and one-shot views keep the hint.
+watch_owner_note=""; watch_owner_kind=""; watch_role="owner"
+loomy_watch_owner_accept() {
+  local IFS='|' f; read -r -a f <<<"${1#O|}"
+  watch_role="${f[0]:-owner}"
+  ai_owner_note "${f[0]:-}" "${f[1]:-}" "${f[2]:-}" "${f[3]:-}" "${f[4]:-}" "${f[5]:-}" "${f[6]:-}"
+  watch_owner_note="$AI_OWNER_NOTE"; watch_owner_kind="$AI_OWNER_KIND"
+  # A follower closes only its own view: say so beside the state (clipped on a narrow footer).
+  if [[ "$watch_owner_kind" == follow ]]; then watch_owner_note="$watch_owner_note $(t "Press q to close this view.")"; fi
+  force_frame=1
 }
 
 loomy_watch_content_hint_accept() {
@@ -1163,6 +1272,7 @@ fi
 loomy_status_content_render
 [[ -n "${LOOMY_NO_HEADER:-}" ]] || ui_end "${LOOMY_STATUS_FOOTER:-$(t "start or resume: loomy start · live tracking: loomy watch")}"
 [[ -z "${LOOMY_CONTENT_HINT:-}" ]] || printf '%s\n' "$LOOMY_CONTENT_HINT"
+if declare -F loomy_owner_note_line >/dev/null; then loomy_owner_note_line; fi
 
 }
 
@@ -1177,8 +1287,10 @@ fi
 if [[ "${LOOMY_STATUS_LIBRARY:-0}" == 1 ]]; then return 0; fi
 
 if (( ! WATCH )) && [[ -z "${LOOMY_WATCH_ID:-}" ]]; then
-  ai_codex_native_poll "$ROOT"
-  ai_claude_native_poll "$ROOT"
+  # One collection per command, before any view reads the journal (see loomy_native_collect_once).
+  # shellcheck source=loomy-tree.sh
+  source "$SCRIPT_DIR/loomy-tree.sh" --library
+  loomy_native_collect_once "$ROOT"
 fi
 if (( WATCH )); then
   if (( ! IN_PANE )); then loomy_content_first_use "$ROOT" || true; fi
@@ -1187,16 +1299,36 @@ if (( WATCH )); then
   # Watch already redraws timers; the independent 16 Hz logo loop would dominate idle CPU.
   LOOMY_NO_ANIM=1 ui_screen_begin
   KEY_READER=""; COALESCER=""; WATCH_PIPE=""; WATCH_STTY=""
+  # The sampler is a direct child of this shell: only that exact child is ever signalled.
+  watch_child_owned() {
+    local parent; parent="$(ps -o ppid= -p "$1" 2>/dev/null)" || return 1
+    [[ "${parent//[[:space:]]/}" == "$$" ]]
+  }
   watch_cleanup() {
     # Process substitutions inherit EXIT on Bash 3.2; only the watch owns the terminal.
     (( BASH_SUBSHELL == 0 )) || return 0
-    [[ -z "$KEY_READER" ]] || { kill "$KEY_READER" 2>/dev/null || true; wait "$KEY_READER" 2>/dev/null || true; }
+    # The terminal comes back first: a slow or stalled drain never holds the screen.
+    UI_PAGE_L=(); _ui_restore
+    local saved_stty="$WATCH_STTY"
+    [[ -z "$saved_stty" ]] || stty "$saved_stty" 2>/dev/null || true
+    WATCH_STTY=""
     [[ -z "$COALESCER" ]] || { kill "$COALESCER" 2>/dev/null || true; wait "$COALESCER" 2>/dev/null || true; }
-    KEY_READER=""; COALESCER=""
+    COALESCER=""
+    local sampler="$KEY_READER" waited=0 unfinished=0
+    KEY_READER=""
+    if [[ -n "$sampler" ]]; then
+      # The sampler drains on its own (finish the batch, flush, save, release last). Wait a bounded
+      # time: the deadline is not proof of death, and nothing is unlinked or force-killed here.
+      if watch_child_owned "$sampler"; then kill "$sampler" 2>/dev/null || true; fi
+      while kill -0 "$sampler" 2>/dev/null && (( waited < 30 )); do sleep 0.1; waited=$(( waited + 1 )); done
+      if kill -0 "$sampler" 2>/dev/null; then unfinished=1
+      else wait "$sampler" 2>/dev/null || { (( $? != 3 )) || unfinished=1; }; fi
+    fi
     exec 7<&- 8<&- 9<&- 10<&-
     [[ -z "$WATCH_PIPE" ]] || { rm -f "$WATCH_PIPE/request"; rmdir "$WATCH_PIPE" 2>/dev/null || true; WATCH_PIPE=""; }
-    UI_PAGE_L=(); _ui_restore
-    [[ -z "$WATCH_STTY" ]] || stty "$WATCH_STTY" 2>/dev/null || true
+    # Same modes again once the readers are gone (the kernel's transient canonical-mode bits settle last).
+    [[ -z "$saved_stty" ]] || stty "$saved_stty" 2>/dev/null || true
+    if (( unfinished )); then t "Live tracking did not finish saving; keep this Loomy version and run loomy doctor." >&2; fi
   }
   trap 'exit 0' INT TERM HUP
   trap watch_cleanup EXIT
@@ -1230,7 +1362,8 @@ if (( WATCH )); then
   watch_error=0; watch_discovering=0
   watch_internal_error() {
     watch_error=1; force_frame=1
-    if ai_journal_enabled "$ROOT"; then
+    # A follower writes nothing under .loomy/logs, not even its own diagnostics.
+    if [[ "$watch_role" != follower ]] && ai_journal_enabled "$ROOT"; then
       perl "$SCRIPT_DIR/lib/watch-errors.pl" "$ROOT/.loomy/logs/watch-errors.log" controller error 2>/dev/null || true
     fi
     return 0
@@ -1278,6 +1411,7 @@ if (( WATCH )); then
     if [[ "$feed_line" == C\|* ]]; then loomy_watch_content_hint_accept "${feed_line#C|}"; continue; fi
     if [[ "$feed_line" == D\|* ]]; then watch_discovering="${feed_line#D|}"; force_frame=1; continue; fi
     if [[ "$feed_line" == W\|* ]]; then watch_error=1; force_frame=1; continue; fi
+    if [[ "$feed_line" == O\|* ]]; then loomy_watch_owner_accept "$feed_line"; continue; fi
     if [[ "$feed_line" == E\|* ]]; then loomy_watch_legacy_accept "$feed_line"; native_dirty=1; continue; fi
     # The bounded log rows (hundreds per batch) are collected inline, without a function call per row.
     if [[ "$feed_line" == K\|L\|* ]]; then LEGACY_LOG_ARR[${#LEGACY_LOG_ARR[@]}]="${feed_line#K|L|}"; continue; fi
@@ -1350,7 +1484,7 @@ if (( WATCH )); then
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Reserve the actual banner/footer before deciding how much hierarchy fits.
       loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
-      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $watch_key_labels"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $watch_key_labels"; UI_FTR_NOTE="${watch_note:-${watch_owner_note:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
       watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
@@ -1379,7 +1513,7 @@ if (( WATCH )); then
         loomy_live_header
         loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
-        UI_FTR_KEYS="$watch_key_labels"; UI_FTR_NOTE="${watch_note:-${LOOMY_CONTENT_HINT_LINE:-}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
+        UI_FTR_KEYS="$watch_key_labels"; UI_FTR_NOTE="${watch_note:-${watch_owner_note:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
         _ui_term_size; _ui_chrome
         (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && watch_key_labels="↑↓ $scroll_word · $watch_key_labels"
         UI_FTR_KEYS="$watch_key_labels"; UI_BODY_TOP=$wtop

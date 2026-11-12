@@ -13,9 +13,13 @@ my (%cache,%inventory,%watch,%diagnosed,%retry,%busy,%roots_of,%scope_seen);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
 our $content_writer;
-# One call layer fewer on the per-record hot path: the shared helpers, under local names.
-*text=\&Loomy::CodexNative::scalar_text; *id=\&Loomy::CodexNative::identity; *epoch=\&Loomy::CodexNative::epoch;
-*safe=\&Loomy::CodexNative::safe_path; *lines=\&Loomy::CodexNative::lines; *label=\&Loomy::CodexNative::label;
+# Shared helpers, resolved by package name at every call so test hooks on them still apply.
+sub text { Loomy::CodexNative::scalar_text($_[0]) }
+sub id { Loomy::CodexNative::identity($_[0]) }
+sub epoch { Loomy::CodexNative::epoch($_[0]) }
+sub safe { Loomy::CodexNative::safe_path($_[0]) }
+sub lines { Loomy::CodexNative::lines(@_) }
+sub label { Loomy::CodexNative::label($_[0]) }
 sub signature { my @s=Time::HiRes::stat($_[0]); return @s ? join(':',@s[0,1,7,9]) : '-' }
 sub slug { my $p=$_[0]; $p =~ s/[^A-Za-z0-9]/-/g; return $p }
 sub input_signature {

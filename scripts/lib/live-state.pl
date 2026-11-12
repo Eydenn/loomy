@@ -109,7 +109,7 @@ sub journal_line {
     # Plain identifier-like text cannot be a number and needs no escaping: quote it directly.
     my $scalar=sub {
         my $v=$_[0];
-        return qq("$v") if defined $v && !ref($v) && ($v =~ /\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,9})?Z\z/
+        return qq("$v") if defined $v && !ref($v) && ($v =~ /\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z\z/
             || $v =~ /\A[A-Za-z][A-Za-z0-9_.:-]*\z/ && $v !~ /\A(?:inf(?:inity)?|nan)\z/i);
         return substr($journal_json->encode([$v]),1,-1);
     };
@@ -251,8 +251,16 @@ sub _checkpoint_kind {
 sub _read_chunk {my $n=sysread($_[0],my $b,262144); return ($n,$b)}
 # Bytes whose decode already classified as supported (or unsupported) in this process: a
 # later kind-only check or save of the identical bytes skips the decode. Sharded manifests
-# are never memoised because their validity also depends on the shard files.
-my %KIND_MEMO;
+# are never memoised because their validity also depends on the shard files. An entry is
+# the stat signature plus the SHA-256 of the bytes, never the bytes; at most 64 entries.
+my (%KIND_MEMO,$KIND_MEMO_SIZE);
+sub _memo_tag {require Digest::SHA; return "$_[0]|".Digest::SHA::sha256_hex($_[1])}
+sub _memo_set {
+    my ($path,$tag,$kind)=@_;
+    if (!exists $KIND_MEMO{$path} && $KIND_MEMO_SIZE>=64) {%KIND_MEMO=(); $KIND_MEMO_SIZE=0}
+    $KIND_MEMO_SIZE++ unless exists $KIND_MEMO{$path};
+    $KIND_MEMO{$path}=[$tag,$kind];
+}
 sub _checkpoint_read {
     my ($candidate,$kind_only)=@_;
     my @l=lstat($candidate); return ($!{ENOENT}||$!{ENOTDIR} ? 'missing' : 'io-error') unless @l;
@@ -265,12 +273,12 @@ sub _checkpoint_read {
     my $raw=''; while (1) {my ($n,$b)=_read_chunk($f); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
     my @z=stat($f);
     return 'changed' unless @z && length($raw)==$a[7] && $a[7]==$z[7] && $a[9]==$z[9];
-    my $memo=$KIND_MEMO{$candidate};
-    return $memo->[1] if $kind_only && $memo && $memo->[0] eq $raw;
+    my $tag=_memo_tag("$a[0]:$a[1]:$a[7]:$a[9]",$raw); my $memo=$KIND_MEMO{$candidate};
+    return $memo->[1] if $kind_only && $memo && $memo->[0] eq $tag;
     my $s=eval {checkpoint_decode($raw)};
     return 'invalid' unless ref($s) eq 'HASH';
     my $kind=_checkpoint_kind($s);
-    $KIND_MEMO{$candidate}=[$raw,$kind//'valid'] unless exists $s->{source_shards};
+    _memo_set($candidate,$tag,$kind//'valid') unless exists $s->{source_shards};
     return $kind if defined $kind;
     if (exists $s->{source_shards}) {
         my $path=$candidate; $path =~ s{\.bak$}{} if $candidate =~ /\.bak$/;
@@ -449,9 +457,10 @@ sub checkpoint_save {
     my ($prior_raw,$prior_state,$prior_known_valid);
     if (-s $path && -s $path<=33554432 && safe_path($path)) {
         sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
+        my @pst=stat($old);
         local $/; $prior_raw=<$old>;
         my $memo=$KIND_MEMO{$path};
-        if ($memo && $memo->[1] eq 'valid' && $memo->[0] eq $prior_raw) {$prior_known_valid=1}
+        if ($memo && $memo->[1] eq 'valid' && @pst && $memo->[0] eq _memo_tag("$pst[0]:$pst[1]:$pst[7]:$pst[9]",$prior_raw)) {$prior_known_valid=1}
         else {
             $prior_state=eval {checkpoint_decode($prior_raw)};
             my $kind=ref($prior_state) eq 'HASH' ? _checkpoint_kind($prior_state) : undef;
@@ -491,8 +500,8 @@ sub checkpoint_save {
     my %keep=map {text($_)=>1} @{$snapshot{source_shards}//[]};
     if (-f "$path.bak" && safe_path("$path.bak")) {
         sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $braw=<$b>;
-        # Without the key anywhere in the bytes the backup names no shard: skip the decode.
-        my $old=index($braw,'source_shards')<0 ? undef : eval {checkpoint_decode($braw)};
+        # Without the key (and without any escape that could spell it) the backup names no shard.
+        my $old=(index($braw,'source_shards')<0 && index($braw,'\\')<0) ? undef : eval {checkpoint_decode($braw)};
         $keep{text($_)}=1 for @{ref($old) eq 'HASH' && ref($old->{source_shards}) eq 'ARRAY' ? $old->{source_shards} : []};
     }
     my $dir=$path; $dir =~ s{/[^/]+$}{}; my $base=$path; $base =~ s{.*/}{};

@@ -8,7 +8,7 @@
 **Your AI development team, orchestrated: Claude Code and Codex working together on your projects.**
 Loomy frames each project, then a lead agent on the best model routes every request to the role and the model that do it reliably for the least cost, with cross reviews between the two model families, official skills, durable state and optional private results shared across sessions and tools, and the whole dispatch live in your terminal.
 
-![version](https://img.shields.io/badge/version-0.17.9-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.10-7F77DD?style=for-the-badge)
 ![status](https://img.shields.io/badge/status-pre--release-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -420,6 +420,8 @@ The journal (`.loomy/logs/events.jsonl`) stays on your machine and is excluded f
 A finished native agent turn is a lifecycle observation, not approval of its work. The lead still checks partial or blocked results and independent reviews before accepting an assignment or publishing a release. Subsequent turns must remain visible; elapsed time is not a completion percentage.
 
 Native Codex tracking reads local rollout metadata and lifecycle events. It never calls a model and does not copy conversation text or tool arguments into the journal. Missing or unrecognized lifecycle evidence is not success. The collector discovers recent files on a bounded schedule, then tails them incrementally; its evidence and compatibility limits are documented in [ADR-0007](docs/adr/0007-native-codex-observability.md).
+
+**One live collector per project (0.17.10).** Only one process per project, shared by all its worktrees, collects native Codex and Claude activity at a time: the first `loomy watch` (or a one-shot `loomy status`/`loomy tree`, for the length of that command). Every other view follows it: it reads the stored data, writes nothing and shows `Following another watch · q closes this view`; `q` closes only that view, and a follower takes over when the owner quits. A quitting owner finishes its current batch within a few seconds and then releases; the footer says so while it does. `loomy doctor` shows the owner (build, pid, boot, epoch) or that there is none. Older Loomy versions do not know this rule: **before upgrading or rolling back, close every open `loomy watch` with `q`**, switch, then reopen it; do not run an older and a newer watch on the same project, because nothing can stop an older build from collecting too. If a watch cannot finish saving, keep the new version and run `loomy doctor`.
 
 ### 💳 Claude and ChatGPT subscriptions
 

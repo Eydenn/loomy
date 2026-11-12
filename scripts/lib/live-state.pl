@@ -253,7 +253,7 @@ sub _read_chunk {my $n=sysread($_[0],my $b,262144); return ($n,$b)}
 # later kind-only check or save of the identical bytes skips the decode. Sharded manifests
 # are never memoised because their validity also depends on the shard files. An entry is
 # the stat signature plus the SHA-256 of the bytes, never the bytes; at most 64 entries.
-my (%KIND_MEMO,$KIND_MEMO_SIZE);
+my %KIND_MEMO; my $KIND_MEMO_SIZE=0;
 sub _memo_tag {require Digest::SHA; return "$_[0]|".Digest::SHA::sha256_hex($_[1])}
 sub _memo_set {
     my ($path,$tag,$kind)=@_;
@@ -679,7 +679,7 @@ sub migrate_checkpoints {
             my ($k)=_checkpoint_read($candidate); return 'refused' if $k =~ /^unsupported-/;
         }
     }
-    my $full=defined $opts ? {%$opts,full=>1} : undef; # migration keeps the full fence everywhere
+    my $full=defined $opts ? {%$opts,full=>1,flush=>(ref($opts->{flush}) eq 'ARRAY' ? $opts->{flush} : [])} : undef; # migration keeps the full fence everywhere
     my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
     require "$lib/codex-native.pl"; require "$lib/claude-native.pl";
     for my $tool (qw(codex claude)) {
@@ -1081,12 +1081,26 @@ sub projections {
     }
     return @out;
 }
+# Direct CLI entries elect like the adapters' own CLI blocks (bare_election): one transient
+# election per call, and a non-owner mutates nothing. A held owner slot means "follow": the
+# reducer reads the stored journal only, and --migrate leaves the upgrade to the owner's turn.
 unless (caller) {
-    if (($ARGV[0]//'') eq '--migrate') {migrate_checkpoints($ARGV[1]); exit 0}
-    my ($root,$sessions)=@ARGV; $root=abs_path($root)//exit 1;
+    no warnings 'once';
     my $dir=abs_path(__FILE__); $dir =~ s{/[^/]+$}{};
+    if (($ARGV[0]//'') eq '--migrate') {
+        my $abs=abs_path($ARGV[1]//'') // exit 0;
+        require "$dir/codex-native.pl"; Loomy::CodexNative::load_owner();
+        my $ctx=eval {Loomy::RuntimePaths::resolve($abs)}; exit 0 unless $ctx && $ctx->{loomy} && $ctx->{logs};
+        my $r=eval {Loomy::CollectorOwner::try_acquire($ctx,Loomy::CodexNative::build_id())};
+        exit 0 unless ref($r) eq 'HASH' && ($r->{status}//'') eq 'owned';
+        my $ok=eval {migrate_checkpoints($ctx->{root},{owner=>$r->{guard},context=>$ctx}); 1};
+        eval {Loomy::CollectorOwner::release($r->{guard})};
+        exit($ok ? 0 : 1);
+    }
+    my ($root,$sessions)=@ARGV; $root=abs_path($root)//exit 1;
     require "$dir/codex-native.pl";
     require "$dir/claude-native.pl";
+    $Loomy::CodexNative::bare_election=1;
     my $native=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::CodexNative::poll($root,$sessions);
     my $claude=$ENV{LOOMY_WATCH_ID} ? undef : Loomy::ClaudeNative::poll($root,($ENV{CLAUDE_CONFIG_DIR}//"$ENV{HOME}/.claude").'/projects');
     my $state=__PACKAGE__->new; $state->read_journal("$root/.loomy/logs/events.jsonl"); $state->source_evidence($native);

@@ -2648,6 +2648,14 @@ if [[ "${1:-}" == --section ]]; then
       run 'shared hook engine' bash "$HERE/hooks-repair.sh"
       run 'scoped hook consumers and rollback' bash "$HERE/hooks-cli.sh"
       ;;
+    'Live collector ownership')
+      section 'Live collector ownership'
+      run 'owner election and records' bash "$HERE/collector-owner.sh"
+      run 'owner storage and bounded drain' bash "$HERE/collector-storage.sh"
+      run 'source union and negative cache' bash "$HERE/collector-sources.sh"
+      run 'command views, followers and diagnostics' bash "$HERE/collector-views.sh"
+      run 'cross-entrypoint ownership matrix' bash "$HERE/collector-ownership.sh"
+      ;;
     *) model_section=0 ;;
   esac
   if (( model_section )); then suite_summary; (( FAIL == 0 )); exit $?; fi
@@ -2732,6 +2740,13 @@ done
 section "Hooks repair"
 run "shared hook engine" bash "$HERE/hooks-repair.sh"
 run "scoped hook consumers and rollback" bash "$HERE/hooks-cli.sh"
+
+section "Live collector ownership"
+run "owner election and records" bash "$HERE/collector-owner.sh"
+run "owner storage and bounded drain" bash "$HERE/collector-storage.sh"
+run "source union and negative cache" bash "$HERE/collector-sources.sh"
+run "command views, followers and diagnostics" bash "$HERE/collector-views.sh"
+run "cross-entrypoint ownership matrix" bash "$HERE/collector-ownership.sh"
 
 section "Syntax and static analysis"
 w47_static_tests

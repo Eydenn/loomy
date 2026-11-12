@@ -1740,8 +1740,8 @@ if (( DIAGRAM )); then
     esac
     if (( RS_I >= 0 )) && [[ "$1" != native:* && "${LV_DISPLAY_ROLE[RS_I]:-${LV_ROLE[RS_I]}}" != "${LV_ROLE[RS_I]}" ]]; then RL="${LV_LABEL[RS_I]}"; fi
     # First letter in lower case, as in the boxes.
-    local f="${RL:0:1}" up="ABCDEFGHIJKLMNOPQRSTUVWXYZ" lo="abcdefghijklmnopqrstuvwxyz" i
-    case "$f" in [A-Z]) i="${up%%"$f"*}"; RL="${lo:${#i}:1}${RL:1}" ;; É) RL="é${RL:1}" ;; esac
+    local fl="${RL:0:1}" up="ABCDEFGHIJKLMNOPQRSTUVWXYZ" lo="abcdefghijklmnopqrstuvwxyz" i
+    case "$fl" in [A-Z]) i="${up%%"$fl"*}"; RL="${lo:${#i}:1}${RL:1}" ;; É) RL="é${RL:1}" ;; esac
   }
   NROLES=0; for r in $AI_ROLES; do [[ "$r" == lead ]] || NROLES=$(( NROLES + 1 )); done
   # Roles shown as boxes: running ones first, then the most recently used, then the usual workers.

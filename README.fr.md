@@ -8,7 +8,7 @@
 **Ton équipe de développement IA, orchestrée : Claude Code et Codex qui travaillent ensemble sur tes projets.**
 Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie chaque demande au rôle et au modèle qui la font de façon fiable au moindre coût, avec des relectures croisées entre les deux familles de modèles, des skills officiels, un état durable et des résultats privés facultatifs partagés entre les sessions et les outils, et tout le dispatch en direct dans ton terminal.
 
-![version](https://img.shields.io/badge/version-0.17.9-7F77DD?style=for-the-badge)
+![version](https://img.shields.io/badge/version-0.17.10-7F77DD?style=for-the-badge)
 ![statut](https://img.shields.io/badge/statut-pr%C3%A9--version-BA7517?style=for-the-badge)
 ![bash](https://img.shields.io/badge/bash-3.2%2B-1D9E75?style=for-the-badge&logo=gnubash&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude_Code-%E2%89%A5_2.1.280-D85A30?style=for-the-badge)
@@ -420,6 +420,8 @@ Le journal (`.loomy/logs/events.jsonl`) reste sur ta machine : il est exclu de G
 Un tour d'agent natif terminé est un événement de cycle de vie, pas une validation de son travail. L'orchestrateur vérifie toujours les résultats partiels ou bloqués et les relectures indépendantes avant d'accepter une tâche ou de publier une version. Les tours suivants doivent rester visibles ; le temps écoulé n'est pas un pourcentage d'avancement.
 
 Le suivi natif Codex lit les métadonnées et événements de cycle de vie des fichiers de session locaux. Il n'appelle aucun modèle et ne recopie ni conversation ni arguments d'outils dans le journal. Des événements absents ou non reconnus ne valent pas réussite. La collecte découvre les fichiers récents à une cadence bornée, puis lit seulement leur suite ; ses limites de compatibilité et d'observation sont documentées dans l'[ADR-0007](docs/adr/0007-native-codex-observability.md).
+
+**Un seul collecteur en direct par projet (0.17.10).** Un seul processus par projet, partagé par tous ses worktrees, collecte l’activité native Codex et Claude à la fois : le premier `loomy watch` (ou un `loomy status`/`loomy tree` ponctuel, le temps de la commande). Toutes les autres vues le suivent : elles lisent les données enregistrées, n’écrivent rien et affichent `Suit un autre watch · q ferme cette vue` ; `q` ne ferme que cette vue, et un suiveur prend le relais quand le propriétaire quitte. Un propriétaire qui quitte termine son lot en cours en quelques secondes puis se libère ; le pied d’écran l’indique. `loomy doctor` montre le propriétaire (build, pid, démarrage, époque) ou son absence. Les anciennes versions de Loomy ne connaissent pas cette règle : **avant de mettre à jour ou de revenir en arrière, ferme chaque `loomy watch` ouvert avec `q`**, change de version, puis rouvre-le ; ne lance pas un ancien et un nouveau watch sur le même projet, car rien n’empêche un ancien build de collecter lui aussi. Si un watch n’arrive pas à finir d’enregistrer, garde la nouvelle version et lance `loomy doctor`.
 
 ### 💳 Forfaits Claude et ChatGPT
 

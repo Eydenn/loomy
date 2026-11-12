@@ -2536,5 +2536,24 @@ _t_fr() {
     'not used by this project; skipped') _T='non utilisé par ce projet ; ignoré' ;;
     'fix: edit the conflicting events in %s by hand (loomy hooks status lists them)') _T='correctif : modifie à la main les événements en conflit dans %s (loomy hooks status les liste)' ;;
     'Before going back to an older Loomy: loomy hooks status, then loomy hooks repair --shell, then loomy hooks status again.') _T='Avant de revenir à un Loomy plus ancien : loomy hooks status, puis loomy hooks repair --shell, puis à nouveau loomy hooks status.' ;;
+    'Following another watch') _T='Suit un autre watch' ;;
+    'q closes this view') _T='q ferme cette vue' ;;
+    'Owner is finishing its batch · showing stored data') _T='Le suivi finit son lot · données enregistrées affichées' ;;
+    'Older watch is running · close it, reopen this one') _T='Ancien watch actif · ferme-le, puis rouvre celui-ci' ;;
+    'Storage not verified · run loomy doctor') _T='Stockage non vérifié · lance loomy doctor' ;;
+    'Tracking stopped: storage changed · run loomy doctor') _T='Suivi arrêté : stockage modifié · lance loomy doctor' ;;
+    'Tracking did not finish saving · run loomy doctor') _T='Suivi non enregistré en entier · lance loomy doctor' ;;
+    'Tracking unavailable · run loomy doctor') _T='Suivi indisponible · lance loomy doctor' ;;
+    'Newer checkpoints · showing stored data · update Loomy') _T='Points de reprise plus récents · mets Loomy à jour' ;;
+    'Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view.') _T='Le suivi en direct est indisponible : %s n’est pas sûr. Ferme tout ancien watch, supprime-le avec %s, puis rouvre cette vue.' ;;
+    'Live tracking is unavailable: %s cannot be used. Close any older watch, delete that file, then reopen this view.') _T='Le suivi en direct est indisponible : %s est inutilisable. Ferme tout ancien watch, supprime ce fichier, puis rouvre cette vue.' ;;
+    'Live tracking owner check was busy; run loomy doctor again.') _T='La vérification du propriétaire du suivi était occupée ; relance loomy doctor.' ;;
+    'Live tracking owner: %s · build %s · pid %s · boot %s · birth %s · epoch %s') _T='Propriétaire du suivi en direct : %s · build %s · pid %s · démarrage %s · naissance %s · époque %s' ;;
+    'No live tracking owner.') _T='Aucun propriétaire du suivi en direct.' ;;
+    'collecting') _T='collecte' ;;
+    'draining') _T='termine son lot' ;;
+    'Files committed under .loomy/logs (%s): %s') _T='Fichiers versionnés sous .loomy/logs (%s) : %s' ;;
+    'runtime files belong outside Git') _T='les fichiers d’exécution n’ont pas leur place dans Git' ;;
+    'shipped with this clone: delete this file, then reopen live tracking') _T='livré avec ce clone : supprime ce fichier, puis rouvre le suivi en direct' ;;
   esac
 }

@@ -2,7 +2,7 @@
 
 [← README](../README.md)
 
-Every command with its variants and what it does in detail. Reference for Loomy **0.17.9**. In the terminal: `loomy help <command>`.
+Every command with its variants and what it does in detail. Reference for Loomy **0.17.10**. In the terminal: `loomy help <command>`.
 
 ## Project
 
@@ -231,6 +231,8 @@ When multiple tool sessions remain open, `LOOMY_WATCH_TOOL=codex loomy watch`
 filter does not switch the acting lead or modify routing. Unset or invalid values
 fall back to the current lead; `o` clears the filter when opening that lead.
 
+Only one view per project collects native activity (the first `watch`, or a one-shot `status`/`tree` while it runs); any other `watch` shows `Following another watch · q closes this view`, reads stored data and writes nothing. `q` closes only that view; the owner finishes its batch and releases on `q`. Close an older Loomy's `watch` with `q` before upgrading or rolling back.
+
 ### `loomy tree`
 
 ```bash
@@ -385,7 +387,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Checks prerequisites, content-policy health, a full label store, and Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model). These health facts do not certify older files as free of sensitive text.
+Checks prerequisites, the live tracking owner (build, pid, boot, epoch, or none), content-policy health, a full label store, and Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model). These health facts do not certify older files as free of sensitive text.
 
 ### `loomy config`
 

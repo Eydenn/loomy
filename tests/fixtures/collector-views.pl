@@ -217,7 +217,10 @@ except Exception:
 print(json.dumps({'out': buf.decode('utf-8', 'replace'), 'done': done, 'elapsed': elapsed, 'rc': rc, 'sampler': sp, 'echo': echo, 'icanon': icanon}))
 PY
 sub pty_watch {
-    my ($root,$mode,$secs,%o)=@_; local %ENV=(%ENV,%{$o{env}||{}});
+    my ($root,$mode,$secs,%o)=@_;
+    # The first-use content screen is a human-terminal question: with no agent ancestor (a person's terminal, CI) it would
+    # replace the frame under test. A managed origin skips it deterministically, as it is skipped when an agent runs the suite.
+    local %ENV=(%ENV,LOOMY_MANAGED=>1,%{$o{env}||{}});
     my $r=run(['python3','-I',"$work/pty_watch.py",$repo,$root,$mode,$secs,$o{rows}//40,$o{cols}//170],timeout=>$secs+30);
     my $d=eval {$json->decode((grep {/^\{/} split /\n/,$r->{out})[-1]//'{}')}; $d->{out}//=''; $d->{out} =~ s/\e\[[0-9;?]*[A-Za-z]//g; return $d;
 }

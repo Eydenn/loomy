@@ -2,6 +2,34 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
+## 0.17.10 — 2026-11-12
+
+### One live collector per project
+
+- Native Codex and Claude collection now has one owner per project. The owner is the first `loomy watch`, or a one-shot `loomy status`, `loomy tree`, direct adapter call, reducer or checkpoint migration for the length of that command. Ownership is a kernel lock on `.loomy/logs/collector.lock` plus a content-free record (`collector-owner-v1.json`: build, pid, host, boot, birth, epoch, state), local 0700/0600, never synced or exported. All worktrees of a project share one lock and one source set: a sibling worktree's agents are collected once, whichever worktree starts first, and unrelated directories are never widened in.
+- Every other view is a follower: it reads the stored checkpoints and journal, writes nothing (no election, preparation, project ID, quarantine, pruning, rotation or cursor write) and shows the same agents, leases and labels as the owner. A watch follower says `Following another watch · q closes this view`; `q` closes only that view, and a follower promotes itself when the owner quits. `loomy log`, plain `loomy doctor` and the resume context never elect.
+- Bounded drain: `q` on the owner publishes `draining`, lets the current batch finish and flush before its checkpoint, then releases the lock last. A watch exits within a few seconds even if the disk stalls (`Tracking did not finish saving · run loomy doctor`), the terminal is restored, and the lock is never stolen.
+- The collector guard fences every write path (journal appends, checkpoints, quarantine, rotation, label and health stores, migration). A replaced lock, record or runtime directory stops writing instead of creating a second lock. Unsafe or unusable runtime files are named with their remedy in `loomy status`, `loomy tree` and `loomy doctor`, and left untouched. Unsupported (newer) checkpoint formats are shown once as `Newer checkpoints · showing stored data · update Loomy` and are never repaired or overwritten.
+- The last unguarded entries now follow the rule too: `live-state.pl`'s reducer command line elects transiently (or follows read-only when an owner exists) and `live-state.pl --migrate` migrates only as owner (an owner holding the slot defers it). The project checkpoint-v2 migration runs under the same transient guard.
+
+### Diagnostics
+
+- `loomy doctor` prints the owner facts (state, build, pid, boot, birth, epoch) or `No live tracking owner.`, and reports `.loomy/logs` files committed to Git, including a `collector-owner-v1.json` shipped with a clone (delete it, then reopen live tracking).
+- Short, action-first watch footer notes: following, owner finishing its batch, older watch running (close it, reopen this one), storage not verified or changed, unfinished save, tracking unavailable, newer checkpoints. They fit 80 columns, never cut a word, and long remedies live in status and doctor. No new key.
+
+### Performance
+
+- One-shot `status` and `tree` do less repeated work: one election and one poll per source per command, cheaper helper calls and journal/shard handling (about 5 ms off a ~60 ms warm poll on the Mac; no measurable change in election cost). The 80 ms cold-poll budget is unchanged.
+
+### Adoption and rollback
+
+- Updating files never updates a running process. Older Loomy versions (0.17.9 and earlier) do not take the lock, and nothing can stop them from collecting on the same project. Before upgrading or rolling back: close every open `loomy watch` with `q`, wait for the drain, switch versions, reopen. Tested pairs, under quiescence: 0.17.9 -> 0.17.10 -> 0.17.9 -> 0.17.10 over one store (no source observed twice, no duplicate native key, checkpoints and journal readable both ways). An old watch left running beside a new one is not fenced and not supported: both keep running, the new owner is undisturbed, and the old one keeps writing under its own cursors. If an owner cannot drain, keep using the stored data and quit it rather than starting a second collector.
+
+### Known limits
+
+- Same-user processes from older builds, copied scripts or relays with an explicit old `LOOMY_HOME` are not prevented from writing. Network filesystems and cross-host sharing are not coordinated, and PID facts are display only (never used to signal or steal). No daemon, no new watch shortcut, no new journal type. Hook accounting is unchanged: the abrupt-crash window of hook costs is a separate audit.
+- Unchanged: watch display, keys and README captures. Native hook registration is still unavailable.
+
 ## 0.17.9 — 2026-11-11
 
 ### Hook registration repair

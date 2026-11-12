@@ -13,5 +13,7 @@ Short records of the decisions that shape Loomy. Each one states the context, th
 | [0007](0007-native-codex-observability.md) | Observe native Codex agents locally | Accepted (2026-10-12) |
 | [0008](0008-terminal-only-routing-ownership.md) | Terminal-only routing ownership | Accepted (2026-10-14) |
 | [0009](0009-structural-journal-content-policy.md) | Structural journal and per-store content policy | Accepted (2026-10-26) |
+| [0010](0010-content-r2-boundaries.md) | Content release 2 boundaries | Accepted contract (2026-10-27) |
+| [0011](0011-one-live-collector-per-project.md) | One live collector per project | Accepted (2026-11-12) |
 
 A new decision gets the next number; a superseded one keeps its file and changes its status.

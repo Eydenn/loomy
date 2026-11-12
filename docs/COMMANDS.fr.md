@@ -2,7 +2,7 @@
 
 [← README](../README.fr.md)
 
-Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.9**. Dans le terminal : `loomy help <commande>`.
+Chaque commande avec ses variantes et ce qu'elle fait en détail. Référence pour Loomy **0.17.10**. Dans le terminal : `loomy help <commande>`.
 
 ## Projet
 
@@ -231,6 +231,8 @@ Si plusieurs sessions d'outils restent ouvertes, `LOOMY_WATCH_TOOL=codex loomy w
 change ni l'orchestrateur actif ni le routage. Sans valeur valide, le suivi reprend
 l'orchestrateur actuel ; `o` efface le filtre lorsqu'il ouvre celui-ci.
 
+Une seule vue par projet collecte l'activité native (le premier `watch`, ou un `status`/`tree` ponctuel pendant son exécution) ; tout autre `watch` affiche `Suit un autre watch · q ferme cette vue`, lit les données enregistrées et n'écrit rien. `q` ne ferme que cette vue ; le propriétaire termine son lot et se libère sur `q`. Ferme le `watch` d'un ancien Loomy avec `q` avant de mettre à jour ou de revenir en arrière.
+
 ### `loomy tree`
 
 ```bash
@@ -385,7 +387,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Vérifie les prérequis, la santé de la politique de contenu, un stockage de libellés plein et les fichiers d'historique Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle). Ces informations de santé ne certifient pas l'absence de texte sensible dans les anciens fichiers.
+Vérifie les prérequis, le propriétaire du suivi en direct (build, pid, démarrage, époque, ou aucun), la santé de la politique de contenu, un stockage de libellés plein et les fichiers d'historique Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle). Ces informations de santé ne certifient pas l'absence de texte sensible dans les anciens fichiers.
 
 ### `loomy config`
 

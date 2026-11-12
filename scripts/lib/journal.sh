@@ -84,6 +84,25 @@ sub load {
     Loomy::LiveState::require_owner(1);   # a lost election can never take the legacy unguarded path
     return 1;
 }
+# First .loomy/logs checkpoint, shard or marker tracked in the repository index (relative to .loomy), or "".
+# Hardened git: no fsmonitor or hooks, GIT_* cleared, bounded read. Not git (or no git) means none.
+my %tracked_memo;   # a long-lived watch retries the election every second: the index is asked at most every 30 s
+sub tracked_runtime {
+    my $root=shift; return "" unless defined $root && $root =~ m{\A/};
+    my $m=$tracked_memo{$root}; return $m->[1] if $m && time-$m->[0]<30;
+    my $hit=tracked_runtime_scan($root); $tracked_memo{$root}=[time,$hit]; return $hit;
+}
+sub tracked_runtime_scan {
+    my $root=shift;
+    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
+    open(my $git,"-|","sh","-c",q{exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -z -- .loomy/logs 2>/dev/null},"sh",$root) or return "";
+    local $/="\0"; my ($n,$hit)=(0,"");
+    while (defined(my $name=<$git>)) {
+        chomp $name; last if ++$n>2000;
+        $hit=substr($name,7) if $hit eq "" && $name =~ m{\A\.loomy/logs/(?:(?:codex|claude)-native\.idx(?:\.[A-Za-z0-9._-]{1,120})?|checkpoint-v2)\z};
+    }
+    close $git; return $hit;
+}
 # One election. busy/bootstrap-busy means retry (a follower inspecting holds the gate briefly),
 # never "another owner": it is retried a few times, then followed.
 sub elect {
@@ -92,6 +111,9 @@ sub elect {
     return \%r if ($ENV{LOOMY_JOURNAL}//"1") eq "0" || !-d "$root/.loomy";
     my $ctx=eval {Loomy::RuntimePaths::resolve($root)};
     unless (ref($ctx) eq "HASH") { @r{qw(role status reason)}=("follower","unsafe","invalid-context"); return \%r }
+    # A clone can ship checkpoints, shards or markers: they would be trusted (and chmod 0600 by the
+    # preparation, erasing the signal). Refuse before any preparation; mode is deliberately not a criterion.
+    if (my $t=tracked_runtime($ctx->{root}//$root)) { @r{qw(role status reason file)}=("follower","unsafe","invalid-record",$t); return \%r }
     my $f;
     for my $try (1..$retries) {
         $f=eval {Loomy::CollectorOwner::try_acquire($ctx,Loomy::CodexNative::build_id())};

@@ -1,12 +1,12 @@
 # ADR-0010 — Content release 2 boundaries
 
 Status: accepted contract (2026-10-27); implementation and release evidence pending.
-R2-D1 acceptance and shared-reader ownership refined on 2026-11-10.
+Execution-scratch acceptance and shared-reader ownership refined on 2026-11-10.
 
 Release 1 separates structural journal events, authorized display labels and
 optional private results. Release 2 must apply that boundary to checkpoints,
 exports and incidental buffers without losing source cursors, accounting,
-recognizable tasks or the caller's complete successful result. T0 fixes the
+recognizable tasks or the caller's complete successful result. This record fixes the
 shared contracts; it does not enable the later checkpoint or execution writers.
 
 ## Read-only identity, policy and export
@@ -23,11 +23,10 @@ Unsafe symlinks, FIFOs, hardlinks, ownership, permissions and races fail closed.
 Registered shared worktree identities retain the existing registration check.
 
 `policy_snapshot` is the single public noncreating policy/identity reader.
-MAINFIRST-LOCK reuses it (HOOKLOCK-DESIGN section 6.2), rather than introducing a
-second public reader. A later LOCK extraction of `_dir` and `_shared_owner` into
+The live collector ownership work (ADR-0011) reuses it rather than introducing a
+second public reader. A later extraction of `_dir` and `_shared_owner` into
 `runtime-paths.pl` may rebuild `_snapshot_context` on those shared primitives;
-it must preserve this read-only contract. Integration requires rebasing R2-T0
-onto R1 and integrating it before LOCK L0 starts.
+it must preserve this read-only contract.
 
 `export_policy_snapshot(root, mode)` defaults to `structural`, independently of
 an existing compatibility policy. Its shell entry point is
@@ -48,8 +47,8 @@ and compatibility selection; it never changes the saved policy generation.
 
 The v2 container and source/cursor identity remain. New generations belong under
 `.loomy/logs/structural-v1/`; historical checkpoints, backups and shards are read
-without mutation and never copied verbatim into that namespace. T1 implements
-the file transactions; T0 supplies the pure `checkpoint_schema()`,
+without mutation and never copied verbatim into that namespace. A later step implements
+the file transactions; this record supplies the pure `checkpoint_schema()`,
 `project_checkpoint(state, context)` and `validate_checkpoint(state, context)`
 contracts. The context requires an existing project ID and explicit approved
 source/workspace roots. Unknown object domains and serialized nested keys are
@@ -58,11 +57,11 @@ recursive scalar rule. Validation cannot itself admit a writer or create files.
 The current `usage.idx` is TSV, not a native v2 JSON checkpoint: its separate
 logical row is `{source_locator, line_offset}`. The smooth display cursor's
 logical record is `{shown}`. `checkpoint_schema()` describes these separately;
-`project_checkpoint` handles native JSON state only. T1 owns preserving or
+`project_checkpoint` handles native JSON state only. a later step owns preserving or
 adopting the concrete usage/cursor formats without losing consumption offsets.
 The pure helpers validate the expanded logical state against the 32 MiB legacy
 read ceiling. A successful validation is not proof of the serialized core and
-shard byte limits; T1 enforces those limits at its serializer/transaction boundary.
+shard byte limits; a later step enforces those limits at its serializer/transaction boundary.
 
 Preserve the real constructors' identities, counters, timestamps, topology,
 dedup maps, consumption offsets, inode/stat probes, windows and signature tuples.
@@ -76,14 +75,14 @@ In particular:
 - Claude built-in/custom `agent_type` is a validated token of at most 40 ASCII
   characters. A legacy Claude call's `role` slot carries that same agent-type
   domain; it must not be degraded to `unknown` by the generic Loomy-role enum.
-  T1 must preserve its meaning when adopting paired `role`/`agent_type` fields.
+  a later step must preserve its meaning when adopting paired `role`/`agent_type` fields.
 - Codex `owner_leads` values are closed `{lead, session}` records, not scalars.
   Retain `projected_metadata=2`, `v2_window`, the stat `probe_sig` tuple and the
   bounded array of task-start epoch values (`starts`) emitted by the collectors.
 - Serialized emitted/checkpoint signatures are projected into their reviewed
   structural domains and deterministically hashed. Text-bearing map keys,
   unknown nested objects, raw carry buffers and encoded source JSON cannot
-  bypass the boundary. Restart/replay stability and one usage count remain T1
+  bypass the boundary. Restart/replay stability and one usage count remain a later step
   transaction acceptance criteria.
 
 `checkpoint_signature(key, value, context)` validates the closed serialized
@@ -95,11 +94,11 @@ replay/emit signatures; a raw signature body is never saved as the new digest.
 Approved local paths are typed source/workspace locators under the supplied
 roots, kept only in private 0700 directories and 0600 local checkpoint files.
 The pure helper checks lexical containment; its caller must supply validated
-roots, and T1 separately enforces filesystem ownership, type, no-follow and race
+roots, and a later step separately enforces filesystem ownership, type, no-follow and race
 checks. Missing sources keep their locator/cursor identity without being opened.
 They are excluded from export and sync; this permission does not cover changed
 file lists, task titles or arbitrary paths. Opaque IDs are optional only after
-the paired Mac and native Linux performance gate. T1 must freeze its numerical
+the paired Mac and native Linux performance gate. a later step must freeze its numerical
 warm regression threshold before measuring; cold p95 remains at most 80 ms.
 New core size is at most 2 MiB; at most 64 shards, each at most 256 KiB and
 16 MiB combined; legacy reads are at most 32 MiB. A failed gate is reported,
@@ -109,10 +108,10 @@ never solved by dropping its workload or weakening a schema silently.
 
 `collector_admission_contract()` fixes the future
 `Loomy::CollectorContent::admit(request, lock_attestation)` API, implemented in
-T1's `collector-content.pl` and bound centrally by T6. Its closed request fields
+the later collector-content module and bound centrally. Its closed request fields
 are `protocol_version=1`, `project_id`, `requester_pid`, `requester_birth`,
 `policy_generation`, `journal_enabled`, `tasks_restricted`. A verified
-MAINFIRST-LOCK attestation adds `collector_pid`, `collector_birth`,
+collector ownership attestation adds `collector_pid`, `collector_birth`,
 `state=new|live|quiescent|unknown` and
 `owner_scope=requester|owned-descendant|other|unknown` to the identity and
 restriction tuple. An arbitrary caller hash or environment flag is not an
@@ -132,7 +131,7 @@ a new daemon or a promise that a later separately granted collector will never
 reread provider transcripts. Project-wide revocation uses the existing privacy
 controls. No safe concurrent mixed-writer guarantee is made without LOCK.
 
-## Named residual: R2-D1 execution scratch
+## Named residual: execution scratch
 
 The lead selected option 2 on 2026-10-27: preserve today's complete output on
 success only, including arbitrarily large output, and preserve failure, exit 75,
@@ -141,7 +140,7 @@ rejected. Provider replay was not established. The same answer prefix can end
 with success or failure; withholding it until that status needs proportional
 storage. An unlinked regular file still counts as disk storage.
 
-The single new raw-storage residual is **execution scratch**. R2-D1's binding
+The single new raw-storage residual is **execution scratch**. The binding
 acceptance checklist records required contracts, not completed bridge checks:
 
 | Item | Required contract |
@@ -218,7 +217,7 @@ The scratch lifecycle must satisfy the following details:
   Independently authorized bounded private-result retention remains its own
   R1 workflow, not an incidental scratch copy.
 - **Content transport:** pipes are mandatory for every content-bearing value;
-  content-bearing Bash here-strings and here-docs are forbidden. T2 adds a
+  content-bearing Bash here-strings and here-docs are forbidden. a later step adds a
   static bridge check for this rule. Internal formatter/matcher values travel
   through stdin, never external process argv. The only listed exceptions are
   the owned execution scratch above, separately authorized bounded R1 private
@@ -235,9 +234,9 @@ The scratch lifecycle must satisfy the following details:
   it, not a secure-erasure guarantee. Unlink does not securely erase filesystem
   or OS copies.
 
-T2 implements the hardened scratch lifecycle in the bridges and verifies their
+A later step implements the hardened scratch lifecycle in the bridges and verifies their
 framing, successful-result bytes, errors, signals, exactly-once 75/handover and
-usage. T0 does not install a scratch allocator or change live bridges. Before R2
+usage. This record does not install a scratch allocator or change live bridges. Before that
 release, the CHANGELOG and privacy status line must disclose this residual using
 the seeded EN/FR text. The current R1 status continues to report pending repair
 until the later implementation and integration are complete.
@@ -246,13 +245,13 @@ Streaming transport targets are 64 KiB per read/chunk and a separate 64 KiB
 error-classification window. Optional private capture retains at most the
 authorized record limit (no more than 1 MiB) plus one byte as an oversize sentinel;
 an oversize capture is unavailable, never a truncated saved result. Metadata
-parser state needs separate explicit bounds in T2. These bounds do not cap
+parser state needs separate explicit bounds in a later step. These bounds do not cap
 successful caller output or execution scratch. Synthetic framing probes cover
 empty, 1 MiB and 64 MiB output, late status and the Bash 3.2 110,592-byte
 here-string/pipe descriptor comparison. Stub evidence does not prove a real
 provider accepts FIFO output or avoids persistent transcript/session files.
-Real-provider-created-file feasibility is **NOT RUN / NOT VERIFIED** in T0 and
-remains a T2/release gate unless separately accepted by the lead.
+Real-provider-created-file feasibility is **NOT RUN / NOT VERIFIED** here and
+remains a release gate unless separately accepted by the lead.
 
 ## Typed skills and handoff
 
@@ -260,15 +259,14 @@ remains a T2/release gate unless separately accepted by the lead.
 memory. `skills_auto_for root` remains a wrapper with the existing `traits` to
 `sensitive` fallback. Task suggestions and matcher inputs use stdin pipes to
 external matchers, preserving recommendations and literal text without synthetic
-brief files, content-bearing here-strings or `awk -v` text arguments. T3 adopts
+brief files, content-bearing here-strings or `awk -v` text arguments. a later step adopts
 the typed API in setup; it does not need to own the skills library.
 
-Known gap assigned to R2 T5: `skills.lock` still receives a task title in its
-`reason` field (`skills.sh:274`, `loomy-task.sh:126`). T5 replaces that raw title
-with the reason code `task:<id>`; T0 neither fixes nor accepts the current write.
+Known gap assigned to a later step: `skills.lock` still receives a task title in its
+`reason` field (`skills.sh:274`, `loomy-task.sh:126`). That step replaces the raw title
+with the reason code `task:<id>`; this record neither fixes nor accepts the current write.
 
-T1–T5 reuse the contiguous `# R2-T0` EN/FR seed block and send additional exact
-`EN<TAB>FR` keys to T6. T6 adopts the new standalone contract suite in the full
-runner, wires collector admission, updates release/privacy disclosures and
-assembles cross-lane write manifests. Passing T0 is contract evidence, not proof
+Later steps reuse the reserved EN/FR seed block and add exact `EN<TAB>FR` keys; the
+final step adopts the standalone contract suite in the full runner, wires collector
+admission and updates release/privacy disclosures. Passing the contract suite is contract evidence, not proof
 that unimplemented checkpoint, provider, collector or scratch writers are safe.

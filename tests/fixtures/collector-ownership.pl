@@ -8,19 +8,17 @@
 #   O  owner collecting  : a compatible owner (another process) holds the slot: follow, mutate nothing.
 #   D  owner draining    : same, and the entrypoint never takes the slot from a finishing owner.
 #   U  unsafe lock       : collector.lock has an unsafe mode: refuse, mutate nothing, exit 0 for views.
-# Cells already proved by collector-views.sh are listed, not repeated:
-#   status  F O D U : L01 (election count, release), L02 (follower, no poll, manifest), L05 (draining), L04 (unsafe)
-#   tree    F O D U : L01, L02, L05, L04
-#   doctor  F O D U : L02 (owner facts, manifest), L04 (unsafe, worktree layouts), L09 (never elects)
-#   log     F       : L09 (read-only, no election); O D U: below (log is read-only in every state)
-#   watch   F O D U : L06 (owner, drain, stall), L08 (follower, promotion, footers), L04 (unsafe footer)
-#   project migrate F O U-refused : L07 (done / deferred / refused)
-# Cells proved here (E = entrypoint):
-#   E1 direct Codex CLI, E2 direct Claude CLI, E3 reducer CLI, E4 reducer --migrate : F O D U
-#   E5 loomy log raw/CSV, E6 loomy context (resume)                              : F O D U (read-only)
-#   E7 mixed concurrent entrypoints (all electing ones at once)                  : one owner, no duplicate rows
-#   E8 supported pairs and the documented limit (design 5.1-5.3, L10)
-# The collector guard is the L0 primitive; only the command lifetime elects.
+# Proved here, with a complete-manifest check in O, D and U and a late (never polled) source so a leaking poll shows:
+#   direct Codex CLI, direct Claude CLI, reducer CLI, reducer --migrate, loomy log --raw/--csv, loomy context,
+#   status, tree, doctor                                           : F O D U
+#   status/tree/doctor D also assert the draining owner is named (note text, doctor owner line).
+# Proved in collector-views.sh (not repeated; text and counters, manifest-checked where noted):
+#   status F (election count, release) and O (manifest) and U (manifest); status D (text only: the manifest is checked here)
+#   tree F O; tree U; watch F O D U in a real pseudo-terminal (owner, drain, stall, follower, promotion, footers)
+#   doctor O U and worktree layouts; project migrate F O refused (done / deferred / refused)
+# Also here: mixed concurrent entrypoints, the release security gates (S1 tracked checkpoints, S2 oversize v2, S3 hardened
+# git and escape-run warning) and the supported-pair evidence (E8: synthetic pre-LOCK writer always; real 0.17.9 build,
+# four legs and an old watch beside a new one, when the history has the release).
 use strict;
 use warnings;
 no warnings 'once';
@@ -197,17 +195,21 @@ my %E=(
     lograw =>{elect=>0,run=>sub {run(['bash',"$repo/scripts/loomy-log.sh",'--root',$_[0],'--raw'])}},
     logcsv =>{elect=>0,run=>sub {run(['bash',"$repo/scripts/loomy-log.sh",'--root',$_[0],'--csv'])}},
     context=>{elect=>0,run=>sub {run(['bash',"$repo/scripts/loomy-context.sh",'--root',$_[0]])}},
+    status =>{elect=>1,run=>sub {status($_[0])},drain=>qr/Owner is finishing its batch/},
+    tree   =>{elect=>1,run=>sub {tree($_[0])},drain=>qr/Owner is finishing its batch/},
+    doctor =>{elect=>0,run=>sub {doctor($_[0])},drain=>qr/Live tracking owner: draining/},
 );
 sub fresh {
     my ($e)=@_; my $p=project(1); codex_source($p); claude_source($p,'claude-'.(++$seq),1);
     status($p);   # one owned command first: identity, checkpoints and marker exist
+    claude_source($p,'claude-late-'.(++$seq),1);   # a source nobody has polled yet: a non-owner that polls would journal it
     unlink "$p/.loomy/logs/checkpoint-v2" if $e->{marker};
     return $p;
 }
 sub observed {my ($p)=@_; scalar grep {($_->{type}//'') eq 'session_observed'} journal($p)}
 
 # ---------------------------------------------------------------- E1-E6: entrypoint x owner state
-for my $name (qw(codex claude reducer migrate lograw logcsv context)) {
+for my $name (qw(codex claude reducer migrate lograw logcsv context status tree doctor)) {
     my $e=$E{$name};
     # F: a free slot.
     {
@@ -228,7 +230,8 @@ for my $name (qw(codex claude reducer migrate lograw logcsv context)) {
         ok(wait_for(undef,sub {($state eq 'D' ? (inspect_root($p)->{record}{state}//'') eq 'draining' : inspect_root($p)->{status} eq 'busy')},10),"E-$name $state: the holder is published before the manifest is taken");
         my $r; unchanged("E-$name $state",$p.'/.loomy',sub {$r=$e->{run}->($p)});
         is($r->{rc},0,"E-$name $state: exits 0 as a follower");
-        is(observed($p),$obs0,"E-$name $state: no event was journaled by a non-owner");
+        is(observed($p),$obs0,"E-$name $state: the late source was not journaled by a non-owner");
+        like($r->{all},$e->{drain},"E-$name D: the draining owner is named") if $state eq 'D' && $e->{drain};
         ok(!-f "$p/.loomy/logs/checkpoint-v2","E-$name $state: no migration marker was written by a non-owner") if $e->{marker};
         is(inspect_root($p)->{reason},'locked',"E-$name $state: the real owner still holds the lock");
         drop($h);
@@ -280,9 +283,67 @@ for my $name (qw(codex claude reducer migrate lograw logcsv context)) {
     is(inspect_root($conc)->{reason},'free','E7 every transient guard was released');
 }
 
+
+# ---------------------------------------------------------------- S1-S3: release security gates
+{
+    # S1: a clone-shipped checkpoint (tracked in the index) is refused before any preparation; mode is not a criterion.
+    my $p=project(1); codex_source($p); claude_source($p,'claude-s1',1); status($p);
+    my $idx="$p/.loomy/logs/codex-native.idx"; chmod 0644,$idx or die;
+    git($p,'add','-f','.loomy/logs/codex-native.idx'); git($p,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','-m','ships a checkpoint');
+    my $gl="$work/git-calls"; unlink $gl; make_path("$work/fakegit");
+    put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+    my ($r,$c)=counted(sub {unchanged('S1 status over a tracked checkpoint',"$p/.loomy",sub {run(['bash',"$repo/scripts/loomy-status.sh",'--root',$p],env=>{PATH=>"$work/fakegit:$ENV{PATH}"})})});
+    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx cannot be used.*delete that file},'S1 status names the tracked checkpoint with the clone-shipped remedy');
+    ok(!$c->{try_acquire},'S1 no election, hence no preparation, was attempted');
+    is(((stat $idx)[2] & 07777),0644,'S1 the tracked checkpoint keeps its mode (not chmod-ed to 0600, so the signal survives)');
+    my $t=unchanged('S1 tree over a tracked checkpoint',"$p/.loomy",sub {tree($p)}); like($t->{all},qr{codex-native\.idx cannot be used},'S1 tree names it too');
+    my $d=unchanged('S1 doctor over a tracked checkpoint',"$p/.loomy",sub {doctor($p)}); like($d->{all},qr{\.loomy/logs/codex-native\.idx.*shipped with this clone},'S1 doctor names it');
+    my @ls=grep {/ls-files/} split /\n/,bytes($gl);
+    ok(@ls && !grep({!/core\.fsmonitor=false/ || !/core\.hooksPath=\/dev\/null/} @ls),'S1 every index read runs with fsmonitor and hooks disabled ('.scalar(@ls).' call(s))');
+    # A tracked marker is refused as well; an untracked 0644 index still upgrades (the plain-mode refusal was rejected).
+    my $q=project(1); codex_source($q); status($q); my $qi="$q/.loomy/logs/codex-native.idx"; chmod 0644,$qi or die;
+    $r=status($q); is($r->{rc},0,'S1 an untracked 0644 checkpoint is still accepted'); is(((stat $qi)[2] & 07777),0600,'S1 and upgraded to 0600 by the preparation');
+    unlike($r->{all},qr/cannot be used/,'S1 with no refusal note');
+    my $m=project(1); status($m); put("$m/.loomy/logs/checkpoint-v2","2\n"); git($m,'add','-f','.loomy/logs/checkpoint-v2'); git($m,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','-m','marker');
+    like(status($m)->{all},qr{checkpoint-v2 cannot be used},'S1 a tracked migration marker is refused');
+    # The one-shot adapter command line stays git-free.
+    my $ctr; { my $g="$work/git-trace"; unlink $g; my $fp=fresh({});
+        put("$work/fakegit/git","#!/bin/sh\necho called >> '$g'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        local $ENV{PATH}="$work/fakegit:$ENV{PATH}"; $E{codex}{run}->($fp); $ctr=-e $g ? 1 : 0 }
+    is($ctr,0,'S1 the direct adapter command line never runs git');
+}
+{
+    # S2: an oversize v2 manifest is refused fast and cheaply.
+    my $p=project(1); status($p); my $idx="$p/.loomy/logs/codex-native.idx";
+    put($idx,'{"version":2,"files":{'.join(',',map {"\"/s/$_\":{\"o\":1,\"pad\":\"".('x' x 200)."\"}"} 1..30000).'}}'); chmod 0600,$idx;
+    my $size=-s $idx; cmp_ok($size,'>',4*1024*1024,"S2 the crafted manifest is $size bytes");
+    my $r=run(['perl','-e',q{
+        require "$ARGV[0]/scripts/lib/live-state.pl"; my $t=Time::HiRes::time();
+        my $k=Loomy::LiveState::checkpoint_peek($ARGV[1]); my $ms=1000*(Time::HiRes::time()-$t);
+        my $rss=`ps -o rss= -p $$`; $rss =~ s/\D//g; printf "%s %.0f %d\n",($k->{status}//'?'),$ms,$rss/1024;
+    },$repo,$idx]); my ($st,$ms,$mb)=split ' ',$r->{out};
+    isnt($st,'valid','S2 an oversize v2 manifest is not read as valid'); cmp_ok($ms,'<',500,"S2 refused fast ($ms ms)"); cmp_ok($mb,'<',120,"S2 low RSS ($mb MB)");
+    # A legacy v1 index larger than 2 MiB still migrates (the 32 MiB bound is kept only there).
+    my $q=project(1); status($q); my $qi="$q/.loomy/logs/codex-native.idx"; unlink "$q/.loomy/logs/checkpoint-v2";
+    put($qi,'{"version":1,"files":{},"seen":{'.join(',',map {"\"k$_\":1"} 1..250000).'}}'); chmod 0600,$qi; cmp_ok(-s $qi,'>',2*1024*1024,'S2 the legacy index is above the v2 cap');
+    $r=$E{migrate}{run}->($q); is($r->{rc},0,'S2 the legacy migration exits 0'); is($json->decode(bytes($qi))->{version},2,'S2 and upgrades a v1 index above 2 MiB');
+}
+{
+    # S3: hardened git for the runtime-path helper, and no warning from the escape-run fallback.
+    my $p=project(1); my $sentinel="$work/rp-sentinel"; git($p,'config','core.fsmonitor',"touch $sentinel");
+    my $plain=run(['git','-C',$p,'status','--porcelain']); my $sens=-e $sentinel; unlink $sentinel;
+    run(['perl','-e','require "$ARGV[0]/scripts/lib/runtime-paths.pl"; Loomy::RuntimePaths::_git($ARGV[1],"status","--porcelain")',$repo,$p]);
+    ok(!-e $sentinel,'S3 runtime-paths git calls disable fsmonitor'.($sens ? '' : ' (sensitivity not reproducible with this git)'));
+    my $w=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/live-state.pl"; my @w; local $SIG{__WARN__}=sub{push @w,@_};
+        my $d=Loomy::LiveState::checkpoint_decode('{"a":"'.("\\\\n" x 70000).'"}'); print length($d->{a})," ",scalar(@w),"\n"},$repo]);
+    is($w->{out},"70000 0\n",'S3 a 70000-escape run decodes with no warning that could set the sampler failure flag');
+}
+
 # ---------------------------------------------------------------- E8: supported pairs, adoption and rollback (design 5)
 # The pre-LOCK writer is the unguarded compatibility entry the adapters still keep: idx.lock-serialized,
-# single root, no collector.lock, no record. It is byte-for-byte the call path of 0.17.9's sampler.
+# single root, no collector.lock, no record. It is the same call SHAPE a pre-LOCK sampler makes (unguarded poll of
+# each source), run through the CURRENT adapter code: it models "a writer that ignores the lock", not the 0.17.9 code
+# itself. The real 0.17.9 build is exercised separately below when the repository history has it.
 sub legacy_poll {
     my ($root)=@_; return run(['perl','-e',q{
         my ($repo,$root,$sessions,$projects)=@ARGV; require "$repo/scripts/lib/codex-native.pl"; require "$repo/scripts/lib/claude-native.pl";
@@ -319,26 +380,52 @@ sub dup_keys {my ($p)=@_; my %key; $key{$_->{native_key}}++ for grep {defined $_
     my $before=manifest("$p/.loomy"); my $r=status($p);
     is($r->{rc},0,'E8 a newer protocol record keeps the view usable'); is_deeply(manifest("$p/.loomy"),$before,'E8 and is preserved untouched');
 }
-# The real 0.17.9 build (the release this one replaces) when the repository history has it.
+# The real 0.17.9 build (the release this one replaces), found by history: the release tag when present, else the newest
+# commit whose VERSION is 0.17.9 and that predates the collector guard (the LOCK work also carried 0.17.9 on its branch).
+sub baseline_commit {
+    return undef unless -e "$repo/.git";
+    my $t=`git -C '$repo' rev-parse --verify --quiet 'v0.17.9^{commit}' 2>/dev/null`; chomp $t; return $t if $t =~ /\A[0-9a-f]{40}\z/;
+    open my $l,'-|','git','-C',$repo,'log','--format=%H','-n','600','--','VERSION' or return undef;
+    while (my $c=<$l>) {
+        chomp $c; my $v=`git -C '$repo' show '$c:VERSION' 2>/dev/null`; chomp $v; next unless $v eq '0.17.9';
+        next if system("git -C '$repo' cat-file -e '$c:scripts/lib/collector-owner.pl' 2>/dev/null")==0;
+        return $c;
+    }
+    return undef;
+}
 {
-    my $base='4bc7c0f'; my $have=system("git -C '$repo' cat-file -e '$base^{commit}' 2>/dev/null")==0 && -d "$repo/.git" || -f "$repo/.git";
-    my $old="$work/old-0.17.9";
-    if ($have) { make_path($old); $have=system("git -C '$repo' archive '$base' | tar -x -C '$old'")==0 && -f "$old/VERSION" }
+    my $base=baseline_commit(); my $old="$work/old-0.17.9"; my $have=0;
+    if ($base) { make_path($old); $have=system("git -C '$repo' archive '$base' | tar -x -C '$old'")==0 && -f "$old/VERSION" }
+    my $N=20;   # assertions in this block when the baseline exists
     SKIP: {
-        skip 'the 0.17.9 history is not in this checkout (no release history in an exported archive)',9 unless $have;
-        chomp(my $v=bytes("$old/VERSION")); is($v,'0.17.9','E8 the comparison build is 0.17.9');
-        my $p=project(1); codex_source($p); claude_source($p,'claude-e8c',1);
+        if (!$have) {
+            fail('E8 the 0.17.9 baseline is required (LOOMY_REQUIRE_BASELINE=1) but the history has none') if $ENV{LOOMY_REQUIRE_BASELINE};
+            diag('E8 SKIPPED: no 0.17.9 release in this checkout history (shallow clone or exported archive): real-build pair evidence not run');
+            skip 'no 0.17.9 release in the checkout history (shallow clone or export): real-build pair evidence skipped',$N;
+        }
+        chomp(my $v=bytes("$old/VERSION")); is($v,'0.17.9','E8 the comparison build is 0.17.9 ('.substr($base,0,7).')');
+        my $p=project(1); my @ids; my $leg=0; codex_source($p); push @ids,claude_source($p,'claude-e8c',1)->{id};
         my $oldst=sub {run(['bash',"$old/scripts/loomy-status.sh",'--root',$p],env=>{LOOMY_HOME=>$old})};
-        my $r=$oldst->(); is($r->{rc},0,'E8 real 0.17.9 status runs on the synthetic project'); my $n=observed($p);
-        $r=status($p); is($r->{rc},0,'E8 real 0.17.9 -> 0.17.10 under quiescence: the new status runs'); is(observed($p),$n,'E8 pair: no source observed twice');
-        $r=$oldst->(); is($r->{rc},0,'E8 real 0.17.10 -> 0.17.9 rollback under quiescence: the old status runs'); is(observed($p),$n,'E8 rollback: no source observed twice');
-        is(dup_keys($p),0,'E8 pair: no duplicate native key through 0.17.9 -> 0.17.10 -> 0.17.9');
+        my $oldtree=sub {run(['bash',"$old/scripts/loomy-tree.sh",'--once','--root',$p],env=>{LOOMY_HOME=>$old})};
+        # Four legs, one new Claude source before each: 0.17.9 -> 0.17.10 -> 0.17.9 -> 0.17.10 over one store.
+        for my $who (qw(old new old new)) {
+            push @ids,claude_source($p,'claude-e8c-'.$leg,1)->{id} if $leg++>0;
+            my $r=$who eq 'old' ? $oldst->() : status($p); is($r->{rc},0,"E8 leg $leg ($who build) runs under quiescence");
+            is(observed($p),scalar(@ids),"E8 leg $leg: every source added so far is observed once in the shared journal ($who build)");
+        }
+        is(dup_keys($p),0,'E8 four legs: no duplicate native key');
+        # Readable both ways: each build shows the checkpoints and journal the other one wrote.
+        my $nt=tree($p); my $ot=$oldtree->(); is($nt->{rc},0,'E8 the new tree reads the store the old build wrote'); is($ot->{rc},0,'E8 the old tree reads the store the new build wrote');
+        my $shape=sub {my $t=shift; $t =~ s/\d\d:\d\d:\d\d//g; $t =~ s/[^\w\n ]//g; scalar(grep {/developer/i} split /\n/,$t)};
+        is($shape->($ot->{all}),$shape->($nt->{all}),'E8 both builds show the same agent rows (readable both ways)');
+        is(inspect_root($p)->{reason},'free','E8 the slot is free after the pair');
         # An old watch beside a new one: both run, the old one is not fenced, the new owner is undisturbed.
         my $ow; { local %ENV=(%ENV,LOOMY_HOME=>$old); my $err=gensym; my $pid=open3(my $in,my $out,$err,'bash',"$old/scripts/loomy-status.sh",'--root',$p,'--watch'); $ow={pid=>$pid,in=>$in,out=>$out,err=>$err,sel=>IO::Select->new($out,$err),o=>'',e=>''} }
         pump($ow,2); my $nw=start_watch($p);
         ok(wait_for($nw,sub {my $i=inspect_root($p); $i->{status} eq 'busy' && ($i->{record}{state}//'') eq 'collecting'},20),'E8 beside an old watch: the new watch still elects (the old one holds no lock to see)');
         pump($nw,2); pump($ow,1);
         is(waitpid($ow->{pid},WNOHANG),0,'E8 beside an old watch: the old watch keeps running (not fenced, not stopped)');
+        is(dup_keys($p),0,'E8 beside an old watch: no duplicate native key');
         print {$nw->{in}} "q\n"; my $f=finish_watch($nw,8); ok($f->{done},'E8 beside an old watch: the new watch drains and exits');
         print {$ow->{in}} "q\n"; $f=finish_watch($ow,8); ok($f->{done},'E8 the old watch exits on q (explicit shutdown is the supported adoption step)');
         is(inspect_root($p)->{reason},'free','E8 the slot is free once both watches are closed');

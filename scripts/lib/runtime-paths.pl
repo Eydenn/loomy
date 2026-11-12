@@ -83,7 +83,7 @@ sub _git_run {
         delete @ENV{grep {/\AGIT_/} keys %ENV};
         require POSIX;
         open STDERR,'>','/dev/null' or POSIX::_exit(1);
-        exec('git','-C',$root,@args) or POSIX::_exit(1);
+        exec('git','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',$root,@args) or POSIX::_exit(1);
     }
     my ($raw,$ok)=('',1);
     while (length($raw)<=$GIT_BYTES) {

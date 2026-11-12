@@ -602,7 +602,7 @@ watch_terminal_tests() {
     printf '  ○ watch PTY matrix skipped (LOOMY_TEST_NATIVE_PTY=0); run on the Mac\n'
     return
   fi
-  local wt="$WORK/watch-terminal" nowz
+  local wt="$WORK/watch-terminal" nowz fail0=$FAIL
   mkdir -p "$wt/project/.loomy/logs" "$wt/config/loomy" "$wt/bin" "$wt/apps/Codex.app/Contents/Resources"
   printf -- '---\nname: Watch regression\nai_mode: ORCHESTRATED\nai_lead: codex\nbudget: equilibre\n---\n' >"$wt/project/.loomy/brief.md"
   printf 'phase=done\n' >"$wt/project/.loomy/state"
@@ -858,6 +858,12 @@ STUB
     done
   else
     printf '  ○ watch tmux PTYs: tmux unavailable or sandbox denies its socket; run Watch terminal on the Mac\n'
+  fi
+  # The expect transcripts live under $WORK, which is removed at exit: keep them when a case failed, so a
+  # one-off PTY failure leaves evidence (LOOMY_TEST_LIVE_ARTIFACTS, or a fixed directory printed here).
+  if (( FAIL > fail0 )); then
+    local evidence="${LIVE_ARTIFACTS:-/tmp/loomy-watch-terminal-failures}"
+    mkdir -p "$evidence" && cp "$wt/"*.log "$evidence/" 2>/dev/null && printf '  ○ watch terminal transcripts kept in %s\n' "$evidence" || true
   fi
 }
 

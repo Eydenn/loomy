@@ -19,11 +19,22 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Performance
 
-- One-shot `status` and `tree` do less repeated work: one election and one poll per source per command, cheaper helper calls and journal/shard handling (about 5 ms off a ~60 ms warm poll on the Mac; no measurable change in election cost). The 80 ms cold-poll budget is unchanged.
+- One-shot `status` and `tree` do less repeated work: one election and one poll per source per command, cheaper helper calls and journal/shard handling. Measured on a five-source fixture: `status` about 490 to 440 ms and `tree --once` about 290 to 230 ms (medians), and the warm poll about 5 ms cheaper. The 80 ms cold-poll budget is unchanged.
+- Costs: `loomy doctor` is about 8% slower (about 390 to 425 ms: it now reads the owner facts and the Git index), and an open watch that owns the collector uses about 0.5% of one core more than 0.17.9 when idle. The owner check itself costs about 0.03 ms per 100 ms tick; the rest of that difference was not isolated.
+
+### Hardening
+
+- A checkpoint, shard or migration marker under `.loomy/logs` that is tracked in the repository (a clone can ship one) is refused when a view elects: nothing is prepared, chmod-ed or trusted, and `status`, `tree` and `loomy doctor` name the file to delete (`shipped with this clone`). File mode is not a criterion, so older 0644 logs still upgrade. The index is read with a hardened `git ls-files` (no fsmonitor, no hooks, `GIT_*` cleared); the one-shot adapter command lines stay Git-free.
+- A v2 checkpoint (primary or backup) is read only up to its 2 MiB writer cap plus a small slack, so a crafted manifest costs a stat instead of hundreds of MB per follower. Only a legacy v1 index being migrated may be larger (up to 32 MiB).
+- Internal Git calls for the project identity also disable fsmonitor and hooks. A run of more than 65,000 JSON escapes in a checkpoint no longer raises a Perl warning that the watch sampler would report as an internal error.
+
+### Internal (no behaviour change)
+
+- Groundwork for a later content release is included and changes nothing today: read-only policy and identity snapshots (`policy_snapshot`, export policy snapshot), automatic skill matching moved from awk to Perl, a contract test, and ADR-0010.
 
 ### Adoption and rollback
 
-- Updating files never updates a running process. Older Loomy versions (0.17.9 and earlier) do not take the lock, and nothing can stop them from collecting on the same project. Before upgrading or rolling back: close every open `loomy watch` with `q`, wait for the drain, switch versions, reopen. Tested pairs, under quiescence: 0.17.9 -> 0.17.10 -> 0.17.9 -> 0.17.10 over one store (no source observed twice, no duplicate native key, checkpoints and journal readable both ways). An old watch left running beside a new one is not fenced and not supported: both keep running, the new owner is undisturbed, and the old one keeps writing under its own cursors. If an owner cannot drain, keep using the stored data and quit it rather than starting a second collector.
+- Updating files never updates a running process. Older Loomy versions (0.17.9 and earlier) do not take the lock, and nothing can stop them from collecting on the same project. Before upgrading or rolling back: close every open `loomy watch` with `q`, wait for the drain, switch versions, reopen. Tested pairs, under quiescence, with the real 0.17.9 build when the repository history has it: 0.17.9 -> 0.17.10 -> 0.17.9 -> 0.17.10 over one store (each source journaled once, no duplicate native key, and each build reads the checkpoints and journal the other wrote). An old watch left running beside a new one is not fenced and not supported: both keep running, the new owner is undisturbed, and the old one keeps writing under its own cursors. If an owner cannot drain, keep using the stored data and quit it rather than starting a second collector.
 
 ### Known limits
 

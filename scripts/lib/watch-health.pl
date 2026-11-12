@@ -37,12 +37,14 @@ sub safe {
     # A clone can ship runtime files: any tracked content under .loomy/logs is named.
     my @names;
     local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
-    if (open my $git,"-|","sh","-c",'exec git -c core.fsmonitor=false -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
+    if (open my $git,"-|","sh","-c",'exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
         local $/="\0"; my $n=0;
         while (defined(my $name=<$git>)) { chomp $name; last if ++$n>1000; push @names,$name if @names<64 }
         close $git; print "committed\t$n\t".join(", ",grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @names[0..($#names>2 ? 2 : $#names)])."\n" if $n;
     }
     for my $name (qw(collector-owner-v1.json collector.lock)) { print "shipped\t.loomy/logs/$name\n" if grep {$_ eq ".loomy/logs/$name"} @names }
+    # Tracked checkpoints, shards and markers are refused by the election too (they would be trusted).
+    for my $name (grep {m{\A\.loomy/logs/(?:(?:codex|claude)-native\.idx(?:\.[A-Za-z0-9._-]{1,120})?|checkpoint-v2)\z}} @names) { print "shipped\t$name\n" }
 }
 exit unless safe($dir) && -d $dir;
 for my $entry (['events.jsonl',8388608],['codex-native.idx',2097152],['claude-native.idx',2097152]) {

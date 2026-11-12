@@ -261,16 +261,26 @@ sub _memo_set {
     $KIND_MEMO_SIZE++ unless exists $KIND_MEMO{$path};
     $KIND_MEMO{$path}=[$tag,$kind];
 }
+# A v2 manifest is at most 2 MiB (the writer's cap); the bound here is that plus a small slack, so a
+# crafted manifest costs a stat, not hundreds of MB per follower peek. Only a legacy v1 index being
+# migrated may be larger (up to 32 MiB): its callers pass the legacy bound explicitly.
+our $V2_READ_LIMIT=2097152+65536; our $LEGACY_READ_LIMIT=33554432;
+# The legacy bound applies only while a store still holds (or is being migrated from) v1 indexes: an explicit migration
+# call, or no checkpoint-v2 marker yet (the owner's in-poll upgrade). Followers and peeks never use it.
+sub _read_limit {
+    my ($opts,$path)=@_; return $LEGACY_READ_LIMIT if ref($opts) eq 'HASH' && $opts->{legacy};
+    my $dir=$path; $dir =~ s{/[^/]+$}{}; return -e "$dir/checkpoint-v2" ? $V2_READ_LIMIT : $LEGACY_READ_LIMIT;
+}
 sub _checkpoint_read {
-    my ($candidate,$kind_only)=@_;
+    my ($candidate,$kind_only,$limit)=@_; $limit//=$V2_READ_LIMIT;
     my @l=lstat($candidate); return ($!{ENOENT}||$!{ENOTDIR} ? 'missing' : 'io-error') unless @l;
     return 'unsafe' unless -f _ && safe_path($candidate);
-    return 'invalid' if !$l[7] || $l[7]>33554432;
+    return 'invalid' if !$l[7] || $l[7]>$limit;
     sysopen my $f,$candidate,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or return 'io-error';
     my @a=stat($f); return 'io-error' unless @a;
     # The handle, not the earlier lstat, is authoritative: a swapped FIFO/other file is unsafe.
     return 'unsafe' unless -f $f && $a[4]==$< && $a[0]==$l[0] && $a[1]==$l[1];
-    my $raw=''; while (1) {my ($n,$b)=_read_chunk($f); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
+    my $raw=''; while (1) {my ($n,$b)=_read_chunk($f); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>$limit}
     my @z=stat($f);
     return 'changed' unless @z && length($raw)==$a[7] && $a[7]==$z[7] && $a[9]==$z[9];
     my $tag=_memo_tag("$a[0]:$a[1]:$a[7]:$a[9]",$raw); my $memo=$KIND_MEMO{$candidate};
@@ -368,12 +378,13 @@ sub follower_read {
 sub checkpoint_load {
     my ($path,$opts)=@_; my $exists=0;
     ref($opts) eq q(HASH) && $opts->{full} ? _fence($opts,$path,0) : _fence_load($opts,$path);
-    my ($pk,$p)=_checkpoint_read($path); ($pk,$p)=_checkpoint_read($path) if $pk eq 'changed';
+    my $lim=_read_limit($opts,$path);
+    my ($pk,$p)=_checkpoint_read($path,0,$lim); ($pk,$p)=_checkpoint_read($path,0,$lim) if $pk eq 'changed';
     die "unsupported checkpoint format: $pk\n" if $pk =~ /^unsupported-/;
     my ($bk,$b);
     if ($pk eq 'valid') {my $r=_backup_refusal($path); die "unsupported checkpoint format: $r\n" if $r}
     if ($pk ne 'valid') {
-        ($bk,$b)=_checkpoint_read("$path.bak"); ($bk,$b)=_checkpoint_read("$path.bak") if $bk eq 'changed';
+        ($bk,$b)=_checkpoint_read("$path.bak",0,$lim); ($bk,$b)=_checkpoint_read("$path.bak",0,$lim) if $bk eq 'changed';
         die "unsupported checkpoint format: $bk\n" if $bk =~ /^unsupported-/;
         die "checkpoint changed during read\n" if $pk eq 'changed' || $bk eq 'changed';
         die "checkpoint unavailable\n" if $pk eq 'io-error' || $bk eq 'io-error';
@@ -455,7 +466,7 @@ sub checkpoint_save {
     my $json=checkpoint_json(); my %snapshot=%$s;
     # An unsupported on-disk primary is preserved; saving would replace it and its backup.
     my ($prior_raw,$prior_state,$prior_known_valid);
-    if (-s $path && -s $path<=33554432 && safe_path($path)) {
+    if (-s $path && -s $path<=_read_limit($opts,$path) && safe_path($path)) {
         sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
         my @pst=stat($old);
         local $/; $prior_raw=<$old>;
@@ -676,10 +687,10 @@ sub migrate_checkpoints {
     for my $tool (qw(codex claude)) {
         my $idx="$dir/$tool-native.idx";
         for my $candidate ($idx,"$idx.bak") {
-            my ($k)=_checkpoint_read($candidate); return 'refused' if $k =~ /^unsupported-/;
+            my ($k)=_checkpoint_read($candidate,0,$LEGACY_READ_LIMIT); return 'refused' if $k =~ /^unsupported-/;
         }
     }
-    my $full=defined $opts ? {%$opts,full=>1,flush=>(ref($opts->{flush}) eq 'ARRAY' ? $opts->{flush} : [])} : undef; # migration keeps the full fence everywhere
+    my $full=defined $opts ? {%$opts,full=>1,legacy=>1,flush=>(ref($opts->{flush}) eq 'ARRAY' ? $opts->{flush} : [])} : undef; # migration keeps the full fence everywhere
     my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+$}{};
     require "$lib/codex-native.pl"; require "$lib/claude-native.pl";
     for my $tool (qw(codex claude)) {
@@ -861,6 +872,9 @@ sub consume {
 my %FD_ESC=('"'=>'"','\\'=>'\\','/'=>'/',b=>"\b",f=>"\f",n=>"\n",r=>"\r",t=>"\t");
 our ($FD,$FD_DEPTH);
 sub _fd_string {
+    # A run of more than ~65k escapes exceeds the regex engine's recursion limit: the match fails (the JSON::PP
+    # fallback then decodes it) and Perl warns. The warning must not reach the sampler's failure flag.
+    no warnings 'regexp';
     $FD =~ /\G"((?:[^"\\\x00-\x1f]++|\\["\\\/bfnrt])*+)"/gc or die \&_fd_string;
     my $v=$1; $v =~ s/\\(.)/$FD_ESC{$1}/g if index($v,'\\')>=0; return $v;
 }

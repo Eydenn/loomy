@@ -291,16 +291,20 @@ use Digest::SHA qw(sha256_hex);
 use JSON::PP;
 my @r;
 for my $path (@ARGV[0,1]) {open my $h,'<',$path or die $!; local $/; push @r,decode_json(<$h>)}
+# Above the pipe capacity every supported Bash backs a here-string with an unlinked regular file.
 is($r[0]{kind},'REG','110592-byte Bash here-string uses a regular file');
 is($r[1]{kind},'FIFO','same builtin printf stream uses a pipe');
 for my $i (0,1) {
-  is($r[$i]{nlink},0,"descriptor $i: zero links alone does not prove disk-free");
+  # nlink is not a disk-free proof: an unlinked regular file has 0 links yet occupies disk, while a
+  # pipe reports 0 (macOS) or 1 (Linux) links and has no disk file at all. Assert per mechanism.
+  if ($r[$i]{kind} eq 'REG') {is($r[$i]{nlink},0,"descriptor $i: zero links alone does not prove disk-free (unlinked regular file)")}
+  else {ok($r[$i]{nlink}==0||$r[$i]{nlink}==1,"descriptor $i: pipe link count is platform-defined (0 or 1) and says nothing about disk")}
   is($r[$i]{bytes},110593,"descriptor $i: payload plus exactly one LF");
   is($r[$i]{sha256},sha256_hex(('H'x110592)."\n"),"descriptor $i: exact payload digest");
   cmp_ok($r[$i]{max_read},'<=',65536,"descriptor $i: bounded reads");
   diag(JSON::PP->new->canonical->encode({probe=>$i?'pipe':'here-string',bash=>$ARGV[2],%{$r[$i]}}));
 }
-is($r[0]{mode},0600,'unlinked here-string regular file is private but remains raw scratch');
+ok(($r[0]{mode}&077)==0 && ($r[0]{mode}&0400),sprintf('unlinked here-string regular file is private (no group/world bits, mode %04o; 0400 or 0600) but remains raw scratch',$r[0]{mode}));
 diag('Bash 3.2 acceptance is VERIFIED only when the reported native version is 3.2; other versions do not establish that platform gate');
 done_testing();
 PERL

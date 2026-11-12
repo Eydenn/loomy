@@ -19,18 +19,22 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Performance
 
-- One-shot `status` and `tree` do less repeated work: one election and one poll per source per command, cheaper helper calls and journal/shard handling. Measured on a five-source fixture: `status` about 490 to 440 ms and `tree --once` about 290 to 230 ms (medians), and the warm poll about 5 ms cheaper. The 80 ms cold-poll budget is unchanged.
+- One-shot `status` and `tree` do less repeated work: one election and one poll per source per command, cheaper helper calls and journal/shard handling. Measured on a five-source fixture, including the Git-index check below (about 10 ms per command): `status` about 490 to 455 ms and `tree --once` about 290 to 240 ms (medians), and the warm poll about 5 ms cheaper. The 80 ms cold-poll budget is unchanged.
 - Costs: `loomy doctor` is about 8% slower (about 390 to 425 ms: it now reads the owner facts and the Git index), and an open watch that owns the collector uses about 0.5% of one core more than 0.17.9 when idle. The owner check itself costs about 0.03 ms per 100 ms tick; the rest of that difference was not isolated.
 
 ### Hardening
 
-- A checkpoint, shard or migration marker under `.loomy/logs` that is tracked in the repository (a clone can ship one) is refused when a view elects: nothing is prepared, chmod-ed or trusted, and `status`, `tree` and `loomy doctor` name the file to delete (`shipped with this clone`). File mode is not a criterion, so older 0644 logs still upgrade. The index is read with a hardened `git ls-files` (no fsmonitor, no hooks, `GIT_*` cleared); the one-shot adapter command lines stay Git-free.
+- Runtime state that is tracked in the repository (a clone can ship it) is refused when a view elects: checkpoints (`*-native.idx`, `.bak`, shards, quarantined copies), the migration marker, the owner record and the lock under `.loomy/logs`, matched case-insensitively (`.Loomy/Logs/` too), and a tracked submodule (gitlink) or symlink standing for `.loomy` or `.loomy/logs`. Nothing is prepared, chmod-ed or trusted. `status`, `tree`, the watch footer and `loomy doctor` say so, and the remedy is `git rm --cached <file>`, commit, then reopen (deleting the file does not clear the Git index). The check uses targeted pathspecs with a hardened `git ls-files` (no fsmonitor, no hooks, `GIT_*` cleared), so it does not depend on how many files the repository tracks, and it is bounded by a 2 s timeout: a Git that does not answer gives `Storage not verified · run loomy doctor` instead of a hang. File mode is not a criterion, so older 0644 logs still upgrade. The answer is reused for 30 s (a clock that moves backwards keeps it until the clock catches up), and a watch that already owns the collector asks again only when it re-elects. The one-shot adapter command lines stay Git-free; `live-state.pl --migrate` applies the same check before reading.
 - A v2 checkpoint (primary or backup) is read only up to its 2 MiB writer cap plus a small slack, so a crafted manifest costs a stat instead of hundreds of MB per follower. Only a legacy v1 index being migrated may be larger (up to 32 MiB).
 - Internal Git calls for the project identity also disable fsmonitor and hooks. A run of more than 65,000 JSON escapes in a checkpoint no longer raises a Perl warning that the watch sampler would report as an internal error.
 
 ### Internal (no behaviour change)
 
 - Groundwork for a later content release is included and changes nothing today: read-only policy and identity snapshots (`policy_snapshot`, export policy snapshot), automatic skill matching moved from awk to Perl, a contract test, and ADR-0010.
+
+### Upgrade note
+
+- If your repository already tracks files under `.loomy/logs` (checkpoints, markers, an owner record), live tracking now refuses them until they leave the index: run `git rm --cached .loomy/logs/<file>` (or `git rm -r --cached .loomy/logs`), commit, then reopen. `loomy doctor` lists them. Runtime files belong outside Git; Loomy ignores `.loomy/logs` by default.
 
 ### Adoption and rollback
 

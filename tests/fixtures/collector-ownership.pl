@@ -285,38 +285,81 @@ for my $name (qw(codex claude reducer migrate lograw logcsv context status tree 
 
 
 # ---------------------------------------------------------------- S1-S3: release security gates
+sub index_add {   # an index-only entry (no worktree file needed): mode, path
+    my ($root,$mode,$path)=@_; my $blob=`git -C '$root' hash-object -w --stdin </dev/null`; chomp $blob;
+    git($root,'update-index','--add','--cacheinfo',"$mode,$blob,$path");
+}
+sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','--allow-empty','-m','ships runtime state')}
 {
     # S1: a clone-shipped checkpoint (tracked in the index) is refused before any preparation; mode is not a criterion.
     my $p=project(1); codex_source($p); claude_source($p,'claude-s1',1); status($p);
     my $idx="$p/.loomy/logs/codex-native.idx"; chmod 0644,$idx or die;
-    git($p,'add','-f','.loomy/logs/codex-native.idx'); git($p,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','-m','ships a checkpoint');
+    git($p,'add','-f','.loomy/logs/codex-native.idx'); commit_all($p);
     my $gl="$work/git-calls"; unlink $gl; make_path("$work/fakegit");
     put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
     my ($r,$c)=counted(sub {unchanged('S1 status over a tracked checkpoint',"$p/.loomy",sub {run(['bash',"$repo/scripts/loomy-status.sh",'--root',$p],env=>{PATH=>"$work/fakegit:$ENV{PATH}"})})});
-    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx cannot be used.*delete that file},'S1 status names the tracked checkpoint with the clone-shipped remedy');
+    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx is tracked by Git\. Run git rm --cached on it, commit},'S1 status names the tracked checkpoint with the git rm --cached remedy');
+    unlike($r->{all},qr/delete that file|delete it/,'S1 and never tells the user to delete the file');
     ok(!$c->{try_acquire},'S1 no election, hence no preparation, was attempted');
     is(((stat $idx)[2] & 07777),0644,'S1 the tracked checkpoint keeps its mode (not chmod-ed to 0600, so the signal survives)');
-    my $t=unchanged('S1 tree over a tracked checkpoint',"$p/.loomy",sub {tree($p)}); like($t->{all},qr{codex-native\.idx cannot be used},'S1 tree names it too');
-    my $d=unchanged('S1 doctor over a tracked checkpoint',"$p/.loomy",sub {doctor($p)}); like($d->{all},qr{\.loomy/logs/codex-native\.idx.*shipped with this clone},'S1 doctor names it');
+    my $t=unchanged('S1 tree over a tracked checkpoint',"$p/.loomy",sub {tree($p)}); like($t->{all},qr{codex-native\.idx is tracked by Git},'S1 tree names it too');
+    my $d=unchanged('S1 doctor over a tracked checkpoint',"$p/.loomy",sub {doctor($p)}); like($d->{all},qr{\.loomy/logs/codex-native\.idx.*tracked by Git \(shipped with this clone\): run git rm --cached},'S1 doctor names it with the remedy');
     my @ls=grep {/ls-files/} split /\n/,bytes($gl);
     ok(@ls && !grep({!/core\.fsmonitor=false/ || !/core\.hooksPath=\/dev\/null/} @ls),'S1 every index read runs with fsmonitor and hooks disabled ('.scalar(@ls).' call(s))');
-    # A tracked marker is refused as well; an untracked 0644 index still upgrades (the plain-mode refusal was rejected).
+    # The remedy works: removing it from the index clears the refusal.
+    git($p,'rm','--cached','--quiet','.loomy/logs/codex-native.idx'); commit_all($p); $r=status($p); unlike($r->{all},qr/is tracked by Git/,'S1 git rm --cached clears the refusal');
+    # An untracked 0644 index still upgrades (the plain-mode refusal was rejected).
     my $q=project(1); codex_source($q); status($q); my $qi="$q/.loomy/logs/codex-native.idx"; chmod 0644,$qi or die;
-    $r=status($q); is($r->{rc},0,'S1 an untracked 0644 checkpoint is still accepted'); is(((stat $qi)[2] & 07777),0600,'S1 and upgraded to 0600 by the preparation');
-    unlike($r->{all},qr/cannot be used/,'S1 with no refusal note');
-    my $m=project(1); status($m); put("$m/.loomy/logs/checkpoint-v2","2\n"); git($m,'add','-f','.loomy/logs/checkpoint-v2'); git($m,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','-m','marker');
-    like(status($m)->{all},qr{checkpoint-v2 cannot be used},'S1 a tracked migration marker is refused');
+    $r=status($q); is($r->{rc},0,'S1 an untracked 0644 checkpoint is still accepted'); is(((stat $qi)[2] & 07777),0600,'S1 and upgraded to 0600 by the preparation'); unlike($r->{all},qr/is tracked by Git/,'S1 with no refusal note');
+    # Every shape the gate must catch, index-only (independent of the filesystem's case rules and of the repository size).
+    my $shard='codex-native.idx.files-'.('a' x 64);
+    for my $case (['marker','.loomy/logs/checkpoint-v2'],['backup','.loomy/logs/codex-native.idx.bak'],['shard',".loomy/logs/$shard"],
+                  ['claude index','.loomy/logs/claude-native.idx'],['claude backup','.loomy/logs/claude-native.idx.bak'],['quarantined','.loomy/logs/codex-native.idx.invalid-1-2'],
+                  ['owner record','.loomy/logs/collector-owner-v1.json'],['lock','.loomy/logs/collector.lock'],
+                  ['upper-case file','.loomy/logs/Codex-Native.idx'],['upper-case directories','.Loomy/Logs/codex-native.idx'],['upper-case marker','.LOOMY/LOGS/CHECKPOINT-V2']) {
+        my ($name,$path)=@$case; my $x=project(1); codex_source($x); status($x); index_add($x,'100644',$path); commit_all($x);
+        my $o=unchanged("S1 $name",$x.'/.loomy',sub {status($x)}); like($o->{all},qr/is tracked by Git\. Run git rm --cached/,"S1 a tracked $name is refused");
+    }
+    {   # More than 2000 tracked files: the gate is targeted, not a capped scan.
+        my $x=project(1); codex_source($x); status($x);
+        open my $ii,'|-','git','-C',$x,'update-index','--add','--index-info' or die; my $blob=`git -C '$x' hash-object -w --stdin </dev/null`; chomp $blob;
+        print {$ii} "100644 $blob\t.loomy/logs/a-$_.txt\n" for 1..2500; print {$ii} "100644 $blob\t.loomy/logs/z-native.idx\n"; close $ii or die; commit_all($x);
+        my $o=status($x); like($o->{all},qr/is tracked by Git/,'S1 a tracked checkpoint is found among 2500 other tracked files');
+    }
+    {   # A tracked gitlink (submodule) or symlink standing for .loomy or .loomy/logs.
+        for my $case (['gitlink .loomy','160000','.loomy'],['symlink .loomy/logs','120000','.loomy/logs'],['gitlink .Loomy','160000','.Loomy']) {
+            my ($name,$mode,$path)=@$case; my $x=project(1); codex_source($x); status($x);
+            my $blob=`git -C '$x' hash-object -w --stdin </dev/null`; chomp $blob; git($x,'update-index','--add','--cacheinfo',"$mode,$blob,$path"); commit_all($x);
+            my $o=status($x); like($o->{all},qr/is tracked by Git/,"S1 a tracked $name is refused");
+        }
+    }
+    {   # A project in a subdirectory of the repository.
+        my $g=project(1); my $sub="$g/sub"; make_path("$sub/.loomy/logs",{mode=>0700}); chmod 0700,"$sub/.loomy"; codex_source($sub); status($sub);
+        git($g,'add','-f','sub/.loomy/logs/codex-native.idx'); commit_all($g);
+        my $o=status($sub); like($o->{all},qr/is tracked by Git/,'S1 a tracked checkpoint of a subdirectory project is refused');
+    }
+    {   # The index read is bounded: a git that hangs yields a clear refusal, not a hung command.
+        my $x=project(1); codex_source($x); status($x); put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) sleep 20;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        my $t0=Time::HiRes::time; my $o=run(['bash',"$repo/scripts/loomy-status.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}); my $el=Time::HiRes::time-$t0;
+        is($o->{rc},0,'S1 a hanging index read: status still exits 0'); cmp_ok($el,'<',15,sprintf('S1 and returns in %.1f s (bounded by the 2 s read timeout)',$el));
+        like($o->{all},qr/Storage not verified/,'S1 with a clear "Storage not verified" note');
+    }
     # The one-shot adapter command line stays git-free.
     my $ctr; { my $g="$work/git-trace"; unlink $g; my $fp=fresh({});
         put("$work/fakegit/git","#!/bin/sh\necho called >> '$g'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
         local $ENV{PATH}="$work/fakegit:$ENV{PATH}"; $E{codex}{run}->($fp); $ctr=-e $g ? 1 : 0 }
     is($ctr,0,'S1 the direct adapter command line never runs git');
+    {   # live-state.pl --migrate applies the same gate before it reads anything.
+        my $x=project(1); codex_source($x); status($x); unlink "$x/.loomy/logs/checkpoint-v2"; git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);
+        my $o=$E{migrate}{run}->($x); is($o->{rc},0,'S1 --migrate over a tracked index exits 0'); ok(!-e "$x/.loomy/logs/checkpoint-v2",'S1 and migrates nothing');
+    }
 }
 {
     # S2: an oversize v2 manifest is refused fast and cheaply.
     my $p=project(1); status($p); my $idx="$p/.loomy/logs/codex-native.idx";
     put($idx,'{"version":2,"files":{'.join(',',map {"\"/s/$_\":{\"o\":1,\"pad\":\"".('x' x 200)."\"}"} 1..30000).'}}'); chmod 0600,$idx;
     my $size=-s $idx; cmp_ok($size,'>',4*1024*1024,"S2 the crafted manifest is $size bytes");
+    unlink "$p/.loomy/logs/checkpoint-v2";   # a follower stays capped even in an unmigrated store (only the owner's upgrade reads legacy sizes)
     my $r=run(['perl','-e',q{
         require "$ARGV[0]/scripts/lib/live-state.pl"; my $t=Time::HiRes::time();
         my $k=Loomy::LiveState::checkpoint_peek($ARGV[1]); my $ms=1000*(Time::HiRes::time()-$t);
@@ -334,9 +377,11 @@ for my $name (qw(codex claude reducer migrate lograw logcsv context status tree 
     my $plain=run(['git','-C',$p,'status','--porcelain']); my $sens=-e $sentinel; unlink $sentinel;
     run(['perl','-e','require "$ARGV[0]/scripts/lib/runtime-paths.pl"; Loomy::RuntimePaths::_git($ARGV[1],"status","--porcelain")',$repo,$p]);
     ok(!-e $sentinel,'S3 runtime-paths git calls disable fsmonitor'.($sens ? '' : ' (sensitivity not reproducible with this git)'));
+    # The pure-Perl scanner itself (the JSON::XS path never reaches it): no warning, and the decode falls back cleanly.
     my $w=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/live-state.pl"; my @w; local $SIG{__WARN__}=sub{push @w,@_};
-        my $d=Loomy::LiveState::checkpoint_decode('{"a":"'.("\\\\n" x 70000).'"}'); print length($d->{a})," ",scalar(@w),"\n"},$repo]);
-    is($w->{out},"70000 0\n",'S3 a 70000-escape run decodes with no warning that could set the sampler failure flag');
+        my $text='{"a":"'.("\\\\n" x 70000).'"}'; my ($ok)=Loomy::LiveState::_fast_parse($text);
+        my $d=Loomy::LiveState::checkpoint_decode($text); print length($d->{a})," ",scalar(@w),"\n"},$repo]);
+    is($w->{out},"70000 0\n",'S3 the scanner on a 70000-escape run emits no warning that could set the sampler failure flag');
 }
 
 # ---------------------------------------------------------------- E8: supported pairs, adoption and rollback (design 5)
@@ -380,16 +425,19 @@ sub dup_keys {my ($p)=@_; my %key; $key{$_->{native_key}}++ for grep {defined $_
     my $before=manifest("$p/.loomy"); my $r=status($p);
     is($r->{rc},0,'E8 a newer protocol record keeps the view usable'); is_deeply(manifest("$p/.loomy"),$before,'E8 and is preserved untouched');
 }
-# The real 0.17.9 build (the release this one replaces), found by history: the release tag when present, else the newest
-# commit whose VERSION is 0.17.9 and that predates the collector guard (the LOCK work also carried 0.17.9 on its branch).
+# The real 0.17.9 build (the release this one replaces), found by history: the release tag v0.17.9 when present, else
+# the newest commit in ALL of the history (no path filter: merge commits carry VERSION without changing it) whose
+# VERSION is 0.17.9 and that has no collector-owner.pl (the LOCK work also carried 0.17.9 on its branch).
 sub baseline_commit {
     return undef unless -e "$repo/.git";
     my $t=`git -C '$repo' rev-parse --verify --quiet 'v0.17.9^{commit}' 2>/dev/null`; chomp $t; return $t if $t =~ /\A[0-9a-f]{40}\z/;
-    open my $l,'-|','git','-C',$repo,'log','--format=%H','-n','600','--','VERSION' or return undef;
-    while (my $c=<$l>) {
-        chomp $c; my $v=`git -C '$repo' show '$c:VERSION' 2>/dev/null`; chomp $v; next unless $v eq '0.17.9';
-        next if system("git -C '$repo' cat-file -e '$c:scripts/lib/collector-owner.pl' 2>/dev/null")==0;
-        return $c;
+    my @c=split /\n/,scalar(`git -C '$repo' log --format=%H -n 6000 2>/dev/null`); return undef unless @c;
+    my $req="$work/baseline-req"; put($req,join('',map {"$_:VERSION\n"} @c));
+    open my $o,'-|',"git -C '$repo' cat-file --batch < '$req' 2>/dev/null" or return undef; binmode $o;
+    for my $c (@c) {
+        my $head=<$o>; last unless defined $head;
+        if ($head =~ /\A[0-9a-f]+ blob (\d+)\n\z/) { read($o,my $body,$1); read($o,my $nl,1); next unless $body =~ /\A0\.17\.9\n?\z/;
+            next if system("git -C '$repo' cat-file -e '$c:scripts/lib/collector-owner.pl' 2>/dev/null")==0; return $c }
     }
     return undef;
 }

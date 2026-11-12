@@ -2554,6 +2554,8 @@ _t_fr() {
     'draining') _T='termine son lot' ;;
     'Files committed under .loomy/logs (%s): %s') _T='Fichiers versionnés sous .loomy/logs (%s) : %s' ;;
     'runtime files belong outside Git') _T='les fichiers d’exécution n’ont pas leur place dans Git' ;;
-    'shipped with this clone: delete this file, then reopen live tracking') _T='livré avec ce clone : supprime ce fichier, puis rouvre le suivi en direct' ;;
+    'tracked by Git (shipped with this clone): run git rm --cached on it and commit, then reopen live tracking') _T='suivi par Git (livré avec ce clone) : lance git rm --cached dessus et valide, puis rouvre le suivi en direct' ;;
+    'Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached dessus, valide, puis rouvre cette vue.' ;;
+    'Tracked runtime file · run loomy doctor') _T='Fichier d’exécution suivi par Git · lance loomy doctor' ;;
   esac
 }

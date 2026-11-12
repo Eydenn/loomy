@@ -135,7 +135,7 @@ loomy_doctor_tracking() {
         ai_owner_note owner owned owned "" "" "" "${path#-}"
         ui_warn "$AI_OWNER_NOTE" ;;
       committed) ui_warn "$(t 'Files committed under .loomy/logs (%s): %s' "$path" "$detail")" "$(t 'runtime files belong outside Git')" ;;
-      shipped) ui_warn "$path" "$(t 'shipped with this clone: delete this file, then reopen live tracking')" ;;
+      shipped) ui_warn "$path" "$(t 'tracked by Git (shipped with this clone): run git rm --cached on it and commit, then reopen live tracking')" ;;
       symlink) ui_warn "$path" "$(t 'symlink: live tracking disabled for this source')" ;;
       bounds) ui_warn "$path" "$(t 'tracking file exceeds its bound (%s bytes)' "$detail")" ;;
       quarantine) ui_info "$(t 'damaged tracking checkpoints (files / bytes): %s' "$detail")" ;;

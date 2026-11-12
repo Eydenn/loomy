@@ -57,7 +57,7 @@ recursive scalar rule. Validation cannot itself admit a writer or create files.
 The current `usage.idx` is TSV, not a native v2 JSON checkpoint: its separate
 logical row is `{source_locator, line_offset}`. The smooth display cursor's
 logical record is `{shown}`. `checkpoint_schema()` describes these separately;
-`project_checkpoint` handles native JSON state only. a later step owns preserving or
+`project_checkpoint` handles native JSON state only. A later step owns preserving or
 adopting the concrete usage/cursor formats without losing consumption offsets.
 The pure helpers validate the expanded logical state against the 32 MiB legacy
 read ceiling. A successful validation is not proof of the serialized core and
@@ -70,7 +70,7 @@ In particular:
 - `label_ref` retains the six scoped fields `version`, `project_id`, `target_kind`,
   `target_id`, `attempt_id`, `label_id`; `label_refs` is a closed object containing only
   `slug`, `nickname`, `role`, each with that same scoped reference.
-  Lifecycle event nulls retain R1's unknown-value meaning and confer no reference
+  Lifecycle event nulls retain 0.17.8's unknown-value meaning and confer no reference
   or grant authority; every non-null reference must satisfy the closed scope.
 - Claude built-in/custom `agent_type` is a validated token of at most 40 ASCII
   characters. A legacy Claude call's `role` slot carries that same agent-type
@@ -86,9 +86,9 @@ In particular:
   transaction acceptance criteria.
 
 `checkpoint_signature(key, value, context)` validates the closed serialized
-domain before reusing R1's structural signature canonicalizer, including its
+domain before reusing 0.17.8's structural signature canonicalizer, including its
 empty optional identity/model and generic-role semantics. The stored Claude call
-retains its separate agent-type value. Adopted signatures match existing R1
+retains its separate agent-type value. Adopted signatures match existing 0.17.8
 replay/emit signatures; a raw signature body is never saved as the new digest.
 
 Approved local paths are typed source/workspace locators under the supplied
@@ -98,7 +98,7 @@ roots, and a later step separately enforces filesystem ownership, type, no-follo
 checks. Missing sources keep their locator/cursor identity without being opened.
 They are excluded from export and sync; this permission does not cover changed
 file lists, task titles or arbitrary paths. Opaque IDs are optional only after
-the paired Mac and native Linux performance gate. a later step must freeze its numerical
+the paired Mac and native Linux performance gate. A later step must freeze its numerical
 warm regression threshold before measuring; cold p95 remains at most 80 ms.
 New core size is at most 2 MiB; at most 64 shards, each at most 256 KiB and
 16 MiB combined; legacy reads are at most 32 MiB. A failed gate is reported,
@@ -133,7 +133,7 @@ controls. No safe concurrent mixed-writer guarantee is made without LOCK.
 
 ## Named residual: execution scratch
 
-The lead selected option 2 on 2026-10-27: preserve today's complete output on
+Option 2 was chosen on 2026-10-27: preserve today's complete output on
 success only, including arbitrarily large output, and preserve failure, exit 75,
 handover and accounting behavior. Progressive delivery on a late failure was
 rejected. Provider replay was not established. The same answer prefix can end
@@ -174,7 +174,7 @@ The scratch lifecycle must satisfy the following details:
   reject unsafe links, containment in the project or any synced/exported
   location, and replacement races. Do not accept an unresolved or unverifiable
   parent or canonical path. A failed validation, creation or later safety check
-  fails closed without falling back to a weaker directory, using the seeded
+  fails closed without falling back to a weaker directory, using the reserved
   diagnostic `Execution scratch could not be created safely; delegation not started.`
 - **Private creation:** create one random per-delegation directory with an
   exclusive 0700 `mkdir`; `EEXIST` or any failed check fails the delegation.
@@ -215,12 +215,12 @@ The scratch lifecycle must satisfy the following details:
   or start a paid retry to compensate. Never copy scratch into another
   incidental spool, structural store, diagnostic, receipt, sync or export.
   Independently authorized bounded private-result retention remains its own
-  R1 workflow, not an incidental scratch copy.
+  0.17.8 workflow, not an incidental scratch copy.
 - **Content transport:** pipes are mandatory for every content-bearing value;
-  content-bearing Bash here-strings and here-docs are forbidden. a later step adds a
+  content-bearing Bash here-strings and here-docs are forbidden. A later step adds a
   static bridge check for this rule. Internal formatter/matcher values travel
   through stdin, never external process argv. The only listed exceptions are
-  the owned execution scratch above, separately authorized bounded R1 private
+  the owned execution scratch above, separately authorized bounded 0.17.8 private
   results, and the existing public task/provider argv protocols, which remain
   separately disclosed. These exceptions do not authorize incidental spools or
   content here-strings/here-docs. The bridge shell sets a shell-local,
@@ -238,7 +238,7 @@ A later step implements the hardened scratch lifecycle in the bridges and verifi
 framing, successful-result bytes, errors, signals, exactly-once 75/handover and
 usage. This record does not install a scratch allocator or change live bridges. Before that
 release, the CHANGELOG and privacy status line must disclose this residual using
-the seeded EN/FR text. The current R1 status continues to report pending repair
+the reserved EN/FR text. The current 0.17.8 status continues to report pending repair
 until the later implementation and integration are complete.
 
 Streaming transport targets are 64 KiB per read/chunk and a separate 64 KiB
@@ -259,14 +259,14 @@ remains a release gate unless separately accepted by the lead.
 memory. `skills_auto_for root` remains a wrapper with the existing `traits` to
 `sensitive` fallback. Task suggestions and matcher inputs use stdin pipes to
 external matchers, preserving recommendations and literal text without synthetic
-brief files, content-bearing here-strings or `awk -v` text arguments. a later step adopts
+brief files, content-bearing here-strings or `awk -v` text arguments. A later step adopts
 the typed API in setup; it does not need to own the skills library.
 
 Known gap assigned to a later step: `skills.lock` still receives a task title in its
 `reason` field (`skills.sh:274`, `loomy-task.sh:126`). That step replaces the raw title
 with the reason code `task:<id>`; this record neither fixes nor accepts the current write.
 
-Later steps reuse the reserved EN/FR seed block and add exact `EN<TAB>FR` keys; the
+Later steps reuse the reserved EN/FR block and add exact `EN<TAB>FR` keys; the
 final step adopts the standalone contract suite in the full runner, wires collector
 admission and updates release/privacy disclosures. Passing the contract suite is contract evidence, not proof
 that unimplemented checkpoint, provider, collector or scratch writers are safe.

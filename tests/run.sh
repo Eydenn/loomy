@@ -860,10 +860,11 @@ STUB
     printf '  ○ watch tmux PTYs: tmux unavailable or sandbox denies its socket; run Watch terminal on the Mac\n'
   fi
   # The expect transcripts live under $WORK, which is removed at exit: keep them when a case failed, so a
-  # one-off PTY failure leaves evidence (LOOMY_TEST_LIVE_ARTIFACTS, or a fixed directory printed here).
+  # one-off PTY failure leaves evidence (LOOMY_TEST_LIVE_ARTIFACTS, or a fresh mktemp directory printed here).
   if (( FAIL > fail0 )); then
-    local evidence="${LIVE_ARTIFACTS:-/tmp/loomy-watch-terminal-failures}"
-    mkdir -p "$evidence" && cp "$wt/"*.log "$evidence/" 2>/dev/null && printf '  ○ watch terminal transcripts kept in %s\n' "$evidence" || true
+    local evidence="${LIVE_ARTIFACTS:-}"
+    [[ -n "$evidence" ]] || evidence="$(mktemp -d /tmp/loomy-watch-failures.XXXXXX)" || evidence=""
+    [[ -n "$evidence" ]] && mkdir -p "$evidence" && cp "$wt/"*.log "$evidence/" 2>/dev/null && printf '  ○ watch terminal transcripts kept in %s\n' "$evidence" || true
   fi
 }
 

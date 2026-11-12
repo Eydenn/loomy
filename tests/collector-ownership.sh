@@ -5,7 +5,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 if [[ "${1:-}" != --isolated ]]; then
   [[ "$#" == 0 ]] || { printf 'usage: %s\n' "$0" >&2; exit 2; }
-  exec env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C \
+  exec env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin LC_ALL=C ${LOOMY_REQUIRE_BASELINE:+LOOMY_REQUIRE_BASELINE=$LOOMY_REQUIRE_BASELINE} \
     /bin/bash "$REPO/tests/collector-ownership.sh" --isolated
 fi
 [[ "$#" == 1 ]] || exit 2

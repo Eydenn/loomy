@@ -97,6 +97,36 @@ sub _git_run {
     $ok=0 if $over;
     return ($ok && $closed ? $raw : undef,0);
 }
+# Clone-shipped runtime state. A checkpoint, shard, migration marker, owner record or lock tracked in the repository
+# index, or a tracked gitlink/symlink standing for .loomy or .loomy/logs, must never be trusted. Targeted pathspecs
+# (case-insensitive: macOS and Windows checkouts), so the answer does not depend on how many files the repository tracks.
+# Hardened git (no fsmonitor, no hooks, GIT_* cleared); the read is bounded by a 2 s alarm.
+# Returns ($path,"tracked") with the path as tracked (relative to the project root), or ("","timeout"), or ("","").
+sub tracked_runtime {
+    my ($root)=@_; return ("","") unless defined $root && $root =~ m{\A/};
+    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
+    my @spec=map {":(icase,glob)$_"} ('.loomy/logs/*-native.idx*','.loomy/logs/checkpoint-v2','.loomy/logs/collector-owner-v1.json',
+        '.loomy/logs/collector.lock','?loomy','?loomy/logs');
+    my $pid=open(my $git,'-|','sh','-c','root=$1; shift; exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$root" ls-files -s -z -- "$@" 2>/dev/null','sh',$root,@spec);
+    return ("","") unless $pid;
+    my ($hit,$why)=("","");
+    my $ok=eval {
+        local $SIG{ALRM}=sub {die "timeout\n"}; alarm 2;
+        local $/="\0"; my $n=0;
+        while (defined(my $rec=<$git>)) {
+            chomp $rec; last if ++$n>4096;
+            next unless $rec =~ /\A(\d{6}) [0-9a-f]+ \d\t(.*)\z/s; my ($mode,$path)=($1,$2);
+            if (($mode eq '160000' || $mode eq '120000') && $path =~ m{\A\.loomy(?:/logs)?\z}i) { $hit=$path; last }
+            if ($path =~ m{\A\.loomy/logs/(?:[^/]*-native\.idx[^/]*|checkpoint-v2|collector-owner-v1\.json|collector\.lock)\z}i) { $hit=$path; last }
+        }
+        alarm 0; 1;
+    };
+    alarm 0;
+    if (!$ok) { kill 'KILL',$pid; $why='timeout' }
+    close $git;
+    return ("","timeout") if $why eq 'timeout';
+    return $hit eq '' ? ("","") : ($hit,"tracked");
+}
 sub _git {my ($raw)=_git_run($_[0],0,@_[1..$#_]); return $raw}
 sub _relation {
     my ($root,$cache)=@_;

@@ -20,6 +20,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the adoption/rollback tests build the real v0.17.9 release from it.
+          fetch-depth: 0
       - name: Dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq expect tmux shellcheck
@@ -32,4 +35,5 @@ jobs:
         env:
           LOOMY_TEST_NATIVE_PTY: "1"
           LOOMY_TEST_TIME_SCALE: "3"
+          LOOMY_REQUIRE_BASELINE: "1"
         run: bash tests/run.sh

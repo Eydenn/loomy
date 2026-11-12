@@ -42,9 +42,10 @@ sub safe {
         while (defined(my $name=<$git>)) { chomp $name; last if ++$n>1000; push @names,$name if @names<64 }
         close $git; print "committed\t$n\t".join(", ",grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @names[0..($#names>2 ? 2 : $#names)])."\n" if $n;
     }
-    for my $name (qw(collector-owner-v1.json collector.lock)) { print "shipped\t.loomy/logs/$name\n" if grep {$_ eq ".loomy/logs/$name"} @names }
-    # Tracked checkpoints, shards and markers are refused by the election too (they would be trusted).
-    for my $name (grep {m{\A\.loomy/logs/(?:(?:codex|claude)-native\.idx(?:\.[A-Za-z0-9._-]{1,120})?|checkpoint-v2)\z}} @names) { print "shipped\t$name\n" }
+    # Tracked runtime state (checkpoints, shards, markers, owner record, lock, or a tracked gitlink/symlink for .loomy)
+    # is refused by the election too: named here with its `git rm --cached` remedy. Targeted, case-insensitive, bounded.
+    my ($tp,$tw)=eval { Loomy::RuntimePaths::tracked_runtime($phys =~ s{/\.loomy/logs\z}{}r) };
+    print "shipped\t$tp\n" if ($tw//"") eq "tracked" && $tp =~ m{\A[A-Za-z0-9._/-]{1,160}\z};
 }
 exit unless safe($dir) && -d $dir;
 for my $entry (['events.jsonl',8388608],['codex-native.idx',2097152],['claude-native.idx',2097152]) {

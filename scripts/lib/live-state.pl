@@ -1105,6 +1105,7 @@ unless (caller) {
         my $abs=abs_path($ARGV[1]//'') // exit 0;
         require "$dir/codex-native.pl"; Loomy::CodexNative::load_owner();
         my $ctx=eval {Loomy::RuntimePaths::resolve($abs)}; exit 0 unless $ctx && $ctx->{loomy} && $ctx->{logs};
+        { my (undef,$why)=Loomy::RuntimePaths::tracked_runtime($ctx->{root}); exit 0 if $why; }   # a tracked (clone-shipped) index is neither read nor migrated
         my $r=eval {Loomy::CollectorOwner::try_acquire($ctx,Loomy::CodexNative::build_id())};
         exit 0 unless ref($r) eq 'HASH' && ($r->{status}//'') eq 'owned';
         my $ok=eval {migrate_checkpoints($ctx->{root},{owner=>$r->{guard},context=>$ctx}); 1};

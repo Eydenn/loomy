@@ -147,31 +147,39 @@ package main;
 # collector facts into text. Sets AI_OWNER_NOTE and AI_OWNER_KIND (problem|drain|follow|"").
 # busy/bootstrap-busy mean "retry", never "another owner"; files come from the frozen L0 table.
 ai_owner_note() {
-  local role="${1:-}" status="${2:-}" reason="${3:-}" file="${4:-}" state="${5:-}" fenced="${6:-}" refusal="${7:-}"
-  AI_OWNER_NOTE=""; AI_OWNER_KIND=""
+  local role="${1:-}" status="${2:-}" reason="${3:-}" file="${4:-}" state="${5:-}" fenced="${6:-}" refusal="${7:-}" a b
+  AI_OWNER_NOTE=""; AI_OWNER_SHORT=""; AI_OWNER_KIND=""
+  # Footer notes are short and lead with the action (at most 70 characters); AI_OWNER_LONG=1
+  # (status, tree, doctor: they have room) names the files to delete.
   if [[ -n "$fenced" ]]; then
-    tv AI_OWNER_NOTE "Live tracking stopped writing after its storage changed; run loomy doctor."; AI_OWNER_KIND=problem; return 0
+    tv AI_OWNER_NOTE "Tracking stopped: storage changed · run loomy doctor"; AI_OWNER_KIND=problem; return 0
   fi
   case "$status:$reason" in
     owned:*|off:*|unavailable:disabled|unavailable:free|unavailable:missing-runtime|busy:bootstrap-busy|:*) ;;
     busy:locked)
-      if [[ "$state" == draining ]]; then tv AI_OWNER_NOTE "Live tracking is finishing its current batch; stored data remains available."; AI_OWNER_KIND=drain; return 0; fi
+      if [[ "$state" == draining ]]; then tv AI_OWNER_NOTE "Owner is finishing its batch · showing stored data"; AI_OWNER_KIND=drain; return 0; fi
       # A compatible owner is active: this view is current. A future checkpoint still deserves its note.
-      if [[ -z "$refusal" ]]; then tv AI_OWNER_NOTE "Live tracking is active in another view; this view follows it."; AI_OWNER_KIND=follow; return 0; fi ;;
+      if [[ -z "$refusal" ]]; then
+        tv a "Following another watch"; tv b "q closes this view"
+        AI_OWNER_SHORT="$a"; AI_OWNER_NOTE="$a · $b"; AI_OWNER_KIND=follow; return 0
+      fi ;;
     *)
       AI_OWNER_KIND=problem
       case "$reason" in
-        unsafe-lock) tv AI_OWNER_NOTE "Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view." ".loomy/logs/collector.lock" ".loomy/logs/collector-owner-v1.json" ;;
+        unsafe-lock)
+          if [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view." ".loomy/logs/collector.lock" ".loomy/logs/collector-owner-v1.json"
+          else tv AI_OWNER_NOTE "Tracking unavailable · run loomy doctor"; fi ;;
         invalid-record|unsafe-record|unsupported-schema|unsupported-protocol|missing-lock)
-          if [[ -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s cannot be used. Close any older watch, delete that file, then reopen this view." ".loomy/$file"
-          else tv AI_OWNER_NOTE "Showing stored data; close the older watch, then reopen it with this Loomy version."; fi ;;
-        *) if [[ "$status" == incompatible ]]; then tv AI_OWNER_NOTE "Showing stored data; close the older watch, then reopen it with this Loomy version."
-           else tv AI_OWNER_NOTE "Live tracking could not verify this project's storage; run loomy doctor."; fi ;;
+          if [[ -z "$file" ]]; then tv AI_OWNER_NOTE "Older watch is running · close it, reopen this one"
+          elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s cannot be used. Close any older watch, delete that file, then reopen this view." ".loomy/$file"
+          else tv AI_OWNER_NOTE "Tracking unavailable · run loomy doctor"; fi ;;
+        *) if [[ "$status" == incompatible ]]; then tv AI_OWNER_NOTE "Older watch is running · close it, reopen this one"
+           else tv AI_OWNER_NOTE "Storage not verified · run loomy doctor"; fi ;;
       esac
       return 0 ;;
   esac
   if [[ -n "$refusal" ]]; then
-    tv AI_OWNER_NOTE "Tracking checkpoints were written by a newer Loomy version; showing stored data. Update Loomy, then reopen."; AI_OWNER_KIND=problem
+    tv AI_OWNER_NOTE "Newer checkpoints · showing stored data · update Loomy"; AI_OWNER_KIND=problem
   fi
   return 0
 }

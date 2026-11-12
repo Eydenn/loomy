@@ -1004,7 +1004,7 @@ loomy_native_facts() {
   local IFS='|' f; read -r -a f <<<"${1#F|}"
   LV_OWNER_ROLE="${f[0]:-}"; LV_OWNER_STATUS="${f[1]:-}"; LV_OWNER_REASON="${f[2]:-}"; LV_OWNER_FILE="${f[3]:-}"
   LV_OWNER_STATE="${f[4]:-}"; LV_OWNER_FENCED="${f[5]:-}"; LV_OWNER_REFUSAL="${f[6]:-}"
-  ai_owner_note "$LV_OWNER_ROLE" "$LV_OWNER_STATUS" "$LV_OWNER_REASON" "$LV_OWNER_FILE" "$LV_OWNER_STATE" "$LV_OWNER_FENCED" "$LV_OWNER_REFUSAL"
+  AI_OWNER_LONG=1 ai_owner_note "$LV_OWNER_ROLE" "$LV_OWNER_STATUS" "$LV_OWNER_REASON" "$LV_OWNER_FILE" "$LV_OWNER_STATE" "$LV_OWNER_FENCED" "$LV_OWNER_REFUSAL"
 }
 # A problem (or a draining owner) is stated once after the view; a plain follower is current and silent.
 loomy_owner_note_line() {

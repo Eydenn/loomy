@@ -118,12 +118,14 @@ loomy_doctor_tracking() {
         o_status="${o_status#-}"; o_reason="${o_reason#-}"; o_file="${o_file#-}"; o_state="${o_state#-}"; o_build="${o_build#-}"
         o_pid="${o_pid#-}"; o_boot="${o_boot#-}"; o_birth="${o_birth#-}"; o_epoch="${o_epoch#-}"
         tv unknown unknown
-        ai_owner_note owner "$o_status" "$o_reason" "$o_file" "$o_state" "" ""
+        AI_OWNER_LONG=1 ai_owner_note owner "$o_status" "$o_reason" "$o_file" "$o_state" "" ""
         if [[ "$o_status:$o_reason" == busy:bootstrap-busy ]]; then
           ui_info "$(t 'Live tracking owner check was busy; run loomy doctor again.')"
         elif [[ "$AI_OWNER_KIND" == problem ]]; then
           ui_warn "$AI_OWNER_NOTE"
-        elif [[ -n "$o_state" ]]; then
+        elif [[ "$o_status:$o_reason" == busy:locked && -n "$o_state" ]]; then
+          # Only a held lock proves a live owner; a stale record of a crashed or released owner does not.
+          case "$o_state" in collecting) tv o_state collecting ;; draining) tv o_state draining ;; esac
           o_epoch="${o_epoch:0:12}"
           ui_info "$(t 'Live tracking owner: %s · build %s · pid %s · boot %s · birth %s · epoch %s' "$o_state" "${o_build:-$unknown}" "${o_pid:-$unknown}" "${o_boot:-$unknown}" "${o_birth:-$unknown}" "${o_epoch:-$unknown}")"
         else

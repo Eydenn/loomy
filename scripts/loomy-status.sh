@@ -398,7 +398,7 @@ loomy_watch_feed() {
     # adapters: it reads the peeked checkpoints (gated by file signatures) and retries the
     # nonblocking election once a second; it promotes only after winning the guard.
     my $libdir=$native; $libdir =~ s{/[^/]+$}{};
-    my ($role,$guard,$opt,$canon,%fact,%refusal,$fenced,$elect_at,$scope_at,$scope_rev,$enriched,$follow_sig,%last_peek,$stat_at,$shown)=("off");
+    my ($role,$guard,$opt,$canon,%fact,%refusal,$fenced,$elect_at,$scope_at,$scope_rev,$enriched,$follow_sig,%last_peek,$stat_at,$shown,$backoff_sig,$backoff_at)=("off");
     $fenced="";
     my $elect=sub {
         my ($tries)=@_; my $e=Loomy::NativeCollect::elect($libdir,$root,$tries);
@@ -406,8 +406,12 @@ loomy_watch_feed() {
         $canon=ref($e->{ctx}) eq "HASH" && defined $e->{ctx}{root} ? $e->{ctx}{root} : $root;
         if ($e->{role} eq "owner") {
             unless (main::journal_prepare("$canon/.loomy/logs")) {
-                eval {Loomy::CollectorOwner::release($e->{guard})}; @fact{qw(status reason)}=("unsafe","unsafe-runtime"); $role="follower"; return;
+                # Lock won but the logs cannot be prepared: release, keep the message, and retry only
+                # when the logs directory changes or after 30 s (no election storm).
+                eval {Loomy::CollectorOwner::release($e->{guard})}; @fact{qw(status reason)}=("unsafe","unsafe-runtime"); $role="follower";
+                $backoff_sig=Loomy::LiveState::file_signature("$canon/.loomy/logs"); $backoff_at=time; return;
             }
+            $backoff_sig=undef;
             ($role,$guard,$opt)=("owner",$e->{guard},{owner=>$e->{guard},context=>$e->{ctx}}); $scope_rev=ref($e->{scope}) eq "HASH" ? $e->{scope}{revision} : "";
             # A promoted owner reloads every generation-dependent cache from storage.
             Loomy::CodexNative::reset_caches(); $fenced=""; $enriched=0; $scope_at=0; $follow_sig=undef; %refusal=();
@@ -420,7 +424,13 @@ loomy_watch_feed() {
         Loomy::CodexNative::reset_caches(); return 1;
     };
     my $errors_real=$errors;
-    $attempt->("elect",sub {Loomy::NativeCollect::load($libdir); $elect->(3); $errors="/dev/null" unless $role eq "owner"});
+    $canon=$root;
+    $attempt->("elect",sub {
+      my $ok=eval {Loomy::NativeCollect::load($libdir); $elect->(3); 1}; my $error=$@;
+      # A failed first election still follows and keeps retrying on the normal cadence.
+      unless ($ok) {$role="follower" if $role eq "off"; die $error}
+      $errors="/dev/null" unless $role eq "owner";
+    });
     $shown="";
     my $legacy=Loomy::WatchLegacy->new;
     $attempt->("legacy-archives",sub {
@@ -453,7 +463,8 @@ loomy_watch_feed() {
       my $wall=time; my $now=int($ENV{LOOMY_NATIVE_NOW}//$wall);
       $attempt->("initialize",sub {require $native; require $reducer; require $claude; $live=Loomy::LiveState->new}) unless $live;
       # Followers retry the nonblocking election at the maintenance cadence (at most once a second).
-      if ($role ne "owner" && $role ne "off" && int($wall)!=($elect_at//-1)) {
+      if ($role ne "owner" && $role ne "off" && int($wall)!=($elect_at//-1)
+          && !(defined $backoff_sig && $wall-($backoff_at//0)<30 && $backoff_sig eq Loomy::LiveState::file_signature("$canon/.loomy/logs"))) {
         $elect_at=int($wall); $attempt->("elect",sub {$elect->(1); $errors=$errors_real if $role eq "owner"});
       }
       if ($role eq "owner") {
@@ -621,14 +632,14 @@ loomy_watch_coalesce() {
 # O|<role>|<status>|<reason>|<file>|<state>|<fenced>|<refusal>: owner facts, sent only on a transition.
 # The owner note (a problem, a draining owner, or the follower state) takes the footer note over the
 # content hint: it explains why this view does not collect. Owners and one-shot views keep the hint.
-watch_owner_note=""; watch_owner_kind=""; watch_role="owner"
+watch_owner_note=""; watch_owner_short=""; watch_owner_shown=""; watch_role="owner"
+# At a narrow width the secondary clause goes, never the action.
+watch_owner_pick() { watch_owner_shown="$watch_owner_note"; (( ${#watch_owner_note} <= ${UI_COLS:-80} - 5 )) || watch_owner_shown="${watch_owner_short:-$watch_owner_note}"; }
 loomy_watch_owner_accept() {
   local IFS='|' f; read -r -a f <<<"${1#O|}"
   watch_role="${f[0]:-owner}"
   ai_owner_note "${f[0]:-}" "${f[1]:-}" "${f[2]:-}" "${f[3]:-}" "${f[4]:-}" "${f[5]:-}" "${f[6]:-}"
-  watch_owner_note="$AI_OWNER_NOTE"; watch_owner_kind="$AI_OWNER_KIND"
-  # A follower closes only its own view: say so beside the state (clipped on a narrow footer).
-  if [[ "$watch_owner_kind" == follow ]]; then watch_owner_note="$watch_owner_note $(t "Press q to close this view.")"; fi
+  watch_owner_note="$AI_OWNER_NOTE"; watch_owner_short="$AI_OWNER_SHORT"
   force_frame=1
 }
 
@@ -1316,19 +1327,19 @@ if (( WATCH )); then
     COALESCER=""
     local sampler="$KEY_READER" waited=0 unfinished=0
     KEY_READER=""
+    exec 7<&- 8<&- 9<&- 10<&-
     if [[ -n "$sampler" ]]; then
       # The sampler drains on its own (finish the batch, flush, save, release last). Wait a bounded
       # time: the deadline is not proof of death, and nothing is unlinked or force-killed here.
       if watch_child_owned "$sampler"; then kill "$sampler" 2>/dev/null || true; fi
-      while kill -0 "$sampler" 2>/dev/null && (( waited < 30 )); do sleep 0.1; waited=$(( waited + 1 )); done
+      while kill -0 "$sampler" 2>/dev/null && (( waited < 300 )); do sleep 0.01; waited=$(( waited + 1 )); done
       if kill -0 "$sampler" 2>/dev/null; then unfinished=1
       else wait "$sampler" 2>/dev/null || { (( $? != 3 )) || unfinished=1; }; fi
     fi
-    exec 7<&- 8<&- 9<&- 10<&-
     [[ -z "$WATCH_PIPE" ]] || { rm -f "$WATCH_PIPE/request"; rmdir "$WATCH_PIPE" 2>/dev/null || true; WATCH_PIPE=""; }
     # Same modes again once the readers are gone (the kernel's transient canonical-mode bits settle last).
     [[ -z "$saved_stty" ]] || stty "$saved_stty" 2>/dev/null || true
-    if (( unfinished )); then t "Live tracking did not finish saving; keep this Loomy version and run loomy doctor." >&2; fi
+    if (( unfinished )); then t "Tracking did not finish saving · run loomy doctor" >&2; fi
   }
   trap 'exit 0' INT TERM HUP
   trap watch_cleanup EXIT
@@ -1484,7 +1495,7 @@ if (( WATCH )); then
       hl_p=0; (( now < hl_phase )) && hl_p=1
       # Reserve the actual banner/footer before deciding how much hierarchy fits.
       loomy_live_header; UI_HDR_TITLE="$LV_HEADER"
-      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $watch_key_labels"; UI_FTR_NOTE="${watch_note:-${watch_owner_note:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
+      tv scroll_word scroll; UI_FTR_KEYS="↑↓ $scroll_word · $watch_key_labels"; watch_owner_pick; UI_FTR_NOTE="${watch_note:-${watch_owner_shown:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."; _ui_chrome
       watch_body_height=$(( UI_ROWS - UI_CHROME_H )); (( watch_body_height >= 0 )) || watch_body_height=0
       # Redraw only changed state, user navigation, or running timers.
       last_frame="$stamp"; force_frame=0; tick="$now"
@@ -1513,7 +1524,7 @@ if (( WATCH )); then
         loomy_live_header
         loomy_live_clip "$LV_HEADER" "$(( UI_COLS - 4 ))"; LV_HEADER="$LV_CLIPPED"
         ui_header "$LV_HEADER" ""
-        UI_FTR_KEYS="$watch_key_labels"; UI_FTR_NOTE="${watch_note:-${watch_owner_note:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
+        UI_FTR_KEYS="$watch_key_labels"; watch_owner_pick; UI_FTR_NOTE="${watch_note:-${watch_owner_shown:-${LOOMY_CONTENT_HINT_LINE:-}}}"; (( ! watch_discovering )) || tv UI_FTR_NOTE "Discovering source inventory (%s pending)." "$watch_discovering"; (( ! watch_error )) || tv UI_FTR_NOTE "Watch internal error; tracking continues (loomy doctor)."
         _ui_term_size; _ui_chrome
         (( LV_PAGE_LINES > UI_ROWS - UI_CHROME_H )) && watch_key_labels="↑↓ $scroll_word · $watch_key_labels"
         UI_FTR_KEYS="$watch_key_labels"; UI_BODY_TOP=$wtop

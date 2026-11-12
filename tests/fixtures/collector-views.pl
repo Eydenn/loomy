@@ -169,10 +169,11 @@ sub counted {
 put("$work/pty_watch.py",<<'PY');
 import os, pty, sys, time, select, signal, struct, fcntl, termios, subprocess, json
 repo, root, mode, secs = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+rows, cols = (int(sys.argv[5]), int(sys.argv[6])) if len(sys.argv) > 6 else (40, 170)
 pid, fd = pty.fork()
 if pid == 0:
     os.execvp('bash', ['bash', repo + '/scripts/loomy-status.sh', '--root', root, '--watch'])
-fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 170, 0, 0))
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
 buf = b''
 def pump(t):
     global buf
@@ -217,7 +218,7 @@ print(json.dumps({'out': buf.decode('utf-8', 'replace'), 'done': done, 'elapsed'
 PY
 sub pty_watch {
     my ($root,$mode,$secs,%o)=@_; local %ENV=(%ENV,%{$o{env}||{}});
-    my $r=run(['python3','-I',"$work/pty_watch.py",$repo,$root,$mode,$secs],timeout=>$secs+30);
+    my $r=run(['python3','-I',"$work/pty_watch.py",$repo,$root,$mode,$secs,$o{rows}//40,$o{cols}//170],timeout=>$secs+30);
     my $d=eval {$json->decode((grep {/^\{/} split /\n/,$r->{out})[-1]//'{}')}; $d->{out}//=''; $d->{out} =~ s/\e\[[0-9;?]*[A-Za-z]//g; return $d;
 }
 # ---------------------------------------------------------------- L01: one collection per command, any mix of commands
@@ -331,7 +332,7 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     is($r->{rc},0,'L05 status exits 0 under a bootstrap gate'); unlike($r->{all},qr/another view|follows it|could not verify|cannot be used|unsafe/,'L05 bootstrap-busy is silent: retry, not an owner and not an error');
     close $gate;
     my $h=hold($p,'drain');
-    $r=status($p); like($r->{all},qr/Live tracking is finishing its current batch; stored data remains available\./,'L05 a draining owner is named');
+    $r=status($p); like($r->{all},qr/Owner is finishing its batch \xc2\xb7 showing stored data/,'L05 a draining owner is named');
     drop($h);
     $h=hold($p); $r=status($p); unlike($r->{all},qr/another view|follows it/,'L05 a one-shot follower of a compatible owner stays silent (it is current)'); drop($h);
 }
@@ -358,7 +359,7 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     my $d=pty_watch($p,'stall',3);
     ok($d->{sampler},'L06 stall: the exact sampler child (ppid is the controller) was identified');
     ok($d->{done} && $d->{elapsed}<7,sprintf('L06 stall: the controller exits in %.1f s although the drain cannot finish',$d->{elapsed}//-1));
-    like($d->{out},qr/Live tracking did not finish saving; keep this Loomy version and run loomy doctor\./,'L06 stall: the unfinished save is reported');
+    like($d->{out},qr/Tracking did not finish saving \x{b7} run loomy doctor/,'L06 stall: the unfinished save is reported');
     ok($d->{echo} && $d->{icanon},'L06 stall: the terminal modes (echo, canonical input) are restored');
     ok(index($d->{out},'Live tracking did not finish saving')>index($d->{out},'AGENT TREE')||1,'L06 stall: the report follows the screen');
     is(inspect_root($p)->{reason},'locked','L06 stall: the stopped process still holds the lock (never stolen, never unlinked)');
@@ -372,8 +373,8 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     my $p=project(1); codex_source($p); claude_source($p,'claude-fol',1); status($p);   # a stored view exists
     my $h=hold($p); my $logs="$p/.loomy/logs";
     my ($d,$c)=counted(sub {my $before=manifest($logs); my $d=pty_watch($p,'q',5); is_deeply(manifest($logs),$before,'L08 the follower leaves the logs manifest unchanged'); $d});
-    like($d->{out},qr/Live tracking is active in another view; this view follows it\./,'L08 a watch follower says it follows the active view');
-    like($d->{out},qr/Press q to close this view\./,'L08 the follower says how to close its own view');
+    like($d->{out},qr/Following another watch \x{b7} q closes this view/,'L08 a watch follower says it follows the active view');
+    like($d->{out},qr/q closes this view/,'L08 the follower says how to close its own view');
     ok($d->{done} && $d->{rc}==0 && $d->{echo} && $d->{icanon},'L08 q closes only the follower view and restores the terminal');
     ok(!$c->{poll},'L08 a follower never polls the adapters');
     cmp_ok($c->{checkpoint_peek}//0,'<=',12,'L12 idle follower frames parse the manifests when their signature changes, not every frame');
@@ -388,11 +389,52 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     # Diagnostics reach the watch footer: draining owner, unsafe lock, future checkpoint.
     my $p=project(1); codex_source($p); claude_source($p,'claude-diag',1); status($p);
     my $h=hold($p,'drain'); my $d=pty_watch($p,'q',4); drop($h);
-    like($d->{out},qr/Live tracking is finishing its current batch; stored data remains available\./,'L06 a watch following a draining owner says so');
+    like($d->{out},qr/Owner is finishing its batch \x{b7} showing stored data/,'L06 a watch following a draining owner says so');
     my $u=project(1); status($u); chmod 0644,"$u/.loomy/logs/collector.lock";
-    $d=pty_watch($u,'q',4); like($d->{out},qr{\.loomy/logs/collector\.lock is unsafe.*\.loomy/logs/collector-owner-v1\.json},'L04 the watch footer names the unsafe lock and its one-step remedy');
+    $d=pty_watch($u,'q',4); like($d->{out},qr{Tracking unavailable \x{b7} run loomy doctor},'L04 the watch footer leads with the action (the files are named by status and doctor)');
     ok($d->{done},'L04 the watch stays usable and exits cleanly under an unsafe lock');
     is(((stat "$u/.loomy/logs/collector.lock")[2] & 07777),0644,'L04 the unsafe lock is left exactly as found');
+}
+
+{
+    # Footer notes fit 80x24 and 60 columns: the action survives, the secondary clause goes first.
+    my $p=project(1); codex_source($p); status($p);
+    my $h=hold($p); my $logs="$p/.loomy/logs";
+    for my $size ([24,80],[24,60],[24,40]) {
+        my ($rows,$cols)=@$size; my $d=pty_watch($p,'q',4,rows=>$rows,cols=>$cols);
+        like($d->{out},$cols>=60 ? qr/Following another watch \x{b7} q closes this view/ : qr/Following another watch(?! \x{b7})/,"L08 follower footer at ${cols}x$rows keeps the action".($cols>=60 ? ' and the q hint' : ' (secondary clause dropped)'));
+        unlike($d->{out},qr/closes this vi(?!ew)|Following anoth(?!er)/,"L08 follower footer at ${cols}x$rows is never cut mid-word");
+    }
+    drop($h);
+    my $u=project(1); status($u); chmod 0644,"$u/.loomy/logs/collector.lock";
+    for my $size ([24,80],[24,60]) {
+        my $d=pty_watch($u,'q',4,rows=>$size->[0],cols=>$size->[1]);
+        like($d->{out},qr/Tracking unavailable \x{b7} run loomy doctor/,"L04 unsafe-lock footer at $size->[1]x$size->[0] shows the whole action");
+    }
+    my $f=project(1); codex_source($f); claude_source($f,'claude-nar',1); status($f); my $fi="$f/.loomy/logs/claude-native.idx"; put($fi,$json->encode({version=>99})); chmod 0600,$fi;
+    my $d=pty_watch($f,'q',4,rows=>24,cols=>80); like($d->{out},qr/Newer checkpoints \x{b7} showing stored data \x{b7} update Loomy/,'L07 refusal footer at 80x24 is whole');
+    # Every note is at most 70 characters (EN), action first.
+    my $r=run(['bash','-c','source "$1/scripts/lib/ui.sh"; source "$1/scripts/lib/journal.sh"; for c in "owner owned owned - - FENCED -" "follower busy locked - draining - -" "follower busy locked - collecting - -" "follower unsafe unsafe-lock logs/collector.lock - - -" "follower incompatible invalid-record logs/collector-owner-v1.json - - -" "follower incompatible unsupported-protocol - - - -" "follower unsafe io-error - - - -" "owner owned owned - - - unsupported-version"; do set -- $c; ai_owner_note "$1" "$2" "$3" "${4#-}" "${5#-}" "${6#FENCED}" "${7#-}"; printf "%s\n" "$AI_OWNER_NOTE"; done','x',$repo]);
+    my @notes=grep {length} split /\n/,$r->{out}; utf8::decode($_) for @notes; cmp_ok(scalar(@notes),'>=',7,'L08 every note kind produced text');
+    ok(!grep({length($_)>70} @notes),'L08 every footer note is at most 70 characters') or diag join "\n",grep {length($_)>70} @notes;
+}
+
+{
+    # Doctor from a registered worktree (alias layouts) still reports the owner, a refusal and shipped files.
+    my $m=project(1); status($m); my $wt="$work/wt-doc"; git($m,'worktree','add','--quiet','--detach',$wt); symlink "$m/.loomy","$wt/.loomy" or die;
+    my $h=hold($m); my $d=doctor($wt); like($d->{all},qr/Live tracking owner: collecting/,'L04 doctor from a whole-.loomy worktree reports the live owner'); drop($h);
+    chmod 0644,"$m/.loomy/logs/collector.lock"; $d=doctor($wt); like($d->{all},qr{collector\.lock is unsafe},'L04 doctor from a worktree names the unsafe lock'); chmod 0600,"$m/.loomy/logs/collector.lock";
+    my $m2=project(1); status($m2); my $wt2="$work/wt-doc2"; git($m2,'worktree','add','--quiet','--detach',$wt2); mkdir "$wt2/.loomy",0700 or die; symlink "$m2/.loomy/logs","$wt2/.loomy/logs" or die;
+    $h=hold($m2); $d=doctor($wt2); like($d->{all},qr/Live tracking owner: collecting/,'L04 doctor from a logs-only worktree reports the live owner'); drop($h);
+    # A crashed owner leaves a stale record: doctor does not call it live.
+    my $c=project(1); status($c); $d=doctor($c); like($d->{all},qr/No live tracking owner\./,'L04 doctor shows no owner for a free slot with a stale record'); unlike($d->{all},qr/Live tracking owner: /,'L04 and does not print the stale record as live');
+}
+{
+    # Lock won but the logs cannot be prepared: no election storm (try_acquire count over 7 s).
+    my $p=project(1); status($p); symlink '/dev/null',"$p/.loomy/logs/stray" or die;
+    my $w; my ($x,$c)=counted(sub {$w=start_watch($p); pump($w,7); print {$w->{in}} "q\n"; finish_watch($w,6)});
+    cmp_ok($c->{try_acquire}//0,'<=',3,'L08 an unsafe-runtime watch backs off (try_acquire count '.($c->{try_acquire}//0).' over 7 s)');
+    is(inspect_root($p)->{reason},'free','L08 and leaves the slot free');
 }
 
 # ---------------------------------------------------------------- L07: unsupported checkpoint formats are preserved, shown once
@@ -402,12 +444,12 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     put("$idx.bak",$good); chmod 0600,"$idx.bak"; put($idx,$json->encode({version=>99,sessions=>{}})); chmod 0600,$idx;
     my $claude=sub {[grep {m{/claude-native\.idx}} @{manifest($logs)}]}; my $before=$claude->();
     my $r=status($p); my $keep=$claude;
-    is($r->{rc},0,'L07 an owned command exits 0 over a future primary'); like($r->{all},qr/Tracking checkpoints were written by a newer Loomy version; showing stored data\./,'L07 the refusal is stated once');
-    is(()=($r->{all} =~ /newer Loomy version/g),1,'L07 and only once');
+    is($r->{rc},0,'L07 an owned command exits 0 over a future primary'); like($r->{all},qr/Newer checkpoints \xc2\xb7 showing stored data \xc2\xb7 update Loomy/,'L07 the refusal is stated once');
+    is(()=($r->{all} =~ /Newer checkpoints/g),1,'L07 and only once');
     is_deeply($keep->(),$before,'L07 the primary, the valid backup and the shards are untouched by an owned command');
-    my $h=hold($p); $r=status($p); like($r->{all},qr/newer Loomy version/,'L07 a follower reads the stored data and states the refusal');
+    my $h=hold($p); $r=status($p); like($r->{all},qr/Newer checkpoints/,'L07 a follower reads the stored data and states the refusal');
     unchanged('L07 follower over a future primary',"$p/.loomy",sub {status($p); tree($p)}); drop($h);
-    like(doctor($p)->{all},qr/Tracking checkpoints were written by a newer Loomy version; showing stored data\./,'L07 doctor reports the unsupported checkpoint format without repairing it');
+    like(doctor($p)->{all},qr/Newer checkpoints \xc2\xb7 showing stored data \xc2\xb7 update Loomy/,'L07 doctor reports the unsupported checkpoint format without repairing it');
     # Project migration: refused, nothing touched, reported through the result variable.
     unlink "$logs/checkpoint-v2"; my $m=run(['bash','-c','source "$1/scripts/lib/project.sh"; loomy_project_migrate "$2"; printf "%s" "$LP_MIGRATE"','x',$repo,$p]);
     is($m->{out},'refused','L07 loomy_project_migrate returns refused for a future format'); is($m->{err},'','L07 the migration prints nothing (hook-safe)');

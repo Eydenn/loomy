@@ -93,7 +93,7 @@ sub content_input {
 }
 sub content_signature {
     my ($w,$type,$value)=@_;
-    my $body=ref($value) eq 'HASH' ? $value : eval {decode_json($value)};
+    my $body=ref($value) eq 'HASH' ? $value : eval {decode_fast($value)};
     $value=content_input($body) if ref($body) eq 'HASH';
     return Loomy::ContentPolicy::_signature($type,$value,$w->{policy}{project_id});
 }
@@ -106,7 +106,13 @@ sub journal_line {
     my ($e)=@_; my %body=%$e; my ($ts,$type)=delete @body{qw(ts type)};
     # Some shell readers require these compact literal pairs; canonical JSON
     # also avoids accidental spaces, regardless of the available XS encoder.
-    my $scalar=sub {substr($journal_json->encode([$_[0]]),1,-1)};
+    # Plain identifier-like text cannot be a number and needs no escaping: quote it directly.
+    my $scalar=sub {
+        my $v=$_[0];
+        return qq("$v") if defined $v && !ref($v) && ($v =~ /\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z\z/
+            || $v =~ /\A[A-Za-z][A-Za-z0-9_.:-]*\z/ && $v !~ /\A(?:inf(?:inity)?|nan)\z/i);
+        return substr($journal_json->encode([$v]),1,-1);
+    };
     my $prefix='{"ts":'.$scalar->($ts).',"type":'.$scalar->($type);
     $prefix.=',"id":'.$scalar->(delete $body{id}) if exists $body{id};
     return $prefix.(keys(%body) ? ','.substr($journal_json->encode(\%body),1) : '}')."\n";
@@ -119,9 +125,14 @@ sub journal_event_line {
 }
 
 sub text { defined $_[0] && !ref($_[0]) ? "$_[0]" : '' }
+# Pure in the text; the same stamps recur on every journal line and projection.
+my (%epoch_memo,$epoch_memo_size);
 sub epoch {
-    my @t=text($_[0]) =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
-    return @t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0)+($t[6]//0) : 0;
+    my $stamp=text($_[0]); my $hit=$epoch_memo{$stamp}; return $hit if defined $hit;
+    my @t=$stamp =~ /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(\.\d+)?Z$/;
+    my $value=@t ? (eval { timegm($t[5],$t[4],$t[3],$t[2],$t[1]-1,$t[0]) } // 0)+($t[6]//0) : 0;
+    if ($epoch_memo_size++>=4096) {%epoch_memo=(); $epoch_memo_size=1}
+    return $epoch_memo{$stamp}=$value;
 }
 sub safe_path {
     my $p=$_[0]; return 0 unless defined $p && $p =~ m{^/};
@@ -238,8 +249,20 @@ sub _checkpoint_kind {
 # Read-only: never chmod, rename, prune or create. Returns (kind,state) with kind one of
 # valid missing invalid unsafe unsupported-version unsupported-extension changed io-error.
 sub _read_chunk {my $n=sysread($_[0],my $b,262144); return ($n,$b)}
+# Bytes whose decode already classified as supported (or unsupported) in this process: a
+# later kind-only check or save of the identical bytes skips the decode. Sharded manifests
+# are never memoised because their validity also depends on the shard files. An entry is
+# the stat signature plus the SHA-256 of the bytes, never the bytes; at most 64 entries.
+my (%KIND_MEMO,$KIND_MEMO_SIZE);
+sub _memo_tag {require Digest::SHA; return "$_[0]|".Digest::SHA::sha256_hex($_[1])}
+sub _memo_set {
+    my ($path,$tag,$kind)=@_;
+    if (!exists $KIND_MEMO{$path} && $KIND_MEMO_SIZE>=64) {%KIND_MEMO=(); $KIND_MEMO_SIZE=0}
+    $KIND_MEMO_SIZE++ unless exists $KIND_MEMO{$path};
+    $KIND_MEMO{$path}=[$tag,$kind];
+}
 sub _checkpoint_read {
-    my ($candidate)=@_;
+    my ($candidate,$kind_only)=@_;
     my @l=lstat($candidate); return ($!{ENOENT}||$!{ENOTDIR} ? 'missing' : 'io-error') unless @l;
     return 'unsafe' unless -f _ && safe_path($candidate);
     return 'invalid' if !$l[7] || $l[7]>33554432;
@@ -250,9 +273,13 @@ sub _checkpoint_read {
     my $raw=''; while (1) {my ($n,$b)=_read_chunk($f); return 'io-error' unless defined $n; last unless $n; $raw.=$b; last if length($raw)>33554432}
     my @z=stat($f);
     return 'changed' unless @z && length($raw)==$a[7] && $a[7]==$z[7] && $a[9]==$z[9];
-    my $s=eval {checkpoint_json()->decode($raw)};
+    my $tag=_memo_tag("$a[0]:$a[1]:$a[7]:$a[9]",$raw); my $memo=$KIND_MEMO{$candidate};
+    return $memo->[1] if $kind_only && $memo && $memo->[0] eq $tag;
+    my $s=eval {checkpoint_decode($raw)};
     return 'invalid' unless ref($s) eq 'HASH';
-    my $kind=_checkpoint_kind($s); return $kind if defined $kind;
+    my $kind=_checkpoint_kind($s);
+    _memo_set($candidate,$tag,$kind//'valid') unless exists $s->{source_shards};
+    return $kind if defined $kind;
     if (exists $s->{source_shards}) {
         my $path=$candidate; $path =~ s{\.bak$}{} if $candidate =~ /\.bak$/;
         # Shards are named from the primary path; the backup refers to the same shard family.
@@ -262,7 +289,7 @@ sub _checkpoint_read {
 }
 # A future-format backup is never replaced or ignored by a mutator: bounded read, then refuse.
 sub _backup_refusal {
-    my ($path)=@_; my ($k)=_checkpoint_read("$path.bak");
+    my ($path)=@_; my ($k)=_checkpoint_read("$path.bak",1);
     return $k =~ /^unsupported-/ ? $k : undef;
 }
 # Pure bounded reader for followers. Never acquires ownership, repairs, chmods, prunes,
@@ -405,7 +432,7 @@ sub load_shards {
         sysopen my $f,$p,O_RDONLY|O_NOFOLLOW|O_NONBLOCK or die; die 'unsafe source shard' unless -f $f; local $/; my $raw=<$f>; $total+=length($raw);
         die 'source inventory exceeds 16 MiB' if $total>16777216;
         require Digest::SHA; die 'source shard checksum mismatch' unless $name eq 'files-'.Digest::SHA::sha256_hex($raw);
-        my $part=checkpoint_json()->decode($raw); die 'invalid source shard' unless ref($part) eq 'HASH';
+        my $part=checkpoint_decode($raw); die 'invalid source shard' unless ref($part) eq 'HASH';
         $files{$_}=$part->{$_} for keys %$part;
     }
     $s->{files}=\%files;
@@ -427,12 +454,18 @@ sub checkpoint_save {
     $s->{version}=2;
     my $json=checkpoint_json(); my %snapshot=%$s;
     # An unsupported on-disk primary is preserved; saving would replace it and its backup.
-    my ($prior_raw,$prior_state);
+    my ($prior_raw,$prior_state,$prior_known_valid);
     if (-s $path && -s $path<=33554432 && safe_path($path)) {
         sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed';
-        local $/; $prior_raw=<$old>; $prior_state=eval {$json->decode($prior_raw)};
-        my $kind=ref($prior_state) eq 'HASH' ? _checkpoint_kind($prior_state) : undef;
-        die "unsupported checkpoint format: $kind\n" if defined($kind) && $kind =~ /^unsupported-/;
+        my @pst=stat($old);
+        local $/; $prior_raw=<$old>;
+        my $memo=$KIND_MEMO{$path};
+        if ($memo && $memo->[1] eq 'valid' && @pst && $memo->[0] eq _memo_tag("$pst[0]:$pst[1]:$pst[7]:$pst[9]",$prior_raw)) {$prior_known_valid=1}
+        else {
+            $prior_state=eval {checkpoint_decode($prior_raw)};
+            my $kind=ref($prior_state) eq 'HASH' ? _checkpoint_kind($prior_state) : undef;
+            die "unsupported checkpoint format: $kind\n" if defined($kind) && $kind =~ /^unsupported-/;
+        }
     }
     {my $r=_backup_refusal($path); die "unsupported checkpoint format: $r\n" if $r}
     my $raw=$json->encode(\%snapshot);
@@ -457,7 +490,7 @@ sub checkpoint_save {
     # Preserve the last valid generation; an invalid primary must not replace a usable backup.
     if (defined $prior_raw) {
         my $prior=$prior_raw; my $valid=$prior_state;
-        my $ok=ref($valid) eq 'HASH' && eval {load_shards($path,$valid) if exists $valid->{source_shards}; 1};
+        my $ok=$prior_known_valid || (ref($valid) eq 'HASH' && eval {load_shards($path,$valid) if exists $valid->{source_shards}; 1});
         $unchanged=$ok && $prior eq $raw;
         if ($unchanged) {sysopen my $old,$path,O_RDONLY|O_NOFOLLOW or die 'checkpoint backup open failed'; chmod 0600,$old or die 'checkpoint permissions failed'}
         atomic_file("$path.bak",$prior) if $ok && !$unchanged;
@@ -466,7 +499,9 @@ sub checkpoint_save {
     # Keep only shards referenced by the primary or its backup, after both are durable.
     my %keep=map {text($_)=>1} @{$snapshot{source_shards}//[]};
     if (-f "$path.bak" && safe_path("$path.bak")) {
-        sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $old=eval {$json->decode(<$b>)};
+        sysopen my $b,"$path.bak",O_RDONLY|O_NOFOLLOW or die; local $/; my $braw=<$b>;
+        # Without the key (and without any escape that could spell it) the backup names no shard.
+        my $old=(index($braw,'source_shards')<0 && index($braw,'\\')<0) ? undef : eval {checkpoint_decode($braw)};
         $keep{text($_)}=1 for @{ref($old) eq 'HASH' && ref($old->{source_shards}) eq 'ARRAY' ? $old->{source_shards} : []};
     }
     my $dir=$path; $dir =~ s{/[^/]+$}{}; my $base=$path; $base =~ s{.*/}{};
@@ -817,6 +852,69 @@ sub consume {
 }
 
 # Seek before decoding; malformed complete lines advance, partial appends retry, oversized lines skip.
+# JSON::PP reads strings one character at a time, which dominates checkpoint, journal
+# and transcript decoding. This scanner reads plain ASCII text made of objects, arrays,
+# strings with simple escapes, small integers, booleans and null with anchored regexes
+# and builds exactly what JSON::PP builds. Anything else (non-ASCII, \u escapes,
+# fractions, exponents, big or negative-zero numbers, deep nesting, malformed text)
+# is handed unchanged to JSON::PP, so results and failures stay identical.
+my %FD_ESC=('"'=>'"','\\'=>'\\','/'=>'/',b=>"\b",f=>"\f",n=>"\n",r=>"\r",t=>"\t");
+our ($FD,$FD_DEPTH);
+sub _fd_string {
+    $FD =~ /\G"((?:[^"\\\x00-\x1f]++|\\["\\\/bfnrt])*+)"/gc or die \&_fd_string;
+    my $v=$1; $v =~ s/\\(.)/$FD_ESC{$1}/g if index($v,'\\')>=0; return $v;
+}
+sub _fd_value {
+    $FD =~ /\G[ \t\r\n]*/gc;
+    if ($FD =~ /\G"/gc) {pos($FD)--; return _fd_string()}
+    if ($FD =~ /\G(0|-?[1-9][0-9]{0,14})(?![0-9.eE])/gc) {return 0+$1}
+    if ($FD =~ /\G\{/gc) {
+        die \&_fd_value if ++$FD_DEPTH>64;
+        my %h; $FD =~ /\G[ \t\r\n]*/gc;
+        unless ($FD =~ /\G\}/gc) {
+            while (1) {
+                my $k;
+                if ($FD =~ /\G"([^"\\\x00-\x1f]*+)":/gc) {$k=$1}
+                else {$FD =~ /\G[ \t\r\n]*/gc; $k=_fd_string(); $FD =~ /\G[ \t\r\n]*:/gc or die \&_fd_value}
+                # Plain strings and small integers need no recursion.
+                if ($FD =~ /\G"([^"\\\x00-\x1f]*+)"/gc) {$h{$k}=$1}
+                elsif ($FD =~ /\G(0|-?[1-9][0-9]{0,14})(?![0-9.eE])/gc) {$h{$k}=0+$1}
+                else {$h{$k}=_fd_value()}
+                next if $FD =~ /\G,/gc; last if $FD =~ /\G\}/gc;
+                $FD =~ /\G[ \t\r\n]*/gc; next if $FD =~ /\G,/gc; last if $FD =~ /\G\}/gc; die \&_fd_value;
+            }
+        }
+        --$FD_DEPTH; return \%h;
+    }
+    if ($FD =~ /\G\[/gc) {
+        die \&_fd_value if ++$FD_DEPTH>64;
+        my @a; $FD =~ /\G[ \t\r\n]*/gc;
+        unless ($FD =~ /\G\]/gc) {
+            while (1) {
+                push @a,_fd_value(); $FD =~ /\G[ \t\r\n]*/gc;
+                next if $FD =~ /\G,/gc; last if $FD =~ /\G\]/gc; die \&_fd_value;
+            }
+        }
+        --$FD_DEPTH; return \@a;
+    }
+    return $JSON::PP::true if $FD =~ /\Gtrue(?![A-Za-z0-9_])/gc;
+    return $JSON::PP::false if $FD =~ /\Gfalse(?![A-Za-z0-9_])/gc;
+    return undef if $FD =~ /\Gnull(?![A-Za-z0-9_])/gc;
+    die \&_fd_value;
+}
+sub _fast_parse {
+    my ($text)=@_;
+    return unless defined $text && !ref($text) && $text =~ /\A[ \t\r\n]*[\{\[]/ && $text !~ /[^\x00-\x7f]/;
+    my $v; local ($FD,$FD_DEPTH)=($text,0); pos($FD)=0;
+    return eval {$v=_fd_value(); $FD =~ /\G[ \t\r\n]*\z/gc or die \&_fd_value; 1} ? (1,$v) : ();
+}
+# Same contract as decode_json (UTF-8 bytes in, structure out, dies on bad input).
+sub decode_fast {my ($ok,$v)=_fast_parse($_[0]); return $ok ? $v : decode_json($_[0])}
+# Same, with the checkpoint codec (JSON::XS when installed) as the fallback.
+sub checkpoint_decode {
+    my $codec=checkpoint_json(); return $codec->decode($_[0]) if ref($codec) eq 'JSON::XS';
+    my ($ok,$v)=_fast_parse($_[0]); return $ok ? $v : $codec->decode($_[0]);
+}
 sub journal_records {
     my ($self,$path)=@_; $self->{read_bytes}=0;
     my @probe=Time::HiRes::stat($path);
@@ -842,7 +940,7 @@ sub journal_records {
     my @out;
     for my $line (split /\n/,substr($buf,$skip,$end-$skip+1)) {
         next if length($line)>65536;
-        my $d=eval {decode_json($line)}; push @out,$d if ref($d) eq 'HASH';
+        my $d=eval {decode_fast($line)}; push @out,$d if ref($d) eq 'HASH';
     }
     return @out;
 }

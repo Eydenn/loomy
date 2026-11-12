@@ -13,8 +13,9 @@ my (%cache,%inventory,%watch,%diagnosed,%retry,%busy,%roots_of,%scope_seen);
 use POSIX qw(strftime);
 my $json=JSON::PP->new->canonical;
 our $content_writer;
+# Shared helpers, resolved by package name at every call so test hooks on them still apply.
 sub text { Loomy::CodexNative::scalar_text($_[0]) }
-sub id { my $value=$_[0]; Loomy::CodexNative::identity($value) }
+sub id { Loomy::CodexNative::identity($_[0]) }
 sub epoch { Loomy::CodexNative::epoch($_[0]) }
 sub safe { Loomy::CodexNative::safe_path($_[0]) }
 sub lines { Loomy::CodexNative::lines(@_) }
@@ -461,7 +462,7 @@ sub poll_locked {
     my $input=Loomy::LiveState::recovery_path($journal,$jc);
     my %replayed_signatures; # R1 journal digests are transient, not a new sent format.
     for my $r (lines($input,$jc,2097152)) {
-        my $e=eval {decode_json($r->[0])}; next unless Loomy::LiveState::valid_event($e);
+        my $e=eval {Loomy::LiveState::decode_fast($r->[0])}; next unless Loomy::LiveState::valid_event($e);
         if (text($e->{bridge}) eq 'claude-native' && text($e->{checkpoint_key}) ne '') {
             my ($key,$value)=(text($e->{checkpoint_key}),text($e->{checkpoint_value}));
             if ($value =~ /^sha256:[0-9a-f]{64}$/) {$replayed_signatures{$key}=$value}

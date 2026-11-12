@@ -12,6 +12,7 @@ use JSON::PP ();
 use POSIX ();
 use Test::More;
 use Time::HiRes ();
+use Time::Local ();
 
 my ($repo,$work)=@ARGV;
 $repo=abs_path($repo//'') or die "repository required\n";
@@ -476,6 +477,155 @@ for my $sharded (0,1) {
     is($ccp->{sessions}{lead}{calls}{'agent:a1'}{source_mtime},$T-5,'claude agent call lease evidence from stat');
 }
 
+# The exact-shape scanner behind journal, transcript and checkpoint decoding must return what
+# JSON::PP returns (same structure, same string/number flags, same failures) for every text.
+{
+    my $pp=JSON::PP->new->utf8->canonical->allow_nonref; my $diverged=0; my $texts=0;
+    my $flags=sub {require B; my $f=B::svref_2object(\$_[0])->FLAGS; return $f & (B::SVf_IOK()|B::SVf_NOK()|B::SVf_POK()|B::SVp_IOK()|B::SVp_NOK()|B::SVp_POK()|B::SVf_UTF8())};
+    my $same; $same=sub {
+        my ($x,$y)=@_; return 0 if ref($x) ne ref($y);
+        if (ref($x) eq 'HASH') {return 0 unless join("\0",sort keys %$x) eq join("\0",sort keys %$y); $same->($x->{$_},$y->{$_}) or return 0 for keys %$x; return 1}
+        if (ref($x) eq 'ARRAY') {return 0 unless @$x==@$y; $same->($x->[$_],$y->[$_]) or return 0 for 0..$#$x; return 1}
+        return $x==$y if ref($x);
+        return defined($x)==defined($y) && (!defined($x) || ($x eq $y && $flags->($x)==$flags->($y)));
+    };
+    my @texts=('{}','[]',' [1, 2 ,3] ','{"a":{"b":[1,{"c":null}],"d":true,"e":false}}','{"a":"x\\ny\\"z\\\\w\\/q\\t"}',
+        '{"a":"\\u00e9"}','{"a":1.5}','{"a":-0}','{"a":01}','{"a":1e3}','{"a":123456789012345678}',"{\"a\":\"\xc3\xa9\"}",'{"a":-5}',
+        '{"a":tru}','{"a":trueX}','{"a":1}x','{"a":1,}','[1,]','{"":1}','{"a":"\\q"}',"{\"a\":\"\x01\"}","{\"a\":\"\x7f\"}",'{"a":"b"',
+        "\t{\"a\": 1 }\n",'{"a":1,"a":2}','"str"','12','null',('[' x 70).(']' x 70),('[' x 40).(']' x 40),
+        '{"ts":"2026-10-13T02:05:04.750Z","type":"x","n":7,"z":null,"s":"a b:c.d-e_f"}',
+        $pp->encode({sent=>{'start:cl:a:b'=>'1','ctx'=>$pp->encode({model=>'m',n=>3})},files=>{'/p/q.jsonl'=>{at_eof=>0,meta=>{agent=>'',id=>'lead'},offset=>12}}}));
+    my @mutated; srand(5);
+    for my $t (@texts) {for (1..160) {my $m=$t; next unless length $m; my $i=int rand length $m; my $op=int rand 3;
+        if ($op==0) {substr($m,$i,1)=''} elsif ($op==1) {substr($m,$i,0)=substr('{}[]",:0-9nulte\\ .',int rand 19,1)} else {substr($m,$i,1)=substr('{}[]",:0-9nulte\\ .',int rand 19,1)}
+        push @mutated,$m}}
+    for my $t (@texts,@mutated) {
+        $texts++; my $a=eval {Loomy::LiveState::decode_fast($t)}; my $ea=$@ ? 1 : 0; my $b=eval {$pp->decode($t)}; my $eb=$@ ? 1 : 0;
+        $diverged++ if $ea!=$eb || (!$ea && (!$same->($a,$b) || $pp->encode($a) ne $pp->encode($b)));
+    }
+    is($diverged,0,"fast scanner matches JSON::PP on $texts texts"); cmp_ok($texts,">=",4800,"scanner differential covers about 5000 texts");
+}
+# A byte-identical supported backup is classified once; changed bytes are always classified again.
+{
+    my $r=project('kind-memo'); my $ridx=logs($r)."/claude-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);
+    put($ridx,$json->encode({version=>2,files=>{},sent=>{a=>'1'}})."\n"); put("$ridx.bak",$json->encode({version=>2,sent=>{}})."\n");
+    Loomy::LiveState::checkpoint_load($ridx,$o);
+    put("$ridx.bak",$json->encode({version=>3,sent=>{}})."\n");
+    refuses('a backup that turns unsupported after a supported load is refused on save',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(5),$o)},'unsupported checkpoint format: unsupported-version');
+    put("$ridx.bak",$json->encode({version=>2,sent=>{}})."\n");
+    ok(eval {Loomy::LiveState::checkpoint_save($ridx,cp(6),$o); 1},'a supported backup saves again');
+    put($ridx,$json->encode({version=>3,files=>{}})."\n");
+    refuses('a primary that turns unsupported after a supported save is refused',$r,sub {Loomy::LiveState::checkpoint_save($ridx,cp(7),$o)},'unsupported checkpoint format: unsupported-version');
+}
+
+# journal_line: identifier-like fields are quoted directly; everything else must match the JSON::PP bytes.
+{
+    my $pp=JSON::PP->new->utf8->canonical; my $bad=0; my $n=0;
+    my $old=sub {my $e=shift; my %b=%$e; my ($ts,$type)=delete @b{qw(ts type)}; my $q=sub {substr($pp->encode([$_[0]]),1,-1)};
+        my $p='{"ts":'.$q->($ts).',"type":'.$q->($type); $p.=',"id":'.$q->(delete $b{id}) if exists $b{id};
+        return $p.(keys(%b) ? ','.substr($pp->encode(\%b),1) : '}')."\n"};
+    my @ts=('2026-10-13T02:05:04.750Z','2026-10-13T02:05:04Z',"\x{662}\x{660}\x{662}\x{666}-\x{660}\x{661}-\x{660}\x{661}T\x{660}\x{660}:\x{660}\x{660}:\x{660}\x{660}Z",'2026-10-13T02:05:04.7500000000Z',"2026-10-13T02:05:04Z\n",'x"y',"a\\b","t\x01",'\x{e9}',5,1.5,'inf');
+    my @ty=('session_observed','delegation_start','x y','Inf','nan','Infinity','9','a/b',"q\"r",'a_b-c.d:e',"\x{e9}t\x{e9}");
+    my @id=(undef,'cl:lead:call','lead','7',7,'inf','NaN','a b',"a\n","\x{661}",'x"y','z\\z');
+    for my $ts (@ts) {for my $ty (@ty) {for my $id (@id) {
+        my %e=(ts=>$ts,type=>$ty,state=>'idle',n=>3); $e{id}=$id if defined $id; $n++;
+        my ($a,$b)=(eval {Loomy::LiveState::journal_line(\%e)},eval {$old->(\%e)});
+        $bad++ unless (defined($a)==defined($b)) && (!defined($a) || ($a eq $b && !utf8::is_utf8($a)==!utf8::is_utf8($b)));
+    }}}
+    is($bad,0,"journal_line matches the JSON::PP encoding on $n ts/type/id combinations");
+}
+# Structural value checks: each kind accepts and rejects the same values as the table-free original.
+{
+    my $pp=JSON::PP->new->canonical->allow_nonref;
+    my %gold=(
+        requested=>'c2ff1ff9a647d613e5f279a59e67a9878b8610a5cd41eecaadb917da45e4928e',
+        source_active=>'833c841f34cd6ffa59ef41a5dc7115cbd4062b5a8672af48c1f5ef73efa7f2c4',
+        task_ref=>'691ae8621035cadb27d09e194b5834989d507991b82a10e5d4f38aa5aab9fcfb',
+        label_refs=>'a803e4ce19f67746671aefd96cf73db617f7b328c5d3e4be560b3e62885b4305',
+        analysis_codes=>'5c3fb24e2494ff9b08e489e68487ab407720043ab81169d5733adae7c567496d',
+        role=>'69a9b5af41965d3a43cf5972c28e216a0b63df49dccdf42bc0ace040f6cdf02d',
+        agent_type=>'62c099b773dd1f6a09e7dbd0459a9d17efbcda4f04c2d67b385fd3f23b31cf83',
+        agent=>'76220a4b5e38e7c31a97e6c829ade407be8871b034ed26927b22c0173fdd4edd',
+        tool=>'f707ced3d8d1789d1d0650bcb7b8f2c6bf382fa9dbcccf3642e254b4961ed817',
+        bridge=>'f282c57aa8e566f05f49070b5bdc30cd1fe4ec08779deac7392c2212fbd5ead7',
+        effort=>'bc4f967e419c2721863cdc2e92ec9a32a773762b047cab74f2fdaaf30be43bed',
+        status=>'6b46f308073bf2294156d406bcf4dbc47ccefa1325c920baa9c54919fc506e38',
+        outcome=>'747c9f006a812dcdb4c2056ce7933b181a139e89c8ac93b788899b33d1f3564a',
+        state=>'5a3f2e3c3990b741d094bad4023308e1485714cfd35789314510641fd77be072',
+        surface=>'63bdab5a95d56878c3d17991590d7d9b4fe974b0437189db8fcd38ff83c6f7eb',
+        source=>'68e1a257caaaf7c1a6ed40c4d032a177c19e48c80c12165fb373b1005a021d8e',
+        evidence=>'73a81c3cf5865812024d909b72509aad84a6d5f768c33c3a9459fdb06e1cd78d',
+        event=>'63186bf9ecdbbd1ded76c86dc5976d140d462a347c46267b3a80513b3ccbdebf',
+        reason_code=>'a92293782c3f9d3fd31a8df51193bdf770f34e39daa7419e073e4bdf68290f48',
+        multi_agent_version=>'c3a1f8a38f00cd9387a91b3dbfd8d3da13585208e0edcc8311ecda73371ebb14',
+        acting=>'748bf19ef1e9c585d16bf9619dff1c0e63fb4f287efa705b996dcfbc18bfb87b',
+        master=>'d2674261dcaed06388c44f454bd1d092531372ef00d9b1bbb495a9dd5332c409',
+        failover_from=>'d65d2362f7bd95b5820ca8722dae3e36181dedfea1fed1278c3d050f6840e413',
+        off_routing=>'edd90a9981620e83113ebc214fd0d92df72871c2cef888eb206f2aef39d5e5cf',
+        ts=>'1bfc4a18c273bc188a4590e877fcf9d0cb35c3f6029fdecf6a5c7669e0b52a20',
+        source_ts=>'f46b206414e35ea395936640c064a0cc959f43d7065fc1a973f8fe00054b4c43',
+        resume_at=>'1f5978d10aee8f0f0faab5967c5fd1b46743c19ec61f7fab0a537c01a4466ba4',
+        observed_at=>'db20fa0a54e9e27714daf087bacebf7794876ad853b803e620584f15251c5f94',
+        tokens_in=>'fe12c5d11e2c69ccaeba7208caaa7370f3e7e209571594b948bfb855e1dc48f5',
+        cost_usd=>'377f3806fcb1adf50cf1b09826d06c71ba1129a881a7180ad7c24cf00483a6a4',
+        used_percent=>'a7ad7e96a123181e63785606c57859acf26ba42f0fac4d6dd9a9a865c50268a7',
+        signal=>'cdc748a7b90cf9e3d5f14b6b293664122cbac867740a7ba32ce2952c0e476a9c',
+        pid=>'b13b231d853dbcd2a24fb521f1955a291acba6e3b7c113116ae4a08bebc7ba68',
+        schema=>'be7be72aa7181869098ad29b70d0afac1b2c9c62ef983a80c160c0dbd8679ac8',
+        source_inode=>'2610c5862ff5637b0a6c3d4c529456086f2db1c43be3cb7ddc41d10ef94f0d7c',
+        model=>'64e399b949360b78b152ebf8ec2218756f2bf4d44c840aebb17f943b58902552',
+        requested_model=>'e59bcef6843cabeb6c34c63f1892756a64b6ba75d719ae276da2871a0d7ef417',
+        name=>'03c92d3b727a5d5a70636bd832a60d68cf8a1db03953e79700d69f0b734f06d3',
+        native_key=>'6474c52497df98d5fdc8806575c22a4c864fdf8d84c027720784105311a0bbcb',
+        checkpoint_key=>'3a6a7c1ab7253b6129dc059e241f4dd256de772722103b9ba132caef94f75b16',
+        id=>'38862c09c4c3b938ca36b23303a14514ee881c7fb9d811c36e6f3ae0f091a038',
+        agent_id=>'d5494814f8ebd724bad2994d691d10ae25e0489ada575fbd838111270d7cb617',
+        session=>'dd16d8c3b3fed4a3d72331ef8016f1d9a50048ae86d8ccaef74849ca5e062f94',
+        session_key=>'f076a7e31d6ca78ec6d3ac3d605549f6b0067fbec3aea272b9ae22e525dbd84a',
+        alias_from=>'01c351bcbf19ae4a134c23ac79400655e6d49d55879533ad5d2cc2cfa66be724',
+        parent_session=>'6b265eb3b9a37c4fb31e21490d50345ad349695e0907f7a1a6d050ece3c5133d',
+        turn_id=>'c9d98fce7729c42a2007a8b14a4bab1d84ed48b990abd4e71c3d3e7160a4ea7f',
+        bogus=>'088009e3a8e2f8ecb9ee73f408c88f9e990f88cd97065e64ca6d45372930256b',
+    );
+    my @vals=(undef,'','unknown','claude','codex','running','done','sha256:'.('a' x 64),'worker','Explore','my agent','0','1','2','7','-1','1.5','100','101',
+        '2026-10-13T02:05:04.750Z','2026-13-45T00:00:00Z','2026-10-13T02:05:04','a:b','cl:lead:call','claude:lead','pending:x','lead:call','a/b','gpt-6/x:y','x' x 130,
+        'model,effort','v2','5:6',JSON::PP::true,{a=>1},[1],{});
+    my $bad=0;
+    for my $k (sort keys %gold) {
+        my @rows; for my $v (@vals) {my $r=eval {Loomy::ContentPolicy::_value($k,$v,'proj')}; my $e=$@; $e =~ s/\n//; push @rows,[$k,$v,$e ? "DIE:$e" : $r]}
+        $bad++ unless sha256_hex(join("\n",map {$pp->encode($_)} @rows)) eq $gold{$k};
+    }
+    is($bad,0,'structural value table matches the golden accept/reject results for '.scalar(keys %gold).' keys');
+}
+# Memos stay correct across their bounds (4096 stamps, 64 checkpoint paths) and wrap-around.
+{
+    my $bad=0;
+    for my $i (0..9000) {
+        my $ts=sprintf('2026-%02d-%02dT%02d:%02d:%02dZ',1+$i%12,1+$i%28,$i%24,$i%60,($i*7)%60);
+        my $want=Time::Local::timegm(($i*7)%60,$i%60,$i%24,1+$i%28,$i%12,2026);
+        $bad++ unless Loomy::LiveState::epoch($ts)==$want && Loomy::CodexNative::epoch($ts)==$want && Loomy::ContentPolicy::_timestamp($ts);
+    }
+    $bad++ if Loomy::LiveState::epoch('2026-13-45T00:00:00Z')!=0 || Loomy::ContentPolicy::_timestamp('2026-13-45T00:00:00Z');
+    is($bad,0,'epoch and timestamp memos stay exact across wrap-around');
+    my $r=project('memo-bound'); my $o=opts(elect($r),$r); my $bad2=0;
+    for my $i (1..90) {
+        my $p=logs($r)."/m$i.idx"; put($p,$json->encode({version=>$i%2 ? 2 : 3,files=>{}})."\n");
+        my ($k)=Loomy::LiveState::_checkpoint_read($p); $bad2++ unless $k eq ($i%2 ? 'valid' : 'unsupported-version');
+        put("$p.bak",$json->encode({version=>$i%2 ? 3 : 2})."\n");
+        my $ref=Loomy::LiveState::_backup_refusal($p); $bad2++ unless defined($ref)==($i%2 ? 1 : 0);
+        $bad2++ unless defined(Loomy::LiveState::_backup_refusal($p))==($i%2 ? 1 : 0);
+    }
+    is($bad2,0,'kind memo answers stay exact past its 64-entry cap');
+}
+# A backup naming its shards through an escaped key still keeps them on save.
+{
+    my $r=project('escaped-shard'); my $ridx=logs($r)."/claude-native.idx"; my $gr=elect($r); my $o=opts($gr,$r);
+    my $shard='files-'.sha256_hex('{}');
+    my $state=cp(2); Loomy::LiveState::checkpoint_save($ridx,$state,$o); put("$ridx.$shard",'{}');
+    put("$ridx.bak",'{"\u0073ource_shards":["'.$shard.'"],"version":2}'."\n");
+    Loomy::LiveState::checkpoint_save($ridx,$state,$o); # unchanged primary: the backup is left as written
+    ok(-e "$ridx.$shard",'a shard named only by an escaped key in the backup is kept');
+}
 # Disabled project: peek and follower never scaffold anything.
 {
     my $r="$work/none"; make_path($r,{mode=>0700});

@@ -504,6 +504,7 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     else
       ui_warn "$(t "Private history not verified · run loomy privacy adopt")" "$(t "not synced automatically until then")"
       ui_info "$(t "fix: %s" "loomy privacy adopt")"
+      [[ "$(privacy_companion_why "$ROOT")" != tracked ]] || ui_info "$(t "the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt")"
     fi
   fi
   p_lead="${AI_LEAD:-${AI_ENV#hybrid-}}"

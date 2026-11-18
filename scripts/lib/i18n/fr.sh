@@ -2588,5 +2588,7 @@ _t_fr() {
     'Private repository refused') _T='Dépôt privé refusé' ;;
     'nothing was run or recorded; remove or fix what is listed, then loomy privacy adopt again') _T='rien n'\''a été exécuté ni enregistré ; retire ou corrige ce qui est listé, puis relance loomy privacy adopt' ;;
     'nothing is backed up automatically until then') _T='rien n'\''est sauvegardé automatiquement d'\''ici là' ;;
+    'the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt') _T='le projet suit .loomy/ai.git : arrête de le suivre (git rm -r --cached .loomy/ai.git), puis lance loomy privacy adopt' ;;
+    'if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)') _T='si .loomy/ai.git était suivi : après l'\''avoir retiré de l'\''index, lance loomy privacy adopt (la confiance est révoquée d'\''ici là)' ;;
   esac
 }

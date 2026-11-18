@@ -749,7 +749,7 @@ ai_start_prompt() {
 #                   a no-op outside `status`), no signature verification (log.showSignature=false) and no pager. Inherited
 #                   repository-location, config and exec variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY,
 #                   GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT, GIT_EXEC_PATH, GIT_EXTERNAL_DIFF,
-#                   GIT_SSH_COMMAND, GIT_PAGER) are removed for the call, so a probe always describes the folder it was given.
+#                   GIT_SSH_COMMAND, GIT_PAGER, GIT_COMMON_DIR, GIT_NAMESPACE, GIT_ASKPASS) are removed for the call, so a probe always describes the folder it was given.
 #   loomy_git_user  commands that create commits, branches, checkouts or worktrees on the user's behalf: the user's own hooks
 #                   keep running (post-checkout, commit hooks...), only fsmonitor is hardened. Lazy fetch stays on: a partial
 #                   (blobless) clone needs it to check out files.
@@ -759,8 +759,8 @@ ai_start_prompt() {
 # never a raw `git`. Residual: a clean/process filter or log.showSignature program set in the project's own .git/config would
 # still run on a stat-dirty file; that config cannot arrive with a plain clone (git never fetches .git/config).
 loomy_git() {
-  if [[ -n "${GIT_DIR+x}${GIT_WORK_TREE+x}${GIT_INDEX_FILE+x}${GIT_OBJECT_DIRECTORY+x}${GIT_ALTERNATE_OBJECT_DIRECTORIES+x}${GIT_CONFIG_PARAMETERS+x}${GIT_CONFIG_COUNT+x}${GIT_EXEC_PATH+x}${GIT_EXTERNAL_DIFF+x}${GIT_SSH_COMMAND+x}${GIT_PAGER+x}" ]]; then
-    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_EXEC_PATH -u GIT_EXTERNAL_DIFF -u GIT_SSH_COMMAND -u GIT_PAGER \
+  if [[ -n "${GIT_DIR+x}${GIT_WORK_TREE+x}${GIT_INDEX_FILE+x}${GIT_OBJECT_DIRECTORY+x}${GIT_ALTERNATE_OBJECT_DIRECTORIES+x}${GIT_CONFIG_PARAMETERS+x}${GIT_CONFIG_COUNT+x}${GIT_EXEC_PATH+x}${GIT_EXTERNAL_DIFF+x}${GIT_SSH_COMMAND+x}${GIT_PAGER+x}${GIT_COMMON_DIR+x}${GIT_NAMESPACE+x}${GIT_ASKPASS+x}" ]]; then
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_EXEC_PATH -u GIT_EXTERNAL_DIFF -u GIT_SSH_COMMAND -u GIT_PAGER -u GIT_COMMON_DIR -u GIT_NAMESPACE -u GIT_ASKPASS \
       GIT_NO_LAZY_FETCH=1 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c log.showSignature=false --no-optional-locks --no-pager "$@"
   else
     GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c log.showSignature=false --no-optional-locks --no-pager "$@"

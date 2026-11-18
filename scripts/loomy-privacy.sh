@@ -463,10 +463,11 @@ create_companion() {
     url="https://github.com/$owner/$AI_REPO.git"
   fi
   loomy_git_user init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
-  privacy_companion_record "$ROOT" || { ui_err "$(t "Can't record the private repository")" "${XDG_CONFIG_HOME:-~/.config}/loomy"; return 1; }
   privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
   privacy_companion_config "$ROOT"
+  # Recorded once its remote is set: the record carries a digest of every url, so any later change needs `loomy privacy adopt`.
+  privacy_companion_record "$ROOT" || { ui_err "$(t "Can't record the private repository")" "${XDG_CONFIG_HOME:-~/.config}/loomy"; return 1; }
   return 0
 }
 
@@ -507,6 +508,8 @@ do_sync() {
         ui_err "$(t "The remote private repository cannot be rebased safely")" "$(t "Runtime files or an unreadable tree were found. Sync stopped before checkout; inspect the remote repository manually.")"
         return 1
       fi
+      # A rebase already in progress (shipped or left over) is refused by the trust check; only the one started here is aborted.
+      privacy_companion_ready "$ROOT" || { ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "nothing was committed or pushed")"; return 1; }
       if ! ai_git "$ROOT" rebase -q origin/main >/dev/null 2>&1; then
         ai_git "$ROOT" rebase --abort >/dev/null 2>&1 || true
         if ! ai_git "$ROOT" diff --quiet >/dev/null 2>&1; then
@@ -533,6 +536,7 @@ warn_tracked() {
   ui_warn "$(t "Still tracked by the project repository")" "$t"
   ui_rail "    ${C_DIM}$(t "to stop tracking them (they stay on your disk):")${C_RESET} git rm -r --cached -- $t"
   ui_rail "    ${C_DIM}$(t "what was already pushed stays in the repository history")${C_RESET}"
+  if grep -qx '.loomy' <<<"${t// /$'\n'}"; then ui_rail "    ${C_DIM}$(t "if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)")${C_RESET}"; fi
 }
 
 apply_mode() {
@@ -540,6 +544,8 @@ apply_mode() {
   case "$m" in
     versioned)
       privacy_remove_exclude "$ROOT" || true
+      # The record stays: the companion is only idle, and every use re-audits it (nonce, URLs, config), so switching back
+      # to private keeps working without a new adopt.
       if privacy_companion_ready "$ROOT"; then ui_info "$(t "the private repository (.loomy/ai.git) stays in place; it's no longer updated")"; fi ;;
     local|private)
       if [[ -n "$GIT_ROOT" ]]; then privacy_add_exclude "$ROOT"; else ui_info "$(t "no Git repository yet: loomy privacy %s will set the exclusion once the repository exists" "$m")"; fi
@@ -618,15 +624,15 @@ case "$CMD" in
     url="$ARG"
     if [[ "$ARG" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "$ARG" ]]; then url="https://github.com/$ARG.git"; fi
     ROOT="$(privacy_companion_worktree "$ROOT")" || { t "Can't restore: %s" "$url" >&2; echo >&2; exit 1; }
-    loomy_git_user clone --bare -q "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
+    loomy_git_user clone --bare -q -- "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
     # The user cloned it themselves: record it, then drop anything a repository could carry beyond its objects.
     rm -rf "$(privacy_ai_git_dir "$ROOT")/hooks" "$(privacy_ai_git_dir "$ROOT")/info/attributes"
-    privacy_companion_record "$ROOT" || { t "Can't clone: %s" "$url" >&2; echo >&2; rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1; }
     privacy_companion_config "$ROOT"
+    privacy_companion_record "$ROOT" || { t "Can't clone: %s" "$url" >&2; echo >&2; rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1; }
     # Filter historical runtime paths before either backing up local files or materializing the old commit.
     if ! privacy_companion_restore_index "$ROOT"; then
       t "Can't restore: %s" "$url" >&2; echo >&2
-      rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
+      rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1
     fi
     # Files already present: identical ones are kept; different ones are set aside before restoring.
     # Nothing is moved or written through a symlinked or foreign-owned directory: every parent component of every
@@ -647,7 +653,7 @@ case "$CMD" in
     if [[ -n "$blocked" ]]; then
       t "Can't restore: %s" "$url" >&2; echo >&2
       t "A symlinked or foreign directory is in the way: %s. Nothing was moved or written." "$blocked" >&2; echo >&2
-      rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
+      rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1
     fi
     while IFS= read -r -d '' f; do
       [[ -e "$ROOT/$f" || -L "$ROOT/$f" ]] || continue
@@ -657,7 +663,7 @@ case "$CMD" in
     if ! ai_git "$ROOT" checkout-index --all --force 2>/dev/null; then
       t "Can't restore: %s" "$url" >&2; echo >&2
       if (( moved > 0 )); then t "%s different local file(s) set aside" "$moved" >&2; echo " (${backup#"$ROOT"/})" >&2; fi
-      rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1
+      rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1
     fi
     if (( moved > 0 )); then ui_warn "$(t "%s different local file(s) set aside" "$moved")" "${backup#"$ROOT"/}"; fi
     [[ -n "$GIT_ROOT" ]] && privacy_add_exclude "$ROOT"

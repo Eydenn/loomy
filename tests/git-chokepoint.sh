@@ -144,10 +144,109 @@ rm -f "$WORK/config/loomy/companions"
 bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; rc=$?
 if (( rc != 0 )) && grep -q 'not verified' "$OUT"; then ok 'older companion without a record: refused with the adopt note'; else ko 'older companion not refused'; fi
 bash "$REPO/bin/loomy" privacy adopt >"$OUT" 2>&1; rc=$?
-if (( rc == 0 )); then ok 'older clean companion: adopt validates and records it'; else ko 'older clean companion: adopt refused'; fi
+if (( rc != 0 )) && grep -q 'local remote refused' "$OUT"; then ok 'adopt refuses a local remote'; else ko 'adopt accepted a local remote'; fi
+git --git-dir="$G/.loomy/ai.git" config remote.origin.url https://example.invalid/good-ai.git
+bash "$REPO/bin/loomy" privacy adopt >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'terminal' "$OUT"; then ok 'adopt without a terminal refuses (no silent trust)'; else ko 'adopt trusted without a terminal'; fi
+pty_adopt() { python3 - "$REPO" "$1" "$2" <<'PYEOF'
+import os, pty, sys, select
+repo, ans, root = sys.argv[1:4]
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(root); os.execvp('bash', ['bash', repo + '/bin/loomy', 'privacy', 'adopt'])
+out = b''; sent = False
+while True:
+    r, _, _ = select.select([fd], [], [], 20)
+    if not r: break
+    try: d = os.read(fd, 4096)
+    except OSError: break
+    if not d: break
+    out += d
+    if not sent and b'[y/N]' in out: os.write(fd, (ans + '\n').encode()); sent = True
+_, st = os.waitpid(pid, 0)
+sys.stdout.write(out.decode(errors='replace')); sys.exit(os.WEXITSTATUS(st))
+PYEOF
+}
+pty_adopt n "$G" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'example.invalid/good-ai.git' "$OUT"; then ok 'adopt shows every URL and refuses when not confirmed'; else ko 'adopt did not show the URL / accepted n'; fi
+pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
+if (( rc == 0 )); then ok 'older clean companion: adopt shows the URLs, asks, validates and records it'; else ko 'older clean companion: adopt refused'; fi
 printf '#!/bin/sh\necho late >>"%s"\n' "$MARK2" >"$G/.loomy/ai.git/hooks/pre-commit"; chmod +x "$G/.loomy/ai.git/hooks/pre-commit"
 printf 'c\n' >>"$G/AGENTS.md"; bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1
-no_marker2 'adopted companion: ai_git never runs a hook'
+no_marker2 'adopted companion: a hook added later is refused and never runs'
+rm -f "$G/.loomy/ai.git/hooks/pre-commit"; pty_adopt y "$G" >/dev/null 2>&1
+
+# ── 3b. re-audit on every call, revocation, URLs, op-state, nonce, protocols, filters ──
+cd "$G" || exit 1
+ready_rc() { bash -c 'source "$1/scripts/lib/privacy.sh"; privacy_companion_ready "$2"' _ "$REPO" "$G" >/dev/null 2>&1; }
+if ready_rc; then ok 'adopted companion is ready'; else : >"$OUT"; ko 'adopted companion is not ready'; fi
+# a later change of the config (hooksPath) is caught by the next call and revokes the record
+git --git-dir="$G/.loomy/ai.git" config core.hooksPath "$WORK/hooks"
+if ! ready_rc; then ok 'config changed after adoption: refused on the next call'; else : >"$OUT"; ko 'config change not caught'; fi
+git --git-dir="$G/.loomy/ai.git" config --unset core.hooksPath
+if ! ready_rc; then ok 'record revoked: the clean config is not trusted again without adopt'; else : >"$OUT"; ko 'revoked record came back'; fi
+pty_adopt y "$G" >"$OUT" 2>&1; if ready_rc; then ok 're-adopt restores trust'; else ko 're-adopt failed'; fi
+# a pushurl different from the url is refused (exfiltration by push)
+git --git-dir="$G/.loomy/ai.git" config remote.origin.pushurl https://example.invalid/evil.git
+pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'pushurl differs' "$OUT"; then ok 'pushurl different from url: adopt refuses'; else ko 'pushurl exfil not refused'; fi
+git --git-dir="$G/.loomy/ai.git" config --unset remote.origin.pushurl
+pty_adopt y "$G" >/dev/null 2>&1
+# tracked config pulled into an adopted companion, then untracked: still refused until adopt, which refuses the hostile config
+cp "$G/.loomy/ai.git/config" "$WORK/good-config"
+git --git-dir="$G/.loomy/ai.git" config credential.helper "!sh -c 'echo cred >>$MARK2'"
+git --git-dir="$G/.loomy/ai.git" config core.sshCommand "$WORK/evil-fsm2"
+( cd "$G" && git add -f .loomy/ai.git/config >/dev/null 2>&1; true )
+if ! ready_rc; then ok 'tracked companion config: refused (record revoked)'; else : >"$OUT"; ko 'tracked companion trusted'; fi
+git -C "$G" rm -q --cached -r .loomy/ai.git >/dev/null 2>&1
+if ! ready_rc; then ok 'untracked afterwards: still refused until adopt'; else : >"$OUT"; ko 'untracking restored trust'; fi
+bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; no_marker2 'untracked hostile config: sync runs nothing'
+pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'credential.helper' "$OUT"; then ok 'adopt refuses the hostile config left behind'; else ko 'adopt accepted credential.helper'; fi
+cp "$WORK/good-config" "$G/.loomy/ai.git/config"; pty_adopt y "$G" >/dev/null 2>&1
+if ready_rc; then ok 'clean config + adopt: trusted again'; else ko 'could not re-adopt'; fi
+# operation in progress shipped in the companion: refused, project files untouched
+mkdir -p "$G/.loomy/ai.git/rebase-merge"; echo deadbeef >"$G/.loomy/ai.git/rebase-merge/orig-head"
+sum_before="$(cksum "$G/AGENTS.md")"
+bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && [[ "$(cksum "$G/AGENTS.md")" == "$sum_before" ]] && grep -q 'not verified' "$OUT"; then ok 'shipped rebase-merge: sync refused, project files untouched'; else ko 'rebase-merge not refused'; fi
+rm -rf "$G/.loomy/ai.git/rebase-merge"; pty_adopt y "$G" >/dev/null 2>&1
+# nonce mismatch (simulated inode reuse) and missing nonce
+cp "$G/.loomy/ai.git/loomy-provenance" "$WORK/nonce.bak"; printf '%032d\n' 0 >"$G/.loomy/ai.git/loomy-provenance"; chmod 600 "$G/.loomy/ai.git/loomy-provenance"
+if ! ready_rc; then ok 'nonce mismatch (inode reuse): refused'; else ko 'nonce mismatch trusted'; fi
+rm -f "$G/.loomy/ai.git/loomy-provenance"; pty_adopt y "$G" >/dev/null 2>&1
+rm -f "$G/.loomy/ai.git/loomy-provenance"
+if ! ready_rc; then ok 'missing nonce file: refused'; else ko 'missing nonce trusted'; fi
+pty_adopt y "$G" >/dev/null 2>&1
+# record file: tricky paths, permissions, exact compare
+CPL="$REPO/scripts/lib/companion.pl"; RF="$WORK/recs/config/companions"
+mkdir -p "$WORK/recs/a" "$WORK/recs/a2" "$WORK/recs/tab"$'\t'"x" "$WORK/recs/nl"$'\n'"x"
+perl "$CPL" write "$RF" "$WORK/recs/a" abc >/dev/null 2>&1; r1=$?
+perl "$CPL" write "$RF" "$WORK/recs/tab"$'\t'"x" abc >/dev/null 2>&1; r2=$?
+perl "$CPL" write "$RF" "$WORK/recs/nl"$'\n'"x" abc >/dev/null 2>&1; r3=$?
+perl "$CPL" match "$RF" "$WORK/recs/a2" >/dev/null 2>&1; r4=$?
+perl "$CPL" match "$RF" "$WORK/recs/a" >/dev/null 2>&1; r5=$?
+mode="$(perl -e 'printf "%o", (stat $ARGV[0])[2] & 07777' "$RF")"; dmode="$(perl -e 'printf "%o", (stat $ARGV[0])[2] & 07777' "$(dirname "$RF")")"
+if (( r1 == 0 && r2 != 0 && r3 != 0 && r4 != 0 && r5 == 0 )) && [[ "$mode" == 600 && "$dmode" == 700 ]] && [[ "$(wc -l <"$RF" | tr -d ' ')" == 1 ]]; then ok 'record file: exact match, refuses tab/newline paths, 0600 file in a 0700 folder'; else printf 'r=%s %s %s %s %s mode=%s dmode=%s\n' "$r1" "$r2" "$r3" "$r4" "$r5" "$mode" "$dmode" >"$OUT"; ko 'record file robustness'; fi
+# repository protocol.ext.allow cannot re-enable ext:: (GIT_ALLOW_PROTOCOL)
+X="$WORK/extproj"; mkdir -p "$X/.loomy"; git init -q -b main "$X"; git init -q --bare -b main "$X/.loomy/ai.git"
+git --git-dir="$X/.loomy/ai.git" config protocol.ext.allow always
+git --git-dir="$X/.loomy/ai.git" remote add origin "ext::sh -c 'echo ext >>$MARK2' %S"
+bash -c 'source "$1/scripts/lib/privacy.sh"; ai_git "$2" ls-remote origin' _ "$REPO" "$X" >"$OUT" 2>&1
+no_marker2 'protocol.ext.allow in the repository config does not run ext::'
+# a user-level filter driver (git-lfs style) selected by the project .gitattributes does not run on companion add
+git config --global filter.evil.clean "$WORK/evil-filter"; git config --global filter.evil.smudge cat; git config --global filter.evil.required true
+printf 'AGENTS.md filter=evil\n' >"$G/.gitattributes"; printf 'filtered\n' >>"$G/AGENTS.md"
+bash -c 'source "$1/scripts/lib/privacy.sh"; ai_git "$2" add -A -- AGENTS.md; ai_git "$2" status --porcelain' _ "$REPO" "$G" >"$OUT" 2>&1
+no_marker2 'global filter driver neutralised for the companion'
+git config --global --unset filter.evil.clean; git config --global --unset filter.evil.smudge; git config --global --unset filter.evil.required
+# a local remote with a post-receive hook on an unverified companion: nothing runs
+H="$WORK/hookproj"; HB="$WORK/hookbare.git"; mkdir -p "$H/.loomy"; git init -q -b main "$H"; git init -q --bare -b main "$HB"
+printf '#!/bin/sh\necho post-receive >>"%s"\n' "$MARK2" >"$HB/hooks/post-receive"; chmod +x "$HB/hooks/post-receive"
+printf -- '---\nname: h\nai_files: private\n---\n' >"$H/.loomy/brief.md"; echo 0.17.10 >"$H/.loomy/VERSION"
+git init -q --bare -b main "$H/.loomy/ai.git"; git --git-dir="$H/.loomy/ai.git" remote add origin "$HB"
+( cd "$H" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 'unverified companion with a local hook remote: sync pushes nothing'
+( cd "$H" && pty_adopt y "$H" >"$OUT" 2>&1 ); no_marker2 'unverified companion with a local hook remote: adopt runs nothing'
 
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1

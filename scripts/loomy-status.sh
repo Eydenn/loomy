@@ -1221,6 +1221,7 @@ if [[ "$COMPACT" != "1" && -f "$BRIEF" ]]; then
 ui_section "$(t "AI FILES")" "$(privacy_label "$(privacy_mode "$ROOT")")"
 if [[ "$(privacy_mode "$ROOT")" == "private" ]]; then
   if privacy_companion_present "$ROOT" && ! privacy_companion_ready "$ROOT"; then ui_warn "$(t "Private history not verified · run loomy privacy adopt")" "$(t "nothing is backed up automatically until then")"
+    [[ "$(privacy_companion_why "$ROOT")" != tracked ]] || ui_info "$(t "the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt")"
   elif ! privacy_companion_ready "$ROOT"; then ui_warn "$(t "private repository missing on this machine")" "loomy privacy restore <$(t "account/repo")>"
   elif [[ "$(privacy_pending "$ROOT")" != "0" ]]; then ui_warn "$(t "%s unsaved change(s) in the private repository" "$(privacy_pending "$ROOT")")" "loomy privacy sync"; fi
 elif [[ "$(privacy_mode "$ROOT")" == "local" ]] && [[ -n "$(privacy_git_root "$ROOT")" ]] && ! privacy_excluded "$ROOT"; then

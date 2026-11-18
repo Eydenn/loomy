@@ -36,7 +36,7 @@ sub safe {
     };
     # A clone can ship runtime files: any tracked content under .loomy/logs is named.
     my @names;
-    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
+    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;
     if (my $gpid=open my $git,"-|","sh","-c",'exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
         my $prev=alarm 0; my $t0=time;
         eval {

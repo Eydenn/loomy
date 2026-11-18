@@ -387,7 +387,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Checks prerequisites, the live tracking owner (build, pid, boot, epoch, or none), content-policy health, a full label store, and Loomy history files tracked by Git (`--fix` fixes, including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model). These health facts do not certify older files as free of sensitive text.
+Checks prerequisites, the live tracking owner (build, pid, boot, epoch, or none), content-policy health, a full label store, and Loomy history files tracked by Git (`--fix` fixes, and also removes clone-shipped runtime files from the Git index (only the entries live tracking refused; the files stay on disk), including the optional GitHub CLI: installs `gh` and logs in; `--live` tests every model). These health facts do not certify older files as free of sensitive text.
 
 ### `loomy config`
 

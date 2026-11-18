@@ -80,7 +80,7 @@ sub _git_run {
     my $pid=open my $g,'-|'; die "content project unavailable\n" unless defined $pid;
     if (!$pid) {
         Loomy::CollectorOwner::after_fork_child() if defined(&Loomy::CollectorOwner::after_fork_child);
-        delete @ENV{grep {/\AGIT_/} keys %ENV};
+        delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;
         require POSIX;
         open STDERR,'>','/dev/null' or POSIX::_exit(1);
         exec('git','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null','-C',$root,@args) or POSIX::_exit(1);
@@ -109,42 +109,54 @@ sub _git_run {
 # handler are saved and restored). Fails closed: a git that exits non-zero, cannot be started or cannot read the
 # index is "index-error". A tree with no .git entry anywhere above it is not a repository: nothing to track.
 # Returns ($path,"tracked") with the path as tracked, ("","timeout"), ("","index-error") or ("","").
-sub tracked_runtime {
-    my ($root)=@_; return ("","") unless defined $root && $root =~ m{\A/};
+# Every identity is taken with lstat inside the alarm window (a tracked symlink such as /net/host or a FUSE mount is
+# never followed, and a stalled mount cannot outlive the 2 s bound); only a real .loomy directory is traversed for
+# .loomy/logs. When .loomy/logs does not exist yet, a second component that case-folds to "logs" (logſ, LOGS, Kelvin)
+# counts as a hit: the first election would pass and the preparation would create the very directory it names.
+# Hardened git: no fsmonitor, no hooks, GIT_* cleared, then GIT_NO_LAZY_FETCH=1 (a hostile partial clone cannot make
+# ls-files contact a promisor remote).
+my $FC=eval q{ use feature 'fc'; sub { fc($_[0]) } } || sub { lc $_[0] };
+sub _scan {
+    my ($root,$all,$secs)=@_; $secs||=2;
+    return ([],"") unless defined $root && $root =~ m{\A/};
     my $in_repo=0; { my $d=$root; while (1) { if (-e "$d/.git" || -l "$d/.git") {$in_repo=1; last} last if $d eq '' || $d eq '/'; $d =~ s{/[^/]*\z}{} } }
-    return ("","") unless $in_repo;
-    my @loomy=stat("$root/.loomy"); my @logs=stat("$root/.loomy/logs");
-    my $same=sub { my ($a,$b)=@_; return @$a && @$b && $a->[0]==$b->[0] && $a->[1]==$b->[1] };
-    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
+    return ([],"") unless $in_repo;
+    local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;
     my $t0=Time::HiRes::time(); my $prev=alarm 0;
     my $pid=open(my $git,'-|','sh','-c','exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -s -z 2>/dev/null','sh',$root);
-    unless ($pid) { alarm($prev) if $prev; return ("","index-error") }
-    my ($hit,$why,%c1,%c2)=("","");
+    unless ($pid) { alarm($prev) if $prev; return ([],"index-error") }
+    my (@hits,@loomy,@logs,%c1,%c2);
+    my $same=sub { my ($a,$b)=@_; return @$a && @$b && $a->[0]==$b->[0] && $a->[1]==$b->[1] };
     my $ok=eval {
-        local $SIG{ALRM}=sub {die "timeout\n"}; alarm 2;
+        local $SIG{ALRM}=sub {die "timeout\n"}; alarm $secs;
+        @loomy=lstat("$root/.loomy"); @logs=(@loomy && S_ISDIR($loomy[2])) ? lstat("$root/.loomy/logs") : ();
         local $/="\0";
         while (defined(my $rec=<$git>)) {
             chomp $rec; next unless $rec =~ /\A(\d{6}) [0-9a-f]+ \d\t(.*)\z/s; my ($mode,$path)=($1,$2);
-            my ($a,$b,$rest)=split m{/},$path,3;
-            if ($path =~ m{\A\.loomy/logs(?:/|\z)}i) { $hit=$path; last }   # ASCII spelling, even when the directory does not exist yet
+            my ($a,$b)=split m{/},$path,3;
+            if ($path =~ m{\A\.loomy/logs(?:/|\z)}i) { push @hits,$path; last unless $all; next }   # ASCII spelling, even when the directory does not exist yet
             next unless @loomy;
-            my $ia=($c1{$a}//=[stat("$root/$a")]); next unless $same->($ia,\@loomy);
-            if (!defined $b) { if ($mode eq '160000' || $mode eq '120000') { $hit=$path; last } next }
-            next unless @logs;
-            my $ib=($c2{"$a/$b"}//=[stat("$root/$a/$b")]); next unless $same->($ib,\@logs);
-            $hit=$path; last;
+            my $ia=($c1{$a}//=[lstat("$root/$a")]); next unless $same->($ia,\@loomy);
+            if (!defined $b) { if ($mode eq '160000' || $mode eq '120000') { push @hits,$path; last unless $all } next }
+            if (@logs) { my $ib=($c2{"$a/$b"}//=[lstat("$root/$a/$b")]); next unless $same->($ib,\@logs) }
+            else { my $d=$b; utf8::decode($d); next unless $FC->($d) eq "logs" }
+            push @hits,$path; last unless $all;
+            last if @hits>=100000;
         }
         alarm 0; 1;
     };
     alarm 0; my $timed_out=!$ok;
-    kill 'KILL',$pid if $timed_out || $hit ne '';
+    kill 'KILL',$pid if $timed_out || (@hits && !$all);
     my $closed=close $git; my $status=$?;
     if ($prev) { my $left=$prev-int(Time::HiRes::time()-$t0); alarm($left>0 ? $left : 1) }
-    return ("","timeout") if $timed_out;
-    return ($hit,"tracked") if $hit ne '';
-    return ("","index-error") if !$closed || $status;
-    return ("","");
+    return ([],"timeout") if $timed_out;
+    return (\@hits,"tracked") if @hits;
+    return ([],"index-error") if !$closed || $status;
+    return ([],"");
 }
+sub tracked_runtime { my ($hits,$why)=_scan($_[0],0,2); return @$hits ? ($hits->[0],"tracked") : ("",$why) }
+# Every offending index path (raw bytes) for `loomy doctor --fix`; bounded by $secs (default 10) instead of 2 s.
+sub tracked_runtime_paths { my ($hits,$why)=_scan($_[0],1,$_[1]||10); return ($hits,$why) }
 sub _git {my ($raw)=_git_run($_[0],0,@_[1..$#_]); return $raw}
 sub _relation {
     my ($root,$cache)=@_;

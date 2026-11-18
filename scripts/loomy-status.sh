@@ -405,7 +405,7 @@ loomy_watch_feed() {
         %fact=map {$_=>$e->{$_}//""} qw(status reason file state);
         $canon=ref($e->{ctx}) eq "HASH" && defined $e->{ctx}{root} ? $e->{ctx}{root} : $root;
         if ($e->{role} eq "owner") {
-            unless (main::journal_prepare("$canon/.loomy/logs")) {
+            unless (main::journal_prepare("$canon/.loomy/logs",undef,1)) {   # elected: the gate already ran
                 # Lock won but the logs cannot be prepared: release, keep the message, and retry only
                 # when the logs directory changes or after 30 s (no election storm).
                 eval {Loomy::CollectorOwner::release($e->{guard})}; @fact{qw(status reason)}=("unsafe","unsafe-runtime"); $role="follower";

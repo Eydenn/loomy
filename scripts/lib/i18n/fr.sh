@@ -2555,11 +2555,19 @@ _t_fr() {
     'draining') _T='termine son lot' ;;
     'Files committed under .loomy/logs (%s): %s') _T='Fichiers versionnés sous .loomy/logs (%s) : %s' ;;
     'runtime files belong outside Git') _T='les fichiers d’exécution n’ont pas leur place dans Git' ;;
-    'tracked by Git (shipped with this clone): run git rm --cached on it and commit, then reopen live tracking') _T='suivi par Git (livré avec ce clone) : lance git rm --cached dessus et valide, puis rouvre le suivi en direct' ;;
-    'Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached dessus, valide, puis rouvre cette vue.' ;;
     'Tracked runtime file · run loomy doctor') _T='Fichier d’exécution suivi par Git · lance loomy doctor' ;;
-    'Live tracking is unavailable: a tracked file under .loomy/logs. Run git rm -r --cached .loomy/logs, commit, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance git rm -r --cached .loomy/logs, valide, puis rouvre cette vue.' ;;
-    'a tracked file under .loomy/logs: run git rm -r --cached .loomy/logs and commit, then reopen live tracking') _T='un fichier suivi par Git sous .loomy/logs : lance git rm -r --cached .loomy/logs et valide, puis rouvre le suivi en direct' ;;
-    'Git index could not be read: %s') _T='L’index Git n’a pas pu être lu : %s' ;;
+    'Live tracking is unavailable: %s is tracked by Git. Run git rm -r --cached -- %s, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm -r --cached -- %s, valide, puis rouvre cette vue.' ;;
+    'Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance loomy doctor --fix, puis rouvre cette vue.' ;;
+    'a tracked file is shipped with this clone') _T='un fichier suivi par Git est livré avec ce clone' ;;
+    'tracked by Git (shipped with this clone)') _T='suivi par Git (livré avec ce clone)' ;;
+    'Git is not answering') _T='Git ne répond pas' ;;
+    'run git status here, then loomy doctor again') _T='lance git status ici, puis relance loomy doctor' ;;
+    'Git cannot read this index') _T='Git ne peut pas lire cet index' ;;
+    'run git status here, fix what it reports, then loomy doctor again') _T='lance git status ici, corrige ce qu’il signale, puis relance loomy doctor' ;;
+    '%s tracked runtime file(s) removed from the Git index') _T='%s fichier(s) d’exécution retiré(s) de l’index Git' ;;
+    'files stay on disk; commit, then reopen live tracking') _T='les fichiers restent sur le disque ; valide, puis rouvre le suivi en direct' ;;
+    'No tracked runtime file left.') _T='Plus aucun fichier d’exécution suivi par Git.' ;;
+    'Could not remove them from the Git index') _T='Retrait de l’index Git impossible' ;;
+    'run git status here, then loomy doctor --fix again') _T='lance git status ici, puis relance loomy doctor --fix' ;;
   esac
 }

@@ -387,7 +387,7 @@ loomy doctor --fix
 loomy doctor --live
 ```
 
-Vérifie les prérequis, le propriétaire du suivi en direct (build, pid, démarrage, époque, ou aucun), la santé de la politique de contenu, un stockage de libellés plein et les fichiers d'historique Loomy suivis par Git (`--fix` corrige, y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle). Ces informations de santé ne certifient pas l'absence de texte sensible dans les anciens fichiers.
+Vérifie les prérequis, le propriétaire du suivi en direct (build, pid, démarrage, époque, ou aucun), la santé de la politique de contenu, un stockage de libellés plein et les fichiers d'historique Loomy suivis par Git (`--fix` corrige, et retire aussi de l'index Git les fichiers d'exécution livrés avec un clone (seulement ceux que le suivi en direct a refusés ; les fichiers restent sur le disque), y compris la CLI GitHub, facultative : installation de `gh` et connexion ; `--live` teste chaque modèle). Ces informations de santé ne certifient pas l'absence de texte sensible dans les anciens fichiers.
 
 ### `loomy config`
 

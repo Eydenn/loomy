@@ -20,7 +20,8 @@ Native Codex and Claude tracking reads provider files and writes checkpoints, cu
 - The protocol number in the record is separate from the version string, so a later implementation can refuse or follow by protocol, not by version text.
 - Out of scope: a daemon, authentication of same-user processes, network filesystems, and hook cost accounting.
 
-- Clone-shipped runtime state tracked in the Git index is refused at election (by filesystem identity, failing closed). The direct adapter and reducer command lines elect without that check: they are Git-free by design and no shipped script calls them.
+- Clone-shipped runtime state tracked in the Git index is refused (by filesystem identity, failing closed). The gate is a leak barrier at journal preparation, not only an election check: every journal write and every election passes it once per process, so a tracked `.loomy/logs` never receives private events that a later `git commit -a` would publish. The verdict is cached in a private file keyed on the index stat and the identity of `.loomy` and `.loomy/logs` (never for an index changed in the last 2 s; an unanswered or erroring Git is a refusal, never cached). The remedy is `git rm -r --cached -- <path>` for a path that can be shown and `loomy doctor --fix` otherwise: it removes from the index only the entries the gate reported, as argv with literal pathspecs.
+- Known limits: only the innermost repository is checked; an index of about 1.5 million entries or more cannot be read within the 2 s bound ("Storage not verified"); the direct adapter and reducer command lines elect without the check (Git-free by design, no shipped script calls them); a same-user process that ignores the gate is out of scope.
 
 ## Alternatives considered
 

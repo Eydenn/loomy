@@ -298,12 +298,12 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     my $gl="$work/git-calls"; unlink $gl; make_path("$work/fakegit");
     put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
     my ($r,$c)=counted(sub {unchanged('S1 status over a tracked checkpoint',"$p/.loomy",sub {run(['bash',"$repo/scripts/loomy-status.sh",'--root',$p],env=>{PATH=>"$work/fakegit:$ENV{PATH}"})})});
-    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx is tracked by Git\. Run git rm --cached on it, commit},'S1 status names the tracked checkpoint with the git rm --cached remedy');
+    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx is tracked by Git\. Run git rm -r --cached -- \S*codex-native\.idx, commit},'S1 status names the tracked checkpoint with the git rm -r --cached -- remedy');
     unlike($r->{all},qr/delete that file|delete it/,'S1 and never tells the user to delete the file');
     ok(!$c->{try_acquire},'S1 no election, hence no preparation, was attempted');
     is(((stat $idx)[2] & 07777),0644,'S1 the tracked checkpoint keeps its mode (not chmod-ed to 0600, so the signal survives)');
     my $t=unchanged('S1 tree over a tracked checkpoint',"$p/.loomy",sub {tree($p)}); like($t->{all},qr{codex-native\.idx is tracked by Git},'S1 tree names it too');
-    my $d=unchanged('S1 doctor over a tracked checkpoint',"$p/.loomy",sub {doctor($p)}); like($d->{all},qr{\.loomy/logs/codex-native\.idx.*tracked by Git \(shipped with this clone\): run git rm --cached},'S1 doctor names it with the remedy');
+    my $d=unchanged('S1 doctor over a tracked checkpoint',"$p/.loomy",sub {doctor($p)}); like($d->{all},qr{\.loomy/logs/codex-native\.idx.*tracked by Git \(shipped with this clone\).*fix: loomy doctor --fix}s,'S1 doctor names it with the remedy');
     my @ls=grep {/ls-files/} split /\n/,bytes($gl);
     ok(@ls && !grep({!/core\.fsmonitor=false/ || !/core\.hooksPath=\/dev\/null/} @ls),'S1 every index read runs with fsmonitor and hooks disabled ('.scalar(@ls).' call(s))');
     # The remedy works: removing it from the index clears the refusal.
@@ -318,7 +318,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
                   ['owner record','.loomy/logs/collector-owner-v1.json'],['lock','.loomy/logs/collector.lock'],
                   ['upper-case file','.loomy/logs/Codex-Native.idx'],['upper-case directories','.Loomy/Logs/codex-native.idx'],['upper-case marker','.LOOMY/LOGS/CHECKPOINT-V2']) {
         my ($name,$path)=@$case; my $x=project(1); codex_source($x); status($x); index_add($x,'100644',$path); commit_all($x);
-        my $o=unchanged("S1 $name",$x.'/.loomy',sub {status($x)}); like($o->{all},qr/is tracked by Git\. Run git rm --cached/,"S1 a tracked $name is refused");
+        my $o=unchanged("S1 $name",$x.'/.loomy',sub {status($x)}); like($o->{all},qr/is tracked by Git\. Run git rm -r --cached -- /,"S1 a tracked $name is refused");
     }
     {   # More than 2000 tracked files: the gate is targeted, not a capped scan.
         my $x=project(1); codex_source($x); status($x);
@@ -358,7 +358,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     {   # Fail closed: a git that cannot answer is "Storage not verified", never an open gate.
         my $note=qr/Storage not verified/;
         my $x=project(1); codex_source($x); status($x); put("$x/.git/index","not an index at all"); my $o=tree($x); is($o->{rc},0,'S1 a corrupt index: tree exits 0 (plain status itself stops in its own GIT section, before this gate)'); like($o->{all},$note,'S1 a corrupt index fails closed');
-        my $d=doctor($x); like($d->{all},qr/Git index could not be read: index-error/,'S1 doctor names the unreadable index');
+        my $d=doctor($x); like($d->{all},qr/Git cannot read this index.*run git status here/s,'S1 doctor names the unreadable index with an action'); unlike($d->{all},qr/index-error/,'S1 and never prints the internal token');
         $x=project(1); codex_source($x); status($x); put("$x/.git/index",pack('a4 N N','DIRC',99,0).("\0" x 20)); $o=tree($x); like($o->{all},$note,'S1 an unknown index version fails closed');
         $x=project(1); codex_source($x); status($x);
         put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) echo 'fatal: detected dubious ownership in repository' >&2; exit 128;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
@@ -371,9 +371,67 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     {   # A path that cannot be shown is reported without a name, with the directory-wide remedy; a long one too.
         for my $case (['non-ASCII name',".loomy/logs/sp ace \xc3\xa9.txt"],['over-long name',".loomy/logs/".('n' x 130)]) {
             my ($name,$path)=@$case; my $x=project(1); codex_source($x); status($x); index_add($x,'100644',$path); commit_all($x);
-            my $o=status($x); like($o->{all},qr/a tracked file under \.loomy\/logs\. Run git rm -r --cached \.loomy\/logs/,"S1 an $name is reported without a name and with the directory remedy");
-            my $d=doctor($x); like($d->{all},qr/a tracked file under \.loomy\/logs: run git rm -r --cached \.loomy\/logs/,"S1 doctor gives the directory remedy for an $name");
+            my $o=status($x); like($o->{all},qr/a tracked file under \.loomy\/logs\. Run loomy doctor --fix, then reopen/,"S1 an $name is reported without a name and with the doctor --fix remedy");
+            my $d=doctor($x); like($d->{all},qr/a tracked file is shipped with this clone.*fix: loomy doctor --fix/s,"S1 doctor points to doctor --fix for an $name");
         }
+    }
+    {   # `doctor --fix` removes exactly what the gate reports (raw index paths, argv, files stay), then the refusal is gone.
+        require Encode;
+        my $folds=-e Encode::encode('UTF-8',".loomy/log\x{17F}") ? 1 : 0;
+        for my $case (['ASCII logs',".loomy/logs/codex-native.idx",1],['long-s directory',".loomy/log\x{17F}/codex-native.idx",$folds],['leading-dash name',".loomy/logs/-x.idx",1],['upper-case directories',".Loomy/Logs/z.idx",1]) {
+            my ($name,$wide,$can)=@$case; unless ($can) { ok(1,"S1 fix: $name is not folded by this filesystem (skipped)"); next }
+            my $raw=Encode::encode('UTF-8',$wide); my $x=project(1); codex_source($x); status($x);
+            put("$x/.loomy/logs/keep.txt","kept\n"); index_add($x,'100644',$raw); index_add($x,'100644','plain.txt'); commit_all($x);
+            my $o=status($x); like($o->{all},qr/is tracked by Git|a tracked file under \.loomy\/logs/,"S1 fix: $name is refused before the fix");
+            my $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); like($d->{all},qr/tracked runtime file\(s\) removed from the Git index|removed from the Git index/,"S1 fix: $name removed by doctor --fix");
+            my $left=`git -C '$x' ls-files -z`; ok(index($left,"plain.txt")>=0,"S1 fix: $name leaves unrelated tracked files alone");
+            ok(-f "$x/.loomy/logs/keep.txt",'S1 fix: files stay on disk');
+            $o=status($x); unlike($o->{all},qr/is tracked by Git|a tracked file under|Storage not verified/,"S1 fix: status no longer refuses ($name)");
+            $o=tree($x); unlike($o->{all},qr/is tracked by Git|a tracked file under|Storage not verified|Tracked runtime/,"S1 fix: tree no longer refuses ($name)");
+            my $again=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); unlike($again->{all},qr/removed from the Git index/,"S1 fix: a second run changes nothing ($name)");
+        }
+    }
+    {   # .loomy/logs absent: a second component that folds to "logs" still counts (the preparation would create that very directory).
+        require Encode;
+        for my $case (['upper-case LOGS',".loomy/LOGS/z"],['long s',".loomy/log\x{17F}/z"],['ASCII logs',".loomy/logs/z"]) {
+            my ($name,$wide)=@$case; my $x=project(1,0); index_add($x,'100644',Encode::encode('UTF-8',$wide)); commit_all($x);
+            my $r=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/runtime-paths.pl"; print join("|",Loomy::RuntimePaths::tracked_runtime($ARGV[1])),"\n"},$repo,$x]);
+            like($r->{out},qr/\|tracked\n\z/,"S1 no logs directory: a tracked $name second component is a hit");
+        }
+        my $x=project(1,0); index_add($x,'100644','.loomy/logbook/z'); commit_all($x);
+        my $r=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/runtime-paths.pl"; print join("|",Loomy::RuntimePaths::tracked_runtime($ARGV[1])),"\n"},$repo,$x]); is($r->{out},"|\n",'S1 no logs directory: an unrelated sibling is not a hit');
+    }
+    {   # A hanging index read gives a short, action-first doctor line (no internal token).
+        my $x=project(1); codex_source($x); status($x); put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) sleep 20;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        my $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"});
+        like($d->{all},qr/Git is not answering.*run git status here/s,'S1 doctor: a hanging Git is named with an action'); unlike($d->{all},qr/\btimeout\b/,'S1 and without the internal token');
+    }
+    {   # Every Git spawn of the gate runs with lazy fetch disabled (after the GIT_* purge) and no inherited GIT_* variable.
+        my $x=project(1); codex_source($x); my $e="$work/git-env"; unlink $e;
+        put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) env | grep '^GIT_' | sort >> '$e'; echo ls-files >> '$e';; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        my $o=run(['bash',"$repo/scripts/loomy-status.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}",GIT_DIR=>"/nonexistent",GIT_INDEX_FILE=>"/nonexistent"});
+        my %seen=map {($_=>1)} grep {$_ ne 'ls-files'} split /\n/,bytes($e); ok(bytes($e) =~ /ls-files/,'S1 the gate did run ls-files'); is(join(",",sort keys %seen),"GIT_NO_LAZY_FETCH=1",'S1 gate and helper Git spawns: only GIT_NO_LAZY_FETCH=1, no inherited GIT_*');
+        my $dd=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}",GIT_DIR=>"/nonexistent"}); %seen=map {($_=>1)} grep {$_ ne 'ls-files'} split /\n/,bytes($e);
+        is(join(",",sort keys %seen),"GIT_NO_LAZY_FETCH=1",'S1 doctor health spawns too');
+    }
+    {   # Leak barrier: a tracked runtime gets no journal write at all (hooks, prompt, usage and stream go through the preparation).
+        my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); chmod 0644,"$x/.loomy/logs/events.jsonl"; git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
+        my $j=sub {my ($body)=@_; run(['bash','-c','source "$1/scripts/lib/journal.sh"; shift; "$@"','_',$repo,@_])};
+        my $o=$j->('ai_journal_prepare',$x); isnt($o->{rc},0,'S1 barrier: a tracked events.jsonl is not prepared');
+        $o=$j->('ai_journal_write',$x,'"type":"phase","phase":"leak"'); is(bytes("$x/.loomy/logs/events.jsonl"),"orig\n",'S1 barrier: a journal write leaves the tracked file untouched');
+        is(((stat "$x/.loomy/logs/events.jsonl")[2] & 07777),0644,'S1 barrier: and does not chmod it');
+        $o=run(['bash',"$repo/scripts/loomy-context.sh",'--hook','stop','--root',$x],env=>{LOOMY_PROJECT_ROOT=>$x}); is(bytes("$x/.loomy/logs/events.jsonl"),"orig\n",'S1 barrier: a hook leaves the tracked file untouched');
+        # The verdict is cached in a private file; a second call asks Git nothing; the remedy clears it.
+        my $y=project(1); my $gl="$work/git-barrier"; unlink $gl;
+        sleep 2.2; $o=$j->('ai_journal_prepare',$y); is($o->{rc},0,'S1 barrier: an untracked runtime is prepared');
+        ok(-f "$y/.loomy/logs/gate-v1" && ((stat "$y/.loomy/logs/gate-v1")[2] & 07777)==0600,'S1 barrier: the verdict is cached in a private file');
+        put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; shift; "$@"','_',$repo,'ai_journal_write',$y,'"type":"phase","phase":"ok"'],env=>{PATH=>"$work/fakegit:$ENV{PATH}"});
+        ok(!-e $gl || bytes($gl) !~ /ls-files/,'S1 barrier: a cached verdict spawns no Git on the hot path');
+        git($y,'add','-f','.loomy/logs/events.jsonl'); sleep 2.2; $o=$j->('ai_journal_prepare',$y); isnt($o->{rc},0,'S1 barrier: tracking the log later is noticed (index stat changed)');
+        git($y,'rm','--cached','--quiet','.loomy/logs/events.jsonl'); sleep 2.2; $o=$j->('ai_journal_prepare',$y); is($o->{rc},0,'S1 barrier: removing it from the index lifts the refusal');
+        # Not a repository: nothing to track, no cache needed.
+        my $n=project(0,1); $o=$j->('ai_journal_prepare',$n); is($o->{rc},0,'S1 barrier: a project that is not a repository is prepared');
     }
     {   # The caller's alarm and handler survive the bounded read.
         my $x=project(1); my $o=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/runtime-paths.pl"; my $h=sub {}; $SIG{ALRM}=$h; alarm 40;

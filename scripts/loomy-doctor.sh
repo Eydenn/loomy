@@ -107,7 +107,7 @@ fi
 
 # Source symlinks are deliberately not followed by the collectors.
 loomy_doctor_tracking() {
-  local kind path detail
+  local kind path detail fix_out fix_kind fix_n fix_names
   # Owner facts come from a pure inspection: doctor never elects, creates or repairs a runtime file.
   local o_status o_reason o_file o_state o_build o_pid o_boot o_birth o_epoch o_scope unknown
   while IFS=$'\t' read -r kind path detail; do
@@ -135,10 +135,24 @@ loomy_doctor_tracking() {
         ai_owner_note owner owned owned "" "" "" "${path#-}"
         ui_warn "$AI_OWNER_NOTE" ;;
       committed) ui_warn "$(t 'Files committed under .loomy/logs (%s): %s' "$path" "$detail")" "$(t 'runtime files belong outside Git')" ;;
-      index) ui_warn "$(t 'Git index could not be read: %s' "$path")" ;;
+      index)
+        if [[ "$path" == timeout ]]; then ui_warn "$(t 'Git is not answering')" "$(t 'run git status here, then loomy doctor again')"
+        else ui_warn "$(t 'Git cannot read this index')" "$(t 'run git status here, fix what it reports, then loomy doctor again')"; fi ;;
       shipped)
-        if [[ "$path" == "-" ]]; then ui_warn ".loomy/logs" "$(t 'a tracked file under .loomy/logs: run git rm -r --cached .loomy/logs and commit, then reopen live tracking')"
-        else ui_warn "$path" "$(t 'tracked by Git (shipped with this clone): run git rm --cached on it and commit, then reopen live tracking')"
+        if [[ "$path" == "-" ]]; then ui_warn ".loomy/logs" "$(t 'a tracked file is shipped with this clone')"
+        else ui_warn "$path" "$(t 'tracked by Git (shipped with this clone)')"
+        fi
+        if (( FIX )); then
+          # Only what the gate itself reports leaves the index (raw paths as argv, files stay on disk).
+          fix_out="$(perl "$SCRIPT_DIR/lib/tracked-fix.pl" "$ROOT" 2>/dev/null </dev/null)" || true
+          IFS=$'\t' read -r fix_kind fix_n fix_names <<<"$fix_out"
+          case "$fix_kind" in
+            removed) ui_ok "$(t '%s tracked runtime file(s) removed from the Git index' "$fix_n")" "${fix_names:+$fix_names · }$(t 'files stay on disk; commit, then reopen live tracking')" ;;
+            none) ui_info "$(t 'No tracked runtime file left.')" ;;
+            *) ui_warn "$(t 'Could not remove them from the Git index')" "$(t 'run git status here, then loomy doctor --fix again')" ;;
+          esac
+        else
+          ui_info "$(t "fix: %s" "loomy doctor --fix")  ($(t "git rm --cached, files kept on disk"))"
         fi ;;
       symlink) ui_warn "$path" "$(t 'symlink: live tracking disabled for this source')" ;;
       bounds) ui_warn "$path" "$(t 'tracking file exceeds its bound (%s bytes)' "$detail")" ;;

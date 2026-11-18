@@ -34,8 +34,61 @@ ai_journal_claude_idle() {
 # Private logs, including older files. Descriptor chmod never follows a symbolic link.
 # The Perl is a sub shared by ai_journal_prepare and ai_journal_write (one process for both).
 AI_JOURNAL_PREPARE_PL='
+  # Leak barrier: runtime state tracked in the Git index (a clone can ship it) must never be journaled into, or a
+  # later `git commit -a` would publish private events. Checked once per process here, the earliest journal entry
+  # point (every hook write, prompt, usage and launch stream passes through it), and answered from a private cache
+  # file (.loomy/logs/gate-v1: verdict keyed on the index stat, .loomy and .loomy/logs identity) so the common case
+  # costs three stats and a small read, no Git. Not a repository: nothing to track. A Git that cannot answer is a
+  # refusal (fail closed), never cached. An index changed in the last 2 s is not cached (racily clean).
+  sub _gate_read {
+    my ($path,$key)=@_; sysopen(my $h,$path,O_RDONLY|O_NOFOLLOW) or return;
+    my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[7]<=1024;
+    sysread($h,my $raw,1025); my ($k,$v)=split /\n/,$raw; return unless defined $k && $k eq $key && defined $v;
+    return $v eq "ok" ? 1 : $v eq "tracked" ? 0 : undef;
+  }
+  sub _gate_ident {
+    my ($root,$dir,$idx)=@_; my @a=lstat("$root/.loomy"); my @b=lstat($dir);
+    return join("|","v1",$idx,join(",",@a[0,1]),join(",",@b[0,1]));
+  }
+  sub _gate_index {
+    my $root=shift; my $d=$root; my $top;
+    while (1) { if (lstat("$d/.git")) {$top=$d; last} last if $d eq "" || $d eq "/"; $d =~ s{/[^/]*\z}{}; }
+    return (1,undef) unless defined $top;   # not a repository
+    my @g=lstat("$top/.git"); my $gd;
+    if (-d _ && !-l _) { $gd="$top/.git" }
+    elsif (-f _ && sysopen(my $h,"$top/.git",O_RDONLY|O_NOFOLLOW)) {
+      sysread($h,my $raw,4097); $gd=$1 if $raw =~ /\Agitdir: ([^\n]+?)\r?\n?\z/ && length($raw)<=4096;
+      $gd="$top/$gd" if defined $gd && $gd !~ m{\A/}; undef $gd unless defined $gd && $gd !~ /[\x00-\x1f\x7f]/ && -d $gd;
+    }
+    return (0,undef) unless defined $gd;   # unusual layout: ask Git every time
+    my @i=stat("$gd/index"); return (0,undef) if @i && time-$i[9]<2;
+    return (0,"$top|$gd|".(@i ? join(",",@i[0,1,7,9,10]) : "none"));
+  }
+  # Returns (allowed, cache key to store or undef).
+  sub _gate {
+    my ($dir,$module)=@_; my $root=$dir; $root =~ s{/\.loomy/logs\z}{} or return (1,undef);
+    unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
+    my ($norepo,$idx)=_gate_index($root); return (1,undef) if $norepo;
+    my $key=defined $idx ? _gate_ident($root,$dir,$idx) : undef;
+    if (defined $key) { my $c=_gate_read("$dir/gate-v1",$key); return ($c,undef) if defined $c }
+    (my $lib=$module) =~ s{/[^/]+\z}{};
+    my ($path,$why)=eval { require "$lib/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
+    $why="index-error" unless defined $why;
+    return (0,undef) if $why eq "timeout" || $why eq "index-error";
+    return ($why eq "tracked" ? 0 : 1, defined $idx ? $idx : undef);
+  }
+  sub _gate_store {
+    my ($dir,$root,$idx,$allowed)=@_; return unless defined $idx && -d $dir && !-l $dir;
+    my $tmp="$dir/gate-v1.$$"; sysopen(my $h,$tmp,Fcntl::O_WRONLY()|O_CREAT|Fcntl::O_EXCL()|O_NOFOLLOW,0600) or return;
+    my $ok=syswrite($h,_gate_ident($root,$dir,$idx)."\n".($allowed ? "ok" : "tracked")."\n"); close $h;
+    rename($tmp,"$dir/gate-v1") or unlink $tmp if $ok; unlink $tmp unless $ok;
+  }
   sub journal_prepare {
-    my $dir=shift; my $old=umask 0077; my $ok=_journal_prepare($dir); umask $old; return $ok;
+    my ($dir,$module,$gated)=@_; my $old=umask 0077; my ($allowed,$idx)=$gated ? (1,undef) : _gate($dir,$module); my $ok=0;
+    my $root=$dir; $root =~ s{/\.loomy/logs\z}{}; unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
+    if ($allowed) { $ok=_journal_prepare($dir) }
+    _gate_store($dir,$root,$idx,$allowed) if defined $idx && ($ok || !$allowed);
+    umask $old; return $ok;
   }
   sub _journal_prepare {
     my $dir=shift;
@@ -60,7 +113,7 @@ AI_JOURNAL_PREPARE_PL='
 _ai_journal_guard() { [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/logs" ]]; }
 ai_journal_prepare() {
   _ai_journal_guard "$1" || return 1
-  perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'exit(journal_prepare(shift) ? 0 : 1);' "$1/.loomy/logs" 2>/dev/null
+  perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'exit(journal_prepare(@ARGV) ? 0 : 1);' "$1/.loomy/logs" "$AI_LIVE_STATE_LIB" 2>/dev/null
 }
 
 # LOCK L3: the only elector. One compound collection per command: a free slot is won for the
@@ -143,7 +196,7 @@ sub collect {
     my $e=elect($dir,$root); my ($native,$claude);
     if ($e->{role} eq "owner") {
         my $o={owner=>$e->{guard},context=>$e->{ctx}}; my $logs="$e->{ctx}{root}/.loomy/logs";
-        if (main::journal_prepare($logs)) {
+        if (main::journal_prepare($logs,undef,1)) {   # the election just ran the same gate
             for my $tool ($sessions ne "" && -d $sessions ? "codex" : (),"claude") {
                 my $s=eval {$tool eq "codex" ? Loomy::CodexNative::poll($root,$sessions,$o) : Loomy::ClaudeNative::poll($root,$projects,$o)};
                 if (($@//"") =~ /\Acollector owner ([A-Z_]+)\n\z/) { $e->{fenced}=$1; last }
@@ -186,8 +239,8 @@ ai_owner_note() {
       AI_OWNER_KIND=problem
       case "$reason" in
         tracked-runtime)
-          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view." "$file"
-          elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: a tracked file under .loomy/logs. Run git rm -r --cached .loomy/logs, commit, then reopen this view."
+          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm -r --cached -- %s, commit, then reopen this view." "$file" "$file"
+          elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view."
           else tv AI_OWNER_NOTE "Tracked runtime file · run loomy doctor"; fi ;;
         unsafe-lock)
           if [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view." ".loomy/logs/collector.lock" ".loomy/logs/collector-owner-v1.json"
@@ -258,7 +311,7 @@ _ai_journal_write_checked() {
   _ai_journal_guard "$root" || return 1
   printf '%s' "$body" | perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'
     my ($module,$path,$ts)=@ARGV; my $dir=$path; $dir =~ s{/[^/]+\z}{};
-    exit 2 unless journal_prepare($dir);
+    exit 2 unless journal_prepare($dir,$module);
     require $module;
     local $/; my $body=<STDIN>;
     exit(Loomy::LiveState::journal_append($path,$body,$ts) ? 0 : 1);

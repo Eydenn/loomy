@@ -2557,5 +2557,8 @@ _t_fr() {
     'tracked by Git (shipped with this clone): run git rm --cached on it and commit, then reopen live tracking') _T='suivi par Git (livré avec ce clone) : lance git rm --cached dessus et valide, puis rouvre le suivi en direct' ;;
     'Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached dessus, valide, puis rouvre cette vue.' ;;
     'Tracked runtime file · run loomy doctor') _T='Fichier d’exécution suivi par Git · lance loomy doctor' ;;
+    'Live tracking is unavailable: a tracked file under .loomy/logs. Run git rm -r --cached .loomy/logs, commit, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance git rm -r --cached .loomy/logs, valide, puis rouvre cette vue.' ;;
+    'a tracked file under .loomy/logs: run git rm -r --cached .loomy/logs and commit, then reopen live tracking') _T='un fichier suivi par Git sous .loomy/logs : lance git rm -r --cached .loomy/logs et valide, puis rouvre le suivi en direct' ;;
+    'Git index could not be read: %s') _T='L’index Git n’a pas pu être lu : %s' ;;
   esac
 }

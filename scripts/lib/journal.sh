@@ -86,7 +86,8 @@ sub load {
 }
 # Clone-shipped runtime state tracked in the repository index (see Loomy::RuntimePaths::tracked_runtime):
 # returns ($path,$why) with $why tracked or timeout. Memo bounds: an answer is reused for 30 s of wall clock, so a
-# watch that keeps retrying a lost election asks the index at most every 30 s; a clock that moves backwards keeps the
+# watch that keeps retrying a lost election asks the index at most every 30 s (while git is unresponsive each
+# question can cost the 2 s bound, so at most 2 s of freeze per 30 s); a clock that moves backwards keeps the
 # last answer until it catches up; a watch that already OWNS the collector does not ask again (it is rechecked only
 # when it re-elects, after a fence or promotion). Not a security boundary against a hostile same-user process.
 my %tracked_memo;
@@ -107,8 +108,9 @@ sub elect {
     # A clone can ship checkpoints, shards or markers: they would be trusted (and chmod 0600 by the
     # preparation, erasing the signal). Refuse before any preparation; mode is deliberately not a criterion.
     my ($t,$why)=tracked_runtime($ctx->{root}//$root);
-    if ($why eq "tracked") { @r{qw(role status reason file)}=("follower","unsafe","tracked-runtime",$t); return \%r }
-    if ($why eq "timeout") { @r{qw(role status reason)}=("follower","unsafe","index-timeout"); return \%r }
+    # A path that cannot be shown as is (altered characters, too long) is reported without a name.
+    if ($why eq "tracked") { @r{qw(role status reason file)}=("follower","unsafe","tracked-runtime",$t =~ m{\A[A-Za-z0-9._/-]{1,120}\z} ? $t : ""); return \%r }
+    if ($why eq "timeout" || $why eq "index-error") { @r{qw(role status reason)}=("follower","unsafe",($why eq "timeout" ? "index-timeout" : "index-error")); return \%r }
     my $f;
     for my $try (1..$retries) {
         $f=eval {Loomy::CollectorOwner::try_acquire($ctx,Loomy::CodexNative::build_id())};
@@ -184,7 +186,8 @@ ai_owner_note() {
       AI_OWNER_KIND=problem
       case "$reason" in
         tracked-runtime)
-          if [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view." "$file"
+          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm --cached on it, commit, then reopen this view." "$file"
+          elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: a tracked file under .loomy/logs. Run git rm -r --cached .loomy/logs, commit, then reopen this view."
           else tv AI_OWNER_NOTE "Tracked runtime file · run loomy doctor"; fi ;;
         unsafe-lock)
           if [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is unsafe. Close any older watch, delete it and %s, then reopen this view." ".loomy/logs/collector.lock" ".loomy/logs/collector-owner-v1.json"

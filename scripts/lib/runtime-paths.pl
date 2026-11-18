@@ -97,35 +97,53 @@ sub _git_run {
     $ok=0 if $over;
     return ($ok && $closed ? $raw : undef,0);
 }
-# Clone-shipped runtime state. A checkpoint, shard, migration marker, owner record or lock tracked in the repository
-# index, or a tracked gitlink/symlink standing for .loomy or .loomy/logs, must never be trusted. Targeted pathspecs
-# (case-insensitive: macOS and Windows checkouts), so the answer does not depend on how many files the repository tracks.
-# Hardened git (no fsmonitor, no hooks, GIT_* cleared); the read is bounded by a 2 s alarm.
-# Returns ($path,"tracked") with the path as tracked (relative to the project root), or ("","timeout"), or ("","").
+# Clone-shipped runtime state. Anything tracked in the repository index that physically sits under .loomy/logs, and a
+# tracked gitlink or symlink standing for .loomy or .loomy/logs, must never be trusted (checkpoints, shards, markers,
+# the owner record and the lock are all read or written there).
+# Identity, not spelling: the index is read once (`git ls-files -s -z`) and the first two path components of every
+# tracked path are compared by device/inode with the real .loomy and .loomy/logs, so a case or Unicode variant the
+# filesystem folds onto them (.Loomy/Logs, logſ, KELVIN SIGN) is caught on APFS/HFS+/NTFS whatever git's own
+# ASCII-only icase would say. Any tracked entry inside logs counts: logs holds runtime state only (Loomy ignores it
+# by default), and judging by file name would reintroduce the folding problem.
+# Hardened git (no fsmonitor, no hooks, GIT_* cleared), whole read bounded by a 2 s alarm (the caller's alarm and
+# handler are saved and restored). Fails closed: a git that exits non-zero, cannot be started or cannot read the
+# index is "index-error". A tree with no .git entry anywhere above it is not a repository: nothing to track.
+# Returns ($path,"tracked") with the path as tracked, ("","timeout"), ("","index-error") or ("","").
 sub tracked_runtime {
     my ($root)=@_; return ("","") unless defined $root && $root =~ m{\A/};
+    my $in_repo=0; { my $d=$root; while (1) { if (-e "$d/.git" || -l "$d/.git") {$in_repo=1; last} last if $d eq '' || $d eq '/'; $d =~ s{/[^/]*\z}{} } }
+    return ("","") unless $in_repo;
+    my @loomy=stat("$root/.loomy"); my @logs=stat("$root/.loomy/logs");
+    my $same=sub { my ($a,$b)=@_; return @$a && @$b && $a->[0]==$b->[0] && $a->[1]==$b->[1] };
     local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
-    my @spec=map {":(icase,glob)$_"} ('.loomy/logs/*-native.idx*','.loomy/logs/checkpoint-v2','.loomy/logs/collector-owner-v1.json',
-        '.loomy/logs/collector.lock','?loomy','?loomy/logs');
-    my $pid=open(my $git,'-|','sh','-c','root=$1; shift; exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$root" ls-files -s -z -- "$@" 2>/dev/null','sh',$root,@spec);
-    return ("","") unless $pid;
-    my ($hit,$why)=("","");
+    my $t0=Time::HiRes::time(); my $prev=alarm 0;
+    my $pid=open(my $git,'-|','sh','-c','exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -s -z 2>/dev/null','sh',$root);
+    unless ($pid) { alarm($prev) if $prev; return ("","index-error") }
+    my ($hit,$why,%c1,%c2)=("","");
     my $ok=eval {
         local $SIG{ALRM}=sub {die "timeout\n"}; alarm 2;
-        local $/="\0"; my $n=0;
+        local $/="\0";
         while (defined(my $rec=<$git>)) {
-            chomp $rec; last if ++$n>4096;
-            next unless $rec =~ /\A(\d{6}) [0-9a-f]+ \d\t(.*)\z/s; my ($mode,$path)=($1,$2);
-            if (($mode eq '160000' || $mode eq '120000') && $path =~ m{\A\.loomy(?:/logs)?\z}i) { $hit=$path; last }
-            if ($path =~ m{\A\.loomy/logs/(?:[^/]*-native\.idx[^/]*|checkpoint-v2|collector-owner-v1\.json|collector\.lock)\z}i) { $hit=$path; last }
+            chomp $rec; next unless $rec =~ /\A(\d{6}) [0-9a-f]+ \d\t(.*)\z/s; my ($mode,$path)=($1,$2);
+            my ($a,$b,$rest)=split m{/},$path,3;
+            if ($path =~ m{\A\.loomy/logs(?:/|\z)}i) { $hit=$path; last }   # ASCII spelling, even when the directory does not exist yet
+            next unless @loomy;
+            my $ia=($c1{$a}//=[stat("$root/$a")]); next unless $same->($ia,\@loomy);
+            if (!defined $b) { if ($mode eq '160000' || $mode eq '120000') { $hit=$path; last } next }
+            next unless @logs;
+            my $ib=($c2{"$a/$b"}//=[stat("$root/$a/$b")]); next unless $same->($ib,\@logs);
+            $hit=$path; last;
         }
         alarm 0; 1;
     };
-    alarm 0;
-    if (!$ok) { kill 'KILL',$pid; $why='timeout' }
-    close $git;
-    return ("","timeout") if $why eq 'timeout';
-    return $hit eq '' ? ("","") : ($hit,"tracked");
+    alarm 0; my $timed_out=!$ok;
+    kill 'KILL',$pid if $timed_out || $hit ne '';
+    my $closed=close $git; my $status=$?;
+    if ($prev) { my $left=$prev-int(Time::HiRes::time()-$t0); alarm($left>0 ? $left : 1) }
+    return ("","timeout") if $timed_out;
+    return ($hit,"tracked") if $hit ne '';
+    return ("","index-error") if !$closed || $status;
+    return ("","");
 }
 sub _git {my ($raw)=_git_run($_[0],0,@_[1..$#_]); return $raw}
 sub _relation {

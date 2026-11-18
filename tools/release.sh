@@ -23,7 +23,9 @@ REMOTE_TAG="$(git ls-remote --tags origin "refs/tags/v$V^{}" | cut -f1)"
 [[ "$REMOTE_TAG" == "$(git rev-parse HEAD)" ]] || fail "tag v$V on GitHub is not HEAD"
 gh release view "v$V" -R "$GH_REPO" >/dev/null 2>&1 && fail "release v$V already exists"
 # The adoption/rollback evidence needs the real v0.17.9 build from the history: a missing baseline is a failure here, not a skip.
-LOOMY_REQUIRE_BASELINE=1 bash tests/collector-ownership.sh >/dev/null 2>&1 || fail "tests/collector-ownership.sh failed (LOOMY_REQUIRE_BASELINE=1; needs the full history and the v0.17.9 tag)"
+OWN_LOG="$(mktemp "${TMPDIR:-/tmp}/loomy-ownership.XXXXXX")"
+if ! LOOMY_REQUIRE_BASELINE=1 bash tests/collector-ownership.sh >"$OWN_LOG" 2>&1; then tail -n 40 "$OWN_LOG" >&2; rm -f "$OWN_LOG"; fail "tests/collector-ownership.sh failed (LOOMY_REQUIRE_BASELINE=1; needs the full history and the v0.17.9 tag)"; fi
+rm -f "$OWN_LOG"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/loomy-release.XXXXXX")"; trap 'rm -rf "$TMP"' EXIT
 npm pack --pack-destination "$TMP" >/dev/null 2>&1 || fail "npm pack failed"

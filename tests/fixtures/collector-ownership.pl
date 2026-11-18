@@ -329,6 +329,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     {   # A tracked gitlink (submodule) or symlink standing for .loomy or .loomy/logs.
         for my $case (['gitlink .loomy','160000','.loomy'],['symlink .loomy/logs','120000','.loomy/logs'],['gitlink .Loomy','160000','.Loomy']) {
             my ($name,$mode,$path)=@$case; my $x=project(1); codex_source($x); status($x);
+            if ($path eq '.Loomy' && !-e "$x/.Loomy") {ok(1,'S1 a gitlink at .Loomy is only the physical .loomy on a case-folding filesystem (skipped here)'); next}
             my $blob=`git -C '$x' hash-object -w --stdin </dev/null`; chomp $blob; git($x,'update-index','--add','--cacheinfo',"$mode,$blob,$path"); commit_all($x);
             my $o=status($x); like($o->{all},qr/is tracked by Git/,"S1 a tracked $name is refused");
         }
@@ -343,6 +344,41 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $t0=Time::HiRes::time; my $o=run(['bash',"$repo/scripts/loomy-status.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}); my $el=Time::HiRes::time-$t0;
         is($o->{rc},0,'S1 a hanging index read: status still exits 0'); cmp_ok($el,'<',15,sprintf('S1 and returns in %.1f s (bounded by the 2 s read timeout)',$el));
         like($o->{all},qr/Storage not verified/,'S1 with a clear "Storage not verified" note');
+    }
+    {   # Identity, not spelling: names this filesystem folds onto .loomy/logs are caught by device/inode (APFS folds U+017F and U+212A).
+        require Encode;
+        for my $case (['long s in logs',".loomy/log\x{17F}/codex-native.idx"],['kelvin in the marker',".loomy/logs/chec\x{212A}point-v2"]) {
+            my ($name,$wide)=@$case; my $raw=Encode::encode('UTF-8',$wide); my $x=project(1); codex_source($x); status($x);
+            my $folds=-e Encode::encode('UTF-8',".loomy/log\x{17F}") ? 1 : 0; my $kf=-e "$x/.loomy/logs/chec".Encode::encode('UTF-8',"\x{212A}")."point-v2" ? 1 : 0;
+            index_add($x,'100644',$raw); commit_all($x);
+            if ($name =~ /long s/ ? $folds : 1) { my $o=status($x); like($o->{all},qr/is tracked by Git|a tracked file under \.loomy\/logs/,"S1 $name: refused (".($folds ? 'this filesystem folds it' : 'plain ASCII prefix').')') }
+            else { ok(1,"S1 $name: this filesystem does not fold it (skipped)") }
+        }
+    }
+    {   # Fail closed: a git that cannot answer is "Storage not verified", never an open gate.
+        my $note=qr/Storage not verified/;
+        my $x=project(1); codex_source($x); status($x); put("$x/.git/index","not an index at all"); my $o=tree($x); is($o->{rc},0,'S1 a corrupt index: tree exits 0 (plain status itself stops in its own GIT section, before this gate)'); like($o->{all},$note,'S1 a corrupt index fails closed');
+        my $d=doctor($x); like($d->{all},qr/Git index could not be read: index-error/,'S1 doctor names the unreadable index');
+        $x=project(1); codex_source($x); status($x); put("$x/.git/index",pack('a4 N N','DIRC',99,0).("\0" x 20)); $o=tree($x); like($o->{all},$note,'S1 an unknown index version fails closed');
+        $x=project(1); codex_source($x); status($x);
+        put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) echo 'fatal: detected dubious ownership in repository' >&2; exit 128;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        $o=run(['bash',"$repo/scripts/loomy-status.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}); like($o->{all},$note,'S1 a dubious-ownership refusal from git fails closed');
+        put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) exit 127;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        $o=run(['bash',"$repo/scripts/loomy-status.sh",'--root',$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}); like($o->{all},$note,'S1 a git that cannot be started fails closed');
+        # A tree that is not a repository at all is still accepted (nothing to track).
+        my $n=project(0,1); codex_source($n); $o=status($n); is($o->{rc},0,'S1 a non-repository project: status exits 0'); unlike($o->{all},qr/Storage not verified|is tracked by Git/,'S1 and is not refused'); ok(-e "$n/.loomy/logs/collector-owner-v1.json",'S1 and elected normally');
+    }
+    {   # A path that cannot be shown is reported without a name, with the directory-wide remedy; a long one too.
+        for my $case (['non-ASCII name',".loomy/logs/sp ace \xc3\xa9.txt"],['over-long name',".loomy/logs/".('n' x 130)]) {
+            my ($name,$path)=@$case; my $x=project(1); codex_source($x); status($x); index_add($x,'100644',$path); commit_all($x);
+            my $o=status($x); like($o->{all},qr/a tracked file under \.loomy\/logs\. Run git rm -r --cached \.loomy\/logs/,"S1 an $name is reported without a name and with the directory remedy");
+            my $d=doctor($x); like($d->{all},qr/a tracked file under \.loomy\/logs: run git rm -r --cached \.loomy\/logs/,"S1 doctor gives the directory remedy for an $name");
+        }
+    }
+    {   # The caller's alarm and handler survive the bounded read.
+        my $x=project(1); my $o=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/runtime-paths.pl"; my $h=sub {}; $SIG{ALRM}=$h; alarm 40;
+            Loomy::RuntimePaths::tracked_runtime($ARGV[1]); my $left=alarm 0; print(($SIG{ALRM}==$h ? "handler" : "lost")," ",($left>30 ? "alarm" : "cleared"),"\n")},$repo,$x]);
+        is($o->{out},"handler alarm\n",'S1 the caller alarm and its handler are restored after the index read');
     }
     # The one-shot adapter command line stays git-free.
     my $ctr; { my $g="$work/git-trace"; unlink $g; my $fp=fresh({});

@@ -37,15 +37,22 @@ sub safe {
     # A clone can ship runtime files: any tracked content under .loomy/logs is named.
     my @names;
     local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV};
-    if (open my $git,"-|","sh","-c",'exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
-        local $/="\0"; my $n=0;
-        while (defined(my $name=<$git>)) { chomp $name; last if ++$n>1000; push @names,$name if @names<64 }
-        close $git; print "committed\t$n\t".join(", ",grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @names[0..($#names>2 ? 2 : $#names)])."\n" if $n;
+    if (my $gpid=open my $git,"-|","sh","-c",'exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -z -- .loomy/logs 2>/dev/null',"sh",$root) {
+        my $prev=alarm 0; my $t0=time;
+        eval {
+            local $SIG{ALRM}=sub {die "timeout\n"}; alarm 2;
+            local $/="\0"; my $n=0;
+            while (defined(my $name=<$git>)) { chomp $name; last if ++$n>1000; push @names,$name if @names<64 }
+            alarm 0; print "committed\t$n\t".join(", ",grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @names[0..($#names>2 ? 2 : $#names)])."\n" if $n; 1;
+        } or do { kill 'KILL',$gpid; @names=() };
+        alarm 0; close $git; alarm(($prev-(time-$t0))>0 ? $prev-(time-$t0) : 1) if $prev;
     }
     # Tracked runtime state (checkpoints, shards, markers, owner record, lock, or a tracked gitlink/symlink for .loomy)
     # is refused by the election too: named here with its `git rm --cached` remedy. Targeted, case-insensitive, bounded.
     my ($tp,$tw)=eval { Loomy::RuntimePaths::tracked_runtime($phys =~ s{/\.loomy/logs\z}{}r) };
-    print "shipped\t$tp\n" if ($tw//"") eq "tracked" && $tp =~ m{\A[A-Za-z0-9._/-]{1,160}\z};
+    $tw//="";
+    if ($tw eq "tracked") { print "shipped\t".($tp =~ m{\A[A-Za-z0-9._/-]{1,120}\z} ? $tp : "-")."\n" }
+    elsif ($tw eq "timeout" || $tw eq "index-error") { print "index\t$tw\n" }
 }
 exit unless safe($dir) && -d $dir;
 for my $entry (['events.jsonl',8388608],['codex-native.idx',2097152],['claude-native.idx',2097152]) {

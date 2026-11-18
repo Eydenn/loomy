@@ -20,6 +20,8 @@ Native Codex and Claude tracking reads provider files and writes checkpoints, cu
 - The protocol number in the record is separate from the version string, so a later implementation can refuse or follow by protocol, not by version text.
 - Out of scope: a daemon, authentication of same-user processes, network filesystems, and hook cost accounting.
 
+- Clone-shipped runtime state tracked in the Git index is refused at election (by filesystem identity, failing closed). The direct adapter and reducer command lines elect without that check: they are Git-free by design and no shipped script calls them.
+
 ## Alternatives considered
 
 - Hold both legacy adapter locks for a whole watch: fences one historical baseline only, adds lock-order and fairness problems and cannot certify older builds.

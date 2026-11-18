@@ -99,13 +99,13 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/delegate-codex.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 BEFORE=""
-if [[ "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  BEFORE="$(git -C "$ROOT" status --porcelain)"
+if [[ "$SANDBOX" == "workspace-write" ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  BEFORE="$(loomy_git -C "$ROOT" status --porcelain)"
 fi
 
 { t "loomy-delegate-codex: role=%s model=%s effort=%s sandbox=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$SANDBOX" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
-if [[ "$SANDBOX" == workspace-write ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [[ "$SANDBOX" == workspace-write ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   ai_delegate_file_snapshot >"$TMP/before-files.json"
 fi
 
@@ -197,8 +197,8 @@ read -r T_IN T_CACHED T_OUT < <(grep '"turn.completed"' "$TMP/log.txt" | awk '
 COST="$(ai_cost_estimate "$MODEL" "$(( T_IN - T_CACHED ))" "$T_CACHED" "$T_OUT")"
 
 CHANGED=0
-if [[ $STATUS -eq 0 && "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  AFTER="$(git -C "$ROOT" status --porcelain)"
+if [[ $STATUS -eq 0 && "$SANDBOX" == "workspace-write" ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  AFTER="$(loomy_git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^> ' || true)"
 fi
 
@@ -221,7 +221,7 @@ fi
 cat "$TMP/last.txt"
 echo
 
-if [[ "$SANDBOX" == "workspace-write" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [[ "$SANDBOX" == "workspace-write" ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if [[ "$CHANGED" != "0" ]]; then
     t "loomy-delegate-codex: the working tree changed — review with 'git diff' before accepting:" >&2; echo >&2
     diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | sed -n 's/^> /  /p' >&2 || true

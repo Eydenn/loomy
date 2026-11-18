@@ -151,11 +151,11 @@ run_claude() {
   fi
 }
 BEFORE=""
-if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then BEFORE="$(git -C "$ROOT" status --porcelain)"; fi
+if (( WRITES )) && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then BEFORE="$(loomy_git -C "$ROOT" status --porcelain)"; fi
 
 { t "loomy-delegate-claude: role=%s model=%s effort=%s max_turns=%s profile=%s" "$ROLE" "$MODEL" "$EFFORT" "$MAX_TURNS" "$AI_PROFILE"; ai_delegate_banner_extra "$REQUESTED" "${O_WHY:-${LOOMY_REQUESTED_MODEL:-}}" "$OFF_ROUTING"; echo; } >&2
 
-if [[ "$SANDBOX" == workspace-write ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [[ "$SANDBOX" == workspace-write ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   ai_delegate_file_snapshot >"$TMP/before-files.json"
 fi
 
@@ -258,8 +258,8 @@ if [[ "$DFORMAT" == "structured" && "$RESULT" == "ok" ]]; then
   FORMAT_JSON="$(ai_result_json "$ROLE" "$ANSWER")"
 fi
 CHANGED=0; AFTER=""
-if (( WRITES )) && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  AFTER="$(git -C "$ROOT" status --porcelain)"
+if (( WRITES )) && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  AFTER="$(loomy_git -C "$ROOT" status --porcelain)"
   CHANGED="$(diff <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") | grep -c '^>' || true)"
 fi
 loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$DELEG_ID\",\"bridge\":\"claude\",\"role\":\"$ROLE\",\"family\":\"claude\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"$RESULT\",\"duration_s\":$DURATION,\"tokens_in\":$(( T_IN + T_CACHED + T_CWRITE )),\"tokens_cached\":$T_CACHED,\"tokens_out\":$T_OUT,\"cost_usd\":$COST,\"cost_source\":\"$COST_SRC\",\"files_changed\":$CHANGED$FAILOVER_JSON$FORMAT_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"

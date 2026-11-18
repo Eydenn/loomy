@@ -445,7 +445,7 @@ case "$cmd" in
       npm) tag="$(loomy_latest_tag)"
            if [[ -n "$tag" ]]; then npm install -g --prefix "${LOOMY_HOME%/lib/node_modules/*}" "github:$LOOMY_REPO#$tag" || rc=$?
            else t "Latest release not found (offline or GitHub API limit): try again later." >&2; echo >&2; rc=1; fi ;;
-      git) git -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
+      git) loomy_git_user -C "$LOOMY_HOME" pull --ff-only || rc=$? ;;
       *) t "Unknown install method: reinstall Loomy (see README)." >&2; echo >&2; exit 1 ;;
     esac
     if (( rc != 0 )); then

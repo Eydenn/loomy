@@ -100,7 +100,7 @@ fi
 ui_section "$(t "SYSTEM")"
 ui_ok "bash ${BASH_VERSION%%(*}" "$(uname -s)"
 if command -v git >/dev/null 2>&1; then
-  ui_ok "git" "$(git --version | awk '{print $3}')"
+  ui_ok "git" "$(loomy_git --version | awk '{print $3}')"
 else
   ui_err "git" "$(t "required — https://git-scm.com/downloads")"; MIN_OK=0
 fi
@@ -532,7 +532,7 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
       loomy_gitignore_sync "$ROOT"
       p_err=""
       while IFS= read -r p_f; do
-        p_e="$(git -C "$ROOT" rm --cached --quiet --ignore-unmatch -- ":(literal)$p_f" 2>&1 >/dev/null | head -1)" || true
+        p_e="$(loomy_git -C "$ROOT" rm --cached --quiet --ignore-unmatch -- ":(literal)$p_f" 2>&1 >/dev/null | head -1)" || true
         [[ -z "$p_err" ]] && p_err="$p_e"
       done < <(printf '%s\n' "$p_tracked")
       p_left="$(loomy_history_tracked "$ROOT")"

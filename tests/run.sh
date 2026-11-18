@@ -2650,6 +2650,7 @@ if [[ "${1:-}" == --section ]]; then
     'Live growth') section 'Live growth'; run 'checkpoint growth/recovery' bash "$HERE/live-growth.sh" ;;
     'W2/W3 resume and session-only') section 'W2/W3 resume and session-only'; run 'resume regressions' bash "$HERE/resume-app.sh" ;;
     'Provider availability') section 'Provider availability'; run 'provider availability regressions' bash "$HERE/provider-availability.sh" ;;
+    'Git chokepoint') section 'Git chokepoint'; run 'hardened git spawns and static guard' bash "$HERE/git-chokepoint.sh" ;;
     'Hooks repair')
       section 'Hooks repair'
       run 'shared hook engine' bash "$HERE/hooks-repair.sh"
@@ -2743,6 +2744,9 @@ for content_test in "$HERE"/content-*.sh; do
   # TAP failures are printed early; the failure tail alone does not name them.
   grep -a '^not ok' "$OUT" | head -20 | sed 's/^/      │ /' || true
 done
+
+section "Git chokepoint"
+run "hardened git spawns and static guard" bash "$HERE/git-chokepoint.sh"
 
 section "Hooks repair"
 run "shared hook engine" bash "$HERE/hooks-repair.sh"

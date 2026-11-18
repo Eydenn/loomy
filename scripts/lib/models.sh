@@ -742,6 +742,18 @@ ai_start_prompt() {
   printf '%s' "$p"
 }
 
+# Git chokepoint. EVERY git spawn of Loomy goes through one of these two helpers (guarded by tests/git-chokepoint.sh):
+# a repository's own config and hooks are untrusted input, and Loomy runs git on its own (statusline, hooks, delegation bridges).
+#   loomy_git       read-only probes and bookkeeping: core.fsmonitor=false, core.hooksPath=/dev/null, no lazy fetch of promisor
+#                   objects (GIT_NO_LAZY_FETCH=1), no optional index lock (--no-optional-locks, a no-op outside `status`).
+#   loomy_git_user  commands that create commits, branches, checkouts or worktrees on the user's behalf: the user's own hooks
+#                   keep running (post-checkout, commit hooks...), only fsmonitor and lazy fetch are hardened.
+# Both are plain `command git` with an env prefix: no extra process, stdout/stderr/exit status unchanged. Perl code that spawns
+# git (runtime-paths.pl, watch-health.pl, tracked-fix.pl, loomy-privacy.sh) hardens its own spawn the same way and is
+# allow-listed in the guard test. New code must use these helpers, never a raw `git`.
+loomy_git() { GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false -c core.hooksPath=/dev/null --no-optional-locks "$@"; }
+loomy_git_user() { GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false "$@"; }
+
 # ai_project_root: root of the nearest Loomy project (folder containing .loomy, walking up from the current folder),
 # otherwise the Git root, otherwise the current folder. A Loomy project can thus live in a subfolder of a repository.
 ai_project_root() {
@@ -753,7 +765,7 @@ ai_project_root() {
     if [[ -d "$d/.loomy" && ( -f "$d/.loomy/VERSION" || -f "$d/.loomy/brief.md" || -f "$d/.loomy/audit.md" ) ]]; then echo "$d"; return 0; fi
     d="$(dirname "$d")"
   done
-  git rev-parse --show-toplevel 2>/dev/null || pwd
+  loomy_git rev-parse --show-toplevel 2>/dev/null || pwd
 }
 
 # loomy_slug <name>: technical id of the project (lowercase, no accents or spaces). It names the folder

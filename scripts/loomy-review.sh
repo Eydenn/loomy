@@ -32,20 +32,20 @@ done
 case "$TOOL" in ""|claude|codex) ;; *) t "%s: claude or codex" "--tool" >&2; echo >&2; exit 2 ;; esac
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
 ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P)" || { t "Error: folder not found: %s" "$ROOT" >&2; echo >&2; exit 1; }
-git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { t "loomy review works in a Git repository." >&2; echo >&2; exit 1; }
+loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { t "loomy review works in a Git repository." >&2; echo >&2; exit 1; }
 cd "$ROOT" || exit 1
 
 # ---------------------------------------------------------------- what to review
-branch="$(git symbolic-ref --short -q HEAD 2>/dev/null || echo HEAD)"
+branch="$(loomy_git symbolic-ref --short -q HEAD 2>/dev/null || echo HEAD)"
 if [[ "$MODE" == "branch" && -z "$BASE" ]]; then
-  for c in "$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)" main master; do
-    [[ -n "$c" && "$c" != "$branch" ]] && git rev-parse -q --verify "$c^{commit}" >/dev/null 2>&1 && { BASE="$c"; break; }
+  for c in "$(loomy_git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)" main master; do
+    [[ -n "$c" && "$c" != "$branch" ]] && loomy_git rev-parse -q --verify "$c^{commit}" >/dev/null 2>&1 && { BASE="$c"; break; }
   done
 fi
 if [[ "$MODE" == "branch" && -n "$BASE" ]]; then
-  git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1 || { t "Unknown base: %s" "$BASE" >&2; echo >&2; exit 2; }
-  mb="$(git merge-base "$BASE" HEAD 2>/dev/null || true)"
-  if [[ -n "$mb" && "$(git rev-list --count "$mb..HEAD")" -gt 0 ]]; then DIFF_CMD="git diff $mb..HEAD"; LABEL="$(t "branch %s against %s" "$branch" "$BASE")"
+  loomy_git rev-parse -q --verify "$BASE^{commit}" >/dev/null 2>&1 || { t "Unknown base: %s" "$BASE" >&2; echo >&2; exit 2; }
+  mb="$(loomy_git merge-base "$BASE" HEAD 2>/dev/null || true)"
+  if [[ -n "$mb" && "$(loomy_git rev-list --count "$mb..HEAD")" -gt 0 ]]; then DIFF_CMD="git diff $mb..HEAD"; LABEL="$(t "branch %s against %s" "$branch" "$BASE")"
   else MODE="working"; fi
 elif [[ "$MODE" == "branch" ]]; then MODE="working"; fi
 case "$MODE" in
@@ -53,9 +53,9 @@ case "$MODE" in
   working) DIFF_CMD="git diff HEAD"; LABEL="$(t "uncommitted changes")" ;;
 esac
 # Loomy's own files (.loomy/) are not part of the review.
-stat="$($DIFF_CMD --shortstat -- . ':(exclude).loomy' 2>/dev/null | sed 's/^ *//')"
+stat="$(loomy_git ${DIFF_CMD#git } --shortstat -- . ':(exclude).loomy' 2>/dev/null | sed 's/^ *//')"
 DIFF_CMD="$DIFF_CMD -- . ':(exclude).loomy'"
-untracked=""; [[ "$MODE" == "working" ]] && untracked="$(git ls-files --others --exclude-standard | grep -v '^\.loomy/' | head -50)"
+untracked=""; [[ "$MODE" == "working" ]] && untracked="$(loomy_git ls-files --others --exclude-standard | grep -v '^\.loomy/' | head -50)"
 if [[ -z "$stat" && -z "$untracked" ]]; then
   t "Nothing to review: %s is empty." "$LABEL"; echo; exit 0
 fi

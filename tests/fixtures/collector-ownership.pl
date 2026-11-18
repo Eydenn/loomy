@@ -513,6 +513,21 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $ln="$work/symcache"; symlink("$work/elsewhere","$ln"); make_path("$work/elsewhere"); run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$ln});
         ok(!-e "$work/elsewhere/loomy",'LR7 a symlinked cache base is refused');
     }
+    {   # LR7: no usable cache directory (symlinked base, foreign or unset HOME): the gate writes no stray file in the project or any cwd.
+        my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
+        my $other="$work/othercwd".++$pn; make_path($other); my $bad="$work/badcache".++$pn; make_path("$work/badtarget$pn"); symlink("$work/badtarget$pn",$bad) or die;
+        my $gw="$work/groupw".++$pn; make_path($gw,{mode=>0700}); chmod 0770,$gw;
+        for my $cfg ([$bad,undef],[$gw,'/nonexistent-home'],[undef,undef]) {
+            for my $cwd ($x,$other) {
+                my @before=map {my $d=$_; [$d,manifest($d)]} ($x,$other,"$work/badtarget$pn");
+                my $o=run(['bash','-c','cd "$1" && perl -e \'require "$ARGV[0]/scripts/lib/journal-gate.pl"; exit(Loomy::JournalGate::check("$ARGV[1]/.loomy/logs") ? 0 : 1)\' "$2" "$3"','_',$cwd,$repo,$x],
+                    env=>{XDG_CACHE_HOME=>$cfg->[0],HOME=>(defined $cfg->[1] ? $cfg->[1] : "$work/nohome$pn")});
+                isnt($o->{rc},0,'LR7 tracked runtime refused with an unusable cache directory');
+                is_deeply([map {manifest($_->[0])} @before],[map {$_->[1]} @before],'LR7 no stray file in the project, the cwd or the symlink target');
+            }
+        }
+        ok(!-e "$x/tracked" && !-e "$other/tracked",'LR7 no file named tracked anywhere');
+    }
     {   # LR7: an aliased worktree (its logs symlinked to the main project logs, which track events.jsonl) writes nothing into main.
         my $m=project(1); my $w="$work/wt".++$pn; git($m,'worktree','add','--quiet','-b',"wt$pn",$w);   # the worktree is taken before the main project tracks anything
         put("$m/.loomy/logs/events.jsonl","orig\n"); git($m,'add','-f','.loomy/logs/events.jsonl'); commit_all($m);

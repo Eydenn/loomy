@@ -53,10 +53,10 @@ sub _cdir {
 # the index stat and the identity of .loomy and .loomy/logs, so any change invalidates it). Both are empty-ish and hold
 # no path.
 sub _marker {
-    my ($name,$create)=@_; my $d=_cdir($create) or return; return "$d/$name";
+    my ($name,$create)=@_; my $d=_cdir($create); return undef unless defined $d; return "$d/$name";
 }
 sub _mark {
-    my ($path,$val)=@_; return unless defined $path;
+    my ($path,$val)=@_; return unless defined $path && length $path;
     if (sysopen(my $h,$path,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_TRUNC()|Fcntl::O_NOFOLLOW(),0600)) { syswrite($h,$val); close $h; utime(time,time,$path) }
 }
 # ($key,$value) of the cache file, or ().
@@ -108,12 +108,12 @@ sub verdict {
     my ($path,$why)=eval { require "$LIB/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
     $why="index-error" unless defined $why;
     if ($why eq "timeout" || $why eq "index-error") {
-        _mark(_marker("r-".Digest::SHA::sha256_hex($root),1),"");
+        my $rm=_marker("r-".Digest::SHA::sha256_hex($root),1); _mark($rm,"");
         return (0,undef);
     }
     unlink $mk if defined $mk;
     my $allowed=$why eq "tracked" ? 0 : 1;
-    _mark(_marker("t-$key",1),"tracked") if !$allowed && defined $key;
+    if (!$allowed && defined $key) { my $tm=_marker("t-$key",1); _mark($tm,"tracked") }
     return ($allowed,($allowed && defined $key) ? [$key,"ok"] : undef);
 }
 sub store {

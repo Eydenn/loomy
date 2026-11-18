@@ -291,7 +291,7 @@ ai_git() {
     fetch|ls-remote|push|pull)
       while IFS= read -r v; do
         [[ -n "$v" && "$v" != -* ]] || continue
-        if (cd / && loomy_git_user -c core.hooksPath=/dev/null ls-remote --get-url "$v" 2>/dev/null) | grep -Eq '^(/|\.\.?/|file://)'; then proto="https:ssh:file"; break; fi
+        if (cd / && unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR && loomy_git_user -c core.hooksPath=/dev/null ls-remote --get-url "$v" 2>/dev/null) | grep -Eq '^(/|\.\.?/|file://)'; then proto="https:ssh:file"; break; fi
       done < <(loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.url 2>/dev/null; loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.pushurl 2>/dev/null)
       ;;
   esac

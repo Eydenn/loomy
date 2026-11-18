@@ -286,6 +286,19 @@ git --git-dir="$WORK/multi-push/.loomy/ai.git" config --add remote.origin.pushur
 adopt_refused "$WORK/multi-push" 'pushurl differs' 'an evil pushurl followed by the good one: adopt refuses'
 mk_comp "$WORK/multi-url"; git --git-dir="$WORK/multi-url/.loomy/ai.git" config --add remote.origin.url https://example.invalid/evil.git
 adopt_refused "$WORK/multi-url" 'several values' 'two remote.origin.url values: adopt refuses'
+# [LR7-B4] non-ASCII url values are refused; C1 and bidi controls never reach the terminal raw; accents stay readable
+mk_comp "$WORK/c1-url"; git --git-dir="$WORK/c1-url/.loomy/ai.git" config --unset remote.origin.url
+printf '[remote "origin"]\n\turl = https://example.invalid/a\xc2\x9b-evil.git\n' >>"$WORK/c1-url/.loomy/ai.git/config"
+pty_adopt y "$WORK/c1-url" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && ! LC_ALL=C grep -q $'\xc2\x9b' "$OUT"; then ok 'url with U+009B: refused, no raw C2 9B on the terminal'; else ko 'url with U+009B not handled'; fi
+mk_comp "$WORK/bidi-url"; git --git-dir="$WORK/bidi-url/.loomy/ai.git" config --unset remote.origin.url
+printf '[remote "origin"]\n\turl = https://example.invalid/a\xe2\x80\xaeb.git\n' >>"$WORK/bidi-url/.loomy/ai.git/config"
+pty_adopt y "$WORK/bidi-url" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && ! LC_ALL=C grep -q $'\xe2\x80\xae' "$OUT"; then ok 'url with U+202E: refused, no raw bidi control on the terminal'; else ko 'url with U+202E not handled'; fi
+mk_comp "$WORK/esc-hook"; mkdir -p "$WORK/esc-hook/.loomy/ai.git/hooks"
+: >"$WORK/esc-hook/.loomy/ai.git/hooks/pr$(printf '\xc3\xa9')"; : >"$WORK/esc-hook/.loomy/ai.git/hooks/x$(printf '\xc2\x9b')y"; : >"$WORK/esc-hook/.loomy/ai.git/hooks/z$(printf '\xe2\x80\xae')w"
+pty_adopt y "$WORK/esc-hook" >"$OUT" 2>&1
+if LC_ALL=C grep -q $'pr\xc3\xa9' "$OUT" && ! LC_ALL=C grep -q $'\xc2\x9b' "$OUT" && ! LC_ALL=C grep -q $'\xe2\x80\xae' "$OUT" && grep -q 'x\\xc2\\x9by' "$OUT"; then ok 'esc keeps accents and escapes C1 and bidi controls'; else ko 'esc output wrong'; fi
 
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1

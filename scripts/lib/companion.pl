@@ -15,7 +15,12 @@
 use strict; use warnings;
 use Digest::SHA qw(sha256_hex); use Fcntl qw(:flock); use File::Basename qw(dirname);
 my ($cmd, @a) = @ARGV; $cmd //= '';
-sub esc { my $v = shift; $v =~ s/([\x00-\x1f\x7f])/sprintf('\\x%02x', ord($1))/ge; $v }
+# Escapes control bytes, C1 controls (U+0080-009F), bidi controls (U+200E/F, U+202A-E, U+2066-9) and invalid UTF-8 as \xNN
+# (per byte); other valid UTF-8 stays readable. Strings here are raw bytes.
+sub esc { my $v = shift; my $o = '';
+  while ($v =~ /\G(?:([\x00-\x1f\x7f]|\xC2[\x80-\x9F]|\xE2\x80[\x8E\x8F\xAA-\xAE]|\xE2\x81[\xA6-\xA9])|([\x20-\x7e]|[\xC2-\xDF][\x80-\xBF]|\xE0[\xA0-\xBF][\x80-\xBF]|[\xE1-\xEC\xEE\xEF][\x80-\xBF]{2}|\xED[\x80-\x9F][\x80-\xBF]|\xF0[\x90-\xBF][\x80-\xBF]{2}|[\xF1-\xF3][\x80-\xBF]{3}|\xF4[\x80-\x8F][\x80-\xBF]{2})|(.))/gcs) {
+    if (defined $2) { $o .= $2 } else { $o .= join('', map { sprintf('\\x%02x', ord) } split //, (defined $1 ? $1 : $3)) } }
+  $o }
 sub bad { $_[0] =~ /[\t\n\r\0]/ }
 sub dirid { my $d = shift; return unless -d $d && !-l $d; my @s = lstat($d) or return; my $r = Cwd::abs_path($d); return unless defined $r; return ($r, "$s[0]:$s[1]") }
 require Cwd;
@@ -80,7 +85,7 @@ if ($cmd eq 'scan') {
       $ok = $remote{$var} ? 1 : 0;
       if ($ok && ($var eq 'url' || $var eq 'pushurl')) {
         my $isl = $v =~ m{\A(?:/|\./|\.\./|file://)}i ? 1 : 0;
-        $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v =~ /[\x00-\x1f\s]/ || $v =~ /\A(?:ext|fd)\b/i;
+        $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v !~ /\A[\x21-\x7e]+\z/ || $v =~ /\A(?:ext|fd)\b/i;
         $ok = 0 unless $v =~ m{\A(?:https://|ssh://|file://|/|\./|\.\./|[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:|[A-Za-z0-9][A-Za-z0-9.-]*:[^/])}i;
         if ($ok && $isl) { $local = 1; if ($strict) { $ok = 0; print "P\t", esc("local remote refused by adopt: remote.$sub.$var"), "\n"; $skip = 1 } }
         push @u, [$sub, $var, $v] if $ok || $isl;

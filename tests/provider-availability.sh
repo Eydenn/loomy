@@ -79,12 +79,32 @@ event_has 'successful other provider has failover metadata' "$journal" '$_->{typ
 run 'same-second handover has distinct lifecycle IDs' bash -c '[[ $(sed -n "s/.*\"id\":\"\([^\"]*\).*/\1/p" "$1" | sort -u | wc -l | tr -d " ") == 2 ]]' _ "$journal"
 
 reset_case
-export STUB_CODEX_CREDITS_DEPLETED=1 STUB_CLAUDE_ERROR='rate_limit_error: usage limit reached retry_after: 600'
+export STUB_CODEX_ERROR='You have hit your usage limit' STUB_CLAUDE_ERROR='rate_limit_error: usage limit reached retry_after: 600'
 fails 'two real refusals pause after one handover' 75 bridge codex
 has 'pause is explicit' 'PAUSED: provider claude'
 run 'neither provider poisons model cache' no_ko
 event_has 'pause carries outcome and expected reset' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "paused" && ($_->{outcome}//"") eq "waiting_for_reset" && ($_->{resume_at}//0)==1791885900'
 run 'exactly two calls, no same-provider retry' bash -c '[[ $(grep -Ec "^(codex.*exec|claude.*-p)" "$STUB_LOG") == 2 ]]'
+
+for variant in 'Your workspace is out of credits' 'insufficient credits' 'You are out of credits' 'Credit balance is too low' 'HTTP 402 Payment Required' 'billing_hard_limit_reached: check your billing details'; do
+  reset_case
+  export STUB_CODEX_ERROR="$variant" STUB_CLAUDE_ERROR="$variant"
+  fails "credits variant '$variant' exits 69, never 75" 69 bridge codex
+  has "credits message is action-first ($variant)" 'OUT OF CREDITS: provider claude'
+  event_has "credits event has outcome credits and no resume_at ($variant)" "$journal" '$_->{type} eq "delegation" && ($_->{outcome}//"") eq "credits" && !exists($_->{resume_at})'
+  run "credits never writes ko ($variant)" no_ko
+  run "credits makes no same-provider retry ($variant)" bash -c '[[ $(grep -Ec "^(codex.*exec|claude.*-p)" "$STUB_LOG") == 2 ]]'
+done
+reset_case
+export STUB_CODEX_ERROR='Your workspace is out of credits' STUB_CLAUDE_ERROR='Credit balance is too low'
+fails 'both providers out of credits: Claude bridge alone also exits 69' 69 bridge claude
+reset_case
+export STUB_CODEX_ERROR='Your workspace is out of credits'
+run 'Codex credits hands role to Claude once' bridge codex
+file_has 'credits handover has a terminal event' "$journal" '"status":"handed_over"'
+reset_case
+export STUB_CODEX_ERROR='You have hit your usage limit. Try again in 10 minutes' STUB_CLAUDE_ERROR='usage limit reached retry_after: 600'
+fails 'rate limits on both providers still pause with 75' 75 bridge codex
 
 reset_case
 export STUB_CLAUDE_ERROR='usage limit reached'
@@ -216,7 +236,7 @@ run 'repository access failure never marks ko' no_ko
 
 reset_case
 printf 'five_hour_pct=100\nfive_hour_reset=1791890500\n' >"$XDG_CONFIG_HOME/loomy/claude-limits"
-export STUB_CODEX_CREDITS_DEPLETED=1
+export STUB_CODEX_ERROR='You have hit your usage limit'
 allow_results
 fails 'opted-in pause retains full task for orchestrator resume' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer 'Full paused task with options and instructions for later resumption'
 run 'resume task held in private results with structured options' resume_matches reviewer codex gpt-6.2-sol high read-only '' 'Full paused task with options and instructions for later resumption'

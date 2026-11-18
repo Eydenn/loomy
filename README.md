@@ -447,6 +447,7 @@ Loomy knows whether you pay per use (API) or by subscription, tool by tool:
 - the handover is announced and logged as `handed_over`, separate from failures;
 - there is one handover per call, with no retry on a sibling model of the saturated provider;
 - if neither provider can serve, the bridge exits 75 with `paused` / `waiting_for_reset` and `resume_at`; after that epoch, the lead reviews partial file changes and resumes only with the exact task and structured options from live context or an authorised task/private-result reference. If unavailable, it reports **original task required to resume** and stops dependent work. See Shared memory below.
+- if a provider is out of credits (not a timed limit), the bridge hands the role over once, or exits 69 with `outcome: "credits"` and no `resume_at`: the lead does not wait or relaunch, and tells the user to add credits or switch provider/model.
 
 The lead’s preventive relay threshold remains separate: `loomy config set quota_switch 90` (a percentage), or `off` to disable preventive relays. A real provider refusal still protects delegations.
 

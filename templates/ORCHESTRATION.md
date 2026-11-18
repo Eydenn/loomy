@@ -32,7 +32,7 @@ Pick the role from the intent of the work (design → architect, implementation 
 
 A real provider refusal (quota, credits or rate limit), or a quota reading at 100 % / reached, hands the role to the other available provider once. Models share their provider’s quota; never retry a sibling model or use an unvalidated fallback.
 
-Provider availability: exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model. If another pause occurs, use its new resume_at; never launch twice for the same pause.
+Provider availability: exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model. If another pause occurs, use its new resume_at; never launch twice for the same pause. Exit 69 means out of credits: do not wait or relaunch; tell the user to add credits or switch provider/model.
 Bridge labels: pass `--task-label "Short task title"` explicitly on each delegation. Saving requires the human-approved `explicit-lead` grant; never derive a label from the task body.
 
 A Codex lead runs its Codex roles as native subagents on their routed models and efforts; the Codex bridge is for a Claude lead.

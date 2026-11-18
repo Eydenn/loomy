@@ -355,7 +355,7 @@ for path in sorted((repo/'scripts').rglob('*.sh')):
                     chunks += [f'PH_TYPE={phase}; PHASE_ARG={value}; src={source}; fromlock="{fromlock}"\n{extra}\n{expression}\n']
 assert collections.Counter(path for path,line in templates)=={
     'scripts/lib/failover.sh':2,'scripts/lib/journal.sh':3,'scripts/lib/launch.sh':5,
-    'scripts/lib/skills.sh':2,'scripts/lib/usage.sh':3,'scripts/loomy-context.sh':2,
+    'scripts/lib/skills.sh':2,'scripts/lib/usage.sh':4,'scripts/loomy-context.sh':2,
     'scripts/loomy-delegate-claude.sh':2,'scripts/loomy-delegate-codex.sh':2,
     'scripts/loomy-start.sh':2,'scripts/loomy-status.sh':1}, 'shell constructor census drift (addition/removal)'
 chunks.append('loomy_cli_bridge_start "$ROOT" "$id" codex reviewer codex "$model" max read-only PRIVATE_TASK 1 model PRIVATE_WHY')

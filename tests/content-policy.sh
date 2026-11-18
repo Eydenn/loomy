@@ -571,6 +571,7 @@ for my $bad ('m'x129,'provider/model with prose',"provider/model\n",'provider/mo
 for my $case (
     ['delegation','cost_source','reported'], # claude bridge: reported vs estimate
     ['delegation','outcome','waiting_for_reset'], # usage.sh pause
+    ['delegation','outcome','credits'], # usage.sh out of credits
     ['delegation','outcome','unformatted'], # models.sh ai_result_json
     ['session_observed','state','failed'], # native task_failed
     ['session_observed','surface','exec'], # codex-native metadata

@@ -779,7 +779,7 @@ my %ENUM = (
     effort=>[qw(none minimal low medium high xhigh max unknown)],
     status=>[qw(ok error interrupted unknown done paused handed_over running cancelled)],
     # usage.sh pause and models.sh ai_result_json emit these outcome codes.
-    outcome=>[qw(done partial blocked failed error interrupted unknown ok paused handed_over cancelled waiting_for_reset unformatted)],
+    outcome=>[qw(done partial blocked failed error interrupted unknown ok paused handed_over cancelled waiting_for_reset unformatted credits)],
     state=>[qw(running busy idle done failed closed unknown interrupted paused handed_over waiting catching_up)],
     surface=>[qw(cli app exec unknown)], context_freshness=>[qw(current fresh catching_up unknown)],
     cost_in=>[qw(usage unknown)], cost_source=>[qw(usage actual reported estimated estimate provider local unknown)],

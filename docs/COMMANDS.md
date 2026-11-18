@@ -325,6 +325,8 @@ A model, effort, sandbox or reason override marks the delegation `requested` in 
 
 Provider availability: exit 75 means paused. The final delegation event records `status: "paused"`, `outcome: "waiting_for_reset"` and `resume_at` (Unix epoch). Reaching that time does not mean the work resumed or succeeded. Retain the exact role/provider/model/effort/sandbox/options; after reset, relaunch once using the original live task or an authorized task/private-result reference. `loomy memory show N` exposes a retained bridge’s structured resume descriptor, not an executable command. Review existing edits before relaunching. If the original task/options are unavailable, report `original task required to resume` and stop dependent work; never guess or choose a weaker model. If another pause occurs, use its new `resume_at`.
 
+Out of credits: exit 69 means the provider has no credits left ("out of credits", "insufficient credits", "credit balance is too low", billing or HTTP 402 payment required). It is not a timed reset: the final delegation event records `status: "error"`, `outcome: "credits"` and no `resume_at`. A role is first handed once to the other provider when it can serve; otherwise the bridge exits 69. Do not wait or relaunch: tell the user to add credits or switch provider/model. A message that carries an explicit reset time stays a rate limit (exit 75).
+
 Delegations pause only after a real refusal or at 100 % / reached; the lead session’s configurable early relay threshold stays separate.
 
 ### `loomy models`

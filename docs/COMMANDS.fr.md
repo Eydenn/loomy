@@ -325,6 +325,8 @@ Une surcharge de modèle, effort, sandbox ou raison marque la délégation `requ
 
 Disponibilité des fournisseurs : le code 75 signifie en pause. L'événement final enregistre `status: "paused"`, `outcome: "waiting_for_reset"` et `resume_at` (epoch Unix). Atteindre cette heure ne signifie pas que le travail a repris ou réussi. Garde exactement le rôle/fournisseur/modèle/effort/sandbox/options ; après la réinitialisation, relance une seule fois avec la tâche du contexte vivant ou une référence de tâche/résultat privé autorisée. `loomy memory show N` expose le descripteur de reprise structuré d'un bridge conservé, pas une commande exécutable. Vérifie les modifications existantes avant de relancer. Si la tâche et les options d'origine sont indisponibles, signale `tâche d’origine nécessaire pour reprendre` et arrête le travail dépendant ; ne devine jamais et ne choisis pas un modèle moins puissant. À chaque nouvelle pause, utilise son nouveau `resume_at`.
 
+Plus de crédits : le code 69 signifie que le fournisseur n'a plus de crédits (« out of credits », « insufficient credits », « credit balance is too low », facturation ou HTTP 402). Ce n'est pas une réinitialisation datée : l'événement final enregistre `status: "error"`, `outcome: "credits"` et aucun `resume_at`. Le rôle est d'abord confié une fois à l'autre fournisseur s'il peut répondre ; sinon le bridge sort avec 69. N'attends pas et ne relance pas : dis à l'utilisateur d'ajouter des crédits ou de changer de fournisseur/modèle. Un message qui porte une date de réinitialisation reste une limite de débit (code 75).
+
 Les délégations se mettent en pause seulement après un refus réel ou à 100 % / limite atteinte ; le seuil de relais préventif configurable du lead reste distinct.
 
 ### `loomy models`

@@ -2569,5 +2569,9 @@ _t_fr() {
     'No tracked runtime file left.') _T='Plus aucun fichier d’exécution suivi par Git.' ;;
     'Could not remove them from the Git index') _T='Retrait de l’index Git impossible' ;;
     'run git status here, then loomy doctor --fix again') _T='lance git status ici, puis relance loomy doctor --fix' ;;
+    'Live tracking is unavailable: a tracked file under .loomy/logs. Run git rm -r --cached .loomy/logs, commit, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance git rm -r --cached .loomy/logs, valide, puis rouvre cette vue.' ;;
+    'a tracked file under .loomy/logs: run git rm -r --cached .loomy/logs and commit, then reopen live tracking') _T='un fichier suivi par Git sous .loomy/logs : lance git rm -r --cached .loomy/logs et valide, puis rouvre le suivi en direct' ;;
+    'Git index could not be read: %s') _T='L’index Git n’a pas pu être lu : %s' ;;
+    'OUT OF CREDITS: provider %s has no credits left. Add credits or switch provider/model, then relaunch. Do not wait: this is not a timed reset.') _T='PLUS DE CRÉDITS : le fournisseur %s n’a plus de crédits. Ajoute des crédits ou change de fournisseur/modèle, puis relance. N’attends pas : ce n’est pas une réinitialisation datée.' ;;
   esac
 }

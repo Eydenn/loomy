@@ -12,6 +12,10 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 - The collector guard fences every write path (journal appends, checkpoints, quarantine, rotation, label and health stores, migration). A replaced lock, record or runtime directory stops writing instead of creating a second lock. Unsafe or unusable runtime files are named with their remedy in `loomy status`, `loomy tree` and `loomy doctor`, and left untouched. Unsupported (newer) checkpoint formats are shown once as `Newer checkpoints · showing stored data · update Loomy` and are never repaired or overwritten.
 - The last unguarded entries now follow the rule too: `live-state.pl`'s reducer command line elects transiently (or follows read-only when an owner exists) and `live-state.pl --migrate` migrates only as owner (an owner holding the slot defers it). The project checkpoint-v2 migration runs under the same transient guard.
 
+### Fixes
+
+- A provider that is out of credits ("out of credits", "insufficient credits", "credit balance is too low", billing, HTTP 402) is no longer treated as a timed rate limit. The Codex and Claude bridges hand the role over once if the other provider can serve, otherwise exit 69 (not 75) with `outcome: "credits"` and no `resume_at`, and tell the user to add credits or switch provider/model. Real rate limits, 5-hour and weekly limits, and any message with an explicit reset time keep exit 75 and `resume_at`. Generated-project instructions document exit 69 next to exit 75.
+
 ### Diagnostics
 
 - `loomy doctor` prints the owner facts (state, build, pid, boot, birth, epoch) or `No live tracking owner.`, and reports `.loomy/logs` files committed to Git, including a `collector-owner-v1.json` shipped with a clone (delete it, then reopen live tracking).

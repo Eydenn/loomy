@@ -228,8 +228,9 @@ ai_delegate_error claude "$TMP/out.json" "$STATUS"
 if [[ "$AI_ERROR_FAILED" == 1 ]]; then
   (( STATUS != 0 )) || STATUS=1
   [[ -n "$AI_ERROR_TEXT" ]] || AI_ERROR_TEXT="$(cat "$TMP/err.log")"
-  ERROR_CLASS="$(ai_model_error_class "$AI_ERROR_TEXT")"
+  if ai_credits_error "$AI_ERROR_TEXT"; then ERROR_CLASS=credits; else ERROR_CLASS="$(ai_model_error_class "$AI_ERROR_TEXT")"; fi
   case "$ERROR_CLASS" in
+    credits) ai_delegate_provider_guard claude credits ;;
     saturated) ai_provider_refusal claude "$AI_ERROR_TEXT"; ai_delegate_provider_guard claude saturated ;;
     model) ai_model_mark "$MODEL" ko; ai_delegate_provider_guard claude model ;;
   esac

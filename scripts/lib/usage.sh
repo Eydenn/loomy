@@ -172,6 +172,12 @@ ai_provider_reset() {
   fi
   echo "${reset:-$(( now + 300 ))}"
 }
+# Out of credits is not a timed reset: it needs the user (add credits, switch provider or model).
+# An explicit reset time in the same message makes it a timed refusal instead.
+ai_credits_error() {
+  ! grep -qiE 'retry[_-]?after|resets?_(at|in)|resume_at|try again (at|in)\b|resets? (in|at)\b' <<<"$1" || return 1
+  grep -qiE 'workspace_member_credits_depleted|credits?[_ -]*(depleted|exhausted)|insufficient[_ -]*credits?|out of[ _-]*credits?|(run|ran) out of[ _-]*credits?|no (more |remaining )credits?|credit balance (is )?(too low|insufficient|exhausted)|insufficient[_ -]*(funds|balance)|payment[_ -]*required|billing[_ -]*(hard[_ -]*limit|issue|error|problem|details|required)|\b402\b.*(payment|billing|credit)' <<<"$1"
+}
 ai_provider_refusal() {
   local f reset parsed now tmp
   f="$(ai_provider_state_file "$1")"; now="$(date +%s)"; reset="$(ai_provider_reset "$1")"
@@ -392,6 +398,14 @@ ai_delegate_provider_guard() {
       exec bash "$SCRIPT_DIR/loomy-delegate-$other.sh" "$ROLE" ${fwd[@]+"${fwd[@]}"} "$TASK"
   fi
   resume="$(ai_provider_reset "$family")"
+  if [[ "$reason" == credits ]]; then
+    id="$DELEG_ID"
+    loomy_cli_end "$ROOT" "\"type\":\"delegation\",\"id\":\"$id\",\"bridge\":\"$family\",\"family\":\"$family\",\"role\":\"$ROLE\",\"model\":\"$MODEL\",\"effort\":\"$EFFORT\",\"profile\":\"$AI_PROFILE\",\"sandbox\":\"$SANDBOX\",\"status\":\"error\",\"outcome\":\"credits\",\"files_changed\":$CHANGED,\"changed_files\":$CHANGED_FILES_JSON,\"duration_s\":$duration$FAILOVER_JSON$WHY_JSON,\"task\":$(ai_json_str "$(ai_task_excerpt "$TASK")")"
+    FINAL_WRITTEN=1
+    ai_delegate_memory_record error "$partial_files"
+    t "OUT OF CREDITS: provider %s has no credits left. Add credits or switch provider/model, then relaunch. Do not wait: this is not a timed reset." "$family" >&2; echo >&2
+    exit 69
+  fi
   [[ "$reason" != "model" ]] || resume=$(( $(date +%s) + 3600 ))
   if ai_provider_saturated "$other"; then
     other_reset="$(ai_provider_reset "$other")"

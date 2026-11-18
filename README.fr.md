@@ -447,6 +447,7 @@ Loomy sait si tu paies à l'usage (API) ou par abonnement, outil par outil :
 - le passage est annoncé et journalisé comme `handed_over`, séparément des échecs ;
 - il y a un seul passage par appel, sans réessai sur un modèle voisin du fournisseur saturé ;
 - si aucun fournisseur ne peut répondre, le bridge sort avec le code 75, `paused` / `waiting_for_reset` et `resume_at` ; après cette date, l’orchestrateur vérifie les modifications partielles et ne reprend qu’avec la tâche exacte et les options structurées du contexte vivant ou d’une référence de tâche/résultat privé autorisée. À défaut, il signale **tâche d’origine nécessaire pour reprendre** et arrête le travail dépendant. Voir Mémoire partagée plus bas.
+- si un fournisseur n’a plus de crédits (limite non datée), le bridge confie le rôle une fois à l’autre, ou sort avec le code 69, `outcome: "credits"` et sans `resume_at` : l’orchestrateur n’attend pas, ne relance pas, et dit à l’utilisateur d’ajouter des crédits ou de changer de fournisseur/modèle.
 
 Le seuil de relais préventif du lead reste distinct : `loomy config set quota_switch 90` (un pourcentage), ou `off` pour désactiver les relais préventifs. Un refus réel du fournisseur continue de protéger les délégations.
 

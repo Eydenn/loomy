@@ -190,7 +190,7 @@ privacy_companion_record() {
   d="$(privacy_ai_git_dir "$root")"
   out="$(privacy_companion_scan "$d" "$mode")" || return 1
   grep -q '^P' <<<"$out" && return 1
-  digest="$(sed -n 's/^D\t//p' <<<"$out")"
+  digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
   [[ -n "$digest" ]] || return 1
   mkdir -p "$(dirname "$(privacy_companions_file)")" 2>/dev/null && chmod 700 "$(dirname "$(privacy_companions_file)")" 2>/dev/null || true
   _privacy_cpl write "$(privacy_companions_file)" "$d" "$digest"
@@ -215,7 +215,7 @@ privacy_companion_why() {
   cache="$(privacy_verdict_file)"
   if [[ -f "$cache" ]] && _privacy_cpl vhas "$cache" "$key" 2>/dev/null; then return 0; fi
   out="$(privacy_companion_scan "$d" ready)"
-  digest="$(sed -n 's/^D\t//p' <<<"$out")"
+  digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
   if grep -q '^P' <<<"$out" || [[ -z "$digest" || "$digest" != "$rec" ]]; then privacy_companion_forget "$root"; echo changed; return 0; fi
   mkdir -p "$(dirname "$cache")" 2>/dev/null || true
   _privacy_cpl vadd "$cache" "$key" 2>/dev/null || true
@@ -244,8 +244,9 @@ privacy_companion_adopt() {
   if [[ ! -O "$d" ]]; then echo "companion is not owned by you"; return 1; fi
   if [[ -n "$(loomy_git -C "$root" ls-files -z -- ':(icase).loomy/ai.git' 2>/dev/null | head -c 1 || true)" ]]; then echo "companion is tracked by the project repository"; return 1; fi
   out="$(privacy_companion_scan "$d" adopt)"
-  if grep -q '^P' <<<"$out"; then sed -n 's/^P\t//p' <<<"$out"; return 1; fi
-  urls="$(sed -n 's/^U\t//p' <<<"$out" | tr '\t' ' ')"
+  if grep -q '^P' <<<"$out"; then awk -F'\t' '$1=="P"{print $2}' <<<"$out"; return 1; fi
+  grep -q '^U'$'\t''origin'$'\t''url'$'\t' <<<"$out" || { echo "no remote.origin.url in the companion config"; return 1; }
+  urls="$(awk -F'\t' '$1=="U"{print $2" "$3" "$4}' <<<"$out")"
   if [[ ! -t 0 || ! -t 2 ]]; then echo "adopt needs a terminal to confirm the remote URLs"; return 1; fi
   printf '%s\n' "Remote URLs (fetch and push) this repository will use:" >&2
   while IFS= read -r answer; do printf '  %s\n' "$answer" >&2; done <<<"${urls:-(none)}"
@@ -284,14 +285,16 @@ ai_git() {
   gd="$(privacy_ai_git_dir "$root")"
   [[ ! -L "$gd" ]] || return 1
   [[ "${1:-}" != status ]] || lock=(--no-optional-locks)
-  if grep -Eiq '^[[:space:]]*(push)?url[[:space:]]*=[[:space:]]*(/|\.\.?/|file://)' "$gd/config" 2>/dev/null; then proto="https:ssh:file"
-  else
-    # A url the user's own global config rewrites (insteadOf) to a local path is theirs too: resolve it for network commands.
-    case "${1:-}" in
-      fetch|ls-remote|push|pull)
-        if loomy_git_user -c core.hooksPath=/dev/null --git-dir="$gd" ls-remote --get-url origin 2>/dev/null | grep -Eq '^(/|\.\.?/|file://)'; then proto="https:ssh:file"; fi ;;
-    esac
-  fi
+  # `file` joins the allowed transports only when a url or pushurl CONFIGURED in the companion config (after the user's global
+  # insteadOf) is a local path. Never resolved through the remote name: git also reads legacy remotes/ and branches/ files there.
+  case "${1:-}" in
+    fetch|ls-remote|push|pull)
+      while IFS= read -r v; do
+        [[ -n "$v" && "$v" != -* ]] || continue
+        if (cd / && loomy_git_user -c core.hooksPath=/dev/null ls-remote --get-url "$v" 2>/dev/null) | grep -Eq '^(/|\.\.?/|file://)'; then proto="https:ssh:file"; break; fi
+      done < <(loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.url 2>/dev/null; loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.pushurl 2>/dev/null)
+      ;;
+  esac
   _privacy_filter_args
   (
     for v in $_PRIVACY_GIT_LOCATION_VARS; do unset "$v"; done

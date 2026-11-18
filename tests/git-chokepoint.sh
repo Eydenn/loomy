@@ -248,6 +248,45 @@ git init -q --bare -b main "$H/.loomy/ai.git"; git --git-dir="$H/.loomy/ai.git" 
 ( cd "$H" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 'unverified companion with a local hook remote: sync pushes nothing'
 ( cd "$H" && pty_adopt y "$H" >"$OUT" 2>&1 ); no_marker2 'unverified companion with a local hook remote: adopt runs nothing'
 
+# ── 3c. legacy remote files, hostile remote names, several values per key ──
+mk_comp() {  # mk_comp <dir>: project + hand-made companion (clean config, one https remote), not recorded
+  local d="$1"; mkdir -p "$d/.loomy"; git init -q -b main "$d"
+  printf -- '---\nname: x\nai_files: private\n---\n' >"$d/.loomy/brief.md"; echo 0.17.10 >"$d/.loomy/VERSION"
+  git init -q --bare -b main "$d/.loomy/ai.git"
+  git --git-dir="$d/.loomy/ai.git" config remote.origin.url https://example.invalid/a-ai.git
+}
+adopt_refused() {  # adopt_refused <dir> <pattern> <label>
+  pty_adopt y "$1" >"$OUT" 2>&1; local rc=$?
+  if (( rc != 0 )) && grep -q "$2" "$OUT"; then ok "$3"; else ko "$3"; fi
+}
+# [high] a legacy remotes/origin file shipped with a clone, after the user untracks the companion as Loomy suggests
+LS="$WORK/leg-src"; LC="$WORK/leg-clone"; mk_comp "$LS"
+git --git-dir="$LS/.loomy/ai.git" config --unset remote.origin.url
+mkdir -p "$LS/.loomy/ai.git/remotes"; printf 'URL: ./evil.git\n' >"$LS/.loomy/ai.git/remotes/origin"
+git --git-dir="$LS/.loomy/ai.git" --work-tree="$LS" add -f .loomy/brief.md >/dev/null 2>&1
+git --git-dir="$LS/.loomy/ai.git" --work-tree="$LS" -c core.hooksPath=/dev/null commit -qm c >/dev/null 2>&1
+git init -q --bare -b main "$LS/evil.git"; printf '#!/bin/sh\necho pre-receive >>"%s"\ncat >/dev/null\nexit 0\n' "$MARK2" >"$LS/evil.git/hooks/pre-receive"; chmod +x "$LS/evil.git/hooks/pre-receive"
+( cd "$LS" && git add -f .loomy evil.git >/dev/null 2>&1 && git -c core.hooksPath=/dev/null commit -qm ship >/dev/null 2>&1 )
+git clone -q "$LS" "$LC" >/dev/null 2>&1; rm -f "$MARK2"
+git -C "$LC" rm -q --cached -r .loomy/ai.git >/dev/null 2>&1
+adopt_refused "$LC" 'legacy remote file' 'legacy remotes/origin (./evil.git): adopt refuses'
+( cd "$LC" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 'legacy remotes/origin: sync runs no receive hook'
+if grep -q 'not verified' "$OUT"; then ok 'legacy remotes/origin: sync refuses with the note'; else ko 'legacy remotes/origin: sync did not refuse'; fi
+mk_comp "$WORK/leg-https"; mkdir -p "$WORK/leg-https/.loomy/ai.git/remotes"; printf 'URL: https://example.invalid/evil.git\n' >"$WORK/leg-https/.loomy/ai.git/remotes/origin"
+adopt_refused "$WORK/leg-https" 'legacy remote file' 'legacy remotes/origin with an https URL: adopt refuses'
+mk_comp "$WORK/leg-br"; mkdir -p "$WORK/leg-br/.loomy/ai.git/branches"; printf 'https://example.invalid/evil.git\n' >"$WORK/leg-br/.loomy/ai.git/branches/origin"
+adopt_refused "$WORK/leg-br" 'legacy remote file' 'legacy branches/origin: adopt refuses'
+# [medium] a remote name with control bytes is refused, and nothing raw from the config reaches the terminal
+mk_comp "$WORK/esc-name"; printf '[remote "a\033[2J\rb"]\n\turl = https://example.invalid/x.git\n' >>"$WORK/esc-name/.loomy/ai.git/config"
+pty_adopt y "$WORK/esc-name" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'remote name not allowed' "$OUT" && ! LC_ALL=C grep -q $'\033' "$OUT"; then ok 'control bytes in a remote name: refused, nothing raw printed'; else ko 'remote name with ESC/CR not handled'; fi
+# [low] several values per key
+mk_comp "$WORK/multi-push"; git --git-dir="$WORK/multi-push/.loomy/ai.git" config --add remote.origin.pushurl https://example.invalid/evil.git
+git --git-dir="$WORK/multi-push/.loomy/ai.git" config --add remote.origin.pushurl https://example.invalid/a-ai.git
+adopt_refused "$WORK/multi-push" 'pushurl differs' 'an evil pushurl followed by the good one: adopt refuses'
+mk_comp "$WORK/multi-url"; git --git-dir="$WORK/multi-url/.loomy/ai.git" config --add remote.origin.url https://example.invalid/evil.git
+adopt_refused "$WORK/multi-url" 'several values' 'two remote.origin.url values: adopt refuses'
+
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1
 git init -q -b main plsrc && printf 'one\n' >plsrc/f && git -C plsrc add f && git -C plsrc commit -qm one && git -C plsrc config uploadpack.allowFilter true && git -C plsrc config uploadpack.allowAnySHA1InWant true

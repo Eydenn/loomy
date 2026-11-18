@@ -478,6 +478,11 @@ do_sync() {
     else ui_err "$(t "No private repository for this project")" "$(t "loomy privacy private")"; fi
     return 1
   fi
+  # The remote must come from the companion's own config file (never from legacy remotes/ or branches/ files, includes...).
+  if [[ -z "$(loomy_git config --no-includes --file "$(privacy_ai_git_dir "$(privacy_companion_worktree "$ROOT")")/config" --get-all remote.origin.url 2>/dev/null)" ]]; then
+    ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "nothing was committed or pushed")"
+    return 1
+  fi
   # A path that disappeared (START.md archived at the end of the setup) is staged too when the companion
   # repository tracks it, so its deletion is committed; a missing, untracked path would make `git add` fail.
   for p in $LOOMY_AI_PATHS; do

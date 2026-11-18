@@ -691,8 +691,15 @@ sub latest_label {
     return _find_label($c,{target_kind=>$kind,target_id=>$target,attempt_id=>$attempt,source=>$source,
         needle=>'"target_id":'.substr($JSON->encode([$target]),1,-1)});
 }
+# Leak barrier (journal-gate.pl): display-context-v1.jsonl lives in .loomy/logs, so it is never written (nor its lock
+# created) when the project tracks runtime state in its Git index or Git cannot say.
+sub _label_gate {
+    my ($root)=@_; my $r=abs_path($root); return 1 unless defined $r;   # an unusable root fails later, as before
+    require "$LIB/journal-gate.pl"; return Loomy::JournalGate::check("$r/.loomy/logs");
+}
 sub _save_label {
     my ($c,$p,$input,$last)=@_; die "invalid label scope\n" unless _scope($input,$c->{project_id});
+    die "label not saved: .loomy/logs is tracked by Git or Git cannot say\n" unless _label_gate($c->{root});
     my %granted=map {$_=>1} @{_sources($p->{label_sources})};
     my $source=$input->{source}//''; die "label source not granted\n" unless $SOURCE{$source} && $granted{$source};
     die "human content confirmation required\n" if $source eq 'explicit-user' && !human_tty();
@@ -733,6 +740,7 @@ sub save_label {
     my $pre=effective_policy($root); my %granted=map {$_=>1} @{_sources($pre->{label_sources})};
     die "label source not granted\n" unless $granted{$input->{source}//''};
     die "human content confirmation required\n" if ($input->{source}//'') eq 'explicit-user' && !human_tty();
+    die "label not saved: .loomy/logs is tracked by Git or Git cannot say\n" unless _label_gate($root);
     my $c=_context($root,1); return _in_context($c,sub {
         my $labels=_lock($c,'display-context.lock');
         my $lock=_lock($c); my $p=_effective($c,_stored($c));

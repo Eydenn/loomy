@@ -52,6 +52,7 @@ sub content_root {
 }
 sub content_label {
     my ($w,$kind,$target,$attempt,$source,$text)=@_; return unless $w;
+    return unless journal_gate("$w->{context}{root}/.loomy/logs");   # display-context-v1.jsonl lives in logs: same barrier
     return unless grep {$_ eq $source} split /,/,$w->{policy}{label_sources};
     my $previous;
     my $ref=eval {Loomy::ContentPolicy::_in_context($w->{context},sub {
@@ -215,11 +216,12 @@ sub journal_gate {   # leak barrier (journal-gate.pl): may this logs directory b
     my $dir=shift; $gate_lib =~ s{/[^/]+$}{/journal-gate.pl} unless $gate_loaded++;
     require $gate_lib; return Loomy::JournalGate::check($dir);
 }
-# The blocking callers are the hook writers (journal_append, agent start/finish, rotation): they pass the barrier here,
-# before events.lock exists. Non-blocking callers are the elected collectors, which passed it at election.
+# Every caller passes the barrier here, before events.lock exists: the blocking ones are the hook writers
+# (journal_append, agent start/finish, rotation), the non-blocking ones the elected collectors (which also pass it
+# in begin_call at each poll).
 sub journal_lock {
     my ($dir,$blocking)=@_; return unless safe_path("$dir/events.lock");
-    return if $blocking && !journal_gate($dir);
+    return unless journal_gate($dir);
     sysopen my $f,"$dir/events.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$f or return; flock($f,LOCK_EX|($blocking ? 0 : LOCK_NB)) or return; return $f;
 }
@@ -634,7 +636,11 @@ sub _journal_append {
     return unless journal_gate($dir);
     # Bootstrap directories/identity without a policy lock. A first PreToolUse
     # hook can arrive before a prompt/session hook has prepared the journal.
-    Loomy::ContentPolicy::_context(content_root($path),1) unless -d $dir;
+    unless (-d $dir) {
+        Loomy::ContentPolicy::_context(content_root($path),1);
+        # The directory did not exist: the verdict above was taken for an absent logs. Ask again now that it exists.
+        my ($again,$st)=Loomy::JournalGate::verdict($dir,1); return unless $again; Loomy::JournalGate::store($dir,$st) if $st;
+    }
     my $lock=journal_lock($dir,1) or return;
     my $writer=content_writer(content_root($path)); return unless $writer && $writer->{policy}{journal_enabled};
     # Prompt hooks can build an authorized excerpt from stdin in this process,

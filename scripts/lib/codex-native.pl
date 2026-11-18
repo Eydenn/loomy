@@ -52,6 +52,9 @@ sub scope_relative {
 sub in_scope { my ($roots,$f)=@_; return scope_match($roots,$f->{meta}{cwd}//'') ne '' }
 # Returns undef when no work may be done, else {guard,context,store,roots,revision,transient}.
 # Dies "collector owner CODE\n" for fenced/invalid/wrong-runtime guards.
+# Leak barrier (journal-gate.pl): a project whose runtime state is tracked by Git is never written into. Asked at the
+# start of every call, so an owner that watches over many polls stops at the next poll when a file becomes tracked.
+sub gate_open { my $r=shift; return Loomy::LiveState::journal_gate("$r/.loomy/logs") ? 1 : 0 }
 sub begin_call {
     my ($root,$opt,$tag)=@_;
     load_owner() if defined $opt || $bare_election;
@@ -59,6 +62,7 @@ sub begin_call {
         die "collector owner INVALID_GUARD\n" unless ref($opt) eq 'HASH' && defined $opt->{owner};
         my ($guard,$ctx)=@$opt{qw(owner context)};
         die "collector owner WRONG_RUNTIME\n" unless ref($ctx) eq 'HASH' && defined $ctx->{root} && defined $ctx->{logs};
+        return unless gate_open($ctx->{root});
         # Batch start: the full check, with the target runtime context.
         my $ok=eval { Loomy::LiveState->can('owner_check') ? Loomy::LiveState::owner_check({owner=>$guard,context=>$ctx},'batch') : Loomy::CollectorOwner::assert_owner($guard,'batch',$ctx) };
         unless ($ok) { return if ($@//'') eq "collector owner DRAINING\n"; die $@ }
@@ -67,6 +71,7 @@ sub begin_call {
     }
     my $abs=abs_path($root)//return;
     return unless -d "$abs/.loomy/logs";   # adapters never scaffold runtime storage
+    return unless gate_open($abs);
     return {guard=>undef,context=>undef,store=>$abs,roots=>[$abs],revision=>'bare',transient=>0,bare=>1} unless $bare_election;
     my $ctx=eval { Loomy::RuntimePaths::resolve($abs) } or return;
     return unless $ctx->{loomy} && $ctx->{logs};

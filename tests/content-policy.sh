@@ -657,6 +657,17 @@ ok(!exists($path->{cwd_relative}),'legacy path cannot escape project');
     local $ENV{LOOMY_JOURNAL_TASKS}=0;
     ok(!exists(Loomy::ContentPolicy::project_with_policy($legacy,{type=>'delegation',task=>'NO'})->{task}),'TASKS=0 also vetoes a stale legacy projection');
 }
+{   # LR7: display-context-v1.jsonl goes through the journal leak barrier (tracked label store: no write, no lock).
+    my $a=project('tracked-labels'); seed($a,label_sources=>'claude-description');
+    my $sf="$a/.loomy/logs/display-context-v1.jsonl"; put($sf,"{}\n");
+    my $g=sub {system('git','-C',$a,'-c','core.hooksPath=/dev/null','-c','user.name=F','-c','user.email=f@example.invalid',@_)==0 or die "git @_"};
+    $g->('init','--quiet'); $g->('add','-f','.loomy/logs/display-context-v1.jsonl'); $g->('commit','--quiet','-m','ships labels'); sleep 2.2;
+    my $before=bytes($sf); my $ok=eval {label($a,'leak'); 1};
+    ok(!$ok && $@ =~ /tracked by Git/,'LR7 tracked display-context-v1.jsonl: the label is refused'); is(bytes($sf),$before,'LR7 and the tracked store is byte for byte unchanged');
+    ok(!-e "$a/.loomy/logs/display-context.lock",'LR7 and no label lock is created');
+    $g->('rm','--cached','--quiet','.loomy/logs/display-context-v1.jsonl'); sleep 2.2;
+    ok(eval {label($a,'fine'); 1},'LR7 untracked again: the label is saved');
+}
 done_testing();
 PERL
 perl "$WORK/unit.pl" "$REPO" "$WORK"

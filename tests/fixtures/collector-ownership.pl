@@ -462,7 +462,8 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     {   # LR6 cache soundness. (a) a verdict taken while logs is absent is never stored; (b) an invalid git directory is never cached; (c) a refusal is cached for a short time.
         my $x=project(1,0); my $o=$j->('ai_journal_prepare',$x); is($o->{rc},0,'S1 cache: preparation creates logs');
         sleep 2.2; $o=$j->(q{ai_journal_prepare},$x); is($o->{rc},0,q{S1 cache: second preparation ok});
-        my ($k)=split /\n/,bytes("$x/.loomy/logs/gate-v1"); my @l=lstat("$x/.loomy/logs"); like($k,qr/\|$l[0],$l[1]\z/,'S1 cache: (a) the stored key carries the identity of the directory that exists now, taken after creation');
+        my ($k,$v)=split /\n/,bytes("$x/.loomy/logs/gate-v1"); like($k,qr/\A[0-9a-f]{64}\z/,'S1 cache: (a) the stored key is a sha256, no path or inode in clear'); is($v,'ok','S1 cache: only an ok verdict is stored');
+        unlike(bytes("$x/.loomy/logs/gate-v1"),qr{\Q$x\E|/|\|},'S1 cache: the file holds no absolute path');
         # (b) .git that is not a repository: no cache file, and a parent repository is not trusted for a cached verdict.
         my $z=project(1); my $sub="$z/sub"; make_path("$sub/.loomy/logs",{mode=>0700}); chmod 0700,"$sub/.loomy"; make_path("$sub/.git"); sleep 2.2;
         $o=$j->('ai_journal_prepare',$sub); ok(!-e "$sub/.loomy/logs/gate-v1",'S1 cache: (b) an invalid .git directory is never cached');
@@ -472,6 +473,29 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         for (1..3) { $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$f],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
         my $calls=() = bytes($gl) =~ /ls/g; is($calls,1,'S1 cache: (c) a Git that cannot answer is asked once, then the refusal is cached');
         ok(!-s "$f/.loomy/logs/events.jsonl",'S1 cache: (c) and nothing is written (fail closed)');
+        ok(!-e "$f/.loomy/logs/gate-v1",'LR7 a refusal never writes into the project'); my @mk=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/*"); is(scalar(@mk),1,'LR7 the refusal marker lives in the per-user cache directory'); ok(-z $mk[0] && $mk[0] =~ m{/[0-9a-f]{64}\z},'LR7 empty marker named by a hash');
+        unlink @mk;
+    }
+    {   # LR7: a tracked verdict stores nothing, and a shipped tracked gate-v1 is never replaced.
+        my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); put("$x/.loomy/logs/gate-v1","/home/attacker/x|1,2\ntracked\n");
+        git($x,'add','-f','.loomy/logs/events.jsonl','.loomy/logs/gate-v1'); commit_all($x); sleep 2.2;
+        my $o=$j->('ai_journal_prepare',$x); isnt($o->{rc},0,'LR7 tracked runtime refused'); is(bytes("$x/.loomy/logs/gate-v1"),"/home/attacker/x|1,2\ntracked\n",'LR7 a shipped gate-v1 is left untouched (nothing stored for a tracked verdict)');
+        is(join(",",sort map {s{.*/}{}r} glob("$x/.loomy/logs/*")),"events.jsonl,gate-v1",'LR7 no other file appears in the tracked logs directory');
+    }
+    {   # LR7: the collectors pass the barrier too, at each poll (an owner that watches stops when a file becomes tracked).
+        my $x=project(1); codex_source($x); status($x); sleep 2.2; my $ctx=Loomy::RuntimePaths::resolve($x); my $a=Loomy::CollectorOwner::try_acquire($ctx,'fixture-build',1); is($a->{status},'owned','LR7 owner elected');
+        my $size0=-s "$x/.loomy/logs/events.jsonl"; codex_source($x); Loomy::CodexNative::poll($x,$sessions,{owner=>$a->{guard},context=>$ctx}); codex_source($x); Loomy::CodexNative::poll($x,$sessions,{owner=>$a->{guard},context=>$ctx}); my $size=-s "$x/.loomy/logs/events.jsonl"; ok($size>$size0,'LR7 the first poll journals');
+        git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x);
+        codex_source($x); my @snap=@{manifest("$x/.loomy/logs")};
+         Loomy::CodexNative::poll($x,$sessions,{owner=>$a->{guard},context=>$ctx}); Loomy::ClaudeNative::poll($x,$projects,{owner=>$a->{guard},context=>$ctx});
+        is(-s "$x/.loomy/logs/events.jsonl",$size,'LR7 a poll after the file became tracked leaves its size unchanged'); is_deeply(manifest("$x/.loomy/logs"),\@snap,'LR7 and creates or changes nothing under logs');
+        my $st=status($x); like($st->{all},qr/is tracked by Git|a tracked file under \.loomy\/logs/,'LR7 the usual refusal note is visible');
+        eval {Loomy::CollectorOwner::release($a->{guard})};
+        # Direct bare-election entries refuse the same way (codex, claude, reducer), before any lock exists.
+        my $y=project(1); codex_source($y); claude_source($y,'cl-1',1); put("$y/.loomy/logs/events.jsonl","orig\n"); git($y,'add','-f','.loomy/logs/events.jsonl'); commit_all($y); sleep 2.2;
+        my $before=manifest("$y/.loomy/logs");
+        for my $e (qw(codex claude reducer)) { $E{$e}{run}->($y); is_deeply(manifest("$y/.loomy/logs"),$before,"LR7 direct $e entry over a tracked journal changes nothing") }
+        is(bytes("$y/.loomy/logs/events.jsonl"),"orig\n",'LR7 the tracked journal is byte for byte unchanged');
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);
@@ -494,11 +518,12 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
             Loomy::RuntimePaths::tracked_runtime($ARGV[1]); my $left=alarm 0; print(($SIG{ALRM}==$h ? "handler" : "lost")," ",($left>30 ? "alarm" : "cleared"),"\n")},$repo,$x]);
         is($o->{out},"handler alarm\n",'S1 the caller alarm and its handler are restored after the index read');
     }
-    # The one-shot adapter command line stays git-free.
-    my $ctr; { my $g="$work/git-trace"; unlink $g; my $fp=fresh({});
+    # The one-shot adapter command line stays git-free once the barrier verdict is cached (LR7: the first call asks the barrier,
+    # which may run git ls-files; the cached verdict costs stats only).
+    my $ctr; { my $g="$work/git-trace"; unlink $g; my $fp=fresh({}); sleep 2.2; $E{codex}{run}->($fp);
         put("$work/fakegit/git","#!/bin/sh\necho called >> '$g'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
         local $ENV{PATH}="$work/fakegit:$ENV{PATH}"; $E{codex}{run}->($fp); $ctr=-e $g ? 1 : 0 }
-    is($ctr,0,'S1 the direct adapter command line never runs git');
+    is($ctr,0,'S1 the direct adapter command line never runs git (cached barrier verdict)');
     {   # live-state.pl --migrate applies the same gate before it reads anything.
         my $x=project(1); codex_source($x); status($x); unlink "$x/.loomy/logs/checkpoint-v2"; git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);
         my $o=$E{migrate}{run}->($x); is($o->{rc},0,'S1 --migrate over a tracked index exits 0'); ok(!-e "$x/.loomy/logs/checkpoint-v2",'S1 and migrates nothing');

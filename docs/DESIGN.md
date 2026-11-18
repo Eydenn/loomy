@@ -290,6 +290,8 @@ restores semantic signatures. Overflow still pauses explicitly. Read-only collec
 recovers interrupted rotations but leaves monthly rotation to journal writes.
 Consumed offsets never skip hooks appended concurrently during source collection.
 
+Leak barrier (`scripts/lib/journal-gate.pl`, ADR-0011): every writer in `.loomy/logs` (hook appends, preparation, the non-blocking lock, native collector polls, the direct adapter and reducer command lines, the label store, the small log writers) asks it first. A positive answer is cached in `gate-v1` as a sha256 key; a tracked answer is memoized 2 s in the process and a refusal 30 s in an empty marker outside the project, so nothing is ever written into a tracked or refused directory. A watch owner asks at each poll (stats only on a cache hit); residual: an answer that needed Git can stay 2 s stale.
+
 All journal writers and rotation share `events.lock`. Rotation runs monthly or at 8 MiB,
 keeps immutable inode-named archive segments and carries structural snapshots of every
 open session/agent, tagged `snapshot`, without copying usage or terminal events. A private

@@ -319,13 +319,13 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     my $p=$table->('lock replaced by a hard link',sub {link "$_[0]/collector.lock","$_[0]/lock-alias" or die},qr{collector\.lock is unsafe});
     # Doctor reports the same facts, with the same file and remedy.
     my $d=doctor($p); like($d->{all},qr{collector\.lock is unsafe},'L04 doctor names the unsafe lock');
-    # A clone-shipped record: tracked by git, named with its git rm --cached remedy.
+    # A clone-shipped record: tracked by git, named with its remedy.
     my $clone=project(1); status($clone); my $cl="$clone/.loomy/logs";
     unlink "$cl/collector.lock" or die; git($clone,'add','-f','.loomy/logs/collector-owner-v1.json'); git($clone,'-c','user.name=F','-c','user.email=f@example.invalid','commit','--quiet','-m','shipped');
     my $dc=doctor($clone);
-    like($dc->{all},qr{\.loomy/logs/collector-owner-v1\.json.*tracked by Git \(shipped with this clone\): run git rm --cached},'L04 doctor names a clone-shipped collector-owner-v1.json with its git rm --cached remedy');
+    like($dc->{all},qr{\.loomy/logs/collector-owner-v1\.json.*tracked by Git \(shipped with this clone\).*fix: loomy doctor --fix}s,'L04 doctor names a clone-shipped collector-owner-v1.json with its remedy');
     like($dc->{all},qr{Files committed under \.loomy/logs \(1\)},'L04 doctor reports committed .loomy/logs content');
-    like(status($clone)->{all},qr{collector-owner-v1\.json is tracked by Git\. Run git rm --cached},'L04 status names the shipped record with the git rm --cached remedy');
+    like(status($clone)->{all},qr{collector-owner-v1\.json is tracked by Git\. Run git rm -r --cached -- \S*collector-owner-v1\.json},'L04 status names the shipped record with the git rm -r --cached -- remedy');
 }
 {
     # busy/bootstrap-busy mean retry, never "another owner".

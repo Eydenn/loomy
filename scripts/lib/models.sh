@@ -107,13 +107,17 @@ _ai_catalog_load "$(ai_catalog_file)"
 # Validate against the catalog before local overrides are loaded.
 ai_chain_valid() {
   local family="$1" tier="$2" value="$3" k chain m
+  local -a ids
   _ai_ascii_upper "${family}_${tier}"; k="$_AI_ASCII_UPPER"
   eval "chain=\"\$AI_VALIDATED_${k}\""
-  for m in $(printf '%s' "$value" | tr ',' ' '); do
-    if [[ "$family" == codex ]]; then
-      case " $AI_ONDEMAND_CODEX " in *" $m "*) t "%s is on-demand only, never in a chain: use --model or model.codex.top." "$m" >&2; echo >&2; return 2 ;; esac
+  # Split without pathname expansion (a bare * must never expand to file names) and compare as literal text.
+  IFS=', ' read -r -a ids <<<"$value"
+  for m in ${ids[@]+"${ids[@]}"}; do
+    [[ "$m" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { t "Model %s is not validated for %s.%s." "$m" "$family" "$tier" >&2; echo >&2; return 2; }
+    if [[ "$family" == codex && " $AI_ONDEMAND_CODEX " == *" $m "* ]]; then
+      t "%s is on-demand only, never in a chain: use --model or model.codex.top." "$m" >&2; echo >&2; return 2
     fi
-    case " $chain " in *" $m "*) ;; *) t "Model %s is not validated for %s.%s." "$m" "$family" "$tier" >&2; echo >&2; return 2 ;; esac
+    [[ " $chain " == *" $m "* ]] || { t "Model %s is not validated for %s.%s." "$m" "$family" "$tier" >&2; echo >&2; return 2; }
   done
 }
 

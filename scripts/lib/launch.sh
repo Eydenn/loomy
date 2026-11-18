@@ -52,10 +52,14 @@ _loomy_cli_check() {
     return 0
   fi
   valid=0
-  for tier in TOP MID FAST; do
-    _ai_ascii_upper "$tool"; eval "chain=\"\$AI_VALIDATED_${_AI_ASCII_UPPER}_${tier}\""
-    case " $chain " in *" $model "*) [[ -z "$model" ]] || valid=1 ;; esac
-  done
+  # Only a plain model id can be valid: a glob character (--model '*') is refused before any comparison, and the
+  # comparison itself is literal text.
+  if [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    for tier in TOP MID FAST; do
+      _ai_ascii_upper "$tool"; eval "chain=\"\$AI_VALIDATED_${_AI_ASCII_UPPER}_${tier}\""
+      [[ " $chain " != *" $model "* ]] || valid=1
+    done
+  fi
   # The documented Claude aliases (--model opus|sonnet|haiku) are resolved by Claude Code itself.
   if [[ "$tool" == claude ]]; then case "$model" in opus|sonnet|haiku) valid=1 ;; esac; fi
   (( valid )) || return 2

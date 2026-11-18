@@ -181,6 +181,15 @@ fails 'config set chain refuses an on-demand model' 2 bash "$REPO/bin/loomy" con
 has 'chain refusal points to the explicit route' 'on-demand only.*--model.*model\.codex\.top'
 run 'refused chain key was not written' bash -c '! grep -q "^chain.codex.top=" "$XDG_CONFIG_HOME/loomy/config"'
 run 'chain key still accepts a chain model' bash "$REPO/bin/loomy" config set chain.codex.top gpt-6.2-sol
+# Glob characters are plain text: never expanded to file names, never a match.
+mkdir -p "$WORK/globdir"; : >"$WORK/globdir/gpt-6.2-sol"; : >"$WORK/globdir/gpt-6.2-astra"
+fails 'config set chain refuses a bare *' 2 bash "$REPO/bin/loomy" config set chain.codex.top '*'
+fails 'config set chain refuses gpt-6.2-*' 2 bash "$REPO/bin/loomy" config set chain.codex.top 'gpt-6.2-*'
+run 'chain validation: * is refused even when a file named like a valid model sits in the directory' bash -c 'cd "$2" && source "$1/scripts/lib/models.sh" && ! ai_chain_valid codex top "*" 2>/dev/null && ! ai_chain_valid codex top "gpt-6.2-*" 2>/dev/null && ! ai_chain_valid codex top "gpt-6.2-sol,*" 2>/dev/null && ai_chain_valid codex top "gpt-6.2-sol" 2>/dev/null' _ "$REPO" "$WORK/globdir"
+for glob in '*' 'gpt-6.2-*' 'gpt-6.2-so?' '[gG]pt-6.2-sol'; do
+  fails "bridge model check refuses --model $glob" 2 bash -c 'cd "$2" && source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/launch.sh"; LOOMY_CLI_PROBE=0; LOOMY_CLI_BIN=/bin/true; ai_provider_saturated() { return 1; }; ai_model_usable() { return 0; }; _loomy_cli_check codex developer "$3"' _ "$REPO" "$WORK/globdir" "$glob"
+done
+fails 'delegate refuses --model *' 2 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --model '*' --effort high 'bounded task'
 
 reset_case
 printf 'chain.codex.top=gpt-6-astra, gpt-6-sol, gpt-6.1-sol\nchain.claude.fast=claude-haiku-4-5\n' >>"$XDG_CONFIG_HOME/loomy/config"

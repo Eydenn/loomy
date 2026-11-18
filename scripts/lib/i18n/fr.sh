@@ -2556,7 +2556,7 @@ _t_fr() {
     'Files committed under .loomy/logs (%s): %s') _T='Fichiers versionnés sous .loomy/logs (%s) : %s' ;;
     'runtime files belong outside Git') _T='les fichiers d’exécution n’ont pas leur place dans Git' ;;
     'Tracked runtime file · run loomy doctor') _T='Fichier d’exécution suivi par Git · lance loomy doctor' ;;
-    'Live tracking is unavailable: %s is tracked by Git. Run git rm -r --cached -- %s, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm -r --cached -- %s, valide, puis rouvre cette vue.' ;;
+    'Live tracking is unavailable: %s is tracked by Git. Run git rm --cached -f -- %s, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached -f -- %s, valide, puis rouvre cette vue.' ;;
     'Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance loomy doctor --fix, puis rouvre cette vue.' ;;
     'a tracked file is shipped with this clone') _T='un fichier suivi par Git est livré avec ce clone' ;;
     'tracked by Git (shipped with this clone)') _T='suivi par Git (livré avec ce clone)' ;;

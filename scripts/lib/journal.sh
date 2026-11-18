@@ -34,60 +34,21 @@ ai_journal_claude_idle() {
 # Private logs, including older files. Descriptor chmod never follows a symbolic link.
 # The Perl is a sub shared by ai_journal_prepare and ai_journal_write (one process for both).
 AI_JOURNAL_PREPARE_PL='
-  # Leak barrier: runtime state tracked in the Git index (a clone can ship it) must never be journaled into, or a
-  # later `git commit -a` would publish private events. Checked once per process here, the earliest journal entry
-  # point (every hook write, prompt, usage and launch stream passes through it), and answered from a private cache
-  # file (.loomy/logs/gate-v1: verdict keyed on the index stat, .loomy and .loomy/logs identity) so the common case
-  # costs three stats and a small read, no Git. Not a repository: nothing to track. A Git that cannot answer is a
-  # refusal (fail closed), never cached. An index changed in the last 2 s is not cached (racily clean).
-  sub _gate_read {
-    my ($path,$key)=@_; sysopen(my $h,$path,O_RDONLY|O_NOFOLLOW) or return;
-    my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[7]<=1024;
-    sysread($h,my $raw,1025); my ($k,$v)=split /\n/,$raw; return unless defined $k && $k eq $key && defined $v;
-    return $v eq "ok" ? 1 : $v eq "tracked" ? 0 : undef;
-  }
-  sub _gate_ident {
-    my ($root,$dir,$idx)=@_; my @a=lstat("$root/.loomy"); my @b=lstat($dir);
-    return join("|","v1",$idx,join(",",@a[0,1]),join(",",@b[0,1]));
-  }
-  sub _gate_index {
-    my $root=shift; my $d=$root; my $top;
-    while (1) { if (lstat("$d/.git")) {$top=$d; last} last if $d eq "" || $d eq "/"; $d =~ s{/[^/]*\z}{}; }
-    return (1,undef) unless defined $top;   # not a repository
-    my @g=lstat("$top/.git"); my $gd;
-    if (-d _ && !-l _) { $gd="$top/.git" }
-    elsif (-f _ && sysopen(my $h,"$top/.git",O_RDONLY|O_NOFOLLOW)) {
-      sysread($h,my $raw,4097); $gd=$1 if $raw =~ /\Agitdir: ([^\n]+?)\r?\n?\z/ && length($raw)<=4096;
-      $gd="$top/$gd" if defined $gd && $gd !~ m{\A/}; undef $gd unless defined $gd && $gd !~ /[\x00-\x1f\x7f]/ && -d $gd;
-    }
-    return (0,undef) unless defined $gd;   # unusual layout: ask Git every time
-    my @i=stat("$gd/index"); return (0,undef) if @i && time-$i[9]<2;
-    return (0,"$top|$gd|".(@i ? join(",",@i[0,1,7,9,10]) : "none"));
-  }
-  # Returns (allowed, cache key to store or undef).
-  sub _gate {
-    my ($dir,$module)=@_; my $root=$dir; $root =~ s{/\.loomy/logs\z}{} or return (1,undef);
-    unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
-    my ($norepo,$idx)=_gate_index($root); return (1,undef) if $norepo;
-    my $key=defined $idx ? _gate_ident($root,$dir,$idx) : undef;
-    if (defined $key) { my $c=_gate_read("$dir/gate-v1",$key); return ($c,undef) if defined $c }
-    (my $lib=$module) =~ s{/[^/]+\z}{};
-    my ($path,$why)=eval { require "$lib/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
-    $why="index-error" unless defined $why;
-    return (0,undef) if $why eq "timeout" || $why eq "index-error";
-    return ($why eq "tracked" ? 0 : 1, defined $idx ? $idx : undef);
-  }
-  sub _gate_store {
-    my ($dir,$root,$idx,$allowed)=@_; return unless defined $idx && -d $dir && !-l $dir;
-    my $tmp="$dir/gate-v1.$$"; sysopen(my $h,$tmp,Fcntl::O_WRONLY()|O_CREAT|Fcntl::O_EXCL()|O_NOFOLLOW,0600) or return;
-    my $ok=syswrite($h,_gate_ident($root,$dir,$idx)."\n".($allowed ? "ok" : "tracked")."\n"); close $h;
-    rename($tmp,"$dir/gate-v1") or unlink $tmp if $ok; unlink $tmp unless $ok;
-  }
+  # Leak barrier: journal-gate.pl answers (cached, fail closed; see there) before anything is created. The same check
+  # guards the single append in live-state.pl, so every .loomy/logs journal writer is covered, not only this one.
+  # When this preparation creates .loomy/logs nothing was cached for the absent directory: the gate is asked again.
   sub journal_prepare {
-    my ($dir,$module,$gated)=@_; my $old=umask 0077; my ($allowed,$idx)=$gated ? (1,undef) : _gate($dir,$module); my $ok=0;
-    my $root=$dir; $root =~ s{/\.loomy/logs\z}{}; unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
-    if ($allowed) { $ok=_journal_prepare($dir) }
-    _gate_store($dir,$root,$idx,$allowed) if defined $idx && ($ok || !$allowed);
+    my ($dir,$module,$gated)=@_; my $old=umask 0077; my $ok=0; my $existed=-d $dir; my $allowed=1;
+    unless ($gated) {
+      my $lib=defined $module ? $module : ""; $allowed=0 unless $lib =~ s{/[^/]+\z}{};
+      $allowed=eval { require "$lib/journal-gate.pl"; Loomy::JournalGate::check($dir) } ? 1 : 0 if $allowed;
+    }
+    if ($allowed) {
+      $ok=_journal_prepare($dir);
+      if ($ok && !$existed && !$gated) {
+        my ($again,$s)=eval { Loomy::JournalGate::verdict($dir,1) }; Loomy::JournalGate::store($dir,$s) if $again && $s; $ok=0 unless $again;
+      }
+    }
     umask $old; return $ok;
   }
   sub _journal_prepare {
@@ -111,6 +72,10 @@ AI_JOURNAL_PREPARE_PL='
   }
 '
 _ai_journal_guard() { [[ ! -L "$1/.loomy" && -d "$1/.loomy" && ! -L "$1/.loomy/logs" ]]; }
+# True when .loomy/logs may be written (the leak barrier verdict, cached): for the small log writers outside the journal.
+ai_journal_gate() {
+  perl -e 'require "$ARGV[0]/journal-gate.pl"; exit(Loomy::JournalGate::check($ARGV[1]) ? 0 : 1)' "${AI_LIVE_STATE_LIB%/*}" "$1/.loomy/logs" 2>/dev/null
+}
 ai_journal_prepare() {
   _ai_journal_guard "$1" || return 1
   perl -MFcntl=O_RDONLY,O_RDWR,O_CREAT,O_NOFOLLOW -e "$AI_JOURNAL_PREPARE_PL"'exit(journal_prepare(@ARGV) ? 0 : 1);' "$1/.loomy/logs" "$AI_LIVE_STATE_LIB" 2>/dev/null
@@ -239,7 +204,7 @@ ai_owner_note() {
       AI_OWNER_KIND=problem
       case "$reason" in
         tracked-runtime)
-          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm -r --cached -- %s, commit, then reopen this view." "$file" "$file"
+          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm --cached -f -- %s, commit, then reopen this view." "$file" "$file"
           elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view."
           else tv AI_OWNER_NOTE "Tracked runtime file · run loomy doctor"; fi ;;
         unsafe-lock)

@@ -162,7 +162,8 @@ elif (( INSTALL )) && (( ! RESUME )); then
     had_c=0; [[ -d "$ROOT/.claude/skills" ]] && had_c=1
     had_a=0; [[ -d "$ROOT/.agents/skills" ]] && had_a=1
     ui_info "$(t "installing the security-audit skill (npx skills add)…")"
-    (cd "$ROOT" && npx -y skills add https://github.com/cloudflare/security-audit-skill --skill security-audit -y) >"$ROOT/.loomy/logs/skill-install.log" 2>&1 || true
+    skill_log=/dev/null; ai_journal_gate "$ROOT" && skill_log="$ROOT/.loomy/logs/skill-install.log"   # never write into tracked runtime state
+    (cd "$ROOT" && npx -y skills add https://github.com/cloudflare/security-audit-skill --skill security-audit -y) >"$skill_log" 2>&1 || true
     (( had_c )) || [[ ! -d "$ROOT/.claude/skills" ]] || exclude_add "/.claude/skills/"
     (( had_a )) || [[ ! -d "$ROOT/.agents/skills" ]] || exclude_add "/.agents/skills/"
     [[ -d "$ROOT/.claude/skills/security-audit" ]] && exclude_add "/.claude/skills/security-audit/"

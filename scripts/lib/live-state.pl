@@ -16,6 +16,7 @@ $INC{abs_path(__FILE__)}=1;
 my $content_lib=abs_path(__FILE__); $content_lib =~ s{/[^/]+$}{/content-policy.pl};
 require $content_lib;
 my $journal_json=JSON::PP->new->utf8->canonical;
+my ($gate_lib,$gate_loaded)=(abs_path(__FILE__),0);
 
 # Locks protect only a policy snapshot or a label append, never source polling
 # or waiting for events.lock. A short retry absorbs normal concurrent hooks.
@@ -210,8 +211,15 @@ sub _flush_handles {
     }
 }
 # One stable lock protects rotation and every writer, including native collectors.
+sub journal_gate {   # leak barrier (journal-gate.pl): may this logs directory be written? Cached verdict, fail closed.
+    my $dir=shift; $gate_lib =~ s{/[^/]+$}{/journal-gate.pl} unless $gate_loaded++;
+    require $gate_lib; return Loomy::JournalGate::check($dir);
+}
+# The blocking callers are the hook writers (journal_append, agent start/finish, rotation): they pass the barrier here,
+# before events.lock exists. Non-blocking callers are the elected collectors, which passed it at election.
 sub journal_lock {
     my ($dir,$blocking)=@_; return unless safe_path("$dir/events.lock");
+    return if $blocking && !journal_gate($dir);
     sysopen my $f,"$dir/events.lock",O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return;
     chmod 0600,$f or return; flock($f,LOCK_EX|($blocking ? 0 : LOCK_NB)) or return; return $f;
 }
@@ -620,6 +628,10 @@ sub _journal_append {
     my ($path,$body,$ts,$label)=@_;
     die 'journal record exceeds 64 KiB' if !ref($body) && length($body)>65000;
     my $dir=$path; $dir =~ s{/[^/]+$}{};
+    # Leak barrier at the single append every journal writer passes through: a project that tracks runtime state in
+    # its Git index is never written into (cached verdict, fail closed; see journal-gate.pl). Before any directory,
+    # lock or policy file is created.
+    return unless journal_gate($dir);
     # Bootstrap directories/identity without a policy lock. A first PreToolUse
     # hook can arrive before a prompt/session hook has prepared the journal.
     Loomy::ContentPolicy::_context(content_root($path),1) unless -d $dir;

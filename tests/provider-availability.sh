@@ -86,7 +86,7 @@ run 'neither provider poisons model cache' no_ko
 event_has 'pause carries outcome and expected reset' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "paused" && ($_->{outcome}//"") eq "waiting_for_reset" && ($_->{resume_at}//0)==1791885900'
 run 'exactly two calls, no same-provider retry' bash -c '[[ $(grep -Ec "^(codex.*exec|claude.*-p)" "$STUB_LOG") == 2 ]]'
 
-for variant in 'Your workspace is out of credits' 'insufficient credits' 'You are out of credits' 'Credit balance is too low' 'HTTP 402 Payment Required' 'billing_hard_limit_reached: check your billing details'; do
+for variant in 'Your workspace is out of credits' 'insufficient credits' 'You are out of credits' 'Credit balance is too low' 'HTTP 402 Payment Required' 'billing_hard_limit_reached: check your billing details' 'insufficient_quota' 'You have exhausted your credits' 'You exhausted the credits'; do
   reset_case
   export STUB_CODEX_ERROR="$variant" STUB_CLAUDE_ERROR="$variant"
   fails "credits variant '$variant' exits 69, never 75" 69 bridge codex

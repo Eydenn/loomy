@@ -55,7 +55,7 @@ Don't use these calls for trivial tasks, routine confirmations or repeated back-
 
 Bridge options, before the task text: pick the role from the intent of the work; when the user names a model or effort, pass `--model <id> --effort <level> --why "user request"`, and `--write` when the role must produce files.
 
-- Provider availability: exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model. If another pause occurs, use its new resume_at; never launch twice for the same pause.
+- Provider availability: exit 75 is paused. Read resume_at; retain exact role/provider/model/effort/sandbox/options. After reset, use the original live task or an authorized task/private-result reference; review existing edits before relaunch. If unavailable, report original task required and stop dependent work. Never guess or choose a weaker model. If another pause occurs, use its new resume_at; never launch twice for the same pause. Exit 69 means out of credits: do not wait or relaunch; tell the user to add credits or switch provider/model.
 - Bridge labels: pass `--task-label "Short task title"` explicitly on each delegation. Saving requires the human-approved `explicit-lead` grant; never derive a label from the task body.
 
 ## Parallel requests

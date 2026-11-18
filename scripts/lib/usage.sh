@@ -176,7 +176,7 @@ ai_provider_reset() {
 # An explicit reset time in the same message makes it a timed refusal instead.
 ai_credits_error() {
   ! grep -qiE 'retry[_-]?after|resets?_(at|in)|resume_at|try again (at|in)\b|resets? (in|at)\b' <<<"$1" || return 1
-  grep -qiE 'workspace_member_credits_depleted|credits?[_ -]*(depleted|exhausted)|insufficient[_ -]*credits?|out of[ _-]*credits?|(run|ran) out of[ _-]*credits?|no (more |remaining )credits?|credit balance (is )?(too low|insufficient|exhausted)|insufficient[_ -]*(funds|balance)|payment[_ -]*required|billing[_ -]*(hard[_ -]*limit|issue|error|problem|details|required)|\b402\b.*(payment|billing|credit)' <<<"$1"
+  grep -qiE 'workspace_member_credits_depleted|credits?[_ -]*(depleted|exhausted)|insufficient[_ -]*(credits?|quota)|exhausted (your|the) credits?|out of[ _-]*credits?|(run|ran) out of[ _-]*credits?|no (more |remaining )credits?|credit balance (is )?(too low|insufficient|exhausted)|insufficient[_ -]*(funds|balance)|payment[_ -]*required|billing[_ -]*(hard[_ -]*limit|issue|error|problem|details|required)|\b402\b.*(payment|billing|credit)' <<<"$1"
 }
 ai_provider_refusal() {
   local f reset parsed now tmp

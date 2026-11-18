@@ -1,7 +1,7 @@
 # `loomy doctor --fix`: take clone-shipped runtime state out of the Git index (files stay on disk).
 # Only entries the gate itself reports (Loomy::RuntimePaths::tracked_runtime_paths: the exact raw index paths, byte for
-# byte, including spellings the filesystem folds onto .loomy/logs) are touched, with raw paths as argv, never through
-# a shell, and as literal pathspecs. Hardened Git (no fsmonitor, no hooks, GIT_* cleared, no lazy fetch).
+# byte, including spellings the filesystem folds onto .loomy/logs) are touched, with raw paths on stdin (NUL separated), never
+# through a shell, and as literal pathspecs. Hardened Git (no fsmonitor, no hooks, GIT_* cleared, no lazy fetch).
 # Output (tab separated, fixed codes): "none", "error<TAB>timeout|index-error|failed", or
 # "removed<TAB>count<TAB>up to 3 displayable paths". Idempotent: a second run reports "none".
 use strict;
@@ -18,13 +18,17 @@ if ($why eq "timeout" || $why eq "index-error") { print "error\t$why\n"; exit 1 
 unless (@$hits) { print "none\n"; exit 0 }
 delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;
 my @paths=@$hits;
+# update-index --force-remove drops exactly the named index entries: no work-tree read, no clean filter, no descendant
+# removal (a gitlink or symlink standing for .loomy never untracks the .loomy/memory entries), works on MM entries.
 while (my @chunk=splice @paths,0,200) {
-    my $pid=fork; unless (defined $pid) { print "error\tfailed\n"; exit 1 }
+    my $pid=open(my $git,"|-"); unless (defined $pid) { print "error\tfailed\n"; exit 1 }
     if (!$pid) {
         open STDOUT,">","/dev/null" or POSIX::_exit(1); open STDERR,">","/dev/null" or POSIX::_exit(1);
-        exec("git","-c","core.fsmonitor=false","-c","core.hooksPath=/dev/null","-C",$root,"--literal-pathspecs","rm","-r","--cached","--quiet","--",@chunk) or POSIX::_exit(1);
+        exec("git","-c","core.fsmonitor=false","-c","core.hooksPath=/dev/null","-C",$root,"--literal-pathspecs","update-index","--force-remove","-z","--stdin") or POSIX::_exit(1);
     }
-    waitpid($pid,0); if ($? != 0) { print "error\tfailed\n"; exit 1 }
+    local $SIG{PIPE}="IGNORE";
+    my $sent=print $git map {"$_\0"} @chunk; my $closed=close $git;
+    if (!$sent || !$closed || $? != 0) { print "error\tfailed\n"; exit 1 }
 }
 # What the gate still reports after the removal means it did not work: never claim success.
 my ($left,$why2)=Loomy::RuntimePaths::tracked_runtime_paths($root,20);

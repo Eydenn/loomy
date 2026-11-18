@@ -16,6 +16,10 @@ sub record {
     while ($parent ne '') { return if -l $parent; $parent =~ s{/[^/]*$}{} }
     $stage='internal' unless ($stage//'') =~ /\A[a-z-]{1,40}\z/;
     $kind='error' unless ($kind//'') =~ /\A[a-z-]{1,40}\z/;
+    if ($path =~ m{\A(.*/\.loomy/logs)/[^/]+\z}) {   # leak barrier: nothing is written into tracked runtime state
+        my $logs=$1; my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+\z}{} if defined $lib; return unless defined $lib;
+        return unless eval { require "$lib/journal-gate.pl"; Loomy::JournalGate::check($logs) };
+    }
     my $line=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime)." watch $stage $kind\n";
     sysopen my $f,$path,O_RDWR|O_APPEND|O_CREAT|O_NOFOLLOW,0600 or return;
     flock $f,LOCK_EX or return; chmod 0600,$f or return;

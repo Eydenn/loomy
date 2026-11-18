@@ -298,7 +298,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     my $gl="$work/git-calls"; unlink $gl; make_path("$work/fakegit");
     put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
     my ($r,$c)=counted(sub {unchanged('S1 status over a tracked checkpoint',"$p/.loomy",sub {run(['bash',"$repo/scripts/loomy-status.sh",'--root',$p],env=>{PATH=>"$work/fakegit:$ENV{PATH}"})})});
-    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx is tracked by Git\. Run git rm -r --cached -- \S*codex-native\.idx, commit},'S1 status names the tracked checkpoint with the git rm -r --cached -- remedy');
+    is($r->{rc},0,'S1 status exits 0'); like($r->{all},qr{codex-native\.idx is tracked by Git\. Run git rm --cached -f -- \S*codex-native\.idx, commit},'S1 status names the tracked checkpoint with the git rm --cached -f -- remedy');
     unlike($r->{all},qr/delete that file|delete it/,'S1 and never tells the user to delete the file');
     ok(!$c->{try_acquire},'S1 no election, hence no preparation, was attempted');
     is(((stat $idx)[2] & 07777),0644,'S1 the tracked checkpoint keeps its mode (not chmod-ed to 0600, so the signal survives)');
@@ -318,7 +318,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
                   ['owner record','.loomy/logs/collector-owner-v1.json'],['lock','.loomy/logs/collector.lock'],
                   ['upper-case file','.loomy/logs/Codex-Native.idx'],['upper-case directories','.Loomy/Logs/codex-native.idx'],['upper-case marker','.LOOMY/LOGS/CHECKPOINT-V2']) {
         my ($name,$path)=@$case; my $x=project(1); codex_source($x); status($x); index_add($x,'100644',$path); commit_all($x);
-        my $o=unchanged("S1 $name",$x.'/.loomy',sub {status($x)}); like($o->{all},qr/is tracked by Git\. Run git rm -r --cached -- /,"S1 a tracked $name is refused");
+        my $o=unchanged("S1 $name",$x.'/.loomy',sub {status($x)}); like($o->{all},qr/is tracked by Git\. Run git rm --cached -f -- /,"S1 a tracked $name is refused");
     }
     {   # More than 2000 tracked files: the gate is targeted, not a capped scan.
         my $x=project(1); codex_source($x); status($x);
@@ -432,6 +432,62 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         git($y,'rm','--cached','--quiet','.loomy/logs/events.jsonl'); sleep 2.2; $o=$j->('ai_journal_prepare',$y); is($o->{rc},0,'S1 barrier: removing it from the index lifts the refusal');
         # Not a repository: nothing to track, no cache needed.
         my $n=project(0,1); $o=$j->('ai_journal_prepare',$n); is($o->{rc},0,'S1 barrier: a project that is not a repository is prepared');
+    }
+    my $j=sub {my ($body)=@_; run(['bash','-c','source "$1/scripts/lib/journal.sh"; shift; "$@"','_',$repo,@_])};
+    {   # LR6: the barrier sits at the single append/lock every journal writer passes through, not only at the preparation.
+        my $x=project(1); put("$x/.loomy/brief.md","brief\n"); put("$x/.loomy/logs/events.jsonl","orig\n"); chmod 0644,"$x/.loomy/logs/events.jsonl";
+        git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x);
+        my %payload=(
+            'agent-start'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_input":{"subagent_type":"developer","description":"d","prompt":"p"}}',
+            'agent-return'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_response":{"agentId":"a1"}}',
+            'agent-failure'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_response":{"agentId":"a1"}}',
+            'subagent'=>'{"session_id":"s1","agent_id":"a1","agent_type":"developer","last_assistant_message":"STATUS: done"}',
+            'prompt'=>'{"session_id":"s1","prompt":"hello"}','stop'=>'{"session_id":"s1","transcript_path":"/nonexistent"}','start'=>'{"session_id":"s1","source":"startup"}');
+        for my $hook (qw(agent-start agent-return agent-failure subagent prompt stop start)) {
+            my $in="$work/hook-in"; put($in,$payload{$hook});
+            unchanged("S1 barrier: hook $hook over a tracked events.jsonl","$x/.loomy/logs",sub {run(['bash','-c','bash "$1/scripts/loomy-context.sh" --hook "$2" --root "$3" <"$4"','_',$repo,$hook,$x,$in],env=>{LOOMY_PROJECT_ROOT=>$x})});
+            is(bytes("$x/.loomy/logs/events.jsonl"),"orig\n","S1 barrier: hook $hook leaves the tracked file byte for byte");
+            ok(!grep({-e "$x/.loomy/logs/$_"} qw(events.lock content-policy.lock month archive)),"S1 barrier: hook $hook creates no lock, month or archive artefact");
+        }
+        # The direct append and the lock are refused too (any future caller of the shared functions).
+        my $r=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/live-state.pl"; my $ok=Loomy::LiveState::journal_append("$ARGV[1]/.loomy/logs/events.jsonl",q{"type":"phase","phase":"x"}); my $l=Loomy::LiveState::journal_lock("$ARGV[1]/.loomy/logs",1); print(($ok?"wrote":"refused")," ",($l?"locked":"nolock"),"\n")},$repo,$x]);
+        is($r->{out},"refused nolock\n",'S1 barrier: journal_append and the blocking lock refuse a tracked runtime');
+        # The small writers outside the journal.
+        my $wl="$x/.loomy/logs/watch-errors.log"; run(['perl',"$repo/scripts/lib/watch-errors.pl",$wl,'controller','error']); ok(!-e $wl,'S1 barrier: watch-errors.log is not written');
+        $r=$j->('ai_journal_gate',$x); isnt($r->{rc},0,'S1 barrier: ai_journal_gate (skill-install.log, desktop-resume.*) refuses');
+        my $y=project(1); put("$y/.loomy/brief.md","brief\n"); sleep 2.2;
+        $r=$j->('ai_journal_gate',$y); is($r->{rc},0,'S1 barrier: ai_journal_gate allows an untracked runtime');
+        run(['perl',"$repo/scripts/lib/watch-errors.pl","$y/.loomy/logs/watch-errors.log",'controller','error']); ok(-s "$y/.loomy/logs/watch-errors.log",'S1 barrier: watch-errors.log is written when untracked');
+    }
+    {   # LR6 cache soundness. (a) a verdict taken while logs is absent is never stored; (b) an invalid git directory is never cached; (c) a refusal is cached for a short time.
+        my $x=project(1,0); my $o=$j->('ai_journal_prepare',$x); is($o->{rc},0,'S1 cache: preparation creates logs');
+        sleep 2.2; $o=$j->(q{ai_journal_prepare},$x); is($o->{rc},0,q{S1 cache: second preparation ok});
+        my ($k)=split /\n/,bytes("$x/.loomy/logs/gate-v1"); my @l=lstat("$x/.loomy/logs"); like($k,qr/\|$l[0],$l[1]\z/,'S1 cache: (a) the stored key carries the identity of the directory that exists now, taken after creation');
+        # (b) .git that is not a repository: no cache file, and a parent repository is not trusted for a cached verdict.
+        my $z=project(1); my $sub="$z/sub"; make_path("$sub/.loomy/logs",{mode=>0700}); chmod 0700,"$sub/.loomy"; make_path("$sub/.git"); sleep 2.2;
+        $o=$j->('ai_journal_prepare',$sub); ok(!-e "$sub/.loomy/logs/gate-v1",'S1 cache: (b) an invalid .git directory is never cached');
+        # (c) fail closed is cached: only the first write asks Git.
+        my $f=project(1); put("$f/.loomy/brief.md","b\n"); my $gl="$work/git-refusal"; unlink $gl; sleep 2.2;
+        put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) echo ls >> '$gl'; exit 128;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        for (1..3) { $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$f],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
+        my $calls=() = bytes($gl) =~ /ls/g; is($calls,1,'S1 cache: (c) a Git that cannot answer is asked once, then the refusal is cached');
+        ok(!-s "$f/.loomy/logs/events.jsonl",'S1 cache: (c) and nothing is written (fail closed)');
+    }
+    {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
+        my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);
+        put("$x/.loomy/logs/codex-native.idx","{\"changed\":1}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); put("$x/.loomy/logs/codex-native.idx","{\"again\":2}\n");   # MM: staged and modified in the work tree
+        my $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); like($d->{all},qr/removed from the Git index/,'S1 fix: an MM entry is removed');
+        ok(-f "$x/.loomy/logs/codex-native.idx",'S1 fix: and the file stays'); is(scalar(grep {/\.loomy\/logs/} split /\0/,`git -C '$x' ls-files -z`),0,'S1 fix: nothing left under .loomy/logs');
+        for my $mode (qw(160000 120000)) {
+            my $y=project(1); put("$y/.loomy/memory/STATE.md","s\n"); put("$y/.loomy/memory/DEAD-ENDS.md","d\n"); git($y,'add','-f','.loomy/memory'); commit_all($y);
+            my $blob=`git -C '$y' hash-object -w --stdin </dev/null`; chomp $blob;
+            # a gitlink/symlink entry named .loomy standing next to the .loomy/memory entries (crafted D/F index)
+            system('git','-C',$y,'update-index','--add','--cacheinfo',"$mode,$blob,.loomy")==0 or ok(1,"S1 fix: git refuses the crafted D/F index ($mode), nothing to test");
+            my @all=split /\0/,`git -C '$y' ls-files -z`; next unless grep {$_ eq '.loomy'} @all;
+            my $f=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$y,'--fix']);
+            my @left=split /\0/,`git -C '$y' ls-files -z`; ok(!grep({$_ eq '.loomy'} @left),"S1 fix: the $mode .loomy entry is removed");
+            ok((grep {$_ eq '.loomy/memory/STATE.md'} @left) && (grep {$_ eq '.loomy/memory/DEAD-ENDS.md'} @left),"S1 fix: the .loomy/memory entries stay tracked ($mode)");
+        }
     }
     {   # The caller's alarm and handler survive the bounded read.
         my $x=project(1); my $o=run(['perl','-e',q{require "$ARGV[0]/scripts/lib/runtime-paths.pl"; my $h=sub {}; $SIG{ALRM}=$h; alarm 40;

@@ -119,10 +119,18 @@ my $FC=eval q{ use feature 'fc'; sub { fc($_[0]) } } || sub { lc $_[0] };
 sub _scan {
     my ($root,$all,$secs)=@_; $secs||=2;
     return ([],"") unless defined $root && $root =~ m{\A/};
-    my $in_repo=0; { my $d=$root; while (1) { if (-e "$d/.git" || -l "$d/.git") {$in_repo=1; last} last if $d eq '' || $d eq '/'; $d =~ s{/[^/]*\z}{} } }
-    return ([],"") unless $in_repo;
+    # lstat inside the alarm window: a stalled mount or a symlink to one cannot outlive the bound.
+    my $t0=Time::HiRes::time(); my $prev=alarm 0; my $in_repo=0;
+    my $probed=eval {
+        local $SIG{ALRM}=sub {die "timeout\n"}; alarm $secs;
+        my $d=$root; while (1) { if (lstat("$d/.git")) {$in_repo=1; last} last if $d eq '' || $d eq '/'; $d =~ s{/[^/]*\z}{} }
+        alarm 0; 1;
+    };
+    alarm 0;
+    my $restore=sub { if ($prev) { my $left=$prev-int(Time::HiRes::time()-$t0); alarm($left>0 ? $left : 1) } };
+    unless ($probed) { $restore->(); return ([],"timeout") }
+    unless ($in_repo) { $restore->(); return ([],"") }
     local %ENV=%ENV; delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;
-    my $t0=Time::HiRes::time(); my $prev=alarm 0;
     my $pid=open(my $git,'-|','sh','-c','exec git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$1" ls-files -s -z 2>/dev/null','sh',$root);
     unless ($pid) { alarm($prev) if $prev; return ([],"index-error") }
     my (@hits,@loomy,@logs,%c1,%c2);

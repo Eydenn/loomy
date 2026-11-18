@@ -52,8 +52,9 @@ open_in_app() {
     version="$(loomy_cli_meta claude --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
     if [[ -n "$session" && -n "$version" ]] && ai_version_ge "$version" 2.1.285; then
       # shellcheck disable=SC2174 # -m on the final directory only is intended
-      mkdir -p -m 0755 "$ROOT/.loomy"; mkdir -m 0700 "$ROOT/.loomy/logs" 2>/dev/null || true
-      log="$(umask 077; mktemp "$ROOT/.loomy/logs/desktop-resume.XXXXXXXX")" || return 1
+      mkdir -p -m 0755 "$ROOT/.loomy"
+      if ai_journal_gate "$ROOT"; then mkdir -m 0700 "$ROOT/.loomy/logs" 2>/dev/null || true; log="$(umask 077; mktemp "$ROOT/.loomy/logs/desktop-resume.XXXXXXXX")" || return 1   # tracked runtime state: no file
+      else log=/dev/null; fi
       if (cd "$ROOT" && loomy_cli_spawn claude lead "$MODEL" -- --desktop --resume "$session" </dev/null >"$log" 2>&1); then
         url=""
       fi

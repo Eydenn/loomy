@@ -2266,6 +2266,7 @@ model override or availability; recheck within one hour	modèle imposé ou indis
 Provider %s: PAUSED	Fournisseur %s : EN PAUSE
 Validated model chains and new candidates to evaluate (Codex list, vendor APIs with a key, published catalog); suggest candidates on GitHub before catalog validation	Chaînes validées et nouveaux candidats à évaluer (liste Codex, API des éditeurs avec une clé, catalogue publié) ; proposer les candidats sur GitHub avant validation
 models_mode: latest only; thrifty is retired	models_mode : latest uniquement ; thrifty est retiré
+%s is on-demand only, never in a chain: use --model or model.codex.top.	%s est réservé à la demande, jamais dans une chaîne : utilise --model ou model.codex.top.
 Model %s is not validated for %s.%s.	Le modèle %s n’est pas validé pour %s.%s.
 DOWNGRADED	DÉGRADÉ
 --thrifty is retired: only validated current models are routed. Use the Thrifty budget profile for lower effort.	--thrifty est retiré : seuls les modèles actuels validés sont routés. Utilise le profil Économe pour réduire l’effort.

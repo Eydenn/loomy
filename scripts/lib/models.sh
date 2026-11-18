@@ -71,7 +71,7 @@ _ai_ascii_upper() {
 #   route.<claude|codex>.<role>=<TOP|MID|FAST> <effort>
 ai_catalog_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/catalog.conf"; }
 _ai_catalog_load() {
-  local f="$1" line k v d up_new=""
+  local f="$1" line k v d up_new="" od_new=""
   [[ -f "$f" ]] || return 0
   d="$(sed -n 's/^date=\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)$/\1/p' "$f" | head -1)"
   [[ -n "$d" && "$d" > "$AI_CATALOG_DATE" ]] || return 0
@@ -84,7 +84,10 @@ _ai_catalog_load() {
       [[ " $v" == *" -"* ]] && continue
       [[ -n "$v" ]] && eval "AI_CHAIN_${k}=\"\$v\""
     elif [[ "$line" =~ ^ondemand\.codex=([A-Za-z0-9][A-Za-z0-9._\ -]*)$ ]]; then
-      AI_ONDEMAND_CODEX="$(printf '%s' "${BASH_REMATCH[1]}" | tr -s ' ' | sed 's/^ //; s/ $//')"
+      v="$(printf '%s' "${BASH_REMATCH[1]}" | tr -s ' ' | sed 's/^ //; s/ $//')"
+      # Same guard as model lines: never an option-like token.
+      [[ " $v" == *" -"* ]] && continue
+      od_new="$v"
     elif [[ "$line" =~ ^upcoming\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._-]*)$ ]]; then
       up_new="${up_new:+$up_new }${BASH_REMATCH[1]}:${BASH_REMATCH[2]}:${BASH_REMATCH[3]}"
     elif [[ "$line" =~ ^price\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
@@ -97,6 +100,8 @@ _ai_catalog_load() {
   done <"$f"
   # A newer catalog lists the announced models itself (none when it has no upcoming line).
   AI_UPCOMING="$up_new"
+  # The newer catalog is authoritative for on-demand models too (no line, or an invalid one: none).
+  AI_ONDEMAND_CODEX="$od_new"
 }
 _ai_catalog_load "$(ai_catalog_file)"
 # Validate against the catalog before local overrides are loaded.
@@ -105,6 +110,9 @@ ai_chain_valid() {
   _ai_ascii_upper "${family}_${tier}"; k="$_AI_ASCII_UPPER"
   eval "chain=\"\$AI_VALIDATED_${k}\""
   for m in $(printf '%s' "$value" | tr ',' ' '); do
+    if [[ "$family" == codex ]]; then
+      case " $AI_ONDEMAND_CODEX " in *" $m "*) t "%s is on-demand only, never in a chain: use --model or model.codex.top." "$m" >&2; echo >&2; return 2 ;; esac
+    fi
     case " $chain " in *" $m "*) ;; *) t "Model %s is not validated for %s.%s." "$m" "$family" "$tier" >&2; echo >&2; return 2 ;; esac
   done
 }
@@ -227,7 +235,8 @@ ai_price() {
     claude-haiku-4-5*) echo "1 5 0.10" ;;
     claude-haiku-5-5*) echo "0.10 0.50 0.01" ;;   # prompts up to 100K tokens (ai_price_long beyond)
     gpt-6-astra*) echo "10 50 1.00" ;;
-    gpt-6.2-sol*) echo "2 10 0.10" ;;   # same Sol-tier price assumed: no published 6.2 figure yet
+    gpt-6.2-sol*) echo "2 10 0.10" ;;   # published rate (2026-11-18); long context and Fast tier not expressible here
+    gpt-6.2-astra*) echo "8 40 0.40" ;;   # published rate, on-demand model (2026-11-18)
     gpt-6.1-sol*) echo "2 10 0.10" ;;
     gpt-6-sol*) echo "2 10 0.20" ;;
     gpt-6-luna*) echo "0.10 0.50 0.01" ;;

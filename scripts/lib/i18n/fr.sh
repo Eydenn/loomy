@@ -2271,6 +2271,7 @@ _t_fr() {
     'Provider %s: PAUSED') _T='Fournisseur %s : EN PAUSE' ;;
     'Validated model chains and new candidates to evaluate (Codex list, vendor APIs with a key, published catalog); suggest candidates on GitHub before catalog validation') _T='Chaînes validées et nouveaux candidats à évaluer (liste Codex, API des éditeurs avec une clé, catalogue publié) ; proposer les candidats sur GitHub avant validation' ;;
     'models_mode: latest only; thrifty is retired') _T='models_mode : latest uniquement ; thrifty est retiré' ;;
+    '%s is on-demand only, never in a chain: use --model or model.codex.top.') _T='%s est réservé à la demande, jamais dans une chaîne : utilise --model ou model.codex.top.' ;;
     'Model %s is not validated for %s.%s.') _T='Le modèle %s n’est pas validé pour %s.%s.' ;;
     'DOWNGRADED') _T='DÉGRADÉ' ;;
     '--thrifty is retired: only validated current models are routed. Use the Thrifty budget profile for lower effort.') _T='--thrifty est retiré : seuls les modèles actuels validés sont routés. Utilise le profil Économe pour réduire l’effort.' ;;

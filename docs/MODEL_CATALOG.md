@@ -10,7 +10,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | Model | Input / output price ($ per million tokens) | Cache read | Cost per task of the AA intelligence index (by effort) | AA agentic coding index | Terminal-Bench 4.0 | Positioning |
 |---|---|---|---|---|---|---|
 | GPT-6-Luna | 0.10 / 0.50 | 0.01 | **$0.07** (max) | 41 | 13% | cheapest capable executor |
-| GPT-6.2-Sol | 2 / 10 (assumed: same Sol tier as 6.1, no published 6.2 figure yet) | 0.10 | not measured yet | not published yet | not published yet | Codex workhorse and top tier from 2026-11-18; replaces 6.1 Sol |
+| GPT-6.2-Sol | 2 / 10 (published, same as 6.1) | 0.10 | about $1.01 (AA, Max) | 57 (AA Intelligence Index, Max) | not published yet | Codex workhorse and top tier from 2026-11-18; replaces 6.1 Sol |
+| GPT-6.2-Astra | 8 / 40 (published) | 0.40 | about $4.00 (AA) | 62 (AA Intelligence Index) | not published yet | premium, on demand only (explicit use, never in a chain) |
 | GPT-6.1-Sol | 2 / 10 | 0.10 | about $1.50 per DeepSWE task (high) | not published yet | DeepSWE 75.2% (vendor), OSWorld 2.0 71.4% | superseded by 6.2 Sol on 2026-11-18; historical pricing only |
 | GPT-6-Sol | 2 / 10 | 0.20 | $0.13 (low) → $1.06 (max) | 57 ($2.99/task) | 43% | workhorse |
 | GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1.00 | $0.82 (low) → $3.26 (max) | **62** ($7.09/task) | 59% | OpenAI's frontier model, computer use |
@@ -46,8 +47,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
    - Vendor figures: DeepSWE v1.1 75.2% for about $1.50 per task, against 74.8% for about $7.70 with Astra and 68.8% with GPT-6 Sol; OSWorld 2.0 71.4% (Astra 73.5%); fewer hallucinations at low effort (7.7% against 11.4%).
    - Consequence: it heads the Codex `mid` chain (developer, reviewer, debugger on the Codex side, the audit's cross review), without a superseded Sol fallback. From 0.7.2 it also takes the top tier (lead agent, architect, security on the Codex side): Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Astra is no longer an automatic fallback; an explicit override remains possible: `loomy config set model.codex.top gpt-6.2-astra` (`auto` to go back).
 8b. **GPT-6.2 Sol (validated 2026-11-18) replaces GPT-6.1 Sol** at the head of the Codex `top` and `mid` chains, with no superseded 6.1 fallback.
-   - Evidence: it is present in Codex's local model cache (`~/.codex/models_cache.json`, priority 1, `supported_in_api`, context 500K) and `codex exec -m gpt-6.2-sol` answered on 2026-11-18. No vendor or AA figure is available locally, so the price is assumed equal to 6.1 Sol's ($2 / $10, cache read $0.10); correct `price.gpt-6.2-sol` when the published rate differs.
-   - GPT-6.2 Astra is **premium, on demand**: validated for explicit use only (`ondemand.codex=gpt-6.2-astra`; `--model gpt-6.2-astra` on a bridge, `AI_MODEL_CODEX_TOP=gpt-6.2-astra`, or `loomy config set model.codex.top gpt-6.2-astra`), never in an automatic chain, and the routing split is unchanged. No evaluation was run (no quota spent); the cache gives no price or benchmark, so none is recorded. GPT-6.2 Terra and Luna do not exist on this account ("model is not supported"); Luna stays GPT-6-Luna. GPT-6.1 Terra is not routed.
+   - Evidence: it is present in Codex's local model cache (`~/.codex/models_cache.json`, priority 1, `supported_in_api`, context 500K) and `codex exec -m gpt-6.2-sol` answered on 2026-11-18. Price: the published rate ($2 / $10, cache read $0.10, Standard tier, read 2026-11-18) equals 6.1 Sol's, so `price.gpt-6.2-sol` is unchanged. Long context (prompt above 272K) doubles the input price (Sol 4.00 / 0.20 / 15.00) and the Fast tier (formerly Priority) costs twice the Standard rate; the one-line price format cannot express the Fast tier, so journal costs use Standard.
+   - GPT-6.2 Astra is **premium, on demand**: validated for explicit use only (`ondemand.codex=gpt-6.2-astra`; `--model gpt-6.2-astra` on a bridge, `AI_MODEL_CODEX_TOP=gpt-6.2-astra`, or `loomy config set model.codex.top gpt-6.2-astra`), never in an automatic chain, and the routing split is unchanged. No evaluation was run (no quota spent); its published Standard rate is $8 / $40, cache read $0.40 (long context above 272K: 16.00 / 0.80 / 60.00), recorded as `price.gpt-6.2-astra` so journal costs of on-demand use are not blank. GPT-6.2 Terra and Luna do not exist on this account ("model is not supported"); Luna stays GPT-6-Luna. GPT-6.1 Terra is not routed.
 9. **Sonnet 5.5 medium as the Thrifty lead agent** (test of 2026-09-29, below): same result as Opus 5.5 medium for about half the lead agent's cost, and faster. Anthropic recommends Sonnet 5.5 at `medium` for well-specified agentic work and Opus 5.5 for long work needing judgment: the architect, debugger and security roles stay on Opus.
 10. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
 11. **Claude Haiku 5.5 (2026-10-07) takes the cheap Claude work.**
@@ -151,7 +152,7 @@ Currently announced: none. On-demand premium models (validated for explicit use,
 
 ### Codex cache metadata, GPT-6.2 Sol and Astra (2026-11-18)
 
-Source: `~/.codex/models_cache.json` (fetched 2026-11-18T09:37Z, Codex CLI 0.169.0). The cache carries **no price and no benchmark**; the rows below are all it says. Astra's price is not recorded in the catalog until a published rate exists (a user report that it is cheaper is unverified).
+Source: `~/.codex/models_cache.json` (fetched 2026-11-18T09:37Z, Codex CLI 0.169.0). The cache carries **no price and no benchmark**; the rows below are all it says. Prices are from the published API pricing (see the benchmarks note below). The report that Astra is cheaper is true relative to GPT-6 Astra ($10 / $50), not relative to Sol.
 
 | Field | GPT-6.2-Sol | GPT-6.2-Astra |
 |---|---|---|
@@ -166,6 +167,20 @@ Source: `~/.codex/models_cache.json` (fetched 2026-11-18T09:37Z, Codex CLI 0.169
 | Other | verbosity default low, tool mode `code_mode_only`, multi-agent v2 (effort xhigh), no `upgrade` target | same |
 
 For comparison, GPT-6.1-Sol: priority 3, context 500,000, default effort medium, marked "Previous generation", its availability notice reads "near-Astra performance at a lower cost".
+
+### Public benchmarks (2026-11-18)
+
+Online sources only; no local evaluation was run and no quota was spent.
+
+- Artificial Analysis Intelligence Index: GPT-6.2 Astra 62, GPT-6.2 Sol (Max) 57, Claude Fable 5.2 65.
+- Cost per Intelligence Index task: Astra about $4.00 (GPT-6 Astra $6.24), Sol about $1.01, Fable 5.2 about $26.54.
+- Terminal-Bench-Science 0.1: Astra about 77% (GPT-6 Astra about 68%).
+- No public SWE-bench figure for Astra found; early user reception is mixed.
+- Prices (Standard tier, per million tokens, prompt up to 272K): Sol 2.00 / 0.10 / 10.00; Astra 8.00 / 0.40 / 40.00 (input / cache read / output).
+
+Conclusion: Astra costs 4 times Sol per token and 20% less than GPT-6 Astra ($10 / $50). This confirms the decision to keep it premium, on demand, outside automatic chains.
+
+Sources: https://developers.openai.com/api/docs/pricing, https://artificialanalysis.ai/models/gpt-6-2-sol, https://www.eesel.ai/blog/gpt-6-2-astra-pricing, https://wccftech.com/openais-gpt-6-2-astra-becomes-the-first-model-to-achieve-a-100-score-on-arc-agi-3-while-being-8x-cheaper-than-anthropics-fable-5-2-but-actual-users-are-not-impressed/
 
 ### Protocol when a new model comes out
 

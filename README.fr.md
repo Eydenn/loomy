@@ -633,7 +633,8 @@ Les skills donnent aux agents une méthode éprouvée pour un type de travail (t
 | Modèle | 💵 Prix ($ par million de tokens, entrée / sortie) | Coût par tâche AA | Indice de codage AA | Terminal-Bench 4.0 | 🏷️ Rôle attribué |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
-| GPT&#8209;6.2&#8209;Sol | 2 / 10 (supposé, comme la 6.1) | pas encore mesuré | — | — | tous les rôles Codex sauf l'exécution, depuis la 0.17.10 |
+| GPT&#8209;6.2&#8209;Sol | 2 / 10 (publié ; comme la 6.1) | environ 1,01 $ | 57 (Max) | — | tous les rôles Codex sauf l'exécution, depuis la 0.17.10 |
+| GPT&#8209;6.2&#8209;Astra | 8 / 40 (publié) | environ 4,00 $ | 62 | — | premium, à la demande seulement (`--model`, `model.codex.top`) ; jamais dans une chaîne automatique |
 | GPT&#8209;6.1&#8209;Sol | 2 / 10 | environ 1,50 $ par tâche DeepSWE | — | DeepSWE 75,2 % (éditeur) | historique ; exclu du routage automatique |
 | GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | historique ; exclu du routage automatique |
 | GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | historique ; exclu du routage automatique |
@@ -841,7 +842,7 @@ loomy/
   - l'auditeur (rôle sécurité : Opus 5.5, ou GPT-6.2 Sol avec un orchestrateur Codex) mène l'audit ;
   - un explorateur cartographie la surface d'attaque, sur un modèle rigoureux (Sonnet 5.5 en medium, ou GPT-6.2 Sol) : un point d'entrée manqué n'est jamais analysé ;
   - Claude Sonnet 5.5 en effort élevé, rigoureux, revérifie chaque constat de façon indépendante ;
-  - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés ;
+  - l'autre famille de modèles (GPT-6.2 Sol) donne un second avis sur les constats critiques et élevés ;
   - un rédacteur rapide (GPT-6-Luna) rédige le rapport et le plan de corrections au fil des validations, à partir des seuls faits validés ; l'auditeur relit chaque brouillon. Sans Codex, un modèle local servi par [LM Studio](https://lmstudio.ai) prend ce rôle s'il répond (texte seul, rien ne sort de la machine, journalisé sans coût).
 - **Phases**, suivies dans `loomy watch` comme un démarrage de projet : périmètre → analyse → validation des constats → rapport → plan de corrections → corrections.
 - **Rapport** : `REPORT.md` et `FIX_PLAN.md` vont dans `.loomy/audits/<date>-security/`, hors de Git, parce qu'ils peuvent décrire des failles exploitables. Tes branches ne sont jamais modifiées et rien n'est poussé.

@@ -24,7 +24,7 @@ Loomy stays at 0.x until the whole thing has been validated in real conditions. 
 
 ### Models
 
-- GPT-6.2 Sol replaces GPT-6.1 Sol as the Codex top and mid model (validated by the local Codex model cache and a live `codex exec` probe; price assumed equal to 6.1 Sol's until a published rate exists; 6.1 Sol is now obsolete, with no fallback). GPT-6.2 Astra is validated as a premium, on-demand model: explicit use only (`--model`, expert override), never in an automatic chain. GPT-6-Luna stays the fast model. Catalog dated 2026-11-18.
+- GPT-6.2 Sol replaces GPT-6.1 Sol as the Codex top and mid model (validated by the local Codex model cache and a live `codex exec` probe; price is the published rate, equal to 6.1 Sol's; 6.1 Sol is now obsolete, with no fallback). GPT-6.2 Astra is validated as a premium, on-demand model: explicit use only (`--model`, expert override), never in an automatic chain, published price recorded ($8 / $40), and refused in `loomy config set chain.*`. A newer downloaded catalog now replaces the on-demand list (leading-dash lines ignored). GPT-6-Luna stays the fast model. Catalog dated 2026-11-18.
 
 ### Hardening
 

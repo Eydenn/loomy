@@ -155,10 +155,32 @@ run 'on-demand Astra: validated for explicit use, absent from every chain' bash 
 source "$1/scripts/lib/models.sh"
 case " $AI_VALIDATED_CODEX_TOP " in *" gpt-6.2-astra "*) ;; *) exit 1 ;; esac
 for c in "$AI_CHAIN_CODEX_TOP" "$AI_CHAIN_CODEX_MID" "$AI_CHAIN_CODEX_FAST"; do case "$c" in *astra*|*gpt-6.1-sol*) exit 1 ;; esac; done
-ai_chain_valid codex top gpt-6.2-astra 2>/dev/null && ! ai_chain_valid codex top gpt-6.1-sol 2>/dev/null
+! ai_chain_valid codex top gpt-6.2-astra 2>/dev/null && ! ai_chain_valid codex top gpt-6.1-sol 2>/dev/null && ai_chain_valid codex top gpt-6.2-sol
 ' _ "$REPO"
 run 'on-demand Astra: repository catalog matches built-in list' bash -c 'source "$1/scripts/lib/models.sh"; [[ "$(sed -n "s/^ondemand\.codex=//p" "$1/catalog/models.conf")" == "$AI_ONDEMAND_CODEX" ]]' _ "$REPO"
 run 'on-demand Astra: bridge model check accepts it' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/launch.sh"; LOOMY_CLI_PROBE=0; LOOMY_CLI_BIN=/bin/true; ai_provider_saturated() { return 1; }; ai_model_usable() { return 0; }; _loomy_cli_check codex developer gpt-6.2-astra' _ "$REPO"
+run 'on-demand Astra: repository catalog price matches built-in' bash -c 'source "$1/scripts/lib/models.sh"; [[ "$(sed -n "s/^price\.gpt-6\.2-astra=//p" "$1/catalog/models.conf")" == "$(ai_price gpt-6.2-astra)" && -n "$(ai_price gpt-6.2-astra)" ]]' _ "$REPO"
+# Downloaded (newer) catalog: ondemand.codex is authoritative and sanitised.
+cat_case() { reset_case; printf 'date=2099-01-01\n%s\n' "$1" >"$XDG_CONFIG_HOME/loomy/catalog.conf"; }
+cat_case 'ondemand.codex=gpt-6.2-astra --yolo'
+run 'downloaded catalog: leading-dash on-demand line ignored' bash -c 'source "$1/scripts/lib/models.sh"; [[ -z "$AI_ONDEMAND_CODEX" && "$AI_VALIDATED_CODEX_TOP" == "gpt-6.2-sol" ]]' _ "$REPO"
+cat_case 'ondemand.codex=gpt-x; touch '"$WORK"'/pwned $(touch '"$WORK"'/pwned2) `id`'
+run 'downloaded catalog: shell metacharacters ignored, nothing executed' bash -c 'source "$1/scripts/lib/models.sh"; [[ -z "$AI_ONDEMAND_CODEX" && ! -e "$2/pwned" && ! -e "$2/pwned2" ]]' _ "$REPO" "$WORK"
+cat_case 'model.codex.top=gpt-6.2-sol'
+run 'downloaded catalog: absent on-demand line revokes the built-in model' bash -c 'source "$1/scripts/lib/models.sh"; [[ -z "$AI_ONDEMAND_CODEX" ]] && ! ai_chain_valid codex top gpt-6.2-astra 2>/dev/null' _ "$REPO"
+cat_case 'ondemand.codex='
+run 'downloaded catalog: empty on-demand line revokes the built-in model' bash -c 'source "$1/scripts/lib/models.sh"; [[ -z "$AI_ONDEMAND_CODEX" ]]' _ "$REPO"
+cat_case 'ondemand.codex=gpt-7-astra'
+run 'downloaded catalog: valid on-demand model accepted but in no chain' bash -c '
+source "$1/scripts/lib/models.sh"
+case " $AI_VALIDATED_CODEX_TOP " in *" gpt-7-astra "*) ;; *) exit 1 ;; esac
+for c in "$AI_CHAIN_CODEX_TOP" "$AI_CHAIN_CODEX_MID" "$AI_CHAIN_CODEX_FAST"; do case "$c" in *gpt-7-astra*) exit 1 ;; esac; done
+' _ "$REPO"
+cat_case 'ondemand.codex=gpt-6.2-astra'
+fails 'config set chain refuses an on-demand model' 2 bash "$REPO/bin/loomy" config set chain.codex.top gpt-6.2-astra
+has 'chain refusal points to the explicit route' 'on-demand only.*--model.*model\.codex\.top'
+run 'refused chain key was not written' bash -c '! grep -q "^chain.codex.top=" "$XDG_CONFIG_HOME/loomy/config"'
+run 'chain key still accepts a chain model' bash "$REPO/bin/loomy" config set chain.codex.top gpt-6.2-sol
 
 reset_case
 printf 'chain.codex.top=gpt-6-astra, gpt-6-sol, gpt-6.1-sol\nchain.claude.fast=claude-haiku-4-5\n' >>"$XDG_CONFIG_HOME/loomy/config"

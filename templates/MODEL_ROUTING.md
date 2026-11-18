@@ -40,7 +40,7 @@ The environment is derived from the brief (`ai_mode`, `ai_lead`) and the CLIs ac
 - **Full Claude Code**: every role runs on Claude models, as subagents in `.claude/agents/`.
 - **Full Codex**: every role runs on GPT-6 models, as native subagents on the routed model and effort.
 - **Hybrid, Claude lead**: the lead agent runs on Opus 5.5. Execution goes to GPT-6-Luna through `loomy-delegate-codex.sh executor`, and cross review through `loomy-delegate-codex.sh reviewer`.
-- **Hybrid, Codex lead**: the lead agent runs on GPT-6.1 Sol. Architecture, security and hard debugging go to Opus 5.5 through `loomy-delegate-claude.sh` (read-only), and review to Sonnet 5.5.
+- **Hybrid, Codex lead**: the lead agent runs on GPT-6.2 Sol. Architecture, security and hard debugging go to Opus 5.5 through `loomy-delegate-claude.sh` (read-only), and review to Sonnet 5.5.
 
 If the mode asks for both tools but only one is installed, routing switches automatically to that tool's full matrix.
 

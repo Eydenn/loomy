@@ -633,7 +633,8 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
 | Model | 💵 Price ($ per million tokens, in / out) | Cost per AA task | AA Coding Agent Index | Terminal-Bench 4.0 | 🏷️ Role |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
-| GPT&#8209;6.2&#8209;Sol | 2 / 10 (assumed, as 6.1) | not measured yet | — | — | every Codex role except execution, from 0.17.10 |
+| GPT&#8209;6.2&#8209;Sol | 2 / 10 (published; as 6.1) | about $1.01 | 57 (Max) | — | every Codex role except execution, from 0.17.10 |
+| GPT&#8209;6.2&#8209;Astra | 8 / 40 (published) | about $4.00 | 62 | — | premium, on demand only (`--model`, `model.codex.top`); never in an automatic chain |
 | GPT&#8209;6.1&#8209;Sol | 2 / 10 | about $1.50 per DeepSWE task | — | DeepSWE 75.2 % (vendor) | historical; excluded from automatic routing |
 | GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | historical; excluded from automatic routing |
 | GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | historical; excluded from automatic routing |
@@ -839,9 +840,9 @@ loomy/
 - **Method**: [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for this repository only when you agree.
 - **Team**, through Loomy's bridges, every delegation logged:
   - the auditor (security role: Opus 5.5, or GPT-6.2 Sol with a Codex lead) leads;
-  - an explorer maps the attack surface, on a rigorous model (Sonnet 5.5 medium, or GPT-6-Sol): a missed entry point is never analysed;
+  - an explorer maps the attack surface, on a rigorous model (Sonnet 5.5 medium, or GPT-6.2 Sol): a missed entry point is never analysed;
   - Claude Sonnet 5.5 at high effort, rigorous, re-checks every finding independently;
-  - the other model family (GPT-6-Sol) gives a second opinion on Critical and High findings;
+  - the other model family (GPT-6.2 Sol) gives a second opinion on Critical and High findings;
   - a fast writer (GPT-6-Luna) drafts the report and the fix plan as findings get validated, from validated facts only; the auditor reviews every draft. Without Codex, a local model served by [LM Studio](https://lmstudio.ai) takes this role when one answers (text only, nothing leaves the machine, logged at no cost).
 - **Phases**, followed in `loomy watch` like a bootstrap: scope → analysis → validation of findings → report → fix plan → fixes.
 - **Report**: `REPORT.md` and `FIX_PLAN.md` go to `.loomy/audits/<date>-security/`, kept out of Git, because they can describe exploitable weaknesses. Your branches are never touched and nothing is pushed.

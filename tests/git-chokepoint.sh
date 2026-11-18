@@ -144,10 +144,11 @@ rm -f "$WORK/config/loomy/companions"
 bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; rc=$?
 if (( rc != 0 )) && grep -q 'not verified' "$OUT"; then ok 'older companion without a record: refused with the adopt note'; else ko 'older companion not refused'; fi
 bash "$REPO/bin/loomy" privacy adopt >"$OUT" 2>&1; rc=$?
-if (( rc != 0 )) && grep -q 'local remote refused' "$OUT"; then ok 'adopt refuses a local remote'; else ko 'adopt accepted a local remote'; fi
+if (( rc != 0 )) && grep -q 'terminal' "$OUT"; then ok 'older companion with an outside absolute local remote: adopt still needs a terminal'; else ko 'adopt skipped the terminal for a local remote'; fi
 git --git-dir="$G/.loomy/ai.git" config remote.origin.url https://example.invalid/good-ai.git
 bash "$REPO/bin/loomy" privacy adopt >"$OUT" 2>&1; rc=$?
 if (( rc != 0 )) && grep -q 'terminal' "$OUT"; then ok 'adopt without a terminal refuses (no silent trust)'; else ko 'adopt trusted without a terminal'; fi
+ready_at() { bash -c 'source "$1/scripts/lib/privacy.sh"; privacy_companion_ready "$2"' _ "$REPO" "$1" >/dev/null 2>&1; }
 pty_adopt() { python3 - "$REPO" "$1" "$2" <<'PYEOF'
 import os, pty, sys, select
 repo, ans, root = sys.argv[1:4]
@@ -157,16 +158,26 @@ if pid == 0:
 out = b''; sent = False
 while True:
     r, _, _ = select.select([fd], [], [], 20)
-    if not r: break
+    if not r:
+        os.kill(pid, 9); break
     try: d = os.read(fd, 4096)
     except OSError: break
     if not d: break
     out += d
-    if not sent and b'[y/N]' in out: os.write(fd, (ans + '\n').encode()); sent = True
+    if not sent and (b'[y/N]' in out or b'[o/N]' in out): os.write(fd, (ans + '\n').encode()); sent = True
 _, st = os.waitpid(pid, 0)
 sys.stdout.write(out.decode(errors='replace')); sys.exit(os.WEXITSTATUS(st))
 PYEOF
 }
+# [LR8-B] an outside absolute local remote (older Loomy: `privacy private --remote /path`) adopts after a "y", then syncs
+git --git-dir="$G/.loomy/ai.git" config remote.origin.url "$BARE"
+pty_adopt n "$G" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q "$BARE" "$OUT" && ! ready_at "$G"; then ok 'outside local remote: adopt shows the path and refuses when not confirmed'; else ko 'outside local remote: n was not refused'; fi
+pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
+if (( rc == 0 )) && ready_at "$G"; then ok 'outside local remote created by an older Loomy: adopt after y trusts it'; else ko 'outside local remote: adopt refused'; fi
+printf 'd\n' >>"$G/AGENTS.md"; bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; rc=$?
+if (( rc == 0 )) && [[ "$(git --git-dir="$BARE" show main:AGENTS.md 2>/dev/null | tail -1)" == d ]]; then ok 'adopted local remote: sync pushes to it'; else ko 'adopted local remote: sync failed'; fi
+git --git-dir="$G/.loomy/ai.git" config remote.origin.url https://example.invalid/good-ai.git
 pty_adopt n "$G" >"$OUT" 2>&1; rc=$?
 if (( rc != 0 )) && grep -q 'example.invalid/good-ai.git' "$OUT"; then ok 'adopt shows every URL and refuses when not confirmed'; else ko 'adopt did not show the URL / accepted n'; fi
 pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
@@ -299,6 +310,66 @@ mk_comp "$WORK/esc-hook"; mkdir -p "$WORK/esc-hook/.loomy/ai.git/hooks"
 : >"$WORK/esc-hook/.loomy/ai.git/hooks/pr$(printf '\xc3\xa9')"; : >"$WORK/esc-hook/.loomy/ai.git/hooks/x$(printf '\xc2\x9b')y"; : >"$WORK/esc-hook/.loomy/ai.git/hooks/z$(printf '\xe2\x80\xae')w"
 pty_adopt y "$WORK/esc-hook" >"$OUT" 2>&1
 if LC_ALL=C grep -q $'pr\xc3\xa9' "$OUT" && ! LC_ALL=C grep -q $'\xc2\x9b' "$OUT" && ! LC_ALL=C grep -q $'\xe2\x80\xae' "$OUT" && grep -q 'x\\xc2\\x9by' "$OUT"; then ok 'esc keeps accents and escapes C1 and bidi controls'; else ko 'esc output wrong'; fi
+
+# ── 3d. local remotes (LR8-B): relative and in-project refused; spaces and accents work end to end; controls refused ──
+cd "$WORK" || exit 1
+# a clone ships ./evil.git (relative) or points at an absolute path inside the project: both refused with the remedy
+for kind in rel in; do
+  D="$WORK/loc-$kind"; mk_comp "$D"; git init -q --bare -b main "$D/evil.git"
+  printf '#!/bin/sh\necho pre-receive >>"%s"\ncat >/dev/null\nexit 0\n' "$MARK2" >"$D/evil.git/hooks/pre-receive"; chmod +x "$D/evil.git/hooks/pre-receive"
+  if [[ $kind == rel ]]; then u=./evil.git; pat='not an absolute path'; else u="$D/evil.git"; pat='inside the project'; fi
+  git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$u"
+  adopt_refused "$D" "$pat" "local remote ($kind-project): adopt refuses"
+  if grep -q 'set-url origin' "$OUT"; then ok "local remote ($kind-project): the refusal names the remedy"; else ko "local remote ($kind-project): no remedy line"; fi
+  ( cd "$D" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 "local remote ($kind-project): sync runs no receive hook"
+done
+# an absolute symlink that leads into the project is still inside it
+D="$WORK/loc-link"; mk_comp "$D"; git init -q --bare -b main "$D/evil.git"; ln -s "$D/evil.git" "$WORK/loc-link-out"
+git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$WORK/loc-link-out"
+adopt_refused "$D" 'inside the project' 'local remote (symlink into the project): adopt refuses'
+D="$WORK/loc-none"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$WORK/does-not-exist.git"
+adopt_refused "$D" 'not an existing directory' 'local remote (missing directory): adopt refuses'
+# spaces and non-ASCII letters in a local path: create, record, then adopt after the record is lost
+for name in "My Drive" "Dépôts privés"; do
+  R="$WORK/$name"; mkdir -p "$R"; git init -q --bare -b main "$R/r.git"
+  P2="$WORK/proj $name"; mkdir -p "$P2/.loomy"; git init -q -b main "$P2"
+  printf -- '---\nname: sp\nai_files: local\n---\n' >"$P2/.loomy/brief.md"; echo 0.17.10 >"$P2/.loomy/VERSION"; printf 'a\n' >"$P2/AGENTS.md"
+  ( cd "$P2" && bash "$REPO/bin/loomy" privacy private --remote "$R/r.git" >"$OUT" 2>&1 ); rc=$?
+  if (( rc == 0 )) && [[ -n "$(git -C "$R/r.git" for-each-ref refs/heads/main)" ]] && ready_at "$P2"; then ok "path with '$name': create, record and push work"; else ko "path with '$name': create failed"; fi
+  rm -f "$WORK/config/loomy/companions"
+  ( cd "$P2" && pty_adopt y "$P2" >"$OUT" 2>&1 ); rc=$?
+  if (( rc == 0 )) && ready_at "$P2"; then ok "path with '$name': adopt after y works"; else ko "path with '$name': adopt failed"; fi
+done
+# file:// form of the same space path
+git --git-dir="$P2/.loomy/ai.git" config remote.origin.url "file://$WORK/Dépôts privés/r.git"
+pty_adopt y "$P2" >"$OUT" 2>&1; rc=$?
+if (( rc == 0 )) && ready_at "$P2"; then ok 'file:// path with spaces and accents: adopt works'; else ko 'file:// path with spaces: adopt failed'; fi
+# control characters stay refused in a local path (C1 U+009B, bidi U+202E, TAB) and never reach the terminal raw
+for cc in '\xc2\x9b' '\xe2\x80\xae' '\x09'; do
+  D="$WORK/loc-cc"; rm -rf "$D"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config --unset remote.origin.url
+  mkdir -p "$WORK/out dir"; printf '[remote "origin"]\n\turl = %s/out dir/a%bb.git\n' "$WORK" "$cc" >>"$D/.loomy/ai.git/config"
+  pty_adopt y "$D" >"$OUT" 2>&1; rc=$?
+  if (( rc != 0 )) && ! ready_at "$D" && ! LC_ALL=C grep -q $'\xc2\x9b' "$OUT" && ! LC_ALL=C grep -q $'\xe2\x80\xae' "$OUT"; then ok "local path with control $cc: refused, nothing raw on the terminal"; else ko "local path with control $cc not refused"; fi
+done
+# network URLs stay printable ASCII (a space or an accent is refused)
+D="$WORK/net-sp"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url "https://example.invalid/a b.git"
+adopt_refused "$D" 'not allowed' 'https URL with a space: adopt refuses'
+# a failed record removes the companion Loomy just created (here: a control character in --remote)
+D="$WORK/rec-fail"; mkdir -p "$D/.loomy"; git init -q -b main "$D"; printf -- '---\nname: rf\nai_files: local\n---\n' >"$D/.loomy/brief.md"; echo 0.17.10 >"$D/.loomy/VERSION"
+( cd "$D" && bash "$REPO/bin/loomy" privacy private --remote "$WORK/bad$(printf '\t')dir.git" >"$OUT" 2>&1 ); rc=$?
+if (( rc != 0 )) && [[ ! -e "$D/.loomy/ai.git" ]] && grep -q 'not allowed' "$OUT"; then ok 'failed record: the half-made .loomy/ai.git is removed and the reason is printed'; else ko 'failed record left the companion or hid the reason'; fi
+# the French prompt accepts o and oui
+D="$WORK/fr-yes"; mk_comp "$D"
+for ans in o OUI; do
+  rm -f "$WORK/config/loomy/companions"
+  LOOMY_LANG=fr pty_adopt "$ans" "$D" >"$OUT" 2>&1; rc=$?
+  if (( rc == 0 )) && ready_at "$D" && grep -q 'Faire confiance' "$OUT"; then ok "French prompt: '$ans' confirms"; else ko "French prompt: '$ans' not accepted"; fi
+done
+# --help shows every line, the inventory one included
+r="$(bash "$REPO/bin/loomy" privacy --help 2>&1)"; printf '%s\n' "$r" >"$OUT"
+if grep -q 'loomy privacy adopt' <<<"$r" && grep -q 'loomy privacy inventory' <<<"$r"; then ok 'privacy --help lists adopt and inventory'; else ko 'privacy --help is cut'; fi
+r="$(LOOMY_LANG=fr bash "$REPO/bin/loomy" privacy --help 2>&1)"; printf '%s\n' "$r" >"$OUT"
+if grep -q 'vérifie un .loomy/ai.git' <<<"$r"; then ok 'privacy --help: the adopt line is translated'; else ko 'privacy --help: adopt line not translated'; fi
 
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1

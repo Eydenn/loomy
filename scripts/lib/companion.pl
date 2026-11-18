@@ -2,9 +2,11 @@
 # Helpers for the private-history companion trust record (scripts/lib/privacy.sh). No git is spawned here.
 #   id DIR                       "realpath<TAB>dev:ino" of DIR itself (never through a link)
 #   nonce                        fresh random hex nonce
-#   scan MODE < config -z list   allow-list audit of a companion config (MODE adopt|ready). Lines: P<TAB>problem,
-#                                U<TAB>remote<TAB>key<TAB>value, L<TAB>1 (a local remote), D<TAB>digest of every url/pushurl
-#   files DIR                    redirecting files, executable hooks, op-state files, attributes: one "P<TAB>problem" per line
+#   scan MODE [ROOT...] < config -z list   allow-list audit of a companion config (MODE adopt|ready). Lines: P<TAB>code<TAB>argument
+#                                (a reason code the shell maps to a translated sentence), U<TAB>remote<TAB>key<TAB>value, L<TAB>1 (a local
+#                                remote), D<TAB>digest of every url/pushurl. Adopt accepts a local remote only when it is an absolute path to
+#                                an existing directory you own, outside every ROOT (the project work tree and its repository top level).
+#   files DIR                    redirecting files, executable hooks, op-state files, attributes: one "P<TAB>code<TAB>argument" per line
 #   write RECORDS DIR DIGEST     new nonce file inside DIR + record line (real, dev:ino, nonce, digest)
 #   match RECORDS DIR            prints the recorded digest when real path, dev:ino and the nonce file all match; exit 1 otherwise
 #   forget RECORDS REAL          removes the record of REAL (exact field compare)
@@ -55,21 +57,33 @@ if ($cmd eq 'vhas' || $cmd eq 'vadd') {
   locked { my @l = grep { $_ ne $key } slurp_lines($file); push @l, $key; @l = @l[-200..-1] if @l > 200; rewrite($file, @l); 1 } $file; exit 0 }
 if ($cmd eq 'files') {
   my $d = $a[0]; my @p;
-  for my $f (qw(commondir gitdir objects/info/alternates info/grafts)) { push @p, "redirecting file present: $f" if -e "$d/$f" || -l "$d/$f" }
-  push @p, "attributes present: info/attributes" if -e "$d/info/attributes" && (-s _ || -l "$d/info/attributes");
+  for my $f (qw(commondir gitdir objects/info/alternates info/grafts)) { push @p, ["redirect", $f] if -e "$d/$f" || -l "$d/$f" }
+  push @p, ["attributes", "info/attributes"] if -e "$d/info/attributes" && (-s _ || -l "$d/info/attributes");
   for my $legacy (qw(remotes branches)) {
     next unless -e "$d/$legacy" || -l "$d/$legacy";
-    if (-d "$d/$legacy" && !-l "$d/$legacy") { if (opendir(my $lh, "$d/$legacy")) { my @e = grep { $_ ne '.' && $_ ne '..' } readdir $lh; closedir $lh; push @p, "legacy remote file present: $legacy/" . esc($e[0]) if @e } }
-    else { push @p, "legacy remote file present: $legacy" }
+    if (-d "$d/$legacy" && !-l "$d/$legacy") { if (opendir(my $lh, "$d/$legacy")) { my @e = grep { $_ ne '.' && $_ ne '..' } readdir $lh; closedir $lh; push @p, ["legacy", "$legacy/" . $e[0]] if @e } }
+    else { push @p, ["legacy", $legacy] }
   }
-  if (opendir(my $h, "$d/hooks")) { for my $e (sort grep { $_ ne '.' && $_ ne '..' && !/\.sample\z/ } readdir $h) { push @p, "hook present: hooks/$e" } closedir $h }
-  for my $f (qw(rebase-merge rebase-apply sequencer MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG BISECT_START BISECT_TERMS BISECT_NAMES BISECT_EXPECTED_REV BISECT_ANCESTORS_OK)) { push @p, "operation in progress: $f" if -e "$d/$f" || -l "$d/$f" }
-  print "P\t$_\n" for map { esc($_) } @p; exit 0 }
+  if (opendir(my $h, "$d/hooks")) { for my $e (sort grep { $_ ne '.' && $_ ne '..' && !/\.sample\z/ } readdir $h) { push @p, ["hook", "hooks/$e"] } closedir $h }
+  for my $f (qw(rebase-merge rebase-apply sequencer MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG BISECT_START BISECT_TERMS BISECT_NAMES BISECT_EXPECTED_REV BISECT_ANCESTORS_OK)) { push @p, ["op", $f] if -e "$d/$f" || -l "$d/$f" }
+  print "P\t$_->[0]\t", esc($_->[1]), "\n" for @p; exit 0 }
+# local_problem URL PATH ROOTS: why adopt refuses a local remote (empty when it is acceptable). The path must be absolute (after file:// is
+# stripped), name an existing directory you own, and sit outside every root (a clone cannot point at a repository it ships itself).
+# Ancestors are compared by device/inode, so a case-insensitive file system or a link cannot hide it.
+sub local_problem { my ($v, $p, $roots) = @_;
+  return 'local_rel' unless $p =~ m{\A/};
+  return 'local_pct' if $v =~ m{\Afile://}i && $p =~ /%/;
+  return 'local_dir' unless -d $p;
+  return 'local_own' unless -O $p;
+  my $r = Cwd::abs_path($p); return 'local_dir' unless defined $r;
+  my %id; for my $root (grep { defined && length } @$roots) { my @s = stat(Cwd::abs_path($root) // $root) or next; $id{"$s[0]:$s[1]"} = 1 }
+  my $q = $r; while (1) { my @s = stat($q); return 'local_in' if @s && $id{"$s[0]:$s[1]"}; last if $q eq '/' || $q eq ''; $q = dirname($q); $q = '/' if $q eq '' }
+  '' }
 if ($cmd eq 'scan') {
-  my $mode = $a[0] // 'adopt'; my $strict = $mode eq 'adopt';
+  my ($mode, @roots) = @a; $mode //= 'adopt'; my $strict = $mode eq 'adopt';
   my %core = map { $_ => 1 } qw(repositoryformatversion filemode bare logallrefupdates ignorecase precomposeunicode symlinks autocrlf eol safecrlf);
   my %remote = map { $_ => 1 } qw(url pushurl fetch push tagopt);
-  my (%bad, %urls, %pushes, %names, @u, $local); local $/ = "\0";
+  my (%bad, %urls, %pushes, %names, @u, $local, $local_bad); local $/ = "\0";
   while (my $rec = <STDIN>) {
     chomp $rec; my ($k, $v) = split /\n/, $rec, 2; $v = '' unless defined $v;
     my ($sec, $rest) = $k =~ /\A([^.]+)\.(.+)\z/s or do { $bad{$k} = 1; next }; $sec = lc $sec;
@@ -81,25 +95,31 @@ if ($cmd eq 'scan') {
     elsif ($sec eq 'branch' && defined $sub) { $ok = $var eq 'remote' || $var eq 'merge' || $var eq 'rebase' }
     elsif ($sec eq 'remote' && defined $sub) {
       $names{$sub} = 1;
-      if ($sub !~ /\A[A-Za-z0-9._-]+\z/) { print "P\t", esc("remote name not allowed: $sub"), "\n"; next }
+      if ($sub !~ /\A[A-Za-z0-9._-]+\z/) { print "P\tremote_name\t", esc($sub), "\n"; next }
       $ok = $remote{$var} ? 1 : 0;
       if ($ok && ($var eq 'url' || $var eq 'pushurl')) {
         my $isl = $v =~ m{\A(?:/|\./|\.\./|file://)}i ? 1 : 0;
-        $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v !~ /\A[\x21-\x7e]+\z/ || $v =~ /\A(?:ext|fd)\b/i;
+        my $lp = $v; $lp =~ s{\Afile://}{}i if $isl;
+        # Local paths may hold spaces and valid UTF-8 (no controls, no bidi controls); network URLs are printable ASCII only.
+        $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v =~ /\A(?:ext|fd)\b/i || ($isl ? ($lp eq '' || esc($lp) ne $lp) : $v !~ /\A[\x21-\x7e]+\z/);
         $ok = 0 unless $v =~ m{\A(?:https://|ssh://|file://|/|\./|\.\./|[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9.-]*:|[A-Za-z0-9][A-Za-z0-9.-]*:[^/])}i;
-        if ($ok && $isl) { $local = 1; if ($strict) { $ok = 0; print "P\t", esc("local remote refused by adopt: remote.$sub.$var"), "\n"; $skip = 1 } }
+        if ($ok && $isl) {
+          $local = 1;
+          if ($strict) { my $why = local_problem($v, $lp, \@roots); if ($why) { $ok = 0; $skip = 1; $local_bad = 1; print "P\t$why\t", esc("remote.$sub.$var"), "\n" } }
+        }
         push @u, [$sub, $var, $v] if $ok || $isl;
         if ($var eq 'url') { push @{ $urls{$sub} }, $v } else { push @{ $pushes{$sub} }, $v }
       }
     }
     $bad{$k} = 1 unless $ok || $skip;
   }
-  for my $r (sort keys %urls) { print "P\t", esc("remote.$r.url has several values"), "\n" if @{ $urls{$r} } > 1 }
+  for my $r (sort keys %urls) { print "P\turl_several\t", esc($r), "\n" if @{ $urls{$r} } > 1 }
   if ($strict) {
-    for my $r (sort keys %pushes) { for my $pv (@{ $pushes{$r} }) { my $u1 = $urls{$r} ? $urls{$r}[0] : undef; print "P\t", esc("pushurl differs from url: remote.$r"), "\n" if !defined $u1 || $u1 ne $pv } }
-    for my $r (sort keys %names) { print "P\t", esc("remote other than origin: $r"), "\n" if $r ne 'origin' && $r =~ /\A[A-Za-z0-9._-]+\z/ }
+    for my $r (sort keys %pushes) { for my $pv (@{ $pushes{$r} }) { my $u1 = $urls{$r} ? $urls{$r}[0] : undef; print "P\tpush_differs\t", esc($r), "\n" if !defined $u1 || $u1 ne $pv } }
+    for my $r (sort keys %names) { print "P\tremote_other\t", esc($r), "\n" if $r ne 'origin' && $r =~ /\A[A-Za-z0-9._-]+\z/ }
   }
-  for my $k (sort keys %bad) { print "P\t", esc("config key not allowed: $k"), "\n" }
+  for my $k (sort keys %bad) { print "P\tconfig_key\t", esc($k), "\n" }
+  print "P\tlocal_remedy\t-\n" if $local_bad;
   print "U\t", join("\t", map { esc($_) } @$_), "\n" for grep { $_->[0] eq 'origin' } sort { join("\t", @$a) cmp join("\t", @$b) } @u;
   print "L\t1\n" if $local;
   print "D\t", sha256_hex(join("\n", sort map { join("\t", @$_) } @u)), "\n"; exit 0 }

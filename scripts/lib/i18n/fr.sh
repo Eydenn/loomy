@@ -1050,6 +1050,7 @@ _t_fr() {
     '  loomy privacy local                    excluded from Git on this machine (invisible in the repository)') _T='  loomy privacy local                    exclus de Git sur cette machine (invisibles dans le dépôt)' ;;
     '  loomy privacy private [--name NAME | --remote URL]   excluded from the project, backed up in a separate private repository') _T='  loomy privacy private [--name NOM | --remote URL]   exclus du projet, sauvegardés dans un dépôt privé séparé' ;;
     '  loomy privacy sync                     backs up the AI files to the private repository') _T='  loomy privacy sync                     sauvegarde les fichiers IA dans le dépôt privé' ;;
+    '  loomy privacy adopt                    verifies an existing .loomy/ai.git (created by an older Loomy or copied) and trusts it') _T='  loomy privacy adopt                    vérifie un .loomy/ai.git existant (créé par un ancien Loomy ou copié) et lui fait confiance' ;;
     '  loomy privacy restore <URL|account/repo>   gets the AI files back on another machine') _T='  loomy privacy restore <URL|compte/dépôt>   récupère les fichiers IA sur une autre machine' ;;
     'Loomy project log, readable. Bash 3.2 compatible.') _T='Journal du projet Loomy, lisible. Compatible bash 3.2.' ;;
     '  loomy log [-n N]        the last N events (20 by default), in local time') _T='  loomy log [-n N]        les N derniers événements (20 par défaut), à l'\''heure locale' ;;
@@ -2572,12 +2573,12 @@ _t_fr() {
     'Git index could not be read: %s') _T='L’index Git n’a pas pu être lu : %s' ;;
     'OUT OF CREDITS: provider %s has no credits left. Add credits or switch provider/model, then relaunch. Do not wait: this is not a timed reset.') _T='PLUS DE CRÉDITS : le fournisseur %s n’a plus de crédits. Ajoute des crédits ou change de fournisseur/modèle, puis relance. N’attends pas : ce n’est pas une réinitialisation datée.' ;;
     'Private history not verified · run loomy privacy adopt') _T='Historique privé non vérifié · lance loomy privacy adopt' ;;
-    '- Private history not verified: .loomy/ai.git was not created by Loomy, so it is never synced automatically. Tell the user in one line to review it and run: loomy privacy adopt.') _T='- Historique privé non vérifié : .loomy/ai.git n'\''a pas été créé par Loomy, il n'\''est donc jamais synchronisé automatiquement. Dis à l'\''utilisateur en une ligne de le vérifier et de lancer : loomy privacy adopt.' ;;
+    '- Private history not verified: .loomy/ai.git is not trusted yet, so it is never synced automatically. Tell the user in one line to review it and run: loomy privacy adopt.') _T='- Historique privé non vérifié : .loomy/ai.git n'\''est pas encore approuvé, il n'\''est donc jamais synchronisé automatiquement. Dis à l'\''utilisateur en une ligne de le vérifier et de lancer : loomy privacy adopt.' ;;
     'too old') _T='trop ancien' ;;
     'Loomy needs git 2.15 or newer (git 2.44+ recommended)') _T='Loomy demande git 2.15 ou plus récent (git 2.44+ recommandé)' ;;
     'private history verified') _T='historique privé vérifié' ;;
     'not synced automatically until then') _T='pas de sauvegarde automatique d'\''ici là' ;;
-    'a .loomy/ai.git is here but Loomy did not create it') _T='un .loomy/ai.git est présent mais Loomy ne l'\''a pas créé' ;;
+    'a .loomy/ai.git is here and is not trusted yet') _T='un .loomy/ai.git est présent mais pas encore approuvé' ;;
     'Can'\''t record the private repository') _T='Impossible d'\''enregistrer le dépôt privé' ;;
     'nothing was committed or pushed') _T='rien n'\''a été validé ni poussé' ;;
     'not verified') _T='non vérifié' ;;
@@ -2588,5 +2589,34 @@ _t_fr() {
     'nothing is backed up automatically until then') _T='rien n'\''est sauvegardé automatiquement d'\''ici là' ;;
     'the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt') _T='le projet suit .loomy/ai.git : arrête de le suivre (git rm -r --cached .loomy/ai.git), puis lance loomy privacy adopt' ;;
     'if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)') _T='si .loomy/ai.git était suivi : après l'\''avoir retiré de l'\''index, lance loomy privacy adopt (la confiance est révoquée d'\''ici là)' ;;
+    'config missing') _T='configuration manquante' ;;
+    'config key not allowed: %s') _T='clé de configuration refusée : %s' ;;
+    'remote name not allowed: %s') _T='nom de dépôt distant refusé : %s' ;;
+    'remote other than origin: %s') _T='dépôt distant autre qu'\''origin : %s' ;;
+    'pushurl differs from url: remote.%s') _T='pushurl différente de url : remote.%s' ;;
+    'remote.%s.url has several values') _T='remote.%s.url a plusieurs valeurs' ;;
+    'local remote refused: not an absolute path (%s)') _T='dépôt distant local refusé : chemin non absolu (%s)' ;;
+    'local remote refused: inside the project (%s)') _T='dépôt distant local refusé : dans le projet (%s)' ;;
+    'local remote refused: not an existing directory (%s)') _T='dépôt distant local refusé : dossier inexistant (%s)' ;;
+    'local remote refused: not owned by you (%s)') _T='dépôt distant local refusé : il ne t'\''appartient pas (%s)' ;;
+    'local remote refused: use a plain absolute path, not an escaped file:// URL (%s)') _T='dépôt distant local refusé : utilise un chemin absolu simple, pas une URL file:// encodée (%s)' ;;
+    'use an absolute path outside the project: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt') _T='utilise un chemin absolu hors du projet : git --git-dir=.loomy/ai.git remote set-url origin <chemin>, puis loomy privacy adopt' ;;
+    'redirecting file present: %s') _T='fichier de redirection présent : %s' ;;
+    'attributes present: %s') _T='attributs présents : %s' ;;
+    'legacy remote file present: %s') _T='ancien fichier de dépôt distant présent : %s' ;;
+    'hook present: %s') _T='hook présent : %s' ;;
+    'operation in progress: %s') _T='opération en cours : %s' ;;
+    'no companion at .loomy/ai.git') _T='aucun dépôt privé dans .loomy/ai.git' ;;
+    'project layout not supported') _T='organisation du projet non prise en charge' ;;
+    'companion is a link') _T='le dépôt privé est un lien' ;;
+    'companion is not owned by you') _T='le dépôt privé ne t'\''appartient pas' ;;
+    'companion is tracked by the project repository') _T='le dépôt privé est suivi par le dépôt du projet' ;;
+    'no remote.origin.url in the companion config') _T='pas de remote.origin.url dans la configuration du dépôt privé' ;;
+    'adopt needs a terminal to confirm the remote URLs') _T='adopt demande un terminal pour confirmer les URL distantes' ;;
+    'Remote URLs (fetch and push) this repository will use:') _T='URL distantes (lecture et envoi) que ce dépôt utilisera :' ;;
+    '(none)') _T='(aucune)' ;;
+    'Trust this repository and these URLs? [y/N] ') _T='Faire confiance à ce dépôt et à ces URL ? [o/N] ' ;;
+    'not confirmed') _T='non confirmé' ;;
+    'cannot write the user config') _T='impossible d'\''écrire la configuration utilisateur' ;;
   esac
 }

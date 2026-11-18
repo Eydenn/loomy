@@ -473,7 +473,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         for (1..3) { $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$f],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
         my $calls=() = bytes($gl) =~ /ls/g; is($calls,1,'S1 cache: (c) a Git that cannot answer is asked once, then the refusal is cached');
         ok(!-s "$f/.loomy/logs/events.jsonl",'S1 cache: (c) and nothing is written (fail closed)');
-        ok(!-e "$f/.loomy/logs/gate-v1",'LR7 a refusal never writes into the project'); my @mk=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/*"); is(scalar(@mk),1,'LR7 the refusal marker lives in the per-user cache directory'); ok(-z $mk[0] && $mk[0] =~ m{/[0-9a-f]{64}\z},'LR7 empty marker named by a hash');
+        ok(!-e "$f/.loomy/logs/gate-v1",'LR7 a refusal never writes into the project'); my @mk=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/r-*"); is(scalar(@mk),1,'LR7 the refusal marker lives in the per-user cache directory'); ok(-z $mk[0] && $mk[0] =~ m{/r-[0-9a-f]{64}\z},'LR7 empty marker named by a hash');
         unlink @mk;
     }
     {   # LR7: a tracked verdict stores nothing, and a shipped tracked gate-v1 is never replaced.
@@ -496,6 +496,32 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $before=manifest("$y/.loomy/logs");
         for my $e (qw(codex claude reducer)) { $E{$e}{run}->($y); is_deeply(manifest("$y/.loomy/logs"),$before,"LR7 direct $e entry over a tracked journal changes nothing") }
         is(bytes("$y/.loomy/logs/events.jsonl"),"orig\n",'LR7 the tracked journal is byte for byte unchanged');
+    }
+    {   # LR7: the tracked verdict is cached outside the project (hooks stay Git-free), and the cache directory is created when absent.
+        my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
+        my $gl="$work/git-tracked"; unlink $gl; my @before=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/t-*");
+        my $o=$j->('ai_journal_prepare',$x); isnt($o->{rc},0,'LR7 tracked: refused');
+        my @t=grep {my $f=$_; !grep {$_ eq $f} @before} glob("$ENV{XDG_CACHE_HOME}/loomy/gate/t-*"); is(scalar(@t),1,'LR7 the tracked verdict is cached in the per-user directory'); is(bytes($t[0]),'tracked','LR7 with the value tracked');
+        ok(!-e "$x/.loomy/logs/gate-v1",'LR7 and nothing about it is written in the project');
+        put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"});
+        ok(!-e $gl || bytes($gl) !~ /ls-files/,'LR7 a second hook over a tracked runtime spawns no Git');
+        # The cache directory is created (0700, each missing level) under a HOME that is ours.
+        my $c="$work/newcache"; my $y=project(1); sleep 2.2; $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$y],env=>{XDG_CACHE_HOME=>"$c/sub"});
+        ok(!-d "$c/sub/loomy/gate",'LR7 a missing parent of the base is not created (one level only)');
+        $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$c}); ok(-d "$c/loomy/gate" && ((stat "$c/loomy/gate")[2]&07777)==0700,'LR7 an absent cache base is created with mode 0700 levels');
+        my $ln="$work/symcache"; symlink("$work/elsewhere","$ln"); make_path("$work/elsewhere"); run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$ln});
+        ok(!-e "$work/elsewhere/loomy",'LR7 a symlinked cache base is refused');
+    }
+    {   # LR7: an aliased worktree (its logs symlinked to the main project logs, which track events.jsonl) writes nothing into main.
+        my $m=project(1); my $w="$work/wt".++$pn; git($m,'worktree','add','--quiet','-b',"wt$pn",$w);   # the worktree is taken before the main project tracks anything
+        put("$m/.loomy/logs/events.jsonl","orig\n"); git($m,'add','-f','.loomy/logs/events.jsonl'); commit_all($m);
+        symlink("$m/.loomy","$w/.loomy") or die; codex_source($w); claude_source($w,'cl-wt',1); sleep 2.2;
+        my $ctxw=eval {Loomy::RuntimePaths::resolve($w)}; is($ctxw ? $ctxw->{root} : '',$m,'LR7 aliased worktree: its runtime resolves to the main project');
+        my $before=manifest("$m/.loomy");
+        $E{codex}{run}->($w); $E{claude}{run}->($w); $E{reducer}{run}->($w);
+        is_deeply(manifest("$m/.loomy"),$before,'LR7 aliased worktree: direct codex, claude and reducer entries create nothing in the main logs');
+        ok(!-e "$m/.loomy/logs/collector.lock" && !-e "$m/.loomy/logs/collector-owner-v1.json",'LR7 aliased worktree: no collector lock or owner record in main');
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);

@@ -71,10 +71,15 @@ sub begin_call {
     }
     my $abs=abs_path($root)//return;
     return unless -d "$abs/.loomy/logs";   # adapters never scaffold runtime storage
-    return unless gate_open($abs);
-    return {guard=>undef,context=>undef,store=>$abs,roots=>[$abs],revision=>'bare',transient=>0,bare=>1} unless $bare_election;
+    unless ($bare_election) {
+        return unless gate_open($abs);
+        my $phys=abs_path("$abs/.loomy/logs"); return unless defined $phys;   # an aliased .loomy or logs: the directory written is the physical one
+        if ($phys =~ s{/\.loomy/logs\z}{} && $phys ne $abs) { return unless gate_open($phys) }
+        return {guard=>undef,context=>undef,store=>$abs,roots=>[$abs],revision=>'bare',transient=>0,bare=>1};
+    }
     my $ctx=eval { Loomy::RuntimePaths::resolve($abs) } or return;
     return unless $ctx->{loomy} && $ctx->{logs};
+    return unless gate_open($ctx->{root});   # the resolved runtime (an aliased worktree logs directory) is the one that is written
     my $r=Loomy::CollectorOwner::try_acquire($ctx,build_id());
     return unless ref($r) eq 'HASH' && ($r->{status}//'') eq 'owned';
     return {guard=>$r->{guard},context=>$ctx,store=>$ctx->{root},roots=>scope_roots($r->{scope_set}),

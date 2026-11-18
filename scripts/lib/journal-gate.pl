@@ -4,10 +4,11 @@
 # An "ok" verdict is answered from a private cache file (.loomy/logs/gate-v1: sha256 of a key made of the index stat,
 # the .loomy and .loomy/logs identity and the resolved Git directory; no path or inode is stored in clear) so the common
 # case costs three stats and a small read, no Git. Only "ok" is ever stored in the project: a tracked or refused verdict
-# never writes into a tracked or refused logs directory (it is kept 2 s in the process). Not a repository: nothing to
+# never writes into a tracked or refused logs directory. Not a repository: nothing to
 # track. A Git that cannot answer is a refusal (fail closed); that refusal is remembered 30 s by an empty marker file
 # outside the project (per-user cache directory, named by sha256 of the project root) so each hook does not rerun
-# `git ls-files`; the marker is dropped by the next conclusive verdict. Nothing is cached when logs does not exist yet,
+# `git ls-files`; the marker is dropped by the next conclusive verdict. A tracked verdict is cached in the same
+# per-user directory, named by the verdict key (so any index or identity change invalidates it), never in the project. Nothing is cached when logs does not exist yet,
 # when the Git directory is not a valid repository, or when the index changed in the last 2 s (racily clean). An answer
 # that needed Git is kept 2 s in the process (a long-lived writer does not spawn Git per write); a cache hit is never
 # memoized, so an owner re-checks at every poll and sees a file that became tracked at once.
@@ -28,17 +29,35 @@ sub _ident {
     my ($root,$dir,$idx)=@_; my @a=lstat("$root/.loomy"); my @b=lstat($dir);
     return Digest::SHA::sha256_hex(join("|","v2",$idx,join(",",@a[0,1]),join(",",@b[0,1])));
 }
-# Refusal marker outside the project: $XDG_CACHE_HOME or ~/.cache, under loomy/gate, one empty file per project root.
-sub _marker {
-    my ($root,$create)=@_; my $base=$ENV{XDG_CACHE_HOME}; $base=defined $ENV{HOME} ? "$ENV{HOME}/.cache" : "" unless defined $base && $base =~ m{\A/};
-    return unless length $base && -d $base;
-    my $d="$base/loomy"; my $g="$d/gate";
-    for my $x ($d,$g) {
+# Per-user cache directory outside the project: $XDG_CACHE_HOME (absolute) or ~/.cache, then loomy/gate. Levels that are
+# missing are created 0700 (create only); every existing level must be a real directory (never a symlink) owned by the
+# user and not group/world writable (the base only not world writable, as ~/.cache is usually 0755); HOME must be ours
+# to create the base. Returns the directory or undef.
+sub _cdir {
+    my $create=shift; my $base=$ENV{XDG_CACHE_HOME}; $base=defined $ENV{HOME} && $ENV{HOME} =~ m{\A/} ? "$ENV{HOME}/.cache" : "" unless defined $base && $base =~ m{\A/};
+    return unless length $base;
+    my $i=0;
+    for my $x ($base,"$base/loomy","$base/loomy/gate") {
         my @s=lstat($x);
-        if (!@s) { return unless $create && mkdir($x,0700); @s=lstat($x) }
-        return unless @s && -d _ && !-l _ && $s[4]==$< && !($s[2]&022);
+        if (!@s) {
+            return unless $create;
+            if ($i==0 && defined $ENV{HOME}) { my @h=stat($ENV{HOME}); return unless @h && -d _ && $h[4]==$< }
+            return unless mkdir($x,0700); @s=lstat($x);
+        }
+        return unless @s && -d _ && !-l _ && $s[4]==$< && !($s[2]&($i ? 022 : 002));
+        $i++;
     }
-    return "$g/".Digest::SHA::sha256_hex($root);
+    return "$base/loomy/gate";
+}
+# Marker file: "r-<sha256 of the root>" is the 30 s refusal, "t-<verdict key>" the tracked verdict (the key changes with
+# the index stat and the identity of .loomy and .loomy/logs, so any change invalidates it). Both are empty-ish and hold
+# no path.
+sub _marker {
+    my ($name,$create)=@_; my $d=_cdir($create) or return; return "$d/$name";
+}
+sub _mark {
+    my ($path,$val)=@_; return unless defined $path;
+    if (sysopen(my $h,$path,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_TRUNC()|Fcntl::O_NOFOLLOW(),0600)) { syswrite($h,$val); close $h; utime(time,time,$path) }
 }
 # ($key,$value) of the cache file, or ().
 sub _read {
@@ -74,25 +93,27 @@ sub _index {
 sub verdict {
     my ($dir,$fresh)=@_; my $root=_root($dir) or return (1,undef);
     my ($norepo,$idx)=_index($root); return (1,undef) if $norepo;
-    my $existed=-d $dir && !-l $dir;   # a verdict taken while logs is absent is never stored
+    my $existed=-d $dir && !-l $dir && !-l "$root/.loomy";   # never stored while logs is absent, nor through an aliased .loomy or logs (the directory written is another project's)
     my $now=time; my $key=($existed && defined $idx) ? _ident($root,$dir,$idx) : undef;
     if ($existed && !$fresh && defined $key) {
         my ($k,$v)=_read("$dir/gate-v1");
         return (1,undef,1) if defined $k && $k eq $key && $v eq "ok";   # third value: answered from the cache file, no memo needed
     }
-    my $mk=_marker($root);
+    my $tk=defined $key ? _marker("t-$key") : undef;
+    if (!$fresh && defined $tk) { my @t=lstat($tk); return (0,undef,1) if @t && -f _ && $t[4]==$< && $t[7]==7 }   # tracked verdict cached outside the project
+    my $mk=_marker("r-".Digest::SHA::sha256_hex($root));
     unless ($fresh || !defined $mk) {
         my @m=lstat($mk); return (0,undef) if @m && -f _ && $m[4]==$< && $m[9]<=$now+1 && $now-$m[9]<$REFUSAL_TTL;
     }
     my ($path,$why)=eval { require "$LIB/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
     $why="index-error" unless defined $why;
     if ($why eq "timeout" || $why eq "index-error") {
-        my $mw=_marker($root,1);
-        if (defined $mw && sysopen(my $h,$mw,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_NOFOLLOW(),0600)) { close $h; utime($now,$now,$mw) }
+        _mark(_marker("r-".Digest::SHA::sha256_hex($root),1),"");
         return (0,undef);
     }
     unlink $mk if defined $mk;
     my $allowed=$why eq "tracked" ? 0 : 1;
+    _mark(_marker("t-$key",1),"tracked") if !$allowed && defined $key;
     return ($allowed,($allowed && defined $key) ? [$key,"ok"] : undef);
 }
 sub store {

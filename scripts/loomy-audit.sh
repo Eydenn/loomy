@@ -44,7 +44,7 @@ case "$TOOL" in ""|claude|codex) ;; *) t "%s: claude or codex" "--tool" >&2; ech
 
 [[ -n "$ROOT" ]] || ROOT="$(ai_project_root)"
 ROOT="$(cd "$ROOT" 2>/dev/null && pwd -P)" || { t "Error: folder not found: %s" "$ROOT" >&2; echo >&2; exit 1; }
-top="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+top="$(loomy_git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "$top" ]]; then
   t "loomy audit works on a Git repository (the fixes go on a branch): run it inside one, or git init first." >&2; echo >&2; exit 1
 fi
@@ -72,7 +72,7 @@ fi
 # ---------------------------------------------------------------- mission
 had_loomy=0; [[ -d "$ROOT/.loomy" ]] && had_loomy=1
 exclude_add() {   # exclude_add <path>: kept out of Git on this machine only (.git/info/exclude)
-  local ex; ex="$(git -C "$ROOT" rev-parse --git-path info/exclude 2>/dev/null)"; [[ "$ex" == /* ]] || ex="$ROOT/$ex"
+  local ex; ex="$(loomy_git -C "$ROOT" rev-parse --git-path info/exclude 2>/dev/null)"; [[ "$ex" == /* ]] || ex="$ROOT/$ex"
   mkdir -p "$(dirname "$ex")"
   grep -qxF "$1" "$ex" 2>/dev/null || printf '%s\n' "$1" >>"$ex"
 }

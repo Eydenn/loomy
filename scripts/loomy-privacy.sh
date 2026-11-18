@@ -457,7 +457,7 @@ create_companion() {
     fi
     url="https://github.com/$owner/$AI_REPO.git"
   fi
-  git init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
+  loomy_git_user init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
   privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
   privacy_companion_config "$ROOT"

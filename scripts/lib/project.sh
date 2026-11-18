@@ -8,6 +8,9 @@
 
 # shellcheck source=memory.sh
 source "$(dirname "${BASH_SOURCE[0]}")/memory.sh"
+# loomy_git (the Git chokepoint) lives in models.sh: load it when a caller sourced this library alone.
+# shellcheck source=models.sh
+declare -F loomy_git >/dev/null 2>&1 || source "$(dirname "${BASH_SOURCE[0]}")/models.sh"
 
 LP_DONE=()   # what the last repair did (one short line each)
 LP_HOOKS_CLAUDE=unchecked
@@ -115,7 +118,7 @@ loomy_gitignore_sync() {
   local r="$1" f="$1/.gitignore" src blk tmp
   LP_GI_CHANGED=0
   [[ ! -L "$f" ]] || return 0
-  if [[ ! -f "$f" ]] && ! git -C "$r" rev-parse --is-inside-work-tree >/dev/null 2>&1; then return 0; fi
+  if [[ ! -f "$f" ]] && ! loomy_git -C "$r" rev-parse --is-inside-work-tree >/dev/null 2>&1; then return 0; fi
   blk="$(mktemp "${TMPDIR:-/tmp}/loomy-gi.XXXXXX")" || return 0
   tmp="$(mktemp "${TMPDIR:-/tmp}/loomy-gi.XXXXXX")" || { rm -f "$blk"; return 0; }
   loomy_history_block >"$blk"
@@ -155,9 +158,9 @@ loomy_gitignore_sync() {
 
 # loomy_history_tracked <root>: history / work files tracked by the project repository (one path per line).
 loomy_history_tracked() {
-  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  loomy_git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   loomy_history_specs_load || return 0
-  git -C "$1" ls-files -- "${LOOMY_HISTORY_SPECS[@]}" 2>/dev/null || true
+  loomy_git -C "$1" ls-files -- "${LOOMY_HISTORY_SPECS[@]}" 2>/dev/null || true
   return 0
 }
 
@@ -226,8 +229,8 @@ loomy_project_migrate() {
     loomy_project_migrate_checkpoints "$r"
   fi
   [[ -d "$r/.ai" && ! -e "$r/.loomy/docs" && -d "$r/.loomy" ]] || return 0
-  if git -C "$r" ls-files --error-unmatch .ai >/dev/null 2>&1 || [[ -n "$(git -C "$r" ls-files .ai 2>/dev/null | head -1)" ]]; then
-    git -C "$r" mv .ai .loomy/docs >/dev/null 2>&1 || mv "$r/.ai" "$r/.loomy/docs"
+  if loomy_git -C "$r" ls-files --error-unmatch .ai >/dev/null 2>&1 || [[ -n "$(loomy_git -C "$r" ls-files .ai 2>/dev/null | head -1)" ]]; then
+    loomy_git -C "$r" mv .ai .loomy/docs >/dev/null 2>&1 || mv "$r/.ai" "$r/.loomy/docs"
   else
     mv "$r/.ai" "$r/.loomy/docs"
   fi

@@ -228,7 +228,7 @@ ai_provider_reason() {
 
 # Fingerprint only dirty paths, including untracked files, without reading ignored private files.
 ai_delegate_file_snapshot() {
-  git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all | perl -MJSON::PP -MDigest::SHA=sha256_hex -e '
+  loomy_git -C "$ROOT" status --porcelain=v1 -z --untracked-files=all | perl -MJSON::PP -MDigest::SHA=sha256_hex -e '
     my $root=shift; local $/; my @entries=split /\0/,<STDIN>; my %files;
     while (@entries) {
       my $entry=shift @entries; my $status=substr($entry,0,2); my $path=substr($entry,3);

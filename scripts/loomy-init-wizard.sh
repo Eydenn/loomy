@@ -143,9 +143,9 @@ yaml_q() {
 HAS_GIT=0; IS_REPO=0; PARENT_REPO=""; PARENT_REMOTE=""; HAS_CLAUDE=0; HAS_CODEX=0; GIT_REMOTE=""; GH_USER=""; REMOTE_VIS=""
 # Existing project adopted on a dedicated branch (set by loomy init; found again when the brief is redone).
 ADOPT_BRANCH="${LOOMY_ADOPT_BRANCH:-}"; BASE_BRANCH="${LOOMY_BASE_BRANCH:-}"
-cur_branch="$(git -C "$TARGET" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+cur_branch="$(loomy_git -C "$TARGET" symbolic-ref --short -q HEAD 2>/dev/null || true)"
 if [[ -z "$ADOPT_BRANCH" && ( "$cur_branch" == loomy/adopt || "$cur_branch" == loomy/setup ) ]]; then
-  ADOPT_BRANCH="$cur_branch"; BASE_BRANCH="$(git -C "$TARGET" config --get "branch.$cur_branch.loomy-base" 2>/dev/null || echo main)"
+  ADOPT_BRANCH="$cur_branch"; BASE_BRANCH="$(loomy_git -C "$TARGET" config --get "branch.$cur_branch.loomy-base" 2>/dev/null || echo main)"
 fi
 
 env_check() {
@@ -156,11 +156,11 @@ env_check() {
 
   if command -v git >/dev/null 2>&1; then
     HAS_GIT=1
-    if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if loomy_git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
       local remote top
-      remote="$(git -C "$TARGET" remote 2>/dev/null | head -1)"
-      if [[ -n "$remote" ]]; then GIT_REMOTE="$remote $(git -C "$TARGET" remote get-url "$remote" 2>/dev/null)"; fi
-      top="$(cd "$(git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)"
+      remote="$(loomy_git -C "$TARGET" remote 2>/dev/null | head -1)"
+      if [[ -n "$remote" ]]; then GIT_REMOTE="$remote $(loomy_git -C "$TARGET" remote get-url "$remote" 2>/dev/null)"; fi
+      top="$(cd "$(loomy_git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)"
       if [[ "$top" == "$(cd "$TARGET" && pwd -P)" ]]; then IS_REPO=1
       else
         # Folder inside a parent repository: dedicated repository, or monorepo (Git question).
@@ -508,7 +508,7 @@ ask_all() {
   fi
   GITHUB_REPO="no"; REMOTE_NAME_NOTE=""; REPO_NAME="$SLUG"; AI_REPO_NAME=""; REMOTE_HAS_HISTORY=0
   # Answer changed on the way back (←): a setup branch chosen for an existing repository is dropped.
-  if [[ "$ADOPT_BRANCH" == loomy/setup && -z "$(git -C "$TARGET" rev-parse -q --verify HEAD 2>/dev/null)" ]]; then ADOPT_BRANCH=""; BASE_BRANCH=""; fi
+  if [[ "$ADOPT_BRANCH" == loomy/setup && -z "$(loomy_git -C "$TARGET" rev-parse -q --verify HEAD 2>/dev/null)" ]]; then ADOPT_BRANCH=""; BASE_BRANCH=""; fi
   if (( IS_REPO )) || [[ "$GIT_INIT" == "yes" ]]; then
     if [[ -n "$GIT_REMOTE" ]]; then
       # The remote repository should have the project's name: otherwise we flag it (without renaming anything).
@@ -962,22 +962,22 @@ ui_steps_begin "$(t "SETUP")" "${steps[@]}"
 st=0
 if [[ "$GIT_INIT" == "yes" ]]; then
   ui_step_run $st
-  if git -C "$TARGET" init -q -b main; then ui_step_done $st ok "$(t "Git repository initialised")" "$(t "main branch")"
+  if loomy_git_user -C "$TARGET" init -q -b main; then ui_step_done $st ok "$(t "Git repository initialised")" "$(t "main branch")"
   else ui_step_done $st fail "$(t "Git repository not initialised")" "$(t "git init failed")"; fi
   st=$(( st + 1 ))
 fi
 GH_FAIL=""
 if [[ "$GITHUB_REPO" == "existing" && -n "$GH_USER" ]]; then
   ui_step_run $st
-  if git -C "$TARGET" remote get-url origin >/dev/null 2>&1; then
+  if loomy_git -C "$TARGET" remote get-url origin >/dev/null 2>&1; then
     ui_step_done $st warn "$(t "GitHub repository not linked")" "$(t "an origin remote already exists")"; GITHUB_REPO="no"
-  elif git -C "$TARGET" remote add origin "https://github.com/$GH_USER/$REPO_NAME.git"; then
+  elif loomy_git_user -C "$TARGET" remote add origin "https://github.com/$GH_USER/$REPO_NAME.git"; then
     if (( REMOTE_HAS_HISTORY )); then
       # Its content comes into the folder; the setup goes on a branch, the default branch stays untouched.
-      if git -C "$TARGET" fetch -q origin "$BASE_BRANCH" 2>/dev/null \
-        && git -C "$TARGET" checkout -q -B "$BASE_BRANCH" "origin/$BASE_BRANCH" 2>/dev/null \
-        && git -C "$TARGET" checkout -q -b "$ADOPT_BRANCH" 2>/dev/null; then
-        git -C "$TARGET" config "branch.$ADOPT_BRANCH.loomy-base" "$BASE_BRANCH"
+      if loomy_git_user -C "$TARGET" fetch -q origin "$BASE_BRANCH" 2>/dev/null \
+        && loomy_git_user -C "$TARGET" checkout -q -B "$BASE_BRANCH" "origin/$BASE_BRANCH" 2>/dev/null \
+        && loomy_git_user -C "$TARGET" checkout -q -b "$ADOPT_BRANCH" 2>/dev/null; then
+        loomy_git_user -C "$TARGET" config "branch.$ADOPT_BRANCH.loomy-base" "$BASE_BRANCH"
         ui_step_done $st ok "$(t "GitHub repository linked")" "$(t "content retrieved, branch %s" "$ADOPT_BRANCH")"
       else
         ui_step_done $st warn "$(t "GitHub repository linked")" "$(t "content not retrieved (files in the way): git pull origin %s" "$BASE_BRANCH")"

@@ -32,10 +32,10 @@ cd "$ROOT" || exit 1
 
 # ---------------------------------------------------------------- file list
 # Git's view when the folder is a repository (what is really versioned), otherwise a filtered walk.
-IS_GIT=0; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [[ "$(cd "$(git rev-parse --show-toplevel)" && pwd -P)" == "$ROOT" ]] && IS_GIT=1
+IS_GIT=0; loomy_git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [[ "$(cd "$(loomy_git rev-parse --show-toplevel)" && pwd -P)" == "$ROOT" ]] && IS_GIT=1
 FILES="$(mktemp "${TMPDIR:-/tmp}/loomy-assess.XXXXXX")"; trap 'rm -f "$FILES"' EXIT
 if (( IS_GIT )); then
-  git ls-files -co --exclude-standard 2>/dev/null >"$FILES"
+  loomy_git ls-files -co --exclude-standard 2>/dev/null >"$FILES"
 else
   find . -type f ! -path './.git/*' ! -path '*/node_modules/*' ! -path '*/.venv/*' ! -path '*/vendor/*' \
     ! -path '*/dist/*' ! -path '*/build/*' ! -path '*/target/*' 2>/dev/null | sed 's|^\./||' >"$FILES"
@@ -167,24 +167,24 @@ ADRS="$(count_re '(adr|decisions?)/.*\.md$')"
 
 # ---------------------------------------------------------------- Git history
 GIT_LINES=()
-if (( IS_GIT )) && git rev-parse HEAD >/dev/null 2>&1; then
-  n_commits="$(git rev-list --count HEAD 2>/dev/null)"
-  first="$(git log --reverse --format=%cs 2>/dev/null | head -1)"; last="$(git log -1 --format=%cs 2>/dev/null)"
-  recent="$(git rev-list --count --since=90.days HEAD 2>/dev/null)"
-  n_authors="$(git log --format='%aN' 2>/dev/null | sort -u | grep -c . | tr -d ' ')"
-  GIT_LINES+=("$(t "Branch: %s · %s commits, from %s to %s · %s in the last 90 days" "$(git symbolic-ref --short HEAD 2>/dev/null || t "detached")" "$n_commits" "$first" "$last" "$recent")")
-  GIT_LINES+=("$(t "Authors: %s (most active: %s)" "$n_authors" "$(git shortlog -sn --no-merges HEAD 2>/dev/null | head -5 | awk '{ n = $1; $1 = ""; sub(/^ /, ""); printf "%s%s (%s)", (NR > 1 ? ", " : ""), $0, n }')")")
-  remotes="$(git remote -v 2>/dev/null | awk '$3 == "(fetch)" { printf "%s%s %s", (n++ ? ", " : ""), $1, $2 }')"
+if (( IS_GIT )) && loomy_git rev-parse HEAD >/dev/null 2>&1; then
+  n_commits="$(loomy_git rev-list --count HEAD 2>/dev/null)"
+  first="$(loomy_git log --reverse --format=%cs 2>/dev/null | head -1)"; last="$(loomy_git log -1 --format=%cs 2>/dev/null)"
+  recent="$(loomy_git rev-list --count --since=90.days HEAD 2>/dev/null)"
+  n_authors="$(loomy_git log --format='%aN' 2>/dev/null | sort -u | grep -c . | tr -d ' ')"
+  GIT_LINES+=("$(t "Branch: %s · %s commits, from %s to %s · %s in the last 90 days" "$(loomy_git symbolic-ref --short HEAD 2>/dev/null || t "detached")" "$n_commits" "$first" "$last" "$recent")")
+  GIT_LINES+=("$(t "Authors: %s (most active: %s)" "$n_authors" "$(loomy_git shortlog -sn --no-merges HEAD 2>/dev/null | head -5 | awk '{ n = $1; $1 = ""; sub(/^ /, ""); printf "%s%s (%s)", (NR > 1 ? ", " : ""), $0, n }')")")
+  remotes="$(loomy_git remote -v 2>/dev/null | awk '$3 == "(fetch)" { printf "%s%s %s", (n++ ? ", " : ""), $1, $2 }')"
   [[ -n "$remotes" ]] && GIT_LINES+=("$(t "Remotes: %s" "$remotes")")
-  n_branches="$(git branch -a 2>/dev/null | grep -vc 'HEAD ->' | tr -d ' ')"
+  n_branches="$(loomy_git branch -a 2>/dev/null | grep -vc 'HEAD ->' | tr -d ' ')"
   GIT_LINES+=("$(t "Branches: %s" "$n_branches")")
-  conv="$(git log -200 --format=%s 2>/dev/null | grep -cE '^(feat|fix|chore|docs|refactor|test|ci|build|perf|style)(\(.+\))?!?:' | tr -d ' ')"
-  tot="$(git log -200 --format=%s 2>/dev/null | grep -c . | tr -d ' ')"
+  conv="$(loomy_git log -200 --format=%s 2>/dev/null | grep -cE '^(feat|fix|chore|docs|refactor|test|ci|build|perf|style)(\(.+\))?!?:' | tr -d ' ')"
+  tot="$(loomy_git log -200 --format=%s 2>/dev/null | grep -c . | tr -d ' ')"
   (( tot > 0 )) && GIT_LINES+=("$(t "Conventional commits: %s of the last %s messages" "$conv" "$tot")")
-  HOT="$(git log --since=180.days --name-only --format= 2>/dev/null | grep -v '^$' | grep -vE '^(\.loomy/|START\.md$)' | sort | uniq -c | sort -rn | head -8 |
+  HOT="$(loomy_git log --since=180.days --name-only --format= 2>/dev/null | grep -v '^$' | grep -vE '^(\.loomy/|START\.md$)' | sort | uniq -c | sort -rn | head -8 |
     awk '{ n = $1; sub(/^ *[0-9]+ /, ""); printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $0, n }')"
   [[ -n "$HOT" ]] && GIT_LINES+=("$(t "Most changed files (180 days): %s" "$HOT")")
-  DIRTY="$(git status --porcelain 2>/dev/null | grep -v -E ' (\.loomy/|START\.md|\.gitignore|\.claude/|\.codex/)' | grep -c . | tr -d ' ')"
+  DIRTY="$(loomy_git status --porcelain 2>/dev/null | grep -v -E ' (\.loomy/|START\.md|\.gitignore|\.claude/|\.codex/)' | grep -c . | tr -d ' ')"
 fi
 
 # ---------------------------------------------------------------- sensitive areas, debt, risks
@@ -194,10 +194,10 @@ N_SENS="$(grep -ciE '(auth|login|session|passw|payment|billing|stripe|checkout|s
 SECRETS="$(grep -E '(^|/)(\.env(\..+)?|.*\.pem|id_rsa|id_ed25519|.*\.p12|.*\.key|credentials\.json|secrets?\.(ya?ml|json))$' "$FILES" | grep -vE '\.env\.(example|sample|template)$' | head -8 |
   awk '{ printf "%s`%s`", (NR > 1 ? ", " : ""), $0 }')"
 if (( IS_GIT )); then
-  TODO_N="$(git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | awk -F: '{ s += $NF } END { print s + 0 }')"
-  TODO_TOP="$(git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | sort -t: -k2 -rn | head -5 | awk -F: '{ printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $1, $2 }')"
+  TODO_N="$(loomy_git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | awk -F: '{ s += $NF } END { print s + 0 }')"
+  TODO_TOP="$(loomy_git grep -I -c -w -E 'TODO|FIXME|HACK|XXX' -- . ':!.loomy' ':!START.md' 2>/dev/null | sort -t: -k2 -rn | head -5 | awk -F: '{ printf "%s`%s` (%s)", (NR > 1 ? ", " : ""), $1, $2 }')"
   # Sizes from Git's index (fast on large repositories, safe with spaces in names).
-  BIG="$(git ls-tree -r -l HEAD 2>/dev/null | awk -F '\t' -v mb="$(t "MB")" '{ split($1, a, " "); if (a[4] + 0 > 1048576) printf "%s`%s` (%.1f %s)", (n++ ? ", " : ""), $2, a[4] / 1048576, mb }' | cut -c1-400)"
+  BIG="$(loomy_git ls-tree -r -l HEAD 2>/dev/null | awk -F '\t' -v mb="$(t "MB")" '{ split($1, a, " "); if (a[4] + 0 > 1048576) printf "%s`%s` (%.1f %s)", (n++ ? ", " : ""), $2, a[4] / 1048576, mb }' | cut -c1-400)"
 else
   TODO_N="$(tr '\n' '\0' <"$FILES" | xargs -0 grep -I -hc -w -E 'TODO|FIXME|HACK|XXX' 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')"; TODO_TOP=""; BIG=""
 fi

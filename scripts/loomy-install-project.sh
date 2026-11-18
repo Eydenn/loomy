@@ -362,14 +362,14 @@ fi
 # branch is never touched, and merging back is the user's call.
 adopt_branch() {
   (( ADOPT_BRANCH )) || return 0
-  git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  [[ "$(cd "$(git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)" == "$(cd "$TARGET" && pwd -P)" ]] || return 0
-  git -C "$TARGET" rev-parse --verify -q HEAD >/dev/null || return 0
-  local base; base="$(git -C "$TARGET" symbolic-ref --short -q HEAD)" || return 0
+  loomy_git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  [[ "$(cd "$(loomy_git -C "$TARGET" rev-parse --show-toplevel)" && pwd -P)" == "$(cd "$TARGET" && pwd -P)" ]] || return 0
+  loomy_git -C "$TARGET" rev-parse --verify -q HEAD >/dev/null || return 0
+  local base; base="$(loomy_git -C "$TARGET" symbolic-ref --short -q HEAD)" || return 0
   local br="loomy/adopt"
-  if [[ "$base" == "$br" ]]; then base="$(git -C "$TARGET" config --get "branch.$br.loomy-base" || echo main)"
-  elif git -C "$TARGET" show-ref --verify -q "refs/heads/$br"; then git -C "$TARGET" checkout -q "$br" || return 0
-  else git -C "$TARGET" checkout -q -b "$br" || return 0; git -C "$TARGET" config "branch.$br.loomy-base" "$base"; fi
+  if [[ "$base" == "$br" ]]; then base="$(loomy_git -C "$TARGET" config --get "branch.$br.loomy-base" || echo main)"
+  elif loomy_git -C "$TARGET" show-ref --verify -q "refs/heads/$br"; then loomy_git_user -C "$TARGET" checkout -q "$br" || return 0
+  else loomy_git_user -C "$TARGET" checkout -q -b "$br" || return 0; loomy_git_user -C "$TARGET" config "branch.$br.loomy-base" "$base"; fi
   export LOOMY_ADOPT_BRANCH="$br" LOOMY_BASE_BRANCH="$base"
   ui_ok "$(t "Dedicated branch %s" "$br")" "$(t "created from %s, which stays untouched" "$base")"
 }

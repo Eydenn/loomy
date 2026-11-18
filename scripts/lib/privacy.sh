@@ -62,19 +62,19 @@ privacy_set_key() {
 }
 
 # privacy_git_root <root>: root of the project's Git repository (empty when there is none).
-privacy_git_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
+privacy_git_root() { loomy_git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
 
 # privacy_exclude_file <root>: the repository's local exclude file (specific to this copy, never versioned).
 privacy_exclude_file() {
   local f
-  f="$(git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 1
+  f="$(loomy_git -C "$1" rev-parse --git-path info/exclude 2>/dev/null)" || return 1
   case "$f" in /*) echo "$f" ;; *) echo "$1/$f" ;; esac
 }
 
 # privacy_patterns <root>: anchored exclude patterns, prefixed when the project lives in a subfolder of the repository.
 privacy_patterns() {
   local prefix p
-  prefix="$(git -C "$1" rev-parse --show-prefix 2>/dev/null || true)"
+  prefix="$(loomy_git -C "$1" rev-parse --show-prefix 2>/dev/null || true)"
   for p in $LOOMY_AI_PATHS; do echo "/${prefix}${p}"; done
 }
 
@@ -106,7 +106,7 @@ privacy_tracked() {
   local p
   [[ -n "$(privacy_git_root "$1")" ]] || return 0
   for p in $LOOMY_AI_PATHS; do
-    [[ -n "$(git -C "$1" ls-files -- "$p" 2>/dev/null || true)" ]] && echo "$p"
+    [[ -n "$(loomy_git -C "$1" ls-files -- "$p" 2>/dev/null || true)" ]] && echo "$p"
   done
   return 0
 }
@@ -126,15 +126,15 @@ privacy_companion_worktree() (
   shared="$(cd "$root/.loomy" 2>/dev/null && pwd -P)" || return 1
   [[ "$shared" == */.loomy ]] || return 1
   owner="${shared%/.loomy}"
-  root_top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || return 1
-  owner_top="$(git -C "$owner" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  root_top="$(loomy_git -C "$root" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  owner_top="$(loomy_git -C "$owner" rev-parse --show-toplevel 2>/dev/null)" || return 1
   root_top="$(cd "$root_top" 2>/dev/null && pwd -P)" || return 1
   owner_top="$(cd "$owner_top" 2>/dev/null && pwd -P)" || return 1
   [[ "$root" == "$root_top" || "$root" == "$root_top/"* ]] || return 1
   [[ "$owner" == "$owner_top" || "$owner" == "$owner_top/"* ]] || return 1
   [[ "${root#"$root_top"}" == "${owner#"$owner_top"}" ]] || return 1
-  root_common="$(git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 1
-  owner_common="$(git -C "$owner" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  root_common="$(loomy_git -C "$root" rev-parse --git-common-dir 2>/dev/null)" || return 1
+  owner_common="$(loomy_git -C "$owner" rev-parse --git-common-dir 2>/dev/null)" || return 1
   [[ "$root_common" == /* ]] || root_common="$root/$root_common"
   [[ "$owner_common" == /* ]] || owner_common="$owner/$owner_common"
   root_common="$(cd "$root_common" 2>/dev/null && pwd -P)" || return 1
@@ -143,7 +143,7 @@ privacy_companion_worktree() (
   while IFS= read -r -d '' field; do
     [[ "$field" != "worktree $root_top" ]] || found_root=1
     [[ "$field" != "worktree $owner_top" ]] || found_owner=1
-  done < <(git -C "$root" worktree list --porcelain -z 2>/dev/null)
+  done < <(loomy_git -C "$root" worktree list --porcelain -z 2>/dev/null)
   (( found_root && found_owner )) || return 1
   printf '%s\n' "$owner"
 )
@@ -158,7 +158,7 @@ ai_git() {
   shift
   (
     for v in $_PRIVACY_GIT_LOCATION_VARS; do unset "$v"; done
-    exec git --git-dir="$(privacy_ai_git_dir "$root")" --work-tree="$root" "$@"
+    loomy_git_user --git-dir="$(privacy_ai_git_dir "$root")" --work-tree="$root" "$@"
   )
 }
 

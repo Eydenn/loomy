@@ -1252,30 +1252,30 @@ fi
 
 # ---------------------------------------------------------------- git
 ui_section "GIT"
-if [[ "$COMPACT" == "1" ]] && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
-  dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
+if [[ "$COMPACT" == "1" ]] && loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  branch="$(loomy_git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
+  dirty="$(loomy_git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  last="$(loomy_git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
   if [[ "$dirty" == "0" ]]; then ui_ok "$(t "%s clean" "$branch")" "${last:0:48}"; else ui_warn "$branch" "$(t "%s uncommitted file(s)" "$dirty")"; fi
-elif git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  branch="$(git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
-  dirty="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  last="$(git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
+elif loomy_git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  branch="$(loomy_git -C "$ROOT" symbolic-ref --short HEAD 2>/dev/null || t "detached")"
+  dirty="$(loomy_git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  last="$(loomy_git -C "$ROOT" log -1 --format='%h %s' 2>/dev/null || true)"
   if [[ "$dirty" == "0" ]]; then ui_ok "$(t "branch %s" "$branch")" "$(t "clean")"
   else ui_warn "$(t "branch %s" "$branch")" "$(t "%s modified file(s) not committed" "$dirty")"; fi
   if [[ -n "$last" ]]; then ui_info "$(t "last commit: %s" "$last")"; else ui_info "$(t "no commit")"; fi
-  upstream="$(git -C "$ROOT" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
+  upstream="$(loomy_git -C "$ROOT" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
   if [[ -n "$upstream" ]]; then
-    counts="$(git -C "$ROOT" rev-list --left-right --count "HEAD...$upstream" 2>/dev/null || echo "0 0")"
+    counts="$(loomy_git -C "$ROOT" rev-list --left-right --count "HEAD...$upstream" 2>/dev/null || echo "0 0")"
     ahead="${counts%%[[:space:]]*}"; behind="${counts##*[[:space:]]}"
     if [[ "$ahead" == "0" && "$behind" == "0" ]]; then ui_ok "$(t "in sync with %s" "$upstream")"
     else ui_warn "$upstream" "$(t "%s ahead · %s behind" "$ahead" "$behind")"; fi
   else
-    remote="$(git -C "$ROOT" remote 2>/dev/null | head -1)"
+    remote="$(loomy_git -C "$ROOT" remote 2>/dev/null | head -1)"
     if [[ -n "$remote" ]]; then ui_info "$(t "remote %s set, no tracked branch" "$remote")"
     else ui_info "$(t "no remote set")"; fi
   fi
-  wt="$(git -C "$ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ')"
+  wt="$(loomy_git -C "$ROOT" worktree list 2>/dev/null | wc -l | tr -d ' ')"
   if (( wt > 1 )); then ui_warn "$(t "%s parallel worktree(s)" "$(( wt - 1 ))")" "git worktree list"; fi
 else
   ui_info "$(t "no Git repository")"

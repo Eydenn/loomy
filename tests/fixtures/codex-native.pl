@@ -106,7 +106,7 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
     write_json("$root/.loomy/logs/events.jsonl",1,{ts=>ts(),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid,session=>id(1)});
 } elsif ($action eq 'root-context' || $action eq 'root-update' || $action eq 'root-no-effort') {
     my $c=context(10,-40);
-    $c->{payload}{model}=$action eq 'root-update' ? 'gpt-6-sol' : 'gpt-6.1-sol';
+    $c->{payload}{model}=$action eq 'root-update' ? 'gpt-6-sol' : 'gpt-6.2-sol';
     $c->{payload}{effort}=$action eq 'root-update' ? 'max' : 'high';
     delete $c->{payload}{effort} if $action eq 'root-no-effort';
     $c->{payload}{developer_instructions}='PRIVATE_ROOT_INSTRUCTIONS';

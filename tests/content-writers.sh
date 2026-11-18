@@ -65,7 +65,7 @@ ok(append($first_root,{type=>'delegation_start',id=>'first'}),'first native hook
 is((events($first_root))[0]{id},'first','first hook event is retained');
 is((stat("$first_root/.loomy/logs"))[2]&0777,0700,'first hook creates a private logs directory');
 my $r=root('append');
-append($r,{type=>'delegation',id=>'d1',role=>'reviewer',model=>'gpt-6.1-sol',status=>'ok',outcome=>'partial',format=>'structured',review=>'incomplete',
+append($r,{type=>'delegation',id=>'d1',role=>'reviewer',model=>'gpt-6.2-sol',status=>'ok',outcome=>'partial',format=>'structured',review=>'incomplete',
  cost_in=>'usage',cost_usd=>0.25,tokens_in=>12,multi_agent_version=>'v2',task=>'PRIVATE_TASK',why=>'PRIVATE_WHY',changed_files=>['PRIVATE_PATH'],result=>'PRIVATE_RESULT',extension=>{prompt=>'PRIVATE_PROMPT'}});
 my ($e)=events($r);
 is($e->{content_policy},'structural-v1','P02 generic appender is structural');

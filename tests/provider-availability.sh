@@ -72,7 +72,7 @@ reset_case
 export STUB_CODEX_CREDITS_DEPLETED=1
 run 'credits depleted hands role to Claude' bridge codex
 run 'credits never writes ko' no_ko
-file_has 'one Codex call only' "$STUB_LOG" '^codex.*-m.gpt-6.1-sol'
+file_has 'one Codex call only' "$STUB_LOG" '^codex.*-m.gpt-6.2-sol'
 file_has 'Claude gets the routed model' "$STUB_LOG" '--model.claude-sonnet-5-5'
 file_has 'handover has a terminal event' "$journal" '"status":"handed_over"'
 event_has 'successful other provider has failover metadata' "$journal" '$_->{type} eq "delegation" && ($_->{status}//"") eq "ok" && ($_->{failover_from}//"") eq "codex"'
@@ -90,7 +90,7 @@ reset_case
 export STUB_CLAUDE_ERROR='usage limit reached'
 run 'Claude refusal hands role to Codex' bridge claude
 run 'Claude quota refusal never writes ko' no_ko
-file_has 'reverse failover uses Codex current model' "$STUB_LOG" '^codex.*-m.gpt-6.1-sol'
+file_has 'reverse failover uses Codex current model' "$STUB_LOG" '^codex.*-m.gpt-6.2-sol'
 
 reset_case
 printf 'five_hour_pct=100\nfive_hour_reset=1791886500\n' >"$XDG_CONFIG_HOME/loomy/claude-limits"
@@ -103,18 +103,18 @@ has 'doctor names paused Codex and Claude' 'Provider codex: PAUSED'
 has 'doctor includes expected reset' 'until .*epoch 1791886800'
 
 reset_case
-export STUB_UNKNOWN_MODELS='gpt-6.1-sol'
+export STUB_UNKNOWN_MODELS='gpt-6.2-sol'
 run 'unknown Codex model crosses provider' bridge codex
-file_has 'only unknown model receives timestamped ko' "$XDG_CONFIG_HOME/loomy/models.state" '^gpt-6.1-sol=ko:1791885600$'
-run 'ko blocks until hour boundary' bash -c 'source "$1/scripts/lib/models.sh"; ! ai_model_usable gpt-6.1-sol codex' _ "$REPO"
+file_has 'only unknown model receives timestamped ko' "$XDG_CONFIG_HOME/loomy/models.state" '^gpt-6.2-sol=ko:1791885600$'
+run 'ko blocks until hour boundary' bash -c 'source "$1/scripts/lib/models.sh"; ! ai_model_usable gpt-6.2-sol codex' _ "$REPO"
 export STUB_NOW=1791889200
-run 'hour boundary drops ko at load' bash -c 'source "$1/scripts/lib/models.sh"; ai_model_usable gpt-6.1-sol codex' _ "$REPO"
+run 'hour boundary drops ko at load' bash -c 'source "$1/scripts/lib/models.sh"; ai_model_usable gpt-6.2-sol codex' _ "$REPO"
 run 'expiry at load is read-only' test ! -e "$XDG_CONFIG_HOME/loomy/models.state.reprobe"
 unset STUB_UNKNOWN_MODELS
 run 'non-live doctor makes no model calls' bash "$REPO/scripts/loomy-doctor.sh" --root "$WORK/project" --compact
 run 'non-live doctor kept model state' bash -c 'grep -q "=ko:" "$1"' _ "$XDG_CONFIG_HOME/loomy/models.state"
 run 'live doctor probes current chains' bash "$REPO/scripts/loomy-doctor.sh" --root "$WORK/project" --compact --live
-file_has 'successful probe records ok' "$XDG_CONFIG_HOME/loomy/models.state" '^gpt-6.1-sol=ok$'
+file_has 'successful probe records ok' "$XDG_CONFIG_HOME/loomy/models.state" '^gpt-6.2-sol=ok$'
 
 reset_case
 printf 'claude-sonnet-5-5=ko:%s\n' "$STUB_NOW" >"$XDG_CONFIG_HOME/loomy/models.state"
@@ -148,12 +148,21 @@ run 'doctor live quota does not write ko' no_ko
 reset_case
 run 'chains contain only validated current models' bash -c '
 source "$1/scripts/lib/models.sh"
-[[ "$AI_CHAIN_CODEX_TOP|$AI_CHAIN_CODEX_MID|$AI_CHAIN_CODEX_FAST|$AI_CHAIN_CLAUDE_TOP|$AI_CHAIN_CLAUDE_MID|$AI_CHAIN_CLAUDE_FAST" == "gpt-6.1-sol|gpt-6.1-sol|gpt-6-luna|claude-opus-5-5|claude-sonnet-5-5|claude-haiku-5-5" ]]
+[[ "$AI_CHAIN_CODEX_TOP|$AI_CHAIN_CODEX_MID|$AI_CHAIN_CODEX_FAST|$AI_CHAIN_CLAUDE_TOP|$AI_CHAIN_CLAUDE_MID|$AI_CHAIN_CLAUDE_FAST" == "gpt-6.2-sol|gpt-6.2-sol|gpt-6-luna|claude-opus-5-5|claude-sonnet-5-5|claude-haiku-5-5" ]]
 ' _ "$REPO"
-run 'published chains match validated set' bash -c '[[ $(sed -n "s/^model\.[^=]*=//p" "$1/catalog/models.conf" | paste -sd "|" -) == "claude-opus-5-5|claude-sonnet-5-5|claude-haiku-5-5|gpt-6.1-sol|gpt-6.1-sol|gpt-6-luna" ]]' _ "$REPO"
+run 'published chains match validated set' bash -c '[[ $(sed -n "s/^model\.[^=]*=//p" "$1/catalog/models.conf" | paste -sd "|" -) == "claude-opus-5-5|claude-sonnet-5-5|claude-haiku-5-5|gpt-6.2-sol|gpt-6.2-sol|gpt-6-luna" ]]' _ "$REPO"
+run 'on-demand Astra: validated for explicit use, absent from every chain' bash -c '
+source "$1/scripts/lib/models.sh"
+case " $AI_VALIDATED_CODEX_TOP " in *" gpt-6.2-astra "*) ;; *) exit 1 ;; esac
+for c in "$AI_CHAIN_CODEX_TOP" "$AI_CHAIN_CODEX_MID" "$AI_CHAIN_CODEX_FAST"; do case "$c" in *astra*|*gpt-6.1-sol*) exit 1 ;; esac; done
+ai_chain_valid codex top gpt-6.2-astra 2>/dev/null && ! ai_chain_valid codex top gpt-6.1-sol 2>/dev/null
+' _ "$REPO"
+run 'on-demand Astra: repository catalog matches built-in list' bash -c 'source "$1/scripts/lib/models.sh"; [[ "$(sed -n "s/^ondemand\.codex=//p" "$1/catalog/models.conf")" == "$AI_ONDEMAND_CODEX" ]]' _ "$REPO"
+run 'on-demand Astra: bridge model check accepts it' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/launch.sh"; LOOMY_CLI_PROBE=0; LOOMY_CLI_BIN=/bin/true; ai_provider_saturated() { return 1; }; ai_model_usable() { return 0; }; _loomy_cli_check codex developer gpt-6.2-astra' _ "$REPO"
+
 reset_case
-printf 'chain.codex.top=gpt-6-astra, gpt-6-sol\nchain.claude.fast=claude-haiku-4-5\n' >>"$XDG_CONFIG_HOME/loomy/config"
-run 'obsolete local chains cannot restore retired fallbacks' bash -c 'source "$1/scripts/lib/models.sh"; [[ "$AI_CHAIN_CODEX_TOP|$AI_CHAIN_CLAUDE_FAST" == "gpt-6.1-sol|claude-haiku-5-5" ]]' _ "$REPO"
+printf 'chain.codex.top=gpt-6-astra, gpt-6-sol, gpt-6.1-sol\nchain.claude.fast=claude-haiku-4-5\n' >>"$XDG_CONFIG_HOME/loomy/config"
+run 'obsolete local chains cannot restore retired fallbacks' bash -c 'source "$1/scripts/lib/models.sh"; [[ "$AI_CHAIN_CODEX_TOP|$AI_CHAIN_CLAUDE_FAST" == "gpt-6.2-sol|claude-haiku-5-5" ]]' _ "$REPO"
 
 reset_case
 printf '%s\n' '{"rate_limits":{"primary":{"window_minutes":300,"used_percent":100,"resets_at":1791889500},"rate_limit_reached_type":"primary"}}' >"$CODEX_HOME/sessions/quota.jsonl"
@@ -188,7 +197,7 @@ printf 'five_hour_pct=100\nfive_hour_reset=1791890500\n' >"$XDG_CONFIG_HOME/loom
 export STUB_CODEX_CREDITS_DEPLETED=1
 allow_results
 fails 'opted-in pause retains full task for orchestrator resume' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer 'Full paused task with options and instructions for later resumption'
-run 'resume task held in private results with structured options' resume_matches reviewer codex gpt-6.1-sol high read-only '' 'Full paused task with options and instructions for later resumption'
+run 'resume task held in private results with structured options' resume_matches reviewer codex gpt-6.2-sol high read-only '' 'Full paused task with options and instructions for later resumption'
 
 reset_case
 export STUB_CODEX_ERROR='{"type":"turn.failed","error":{"message":"workspace_member_credits_depleted"}}' STUB_CODEX_ERROR_EXIT=0
@@ -202,9 +211,9 @@ has 'doctor identifies downgraded provider' 'Provider codex: DOWNGRADED'
 reset_case
 run 'refused head never selects a sibling even in a custom chain' bash -c '
 source "$1/scripts/lib/models.sh"
-AI_CHAIN_CODEX_TOP="gpt-6.1-sol gpt-6-luna"
-ai_model_mark gpt-6.1-sol ko
-[[ "$(ai_model_pick codex top)" == gpt-6.1-sol && -z "$(ai_model_next codex gpt-6.1-sol)" ]]
+AI_CHAIN_CODEX_TOP="gpt-6.2-sol gpt-6-luna"
+ai_model_mark gpt-6.2-sol ko
+[[ "$(ai_model_pick codex top)" == gpt-6.2-sol && -z "$(ai_model_next codex gpt-6.2-sol)" ]]
 ' _ "$REPO"
 
 reset_case
@@ -260,7 +269,7 @@ run 'unparsable reset uses five-minute estimate' bash -c 'source "$1/scripts/lib
 
 # V6: read-only doctor, current chains and bounded model calls.
 reset_case
-printf 'gpt-6-astra=ko:%s\ngpt-6.1-sol=ko:%s\n' "$STUB_NOW" "$STUB_NOW" >"$XDG_CONFIG_HOME/loomy/models.state"
+printf 'gpt-6-astra=ko:%s\ngpt-6.2-sol=ko:%s\n' "$STUB_NOW" "$STUB_NOW" >"$XDG_CONFIG_HOME/loomy/models.state"
 cp "$XDG_CONFIG_HOME/loomy/models.state" "$WORK/before-state"
 run 'ordinary doctor is read-only for rejected models' bash "$REPO/scripts/loomy-doctor.sh" --root "$WORK/project" --compact
 run 'ordinary doctor preserves models.state bytes' cmp "$WORK/before-state" "$XDG_CONFIG_HOME/loomy/models.state"
@@ -271,7 +280,7 @@ file_has 'retired rejection remains untouched' "$XDG_CONFIG_HOME/loomy/models.st
 reset_case
 export LOOMY_MODEL_PROBE_TIMEOUT=1 STUB_SLEEP=10
 SECONDS=0
-fails 'hung Codex probe is bounded' 1 bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe codex gpt-6.1-sol' _ "$REPO"
+fails 'hung Codex probe is bounded' 1 bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe codex gpt-6.2-sol' _ "$REPO"
 (( SECONDS < 5 )) && ok 'probe timeout kills process group promptly' || ko 'probe timeout took too long'
 fails 'hung Claude probe is bounded' 1 bash -c 'source "$1/scripts/lib/models.sh"; ai_model_probe claude claude-sonnet-5-5' _ "$REPO"
 run 'timeouts never poison cache' no_ko
@@ -288,7 +297,7 @@ printf '{"rate_limits":{"rate_limit_reached_type":"primary"}}\n' >"$CODEX_HOME/s
 run 'stale reached without reset permits a fresh attempt' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/usage.sh"; STUB_NOW=$(( $(stat -c %Y "$2" 2>/dev/null || stat -f %m "$2")+301 )); export STUB_NOW; ! ai_provider_saturated codex' _ "$REPO" "$CODEX_HOME/sessions/quota.jsonl"
 reset_case
 run 'unknown chain model is explicitly refused' bash -c '"$1/bin/loomy" config set chain.codex.top gpt-9-test; [[ $? == 2 ]]' _ "$REPO"
-run 'validated local chain is accepted' "$REPO/bin/loomy" config set chain.codex.top gpt-6.1-sol
+run 'validated local chain is accepted' "$REPO/bin/loomy" config set chain.codex.top gpt-6.2-sol
 fails 'retired thrifty option is explicitly refused' 2 "$REPO/bin/loomy" models --thrifty on
 has 'retired thrifty option explains current routing' 'retired.*validated'
 
@@ -321,7 +330,7 @@ assert paused
 assert any('partial.txt' in json.loads((memory/'private-results-v1'/f'{r["id"]}.json').read_text())['result'] for r in paused)
 assert all('partial.txt' not in json.dumps(r) for r in receipts)
 PYPARTIAL
-run 'pause memory contains exact structured role/options' resume_matches developer codex gpt-6.1-sol high workspace-write 'writer pause' 'bounded implementation'
+run 'pause memory contains exact structured role/options' resume_matches developer codex gpt-6.2-sol high workspace-write 'writer pause' 'bounded implementation'
 run 'display formatter shows paused without failure' bash -c 'source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/journal.sh"; ai_journal_display_events "$2"' _ "$REPO" "$journal"
 has 'display formatter includes pause deadline' 'paused.*until [0-9]{2}:[0-9]{2}'
 printf '%s\n' '---' 'name: availability view' 'ai_mode: ORCHESTRATED' 'ai_lead: codex' '---' >"$WORK/project/.loomy/brief.md"
@@ -335,7 +344,7 @@ run 'report counts pause separately' bash "$REPO/scripts/loomy-report.sh" --root
 has 'report pause is not an error' '0 failed.*1 paused.*0 handed over'
 reset_case
 run 'watch identifies downgraded chain prominently' env COLUMNS=200 AI_MODEL_CODEX_TOP=gpt-6-luna bash "$REPO/scripts/loomy-tree.sh" --root "$WORK/project" --once
-has 'watch downgraded chain head' 'codex.top: DOWNGRADED.*gpt-6.1-sol.*gpt-6-luna'
+has 'watch downgraded chain head' 'codex.top: DOWNGRADED.*gpt-6.2-sol.*gpt-6-luna'
 
 
 reset_case
@@ -364,8 +373,8 @@ reset_case
 rm -rf "$WORK/project/.loomy/memory"
 export STUB_CODEX_ERROR='rate limit' STUB_CLAUDE_ERROR='rate limit'
 allow_results
-fails 'writer paused after a handover keeps a valid resumption bridge' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write --model gpt-6.1-sol --effort high 'bounded implementation'
-run 'resumption keeps original provider/model/permissions without a shell string' resume_matches developer codex gpt-6.1-sol high workspace-write '' 'bounded implementation'
+fails 'writer paused after a handover keeps a valid resumption bridge' 75 bash "$REPO/scripts/loomy-delegate-codex.sh" developer --write --model gpt-6.2-sol --effort high 'bounded implementation'
+run 'resumption keeps original provider/model/permissions without a shell string' resume_matches developer codex gpt-6.2-sol high workspace-write '' 'bounded implementation'
 
 printf '\nProvider availability: %s passed, %s failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

@@ -313,7 +313,7 @@ delegation_options_tests() {
     ' "$J" "$req" "$off" "$why" "$effort" "$sandbox" "$files" "$task"; then ok "$desc"; else ko "$desc"; fi
   }
 
-  run "codex: requested write with routing overrides" bash -c 'cd "$1" && STUB_WRITE=1 "$2" delegate codex architect --model gpt-6.1-sol --effort high --write --why "user request" "design it"' _ "$op" "$LOOMY"
+  run "codex: requested write with routing overrides" bash -c 'cd "$1" && STUB_WRITE=1 "$2" delegate codex architect --model gpt-6.2-sol --effort high --write --why "user request" "design it"' _ "$op" "$LOOMY"
   first="$(head -n 1 "$OUT")"
   if [[ "$first" == *"requested (user request)"* && "$first" == *"off routing: tool,sandbox"* ]]; then ok "codex: first stderr line explains requested and off routing"; else ko "codex: requested/off-routing banner missing"; fi
   delegation_pair_has "codex: both journal events and write result" true tool,sandbox "user request" high workspace-write 1 "design it"
@@ -343,7 +343,7 @@ delegation_options_tests() {
   run "claude: write accepted during Codex failover" bash -c 'cd "$1" && LOOMY_FAILOVER_FROM=codex "$2" delegate claude executor --write "failover write"' _ "$op" "$LOOMY"
 
   : >"$J"
-  if (cd "$op" && env LOOMY_UI_LANG=fr "$LOOMY" delegate codex architect --model gpt-6.1-sol --why raison "tâche") >"$WORK/fr.out" 2>"$WORK/fr.err"; then
+  if (cd "$op" && env LOOMY_UI_LANG=fr "$LOOMY" delegate codex architect --model gpt-6.2-sol --why raison "tâche") >"$WORK/fr.out" 2>"$WORK/fr.err"; then
     if grep -q 'demandé.*hors routage' "$WORK/fr.err"; then ok "delegation: French stderr translates requested and off routing"; else ko "delegation: French banner translation missing"; fi
   else ko "delegation: French bridge failed"; fi
 
@@ -609,7 +609,7 @@ watch_terminal_tests() {
   # A plain terminal (CI, no agent ancestor) would otherwise open the first-use screen before any frame.
   run "watch PTY: human first-use No" test_content_decline "$REPO" "$wt/project"
   nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"watch-test","pid":%s,"model":"gpt-6.1-sol","effort":"high"}\n' "$nowz" "$$" >"$wt/project/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"watch-test","pid":%s,"model":"gpt-6.2-sol","effort":"high"}\n' "$nowz" "$$" >"$wt/project/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation_start","id":"run","session":"watch-test","pid":%s,"role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Fix watch"}\n' "$nowz" "$$" >>"$wt/project/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation","id":"security-done","session":"watch-test","role":"security","family":"claude","model":"claude-opus-5-5","effort":"high","status":"ok","duration_s":2,"task":"Check terminal ownership"}\n' "$nowz" >>"$wt/project/.loomy/logs/events.jsonl"
   ln -s "$HERE/stubs/codex" "$wt/apps/Codex.app/Contents/Resources/codex"
@@ -1113,7 +1113,7 @@ live_view_tests() {
   has "translated role labels" 'Développeur.*Claude'
   has "translated routing legend" '⚑ demandé · ⇢ hors routage'
   # A relay must have an acting session, with its own recorded model rather than the master's routing.
-  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"acting","pid":%s,"model":"gpt-6.1-sol","effort":"high"}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
+  printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"acting","pid":%s,"model":"gpt-6.2-sol","effort":"high"}\n' "$nowz" "$$" >>"$demo/.loomy/logs/events.jsonl"
   printf 'master=claude\nacting=codex\n' >"$demo/.loomy/failover"
   run "relay frame: acting tool and model" env COLUMNS=100 LINES=30 bash "$REPO/scripts/loomy-tree.sh" --root "$demo" --once
   has "relay: acting lead marker" 'Orchestrator.*⇄ Codex.*6[.-]'
@@ -1156,8 +1156,8 @@ live_view_tests() {
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"polish","pid":%s,"model":"claude-opus-5-5","effort":"max"}\n' "$nowz" "$$" >>"$pj"
   printf '{"ts":"%s","type":"delegation","id":"earlier","session":"polish","role":"explorer","family":"codex","model":"gpt-6-luna","effort":"medium","duration_s":3780,"status":"ok","task":"GOAL: Map the journal. SCOPE: hidden details"}\n' "$nowz" >>"$pj"
   printf '%s\n' '{"session_id":"polish","prompt":"TASK: Clean the labels. SCOPE: private implementation"}' | bash "$REPO/scripts/loomy-context.sh" --root "$polish" --hook prompt >/dev/null
-  printf '{"ts":"%s","type":"delegation","id":"dev-last","session":"polish","role":"developer","family":"codex","model":"gpt-6.1-sol","effort":"low","duration_s":1,"status":"ok"}\n' "$nowz" >>"$pj"
-  printf '{"ts":"%s","type":"delegation","id":"doc","session":"polish","role":"documenter","family":"codex","model":"gpt-6.1-sol","effort":"low","duration_s":1,"status":"ok","task":"OBJECTIF : Write the docs\\nSCOPE: hidden detail"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"delegation","id":"dev-last","session":"polish","role":"developer","family":"codex","model":"gpt-6.2-sol","effort":"low","duration_s":1,"status":"ok"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"delegation","id":"doc","session":"polish","role":"documenter","family":"codex","model":"gpt-6.2-sol","effort":"low","duration_s":1,"status":"ok","task":"OBJECTIF : Write the docs\\nSCOPE: hidden detail"}\n' "$nowz" >>"$pj"
   printf '{"ts":"%s","type":"delegation_start","id":"dev-run","session":"polish","pid":%s,"role":"developer","family":"codex","model":"gpt-6-astra","effort":"high","task":"GOAL: Polish every visible label with complete words and truthful delegation metadata for every request in this journal. SCOPE: invisible"}\n' "$nowz" "$$" >>"$pj"
   run "polish: live request groups" env LOOMY_WATCH_GROUP=request COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
   has "prompt hook: structural request names its id and unavailable context" '^┌─ r[0-9]+-[0-9]+ · context unavailable'
@@ -1172,7 +1172,7 @@ live_view_tests() {
   run "title helper: ellipsis at a complete word" bash -c 'source "$1/scripts/lib/journal.sh"; ai_task_title "Alpha beta gamma delta" 12; test "$AI_TASK_TITLE" = "Alpha beta…"; ai_task_title "unbreakable word" 5; test "$AI_TASK_TITLE" = "…"; ai_display_duration 3599; test "$AI_DURATION" = 59:59; ai_display_duration 3600; test "$AI_DURATION" = "1 h 00"' _ "$REPO"
   run "polish: classic diagram" env COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$polish"
   sed -n '28,36p' "$OUT" >"$polish/boxes.txt"
-  grep -q 'gpt-6-astra.*gpt-6.1-sol.*gpt-6-luna' "$polish/boxes.txt" && ok "diagram: actual running and last completed models" || ko "diagram: delegation models missing"
+  grep -q 'gpt-6-astra.*gpt-6.2-sol.*gpt-6-luna' "$polish/boxes.txt" && ok "diagram: actual running and last completed models" || ko "diagram: delegation models missing"
   grep -q 'effort.*high.*effort.*low.*effort.*med' "$polish/boxes.txt" && ok "diagram: actual running and completed efforts" || ko "diagram: effort differs from delegation"
   grep -q 'planned' "$polish/boxes.txt" && ok "diagram: unused role is planned" || ko "diagram: planned state missing"
   has "diagram: effort label permits recorded overrides" 'delegate to roles · model \+ effort'
@@ -1184,7 +1184,7 @@ live_view_tests() {
   hasnt "diagram log: task titles strip ticket labels" 'GOAL:|TASK:|OBJECTIF|SCOPE:|invisible|hidden detail'
   run "polish: planned model is dimmed" env NO_COLOR= LOOMY_FORCE_COLOR=1 COLUMNS=170 LINES=60 bash "$REPO/scripts/loomy-tree.sh" --root "$polish"
   cp "$OUT" "$polish/planned.txt"
-  run "diagram: planned model has dim ANSI colour" perl -e 'local $/; my $s=<>; die unless $s =~ /\e\[2m[^\e\n]*gpt-6.1-sol/' "$polish/planned.txt"
+  run "diagram: planned model has dim ANSI colour" perl -e 'local $/; my $s=<>; die unless $s =~ /\e\[2m[^\e\n]*gpt-6.2-sol/' "$polish/planned.txt"
   run "polish: French full labels and durations" env LOOMY_UI_LANG=fr LOOMY_WATCH_GROUP=request COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
   cp "$OUT" "$polish/french.txt"
   run "French: role column aligns Unicode labels" perl -MEncode=decode -e 'use utf8; my ($col,$n); while (<>) { my $s=decode("UTF-8",$_); next unless $s =~ /^  . (?:Développeur|Documentaliste|Explorateur)\s+Codex/; my $c=index($s,"Codex"); $col //= $c; die if $c!=$col; ++$n } die unless ($n//0)>=3' "$polish/french.txt"
@@ -1203,15 +1203,15 @@ live_view_tests() {
   # A newer dead start cannot replace the living lead; concurrent tool usage stays paired.
   printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"concurrent","pid":%s,"model":"gpt-6-luna","effort":"low"}\n' "$nowz" "$$" >>"$pj"
   printf '{"ts":"%s","type":"usage","tool":"claude","scope":"lead","model":"claude-sonnet-5-5"}\n' "$nowz" >>"$pj"
-  printf '{"ts":"%s","type":"usage","tool":"codex","scope":"lead","model":"gpt-6.1-sol"}\n' "$nowz" >>"$pj"
+  printf '{"ts":"%s","type":"usage","tool":"codex","scope":"lead","model":"gpt-6.2-sol"}\n' "$nowz" >>"$pj"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"dead-newest","pid":99999999,"model":"claude-dead"}\n' "$nowz" >>"$pj"
   run "lead: brief preference among living sessions" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
   has "lead: preferred living session and matching usage" '^Orchestrator · Claude sonnet-5-5 max'
   has "lead: concurrent session preserves roles" 'Developer.*Codex.*6-astra'
-  hasnt "lead: dead start and other tool model rejected" '^Orchestrator.*(claude-dead|6.1-sol|6-luna)'
+  hasnt "lead: dead start and other tool model rejected" '^Orchestrator.*(claude-dead|6.2-sol|6-luna)'
   printf 'master=claude\nacting=codex\n' >"$polish/.loomy/failover"
   run "lead: live acting session during relay" env COLUMNS=120 LINES=50 bash "$REPO/scripts/loomy-tree.sh" --root "$polish" --once
-  has "lead: relay uses acting tool and its usage model" '^Orchestrator · ⇄ Codex 6.1-sol low'
+  has "lead: relay uses acting tool and its usage model" '^Orchestrator · ⇄ Codex 6.2-sol low'
   hasnt "lead: relay never uses Claude model" '^Orchestrator.*Codex.*sonnet'
   # End the acting session and let incremental selection return to the preferred living lead.
   run "lead: incremental reselection after acting session ends" bash -c '
@@ -1351,7 +1351,7 @@ release_defects_tests() {
   printf 'plan_claude=pro\nplan_codex=business\n' >"$qcfg/loomy/config"
   for from in codex claude; do
     if [[ "$from" == codex ]]; then
-      to=claude; model=gpt-6.1-sol
+      to=claude; model=gpt-6.2-sol
       printf '{"type":"event_msg","payload":{"rate_limits":{"rate_limit_reached_type":"workspace_member_credits_depleted"}}}\n' >"$qhome/sessions/r.jsonl"
       printf 'five_hour_pct=20\nfive_hour_reset=%s\n' "$(( $(date +%s) + 3600 ))" >"$qcfg/loomy/claude-limits"
     else
@@ -1402,7 +1402,7 @@ native_lifecycle_tests() {
     sub ts {strftime("%Y-%m-%dT%H:%M:%SZ",gmtime($now+$_[0]))}
     my $dir="$home/sessions/".strftime("%Y/%m/%d",gmtime($now)); make_path($dir);
     sub write_rows {my ($path,@r)=@_; open my $f,">",$path or die; print $f encode_json($_),"\n" for @r}
-    write_rows("$root/.loomy/logs/events.jsonl",{type=>"session",ts=>ts(-1000),tool=>"codex",session=>"owner",pid=>0+$pid,event=>"start",model=>"gpt-6.1-sol",effort=>"high"});
+    write_rows("$root/.loomy/logs/events.jsonl",{type=>"session",ts=>ts(-1000),tool=>"codex",session=>"owner",pid=>0+$pid,event=>"start",model=>"gpt-6.2-sol",effort=>"high"});
     write_rows("$dir/rollout-owner.jsonl",{type=>"session_meta",timestamp=>ts(-1000),payload=>{id=>"owner",cwd=>$root,source=>"cli"}});
     write_rows("$dir/rollout-child.jsonl",{type=>"session_meta",timestamp=>ts(-500),payload=>{id=>"child",cwd=>$root,agent_role=>"worker",source=>{subagent=>{thread_spawn=>{parent_thread_id=>"owner",agent_path=>"/root/persistent"}}}}},
       {type=>"event_msg",timestamp=>ts(-500),payload=>{type=>"task_started",turn_id=>"turn1"}},
@@ -1587,7 +1587,7 @@ has "failover to Codex: announced" "Provider claude unavailable .*reviewer hande
 grep -q '^codex' "$FL" && ! grep -q '^claude' "$FL" && grep -q 'read-only' "$FL" && ok "failover to Codex: read-only role stays read-only" || ko "failover to codex: $(cut -c1-80 "$FL")"
 run "start with the lead tool nearly exhausted" qenv "$LOOMY" start --root "$QD" --print
 has "start: lead agent session on the other tool" "Claude Code quota at 100 %: this session runs on Codex"
-has "start: Codex command for the lead agent" "codex -m gpt-6.1-sol"
+has "start: Codex command for the lead agent" "codex -m gpt-6.2-sol"
 rm -f "$QC/loomy/claude-limits"
 
 }
@@ -1721,7 +1721,7 @@ w47_tests() {
   fails "tracked .loomy/logs at base refused" 1 bash -c 'cd "$1"; bash "$2/scripts/loomy-worktrees.sh" tracked --count 1' _ "$wt" "$REPO"
   printf -- '---\nname: "metrics"\nai_lead: codex\n---\n' >"$st/.loomy/brief.md"
   cat >"$st/.loomy/logs/events.jsonl" <<'EOF'
-{"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"a","session":"s","duration_s":10,"family":"codex","status":"ok","role":"developer","model":"gpt-6.1-sol"}
+{"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"a","session":"s","duration_s":10,"family":"codex","status":"ok","role":"developer","model":"gpt-6.2-sol"}
 {"type":"delegation","ts":"2026-10-13T10:00:10Z","id":"b","session":"s","duration_s":10,"family":"codex","status":"ok","role":"executor","model":"gpt-6-luna"}
 {"type":"agent_alias","ts":"2026-10-13T10:00:11Z","agent_id":"synthetic"}
 EOF
@@ -2848,13 +2848,13 @@ has "lead agent on the best model" "opus|astra"
 run "route get executor" "$LOOMY" route get executor
 if [[ "$(wc -w <"$OUT" | tr -d ' ')" == "3" ]]; then ok "route get: family model effort"; else ko "route get: unexpected format ($(cat "$OUT"))"; fi
 got="$(bash -c 'source "$1/scripts/lib/models.sh"; ai_resolve lead hybrid-claude econome; a="$R_MODEL $R_EFFORT"; ai_resolve architect hybrid-claude econome; b="$R_MODEL $R_EFFORT"; ai_resolve lead hybrid-codex econome; echo "$a | $b | $R_MODEL $R_EFFORT"' _ "$REPO")"
-[[ "$got" == "claude-sonnet-5-5 medium | claude-opus-5-5 medium | gpt-6.1-sol medium" ]] && ok "Thrifty: Claude lead on Sonnet 5.5 medium, hard roles on Opus, Codex lead unchanged" || ko "Thrifty routing: $got"
+[[ "$got" == "claude-sonnet-5-5 medium | claude-opus-5-5 medium | gpt-6.2-sol medium" ]] && ok "Thrifty: Claude lead on Sonnet 5.5 medium, hard roles on Opus, Codex lead unchanged" || ko "Thrifty routing: $got"
 
 # Fallback: without Codex, a hybrid mode falls back to Claude alone.
 # Each environment puts the lead agent and the executor on the right family.
 lead_of() { "$LOOMY" route --root "$P" --env "$1" get lead 2>/dev/null | cut -d' ' -f2; }
 exec_of() { "$LOOMY" route --root "$P" --env "$1" get executor 2>/dev/null | cut -d' ' -f1; }
-if [[ "$(lead_of claude)" == claude-opus* && "$(lead_of codex)" == gpt-6.1-sol && "$(lead_of hybrid-claude)" == claude-opus* && "$(lead_of hybrid-codex)" == gpt-6.1-sol ]]
+if [[ "$(lead_of claude)" == claude-opus* && "$(lead_of codex)" == gpt-6.2-sol && "$(lead_of hybrid-claude)" == claude-opus* && "$(lead_of hybrid-codex)" == gpt-6.2-sol ]]
 then ok "lead agent: Opus on Claude, Astra on Codex"; else ko "lead agent misrouted ($(lead_of claude) / $(lead_of codex) / $(lead_of hybrid-claude) / $(lead_of hybrid-codex))"; fi
 if [[ "$(exec_of claude)" == claude && "$(exec_of codex)" == codex && "$(exec_of hybrid-claude)" == codex ]]
 then ok "executor: Luna in hybrid Claude lead"; else ko "executor misrouted"; fi
@@ -2930,7 +2930,7 @@ rm -rf "$HOME/.claude/projects"
 PX="$WORK/projet-codex"; mkdir -p "$PX/.loomy" && printf -- '---\nname: X\nai_mode: SOLO\nai_lead: codex\nbudget: equilibre\n---\n' >"$PX/.loomy/brief.md" && touch "$PX/START.md"
 : >"$L"
 (cd "$PX" && STUB_LOG="$L" "$LOOMY" start --new) >"$OUT" 2>&1
-if grep -q $'^codex\t-m\tgpt-6.1-sol\t-c\tmodel_reasoning_effort=' "$L"; then ok "start --new runs codex when Codex leads"; else ko "start codex ($(cat "$L"))"; fi
+if grep -q $'^codex\t-m\tgpt-6.2-sol\t-c\tmodel_reasoning_effort=' "$L"; then ok "start --new runs codex when Codex leads"; else ko "start codex ($(cat "$L"))"; fi
 fails "start without brief refused" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
 mkdir -p "$WORK/route-vide-$$"
 fails "start without brief refused" 1 "$LOOMY" start --root "$WORK/route-vide-$$"
@@ -4604,7 +4604,7 @@ section "Security audit"
 AR="$WORK/audit-repo"; mkdir -p "$AR" && git -C "$AR" init -q && echo x >"$AR/a.txt" && git -C "$AR" add -A && git -C "$AR" -c user.name=t -c user.email=t@t commit -qm i
 fails "audit: refused outside a Git repository" 1 bash -c 'cd "$1" && "$2" audit --yes --print --no-install' _ "$WORK/pas-git-$$" "$LOOMY" 2>/dev/null || true
 (cd "$AR" && "$LOOMY" audit --yes --print --no-install) >"$OUT" 2>&1
-has "audit: auditor on the security role" "claude-opus|gpt-6.1-sol"
+has "audit: auditor on the security role" "claude-opus|gpt-6.2-sol"
 file_has "audit: mission written" "$AR/.loomy/audit.md" "^fixes: plan$"
 file_has "audit: first phase" "$AR/.loomy/audit.state" "^phase=scope$"
 file_has "audit: prompt names the Cloudflare skill" "$AR/.loomy/audit-prompt.txt" "security-audit skill"
@@ -4807,7 +4807,7 @@ advq() { XDG_CONFIG_HOME="$AC" bash -c 'source "$1/scripts/lib/models.sh"; ai_ad
 [[ "$(advq claude-sonnet-5-5 econome)" == "opus" ]] && ok "advisor: Opus advises the Thrifty Sonnet lead" || ko "advisor econome: $(advq claude-sonnet-5-5 econome)"
 [[ -z "$(advq claude-opus-5-5 equilibre)" ]] && ok "advisor: none by default in Balanced" || ko "advisor balanced: $(advq claude-opus-5-5 equilibre)"
 [[ "$(advq claude-opus-5-5 qualite)" == "opus" ]] && ok "advisor: a second Opus in Max quality" || ko "advisor quality"
-[[ -z "$(advq gpt-6.1-sol econome)" ]] && ok "advisor: never for a Codex lead" || ko "advisor codex"
+[[ -z "$(advq gpt-6.2-sol econome)" ]] && ok "advisor: never for a Codex lead" || ko "advisor codex"
 printf 'advisor=sonnet\n' >"$AC/loomy/config"
 [[ -z "$(advq claude-opus-5-5 equilibre)" && "$(advq claude-sonnet-5-5 equilibre)" == "sonnet" ]] && ok "advisor: pairing Claude Code refuses (Sonnet advising Opus) left out" || ko "advisor pairing"
 printf 'advisor=off\n' >"$AC/loomy/config"
@@ -4828,7 +4828,7 @@ has "tree: every role with its model" "Executor.*gpt-6-luna"
 has "tree: session log and status line" "session log"
 TREE_OUTCOME="$WORK/tree-outcome"; mkdir -p "$TREE_OUTCOME/.loomy/logs"
 printf -- '---\nai_mode: ORCHESTRATED\nai_lead: claude\nbudget: equilibre\n---\n' >"$TREE_OUTCOME/.loomy/brief.md"
-printf '{"ts":"%s","type":"delegation","id":"partial","role":"reviewer","family":"codex","model":"gpt-6.1-sol","effort":"high","status":"ok","outcome":"partial","duration_s":12}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$TREE_OUTCOME/.loomy/logs/events.jsonl"
+printf '{"ts":"%s","type":"delegation","id":"partial","role":"reviewer","family":"codex","model":"gpt-6.2-sol","effort":"high","status":"ok","outcome":"partial","duration_s":12}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$TREE_OUTCOME/.loomy/logs/events.jsonl"
 COLUMNS=100 LINES=40 LOOMY_TREE=list bash "$REPO/scripts/loomy-tree.sh" --root "$TREE_OUTCOME" >"$OUT" 2>&1
 has "tree: finished partial uses triangle" "△ Reviewer"
 hasnt "tree: finished partial never uses running glyph" "◐ Reviewer"

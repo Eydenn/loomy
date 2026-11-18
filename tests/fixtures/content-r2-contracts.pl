@@ -306,11 +306,11 @@ my $legacy={version=>1,files=>{$source=>{
     meta=>{id=>'agent1',parent=>'parent1',agent=>'',role=>'explorer',surface=>'cli',ts=>$stamp,v2=>1,metadata_protocol=>2,
         workspace_id=>'workspace1',cwd=>'/synthetic-workspace',workspace_roots=>['/synthetic-workspace/src'],task=>'PRIVATE_META',nickname=>'PRIVATE_META'},
     key=>'1:2',offset=>0,skipping=>0,read_sig=>'1:2:120:1793102400.125',at_eof=>1,replay_fence=>1793102400,source_mtime=>1793102400.125,
-    last_observed_ts=>$stamp,last_evidence_ts=>$stamp,last_model=>'gpt-6.1-sol',last_effort=>'max',id=>'cn:agent1:turn1',turn=>'turn1',started=>$stamp,finished=>0,
-    model=>'gpt-6.1-sol',effort=>'max',activity=>'waiting',activity_ts=>$stamp,activity_position=>120,event_position=>120,
+    last_observed_ts=>$stamp,last_evidence_ts=>$stamp,last_model=>'gpt-6.2-sol',last_effort=>'max',id=>'cn:agent1:turn1',turn=>'turn1',started=>$stamp,finished=>0,
+    model=>'gpt-6.2-sol',effort=>'max',activity=>'waiting',activity_ts=>$stamp,activity_position=>120,event_position=>120,
     lead_state=>'waiting',lead_turn=>'turn1',lead_position=>120,lead_waits=>{wait1=>1},wait_calls=>{wait1=>1},close_calls=>{close1=>'agent2'},closed_agents=>{agent2=>$stamp},
     context=>{turn=>'turn1',ts=>$stamp,position=>0,model=>'',effort=>''},context_invalidated=>0,context_revision=>4,
-    emitted_activity=>'cn:agent1:turn1:gpt-6.1-sol:max:waiting:a2',projected_lead=>'pending:parent1',projected_metadata=>2,journal_generation=>1,
+    emitted_activity=>'cn:agent1:turn1:gpt-6.2-sol:max:waiting:a2',projected_lead=>'pending:parent1',projected_metadata=>2,journal_generation=>1,
     complete_sig=>'1:2:120:1793102400.125',tail_sig=>'1:2:120:1793102400.125',tail_start=>0,tail_end=>120,tail_at=>1793102400,back_chunk=>262144,
     gap_start=>0,gap_end=>120,v2_position=>120,v2_tail_sig=>'1:2:120:1793102400.125',v2_window=>0,model_probe=>'cn:agent1:turn1',
     probe_sig=>'1:2:120:1793102400.125',starts=>[1793102400,1793102400.125],oversized=>0,oversized_at=>120,buffer=>'PRIVATE_BUFFER',read_bytes=>128,read_start=>0}},
@@ -325,7 +325,7 @@ my $legacy={version=>1,files=>{$source=>{
     owner_leads=>{"42:$stamp"=>{lead=>'agent1',session=>'session1'}},root_revisions=>{agent1=>4},
     root_snapshots=>{agent1=>{known=>1,ts=>$stamp,owner_pid=>42,context_freshness=>'current',context_revision=>4}},fences=>{session1=>1793102400},
     rotation=>0,read_rotation=>0,reconstructing=>1,discovering=>0,recovery_sources=>{agent1=>{
-        type=>'delegation',ts=>$stamp,tool=>'codex',bridge=>'codex-native',id=>'cn:agent1:turn1',agent_id=>'agent1',turn_id=>'turn1',role=>'explorer',model=>'gpt-6.1-sol',effort=>'max',
+        type=>'delegation',ts=>$stamp,tool=>'codex',bridge=>'codex-native',id=>'cn:agent1:turn1',agent_id=>'agent1',turn_id=>'turn1',role=>'explorer',model=>'gpt-6.2-sol',effort=>'max',
         cost_in=>'usage',cost_usd=>0,duration_s=>undef,label_ref=>clone($ref),label_refs=>{map {$_=>clone($ref)} qw(slug nickname role)},
         source_inode=>'1:2',source_offset=>120,task=>'PRIVATE_RECOVERY',checkpoint_value=>'sha256:'.('c'x64)}},
     repair=>{'cn:agent1:turn1'=>{agent=>'agent1',turn=>'turn1',model=>'',effort=>'',ts=>$stamp}},unknown_repair_v1=>1};
@@ -458,7 +458,7 @@ for my $n (1,2) {
         {type=>'session_meta',timestamp=>ts(-600),payload=>{id=>$id,cwd=>$native,timestamp=>ts(-600),source=>$n==1 ? 'cli' : {subagent=>{thread_spawn=>{parent_thread_id=>'node1'}}},
             history_mode=>'paginated',multi_agent_version=>'v2',($n==2 ? (parent_thread_id=>'node1') : ()),agent_role=>$n==1 ? '' : 'linguistique',agent_nickname=>'Lyra',agent_path=>'/root/inventory',runtime_workspace_roots=>["$native/src"]}},
         {type=>'event_msg',timestamp=>ts(-50),payload=>{type=>'task_started',turn_id=>"turn$n"}},
-        {type=>'turn_context',timestamp=>ts(-49),payload=>{turn_id=>"turn$n",model=>'gpt-6.1-sol',effort=>'max'}},
+        {type=>'turn_context',timestamp=>ts(-49),payload=>{turn_id=>"turn$n",model=>'gpt-6.2-sol',effort=>'max'}},
         {type=>'response_item',timestamp=>ts(-48),payload=>{type=>'function_call',name=>'wait_agent',call_id=>"wait$n",arguments=>'PRIVATE_NATIVE_ARGUMENT'}},
         {type=>'world_state',timestamp=>ts(-47),payload=>{padding=>'x'x300000}},
         {type=>'token_usage_record',timestamp=>ts(-1),payload=>{turn_id=>"turn$n",thread_id=>$id}});

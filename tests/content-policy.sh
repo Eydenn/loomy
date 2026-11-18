@@ -547,7 +547,7 @@ my @mutations=($original."usage\tunknown_key\tkeep\n",$original,$original,$origi
 $mutations[1]=~s/usage\tcost_usd\tkeep\n//; $mutations[2]=~s/request\texcerpt\tomit/request\texcerpt\tkeep/;
 for my $i (0..3) {my $path="$work/mutation$i.tsv"; put($path,$mutations[$i]);
     deny("allowlist mutation $i fails the real drift comparison",sub {Loomy::ContentPolicy::check_allowlist($path)})}
-my $p=policy($r); my $event={type=>'delegation',ts=>'2026-10-26T12:00:00Z',id=>'d179297280012345',role=>'developer',model=>'gpt-6.1-sol',
+my $p=policy($r); my $event={type=>'delegation',ts=>'2026-10-26T12:00:00Z',id=>'d179297280012345',role=>'developer',model=>'gpt-6.2-sol',
     status=>'paused',outcome=>'partial',multi_agent_version=>'v2',cost_in=>'usage',cost_usd=>0,tokens_in=>12,duration_s=>undef,
     task=>'TASK_CANARY',why=>'WHY_CANARY',changed_files=>['PATH_CANARY'],unknown=>{task=>'NESTED_CANARY'},summary=>'RESULT_CANARY'};
 my $out=Loomy::ContentPolicy::project_with_policy($p,$event);

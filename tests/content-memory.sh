@@ -185,13 +185,13 @@ save unicode ok 'Tâche 日本語' $'SUMMARY: Résultat 日本語 👩🏽‍�
 check 'private UTF-8 text survives display with Cf stripped' bash -c 'source "$1/scripts/lib/memory.sh"; [[ "$(loomy_memory_digest "$2")" == *"Résultat 日本語 👩🏽💻"* && "$(loomy_memory_show "$2")" == *"Tâche 日本語"* ]]' _ "$REPO" "$P"
 project bridge; policy
 export STUB_LOG="$WORK/calls"
-(cd "$P" && bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer --task-label 'Review receipts' --model gpt-6.1-sol --effort high --read-only --why 'exact options' 'original live task') >"$OUT" 2>&1
+(cd "$P" && bash "$REPO/scripts/loomy-delegate-codex.sh" reviewer --task-label 'Review receipts' --model gpt-6.2-sol --effort high --read-only --why 'exact options' 'original live task') >"$OUT" 2>&1
 check 'bridge label refs match receipts/events; descriptor keeps exact effective options' python3 - "$P" <<'PY'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1])/'.loomy'
 rs=[json.loads(f.read_text()) for f in (p/'memory/receipts-v1').glob('[!.]*.json')]; assert len(rs)==1
 r=rs[0]; b=json.loads((p/f'memory/private-results-v1/{r["id"]}.json').read_text())
-d=b['resume']; assert (d['role'],d['provider'],d['model'],d['effort'],d['sandbox'])==('reviewer','codex','gpt-6.1-sol','high','read-only')
+d=b['resume']; assert (d['role'],d['provider'],d['model'],d['effort'],d['sandbox'])==('reviewer','codex','gpt-6.2-sol','high','read-only')
 assert d['options']['why']=='exact options' and d['options']['task_label']=='Review receipts'
 label=json.loads((p/'logs/display-context-v1.jsonl').read_text())
 assert label['source']=='explicit-lead' and label['text']=='Review receipts'
@@ -280,7 +280,7 @@ PYOFF
 project revoked; policy
 check 'pause after policy revocation saves no new task/result and reports unavailable' bash -c '
  source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; source "$1/scripts/lib/usage.sh"
- ROOT="$2"; DELEG_ID=revoked; ROLE=reviewer; MODEL=gpt-6.1-sol; EFFORT=high; SANDBOX=read-only; STARTED=1
+ ROOT="$2"; DELEG_ID=revoked; ROLE=reviewer; MODEL=gpt-6.2-sol; EFFORT=high; SANDBOX=read-only; STARTED=1
  TASK="new sensitive task"; RESUME_DESCRIPTOR=""; LABEL_JSON=""; FORMAT_JSON=""
  perl -pi -e "s/private_results=on/private_results=off/" "$ROOT/.loomy/logs/content-policy.conf"
  msg=$(ai_delegate_memory_record paused "new sensitive result" 123 2>&1)
@@ -289,7 +289,7 @@ check 'pause after policy revocation saves no new task/result and reports unavai
 project retained-task; policy
 check 'revoking capture preserves an earlier authorized task without claiming a new result' bash -c '
  source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; source "$1/scripts/lib/usage.sh"
- ROOT="$2"; DELEG_ID=retained; ROLE=reviewer; MODEL=gpt-6.1-sol; EFFORT=high; SANDBOX=read-only; STARTED=1
+ ROOT="$2"; DELEG_ID=retained; ROLE=reviewer; MODEL=gpt-6.2-sol; EFFORT=high; SANDBOX=read-only; STARTED=1
  TASK="authorized original task"; LABEL_JSON=""; FORMAT_JSON=""
  RESUME_DESCRIPTOR=$(printf "%s\0" "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" equilibre why label "" "" | _lm_backend descriptor "$ROOT")
  ai_delegate_memory_record running
@@ -363,10 +363,10 @@ PYCONTROL
 state_save() {
   local id="$1" state="$2" pid="$3" start="$4" reset="$5" task_ref="${6:-}"
   local metadata descriptor
-  descriptor="$(printf '%s\0' reviewer codex gpt-6.1-sol high read-only equilibre why label '' '' | _lm_backend descriptor "$P")"
+  descriptor="$(printf '%s\0' reviewer codex gpt-6.2-sol high read-only equilibre why label '' '' | _lm_backend descriptor "$P")"
   metadata="$(printf '%s\0' "$id" "$state" "$start" "$reset" "$task_ref" | perl -MJSON::PP -0777 -ne '
     my ($id,$status,$start,$reset,$ref)=split /\0/;
-    my $r={version=>1,id=>$id,attempt_id=>$id,session_key=>undef,role=>"reviewer",model=>"gpt-6.1-sol",effort=>"high",sandbox=>"read-only",
+    my $r={version=>1,id=>$id,attempt_id=>$id,session_key=>undef,role=>"reviewer",model=>"gpt-6.2-sol",effort=>"high",sandbox=>"read-only",
       status=>$status,outcome=>($status eq "paused" ? "waiting_for_reset" : "unknown"),started_at=>0+$start,ended_at=>0,resume_at=>0+$reset,
       files_changed=>0,format=>"unknown",review=>"unknown"};
     $r->{task_ref}=decode_json($ref) if length($ref//""); print encode_json($r);')"
@@ -443,7 +443,7 @@ printf 'old full result\n' >"$P/.loomy/memory/delegations/old.md"
 check 'legacy-only show points to legacy command' bash -c 's=$(bash "$1/scripts/loomy-memory.sh" --root "$2" show); [[ "$s" == *"loomy memory show legacy"* && "$s" != *"No delegation result yet"* ]]' _ "$REPO" "$P"
 # Invalid environment descriptors are rejected, rather than trusted as options.
 project descriptors; policy
-valid="$(printf '%s\0' reviewer codex gpt-6.1-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
+valid="$(printf '%s\0' reviewer codex gpt-6.2-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
 check 'matching environment descriptor is accepted' bash -c 'source "$1/scripts/lib/memory.sh"; printf "%s\0" "$3" reviewer codex | _lm_backend descriptor-env "$2"' _ "$REPO" "$P" "$valid"
 for invalid in role provider sandbox effort label; do
   bad="$(printf '%s' "$valid" | python3 -c 'import json,sys; d=json.load(sys.stdin); k=sys.argv[1]; value={"role":"developer","provider":"claude","sandbox":"danger-full-access","effort":"unknown"}; d["options"]["task_label"]="raw\x1b[31m" if k=="label" else d["options"]["task_label"]; d.update({k:value[k]} if k in value else {}); print(json.dumps(d))' "$invalid")"
@@ -666,14 +666,14 @@ chmod 0700 "$P/.loomy/memory"
 
 # A resume descriptor's free-text reason must survive clean_text unchanged: C1 controls and bidi are refused at storage.
 project descriptor-why; policy
-valid_why="$(printf '%s\0' reviewer codex gpt-6.1-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
+valid_why="$(printf '%s\0' reviewer codex gpt-6.2-sol high read-only equilibre why '' '' '' | _lm_backend descriptor "$P")"
 for why in 'a\u009bb' 'a\u009db' 'a\u202eb' 'a\u009b2J \u009d52;c;x\u202e'; do
   bad="$(printf '%s' "$valid_why" | python3 -c 'import json,sys; d=json.load(sys.stdin); d["options"]["why"]=json.loads("\""+sys.argv[1]+"\""); print(json.dumps(d))' "$why")"
   check "stored descriptor with a reason containing $why is refused" bash -c '
     source "$1/scripts/lib/memory.sh"; ! { printf "%s\0" "$3" reviewer codex | _lm_backend descriptor-env "$2"; } >/dev/null 2>&1' _ "$REPO" "$P" "$bad"
 done
 check 'descriptor still accepts a clean reason' bash -c '
-  source "$1/scripts/lib/memory.sh"; printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "plain reason" "" "" "" | _lm_backend descriptor "$2" >/dev/null' _ "$REPO" "$P"
+  source "$1/scripts/lib/memory.sh"; printf "%s\0" reviewer codex gpt-6.2-sol high read-only equilibre "plain reason" "" "" "" | _lm_backend descriptor "$2" >/dev/null' _ "$REPO" "$P"
 # A raw --why over 200 characters is cut after trimming: the stored reason must be stable under a second clean_text.
 for kind in ws200 pairs cjk exact200 len201 len201ws; do
   why="$(python3 -c '
@@ -681,7 +681,7 @@ import sys
 k=sys.argv[1]
 print({"ws200":"a"*199+" b b b b b","pairs":"a "*150,"cjk":"日本語 "*80,"exact200":"x"*200,"len201":"y"*201,"len201ws":"z"*199+"  q"}[k],end="")' "$kind")"
   check "descriptor is built from a long raw reason ($kind) and is stable" bash -c '
-    source "$1/scripts/lib/memory.sh"; d=$(printf "%s\0" reviewer codex gpt-6.1-sol high read-only equilibre "$3" "" "" "" | _lm_backend descriptor "$2") || exit 1
+    source "$1/scripts/lib/memory.sh"; d=$(printf "%s\0" reviewer codex gpt-6.2-sol high read-only equilibre "$3" "" "" "" | _lm_backend descriptor "$2") || exit 1
     w=$(printf "%s" "$d" | python3 -c "import json,sys; print(json.load(sys.stdin)[\"options\"][\"why\"],end=\"\")"); [[ -n "$w" && "${#w}" -le 200 && "$w" != *" " ]] || exit 1
     printf "%s\0" "$d" reviewer codex | _lm_backend descriptor-env "$2" >/dev/null' _ "$REPO" "$P" "$why"
 done

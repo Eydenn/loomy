@@ -57,7 +57,7 @@ if ($action eq 'seed') {
         }
         open my $f,'>',path($n) or die $!; print $f encode_json(row('session_meta',$m,$n==1 ? -172800 : -60)),"\n"; close $f;
         append($n,event('task_started',$n,$n==1 ? -172795 : -50),
-            row('turn_context',{turn_id=>id(10+$n),model=>'gpt-6.1-sol',effort=>'max'},$n==1 ? -172794 : -49));
+            row('turn_context',{turn_id=>id(10+$n),model=>'gpt-6.2-sol',effort=>'max'},$n==1 ? -172794 : -49));
         padding($n,$n==1 ? 36*1024*1024 : 2*1024*1024) if $n<7;
         append($n,item($n,-3),usage($n,-2),row('inter_agent_communication_metadata',{trigger_turn=>JSON::PP::true},-1));
     }
@@ -103,7 +103,7 @@ if ($action eq 'seed') {
     print $brief "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $brief;
     my $lead={id=>id(1),timestamp=>ts(-3600),cwd=>$root,originator=>'codex-tui',source=>'cli',thread_source=>'user',session_id=>id(1),history_mode=>'paginated'};
     open my $f,'>',path(1) or die $!; print $f encode_json(row('session_meta',$lead,-3600)),"\n"; close $f;
-    append(1,event('task_started',1,-3590),row('turn_context',{turn_id=>id(11),model=>'gpt-6.1-sol',effort=>'high'},-3589));
+    append(1,event('task_started',1,-3590),row('turn_context',{turn_id=>id(11),model=>'gpt-6.2-sol',effort=>'high'},-3589));
     padding(1,3*1024*1024);
     # A newer lead turn sits far behind the tail: only a backward scan finds its model.
     append(1,event('task_started',1,-1200),row('turn_context',{turn_id=>id(111),model=>'gpt-6-luna',effort=>'max'},-1199));
@@ -131,7 +131,7 @@ if ($action eq 'seed') {
         print $brief "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $brief;
         my $lead={id=>id(1),timestamp=>ts(-3600),cwd=>$root,originator=>'codex-tui',source=>'cli',thread_source=>'user',session_id=>id(1),history_mode=>'paginated'};
         open my $f,'>',path(1) or die $!; print $f encode_json(row('session_meta',$lead,-3600)),"\n"; close $f;
-        append(1,event('task_started',1,-3590),row('turn_context',{turn_id=>id(11),model=>'gpt-6.1-sol',effort=>'high'},-3589));
+        append(1,event('task_started',1,-3590),row('turn_context',{turn_id=>id(11),model=>'gpt-6.2-sol',effort=>'high'},-3589));
         my $m={id=>id(9),timestamp=>ts(-3000),cwd=>$root,runtime_workspace_roots=>["$root/src"],originator=>'codex-tui',
             source=>{subagent=>{thread_spawn=>{parent_thread_id=>id(1),depth=>1,agent_path=>'/root/gap',agent_nickname=>'Aristotle',agent_role=>'worker'}}},
             thread_source=>'subagent',session_id=>id(1),history_mode=>'paginated',multi_agent_version=>'v2',parent_thread_id=>id(1),

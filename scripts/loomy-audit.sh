@@ -130,7 +130,7 @@ fi
 SCOPE="$(brief_a scope)"; DEPTH="$(brief_a depth)"; FIXES="$(brief_a fixes)"; DIR="$(brief_a report_dir)"
 
 # ---------------------------------------------------------------- auditor: tool, model
-# The security role: Opus 5.5 on the Claude side, GPT-6.1 Sol on the Codex side (effort from the project's profile).
+# The security role: Opus 5.5 on the Claude side, GPT-6.2 Sol on the Codex side (effort from the project's profile).
 if [[ -z "$TOOL" ]]; then
   TOOL="$(_ai_brief_get "$ROOT/.loomy/brief.md" ai_lead 2>/dev/null || true)"
   case "$TOOL" in claude) ai_has_claude || TOOL="" ;; codex) ai_has_codex || TOOL="" ;; *) TOOL="" ;; esac
@@ -188,9 +188,9 @@ esac
 lang_txt="English"; [[ "$(ui_lang)" == "fr" ]] && lang_txt="French"
 # Audit team (multi-agent, through Loomy's bridges; every delegation is logged and shown in loomy watch):
 #   explorer   maps the attack surface: a missed entry point is never analysed, so a rigorous model
-#              (Codex mid tier: Sonnet 5.5 medium, or GPT-6.1 Sol with a Codex auditor), never a fast or local one
+#              (Codex mid tier: Sonnet 5.5 medium, or GPT-6.2 Sol with a Codex auditor), never a fast or local one
 #   validator  Claude Sonnet 5.5 at high effort: rigorous, re-checks every finding independently
-#   cross      the other family's reviewer (GPT-6.1 Sol), a second opinion on Critical and High findings
+#   cross      the other family's reviewer (GPT-6.2 Sol), a second opinion on Critical and High findings
 BR="$SCRIPT_DIR"
 VALIDATOR="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_EFFORT=high bash \"$BR/loomy-delegate-claude.sh\" reviewer"
 EXPLORER="LOOMY_BRIDGE_OK=1 DELEGATE_CLAUDE_MODEL=$AI_MODEL_CLAUDE_MID DELEGATE_CLAUDE_EFFORT=medium bash \"$BR/loomy-delegate-claude.sh\" explorer"

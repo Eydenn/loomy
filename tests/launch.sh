@@ -25,21 +25,21 @@ expect_rc() { local want="$1" rc=0; shift; "$@" >"$WORK/output" 2>&1 || rc=$?; [
 # A deliberately untrusted executable is refused before it can leave evidence.
 printf '#!/bin/bash\ntouch "%s"\n' "$WORK/executed" >"$WORK/real"
 chmod +x "$WORK/real"
-check expect_rc 97 env LOOMY_CODEX_BIN="$WORK/real" bash -c 'source "$1/scripts/lib/launch.sh"; loomy_cli_run codex reviewer gpt-6.1-sol -- exec' _ "$REPO"
+check expect_rc 97 env LOOMY_CODEX_BIN="$WORK/real" bash -c 'source "$1/scripts/lib/launch.sh"; loomy_cli_run codex reviewer gpt-6.2-sol -- exec' _ "$REPO"
 check test ! -e "$WORK/executed"
 check grep -q 'refusing to launch real codex' "$LOOMY_TEST_GUARD_LOG"
 : >"$LOOMY_TEST_GUARD_LOG" # The refusal above is the expected assertion, not a leak.
 check expect_rc 2 loomy_cli_run codex reviewer gpt-9-unknown -- exec
-check expect_rc 2 loomy_cli_run codex reviewer gpt-6.1-sol -- exec -m gpt-9-unknown
+check expect_rc 2 loomy_cli_run codex reviewer gpt-6.2-sol -- exec -m gpt-9-unknown
 check expect_rc 2 loomy_cli_meta codex exec
 ai_provider_refusal codex 'rate limit retry_after: 600'
-check expect_rc 75 loomy_cli_run codex reviewer gpt-6.1-sol -- exec
+check expect_rc 75 loomy_cli_run codex reviewer gpt-6.2-sol -- exec
 # Metadata never consults quota and never journals model activity.
 check loomy_cli_meta codex --version
 check test ! -e "$ROOT/.loomy/logs/events.jsonl"
 rm "$XDG_CONFIG_HOME/loomy/codex-availability"
 export LOOMY_PARENT_ID=lead-a LOOMY_ATTEMPT=attempt-a
-check loomy_cli_run codex reviewer gpt-6.1-sol -- exec -m gpt-6.1-sol --ephemeral --json -o "$WORK/answer" OK
+check loomy_cli_run codex reviewer gpt-6.2-sol -- exec -m gpt-6.2-sol --ephemeral --json -o "$WORK/answer" OK
 check perl -MJSON::PP -e 'open my $f,"<",shift or die $!;my @e=map {decode_json($_)} <$f>;my @s=grep {$_->{type} eq "delegation_start"} @e;my @n=grep {$_->{type} eq "delegation"} @e;die unless @s==1 && @n==1;for (@s,@n) {die unless $_->{parent_id} eq "lead-a" && $_->{attempt_id} eq "attempt-a"}' "$ROOT/.loomy/logs/events.jsonl"
 # Lead hooks remain enabled, and redirected stdin reaches the provider transport.
 check bash -c 'source "$1/scripts/lib/launch.sh"; printf "lead-input\n" | LOOMY_DELEGATION=1 LOOMY_CLI_META_BIN="$LOOMY_TEST_STUBS/launch-env" loomy_cli_run claude lead claude-opus-5-5 -- --model claude-opus-5-5 >"$2"; grep -qx "delegation=" "$2" && grep -qx "input=lead-input" "$2"' _ "$REPO" "$WORK/lead-env"
@@ -94,7 +94,7 @@ check test "$(ai_provider_reset codex)" = "$(perl -MTime::Local -e 'print timegm
 rm "$XDG_CONFIG_HOME/loomy/codex-availability"
 # Probe mode is bounded, journal-less, and never poisons model availability.
 export STUB_SLEEP=3 LOOMY_MODEL_PROBE_TIMEOUT=1
-check expect_rc 1 ai_model_probe codex gpt-6.1-sol
+check expect_rc 1 ai_model_probe codex gpt-6.2-sol
 check test "$AI_PROBE_STATUS" = 124
 check expect_rc 1 ai_model_probe claude claude-sonnet-5-5
 check test "$AI_PROBE_STATUS" = 124
@@ -107,19 +107,19 @@ unset STUB_SLEEP LOOMY_MODEL_PROBE_TIMEOUT
 check expect_rc 2 loomy_cli_check codex lead gpt-9-unknown
 check grep -q 'model not validated: gpt-9-unknown' "$WORK/output"
 printf '{"models":[{"slug":"foreign-model"}]}\n' >"$CODEX_HOME/models_cache.json"
-check expect_rc 0 loomy_cli_check codex lead gpt-6.1-sol
-check grep -q "gpt-6.1-sol missing from Codex's local catalog" "$WORK/output"
+check expect_rc 0 loomy_cli_check codex lead gpt-6.2-sol
+check grep -q "gpt-6.2-sol missing from Codex's local catalog" "$WORK/output"
 rm "$CODEX_HOME/models_cache.json"
 ai_provider_refusal codex 'rate limit retry_after: 600'
 ai_provider_refusal claude 'usage limit retry_after: 600'
-check expect_rc 75 loomy_cli_check codex lead gpt-6.1-sol
+check expect_rc 75 loomy_cli_check codex lead gpt-6.2-sol
 check grep -q 'paused until .* (both providers saturated)' "$WORK/output"
 check expect_rc 75 env LOOMY_CLI_PROBE=1 bash -c 'source "$1/scripts/lib/launch.sh"; loomy_cli_check codex probe ""' _ "$REPO"
 check bash -c 'source "$1/scripts/lib/models.sh"; AI_UPCOMING="codex:gpt-announced claude:claude-announced"; export STUB_LOG="$2"; ai_upcoming_probe_daily; wait; test ! -s "$2"' _ "$REPO" "$WORK/upcoming-calls"
 rm "$XDG_CONFIG_HOME/loomy/codex-availability" "$XDG_CONFIG_HOME/loomy/claude-availability"
 check bash -c 'source "$1/scripts/lib/launch.sh"; test "$(loomy_cli_open_note 97 "loomy: test guard: refusing to launch real open")" = "loomy: test guard: refusing to launch real open"; test "$(loomy_cli_open_note 1 "Desktop apps: macOS only / opening in the terminal")" = "Desktop apps: macOS only"; test -z "$(loomy_cli_open_note 1 stale-warning)"' _ "$REPO"
 # Explicit provider names survive misleading installation paths.
-check bash -c 'source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/models.sh"; test "$(ai_tool_version_of codex "$LOOMY_TEST_STUBS/codex")" = 0.160.0; _ai_probe_run codex exec -m gpt-6.1-sol --ephemeral -o "$2" "Reply exactly: OK"; grep -q OK "$2"' _ "$REPO" "$WORK/probe-answer"
+check bash -c 'source "$1/scripts/lib/repair.sh"; source "$1/scripts/lib/models.sh"; test "$(ai_tool_version_of codex "$LOOMY_TEST_STUBS/codex")" = 0.160.0; _ai_probe_run codex exec -m gpt-6.2-sol --ephemeral -o "$2" "Reply exactly: OK"; grep -q OK "$2"' _ "$REPO" "$WORK/probe-answer"
 # A detached runner, rather than its caller, owns the journal lifetime on Bash 3.2.
 check bash -c 'set -e; source "$1/scripts/lib/launch.sh"; export ROOT="$2/pid-project" STUB_SLEEP=2; mkdir -p "$ROOT/.loomy"; loomy_cli_spawn claude reviewer claude-sonnet-5-5 -- -p OK --output-format json >"$2/pid-output"; perl -MJSON::PP -e '\''my ($p,$caller)=@ARGV; open my $f,"<",$p or die; my ($e)=grep {$_->{type} eq "delegation_start"} map {decode_json($_)} <$f>; die unless $e->{pid}>1 && $e->{pid}!=$caller && kill(0,$e->{pid});'\'' "$ROOT/.loomy/logs/events.jsonl" "$$"; wait "$LOOMY_CLI_PID"' _ "$REPO" "$WORK"
 check bash "$REPO/tests/fixtures/guard-poll.sh" "$REPO" "$WORK"

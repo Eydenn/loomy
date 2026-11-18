@@ -52,7 +52,7 @@ my $sid='content-session';
 my %base=(schema=>2,tool=>$tool,family=>$tool,session_key=>"$tool:$sid",session=>$sid,
     surface=>'app',agent_id=>$sid,source=>($tool eq 'codex' ? 'rollout' : 'transcript'));
 put($now-3,'session_observed',%base,state=>'running',source_active=>1);
-put($now-2,'session_context',%base,model=>($tool eq 'codex' ? 'gpt-6.1-sol' : 'claude-sonnet-5-5'),effort=>'high',context_freshness=>'current');
+put($now-2,'session_context',%base,model=>($tool eq 'codex' ? 'gpt-6.2-sol' : 'claude-sonnet-5-5'),effort=>'high',context_freshness=>'current');
 my @slug=$mode eq 'codex-v1' ? qw(consolidation enrichment vocabulary) : qw(inventory verification vocabulary);
 for my $n (1..3) {
     my $aid="00000000-0000-4000-8000-${n}00012345678";

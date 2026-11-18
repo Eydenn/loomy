@@ -13,7 +13,7 @@ my $ts=strftime('%Y-%m-%dT%H:%M:%SZ',gmtime(time-20));
 my $tool=$mode eq 'advisor' ? 'claude' : 'codex';
 my @rows=({ts=>$ts,type=>'session',event=>'start',tool=>$tool,pid=>0+$pid,session=>'layout-owner'});
 push @rows,{ts=>$ts,type=>'session_context',tool=>$tool,bridge=>'codex-native',scope=>'lead',owner_pid=>0+$pid,session=>'layout-owner',
-    model=>($mode eq 'advisor' ? 'claude-sonnet-5-5' : 'gpt-6.1-sol'),effort=>'high',context_freshness=>($mode eq 'catchup' ? 'catching_up' : 'current')} unless $mode eq 'unknown';
+    model=>($mode eq 'advisor' ? 'claude-sonnet-5-5' : 'gpt-6.2-sol'),effort=>'high',context_freshness=>($mode eq 'catchup' ? 'catching_up' : 'current')} unless $mode eq 'unknown';
 my @labels=('vocab_enrichissement_reprise','vocab_integration_finale','vocab_label_extremement_long_sans_espace_et_sans_fin','vocab_consolidation_finale');
 for my $n (0..3) {
     push @rows,{ts=>$ts,type=>'delegation_start',bridge=>'codex-native',tool=>'codex',session=>'layout-owner',owner_pid=>0+$pid,

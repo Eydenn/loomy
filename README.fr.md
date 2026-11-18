@@ -39,7 +39,7 @@ Loomy cadre chaque projet, puis un orchestrateur sur le meilleur modèle confie 
 | | |
 |---|---|
 | 🎯&nbsp;**Qualité** | Le meilleur raisonnement planifie, décide et relit ; chaque changement peut être relu par l'autre famille de modèles ; les caractéristiques du projet (comptes, paiements, données sensibles…) fixent les vérifications que les agents doivent faire. |
-| 💰&nbsp;**Coût** | Chaque travail va au rôle le moins cher qui le fait de façon fiable (GPT-6-Luna pour les tâches cadrées, Sonnet 5.5 ou GPT-6.1 Sol pour le quotidien, Opus 5.5 pour l'architecture et la sécurité). Tokens, coût et quotas d'abonnement sont mesurés ; le travail passe à l'autre outil avant qu'un quota s'épuise. |
+| 💰&nbsp;**Coût** | Chaque travail va au rôle le moins cher qui le fait de façon fiable (GPT-6-Luna pour les tâches cadrées, Sonnet 5.5 ou GPT-6.2 Sol pour le quotidien, Opus 5.5 pour l'architecture et la sécurité). Tokens, coût et quotas d'abonnement sont mesurés ; le travail passe à l'autre outil avant qu'un quota s'épuise. |
 | 🧠&nbsp;**Continuité** | L’état du travail, la documentation durable et un commit par demande terminée gardent le fil entre sessions, compactages et outils. Les résultats privés facultatifs ajoutent une continuité locale ; les documents de continuité rédigés peuvent passer par la sauvegarde privée. |
 | 🧩&nbsp;**Méthode** | Un type de projet et ses caractéristiques clés mettent en place la structure, les rôles et les skills officiels (Anthropic et OpenAI) dont les agents ont besoin, enrichis au fil du projet. |
 | 👀&nbsp;**Visibilité** | L'orchestrateur à gauche, le dispatch à droite : phases, délégations, arbre des agents et coûts en direct, dans le terminal ou à côté de l'app de bureau. |
@@ -504,7 +504,7 @@ flowchart TB
   L --> AR["🏛️ Architecte<br/>Opus 5.5 · high"]:::deep
   L --> DB["🐞 Débogueur<br/>Opus 5.5 · high"]:::deep
   L --> SE["🔒 Sécurité<br/>Opus 5.5 · high"]:::deep
-  L --> RV["🔍 Relecteur<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
+  L --> RV["🔍 Relecteur<br/>GPT-6.2-Sol · high ⇄"]:::std
   L --> DV["🛠️ Développeur<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Exécutant<br/>GPT-6-Luna · max ⇄"]:::fast
   L --> XP["🔎 Explorateur<br/>Haiku 5.5 · medium"]:::fast
@@ -521,21 +521,21 @@ flowchart TB
 
 | Rôle | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybride, lead Claude | 🟣 Hybride, lead Codex |
 |---|---|---|---|---|
-| 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Sol 6.1 · high | **Opus 5.5 · high** | Sol 6.1 · high |
-| 🏛️&nbsp;Architecte | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒&nbsp;Sécurité | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
-| 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
+| 🎯&nbsp;**Orchestrateur** | Opus 5.5 · high | Sol 6.2 · high | **Opus 5.5 · high** | Sol 6.2 · high |
+| 🏛️&nbsp;Architecte | Opus 5.5 · high | Sol 6.2 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Débogueur | Opus 5.5 · high | Sol 6.2 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Sécurité | Opus 5.5 · high | Sol 6.2 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔍&nbsp;Relecteur | Sonnet 5.5 · high | Sol 6.2 · high | Sol 6.2 · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Développeur | Sonnet 5.5 · medium | Sol 6.2 · high | Sonnet 5.5 · medium | Sol 6.2 · high |
 | ⚙️&nbsp;Exécutant | **Haiku 5.5 · high** | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorateur | Haiku 5.5 · medium | Luna · low | Haiku 5.5 · medium | Luna · low |
-| 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
+| 📚&nbsp;Documentaliste | Sonnet 5.5 · low | Sol 6.2 · low | Sonnet 5.5 · low | Sol 6.2 · low |
 
 **Profils de budget.** L'orchestrateur reste toujours sur le meilleur modèle ; seuls les efforts et les modèles des rôles changent.
 
 | Profil | Effet |
 |---|---|
-| 💚&nbsp;Économe | orchestrateur Claude sur Sonnet 5.5 `medium` (Codex sur Sol 6.1 `medium`), spécialistes en `medium`, exécution sur les modèles rapides |
+| 💚&nbsp;Économe | orchestrateur Claude sur Sonnet 5.5 `medium` (Codex sur Sol 6.2 `medium`), spécialistes en `medium`, exécution sur les modèles rapides |
 | 💛&nbsp;Équilibré&nbsp;*(défaut)* | la matrice ci-dessus |
 | ❤️&nbsp;Qualité&nbsp;max | orchestrateur et spécialistes en `xhigh`, revues sur le modèle de pointe, exécution sur Sol ou Sonnet `high` |
 
@@ -633,7 +633,8 @@ Les skills donnent aux agents une méthode éprouvée pour un type de travail (t
 | Modèle | 💵 Prix ($ par million de tokens, entrée / sortie) | Coût par tâche AA | Indice de codage AA | Terminal-Bench 4.0 | 🏷️ Rôle attribué |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0,10 / 0,50** | **0,07 $** | 41 | 🔻 13 % | exécutant, explorateur |
-| GPT&#8209;6.1&#8209;Sol | 2 / 10 | environ 1,50 $ par tâche DeepSWE | — | DeepSWE 75,2 % (éditeur) | tous les rôles Codex sauf l'exécution, depuis la 0.7.2 |
+| GPT&#8209;6.2&#8209;Sol | 2 / 10 (supposé, comme la 6.1) | pas encore mesuré | — | — | tous les rôles Codex sauf l'exécution, depuis la 0.17.10 |
+| GPT&#8209;6.1&#8209;Sol | 2 / 10 | environ 1,50 $ par tâche DeepSWE | — | DeepSWE 75,2 % (éditeur) | historique ; exclu du routage automatique |
 | GPT&#8209;6&#8209;Sol | 2 / 10 | 0,13 → 1,06 $ | 57 | 43 % | historique ; exclu du routage automatique |
 | GPT&#8209;6&#8209;Astra | 10 / 50 | 0,82 → 3,26 $ | **62** | 59 % | historique ; exclu du routage automatique |
 | Claude&nbsp;Sonnet&nbsp;5.5 | 2 / 10 | 0,41 → 7,60 $ | — | 70,6 % (éditeur) | développeur, relecteur (Claude), orchestrateur Économe |
@@ -645,7 +646,7 @@ Les skills donnent aux agents une méthode éprouvée pour un type de travail (t
   - Il fait 66,6 % sur des corrections bornées pour 0,22 $, contre 2,74 $ pour Sol.
   - Sur le travail long et autonome en terminal, il tombe à 13 %.
   - Il exécute donc des tickets précis sous l'orchestrateur, jamais plus.
-- 🐎 **GPT-6.1 Sol tient tout le côté Codex.** Il égale Astra sur DeepSWE (75,2 % contre 74,8 %) pour environ un cinquième du coût, et Astra s'est montré moins fiable ces derniers temps en usage réel : seuls les modèles actuels validés sont routés. Un fournisseur saturé passe le rôle à l’autre une seule fois ; si aucun ne peut répondre, la délégation est mise en pause jusqu’au reset attendu.
+- 🐎 **GPT-6.2 Sol tient tout le côté Codex.** Son prédécesseur 6.1 Sol égalait Astra sur DeepSWE (75,2 % contre 74,8 %) pour environ un cinquième du coût (aucun benchmark 6.2 n'est encore publié), et Astra s'est montré moins fiable ces derniers temps en usage réel : seuls les modèles actuels validés sont routés. Un fournisseur saturé passe le rôle à l’autre une seule fois ; si aucun ne peut répondre, la délégation est mise en pause jusqu’au reset attendu.
 
 ---
 
@@ -784,7 +785,7 @@ Pour contribuer : les textes de l'interface sont écrits en anglais dans le code
 
 Le catalogue tient dans `catalog/models.conf` (publié, récupéré par `loomy update --catalog`) et `scripts/lib/models.sh` (valeurs intégrées) : chaînes de modèles par niveau, prix, versions minimales des CLI. Le protocole de mise à jour est dans `docs/MODEL_CATALOG.md`.
 
-Pour une surcharge experte explicite avec un modèle actuel validé sur une seule machine : `AI_MODEL_CODEX_FAST=gpt-6.1-sol loomy route`, ou l'épingler avec `loomy config set model.codex.fast gpt-6.1-sol`. Si la CLI Codex est installée à un endroit inhabituel, indique son chemin avec `LOOMY_CODEX_BIN`.
+Pour une surcharge experte explicite avec un modèle actuel validé sur une seule machine : `AI_MODEL_CODEX_FAST=gpt-6.2-sol loomy route`, ou l'épingler avec `loomy config set model.codex.fast gpt-6.2-sol`. Si la CLI Codex est installée à un endroit inhabituel, indique son chemin avec `LOOMY_CODEX_BIN`.
 
 </details>
 
@@ -837,8 +838,8 @@ loomy/
 - **Questions** : le périmètre, la profondeur (rapide, standard, approfondi) et les livrables : rapport seul, rapport et plan de corrections, ou corrections en plus sur une branche `loomy/audit-fixes`.
 - **Méthode** : [le skill officiel security-audit de Cloudflare](https://github.com/cloudflare/security-audit-skill) (MIT), installé pour ce dépôt uniquement si tu l'acceptes.
 - **Équipe**, via les bridges de Loomy, chaque délégation journalisée :
-  - l'auditeur (rôle sécurité : Opus 5.5, ou GPT-6.1 Sol avec un orchestrateur Codex) mène l'audit ;
-  - un explorateur cartographie la surface d'attaque, sur un modèle rigoureux (Sonnet 5.5 en medium, ou GPT-6.1 Sol) : un point d'entrée manqué n'est jamais analysé ;
+  - l'auditeur (rôle sécurité : Opus 5.5, ou GPT-6.2 Sol avec un orchestrateur Codex) mène l'audit ;
+  - un explorateur cartographie la surface d'attaque, sur un modèle rigoureux (Sonnet 5.5 en medium, ou GPT-6.2 Sol) : un point d'entrée manqué n'est jamais analysé ;
   - Claude Sonnet 5.5 en effort élevé, rigoureux, revérifie chaque constat de façon indépendante ;
   - l'autre famille de modèles (GPT-6-Sol) donne un second avis sur les constats critiques et élevés ;
   - un rédacteur rapide (GPT-6-Luna) rédige le rapport et le plan de corrections au fil des validations, à partir des seuls faits validés ; l'auditeur relit chaque brouillon. Sans Codex, un modèle local servi par [LM Studio](https://lmstudio.ai) prend ce rôle s'il répond (texte seul, rien ne sort de la machine, journalisé sans coût).

@@ -109,7 +109,7 @@ for tool in codex claude; do
   cli_pid="$(cat "$WORK/cli-pid")"
   for role in lead architect debugger security reviewer developer executor explorer documenter; do
     actual="$(cat "$only_out/$role")"
-    check "$tool only routes $role to validated tool chain" perl -e 'my ($s,$t)=@ARGV; die unless $s =~ /^\Q$t\E /; die if $t eq "codex" && $s !~ /gpt-6(?:\.1-sol|-luna) /; die if $t eq "claude" && $s !~ /claude-(?:opus|sonnet|haiku)-5-5 /' "$actual" "$tool"
+    check "$tool only routes $role to validated tool chain" perl -e 'my ($s,$t)=@ARGV; die unless $s =~ /^\Q$t\E /; die if $t eq "codex" && $s !~ /gpt-6(?:\.2-sol|-luna) /; die if $t eq "claude" && $s !~ /claude-(?:opus|sonnet|haiku)-5-5 /' "$actual" "$tool"
   done
   check 'brief remains byte-for-byte unchanged' cmp "$WORK/brief-original" "$ROOT/.loomy/brief.md"
   cp "$only_out/route" "$WORK/route-output"

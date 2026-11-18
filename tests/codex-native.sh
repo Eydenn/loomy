@@ -222,9 +222,9 @@ check '100 unchanged polls stay below five CPU seconds and append nothing' perl 
 # Root metadata is observed, refreshed and owner-scoped; it never becomes fake usage/activity.
 ROOT="$WORK/root-context"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-context-codex"
 fixture compact-seed; fixture root-context; fixture root-large; poll
-check 'bounded head recovers actual root model/effort with explicit catch-up freshness' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==1 && $c[0]{model} eq "gpt-6.1-sol" && $c[0]{effort} eq "high" && $c[0]{context_freshness} eq "catching_up"; die if grep {$_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @all; die if encode_json(\@all)=~/PRIVATE_ROOT/;'
+check 'bounded head recovers actual root model/effort with explicit catch-up freshness' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==1 && $c[0]{model} eq "gpt-6.2-sol" && $c[0]{effort} eq "high" && $c[0]{context_freshness} eq "catching_up"; die if grep {$_->{type} eq "usage" || exists($_->{tokens_in}) || exists($_->{cost_usd})} @all; die if encode_json(\@all)=~/PRIVATE_ROOT/;'
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-live" 2>&1
-check 'live root uses observed Sol 6.1/high and names catch-up' grep -q '6.1-sol high.*catching up' "$WORK/root-live"
+check 'live root uses observed Sol 6.2/high and names catch-up' grep -q '6.2-sol high.*catching up' "$WORK/root-live"
 fixture root-update; poll
 check 'new tail context updates model/effort before historical catch-up completes' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6-sol" && $c[-1]{effort} eq "max" && $c[-1]{context_freshness} eq "current";'
 for (( catchup=0; catchup<3; catchup++ )); do poll; done
@@ -234,7 +234,7 @@ check 'unchanged root context is append-free' cmp "$J" "$WORK/root-stable"
 fixture compact; poll
 check 'compaction keeps observed root and original owner boundary' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6-sol" && $c[-1]{session} eq "00000000-0000-4000-8000-000000000001";'
 fixture root-context; poll
-check 'subsequent model change after compaction remains observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6.1-sol" && $c[-1]{effort} eq "high";'
+check 'subsequent model change after compaction remains observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless $c[-1]{model} eq "gpt-6.2-sol" && $c[-1]{effort} eq "high";'
 fixture root-incomplete; poll
 check 'incomplete newest root record does not invent model change' json_check 'die if grep {($_->{model}//"") eq "gpt-incomplete"} @native;'
 fixture root-complete-line; poll
@@ -245,45 +245,45 @@ fixture root-truncate-empty; poll
 check 'truncation without valid context clears stale model evidence' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die if defined($c[-1]{model}); die unless $c[-1]{effort} eq "unknown";'
 fixture root-no-effort; poll
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-no-effort" 2>&1
-check 'missing observed root effort is named unknown, not configured routing effort' grep -q '6.1-sol unknown' "$WORK/root-no-effort"
+check 'missing observed root effort is named unknown, not configured routing effort' grep -q '6.2-sol unknown' "$WORK/root-no-effort"
 fixture root-stale-sessionless
 COLUMNS=170 LINES=65 bash "$REPO/scripts/loomy-tree.sh" --root "$ROOT" --once >"$WORK/root-selected-owner" 2>&1
-check 'same-PID sessionless stale context cannot overwrite the selected explicit owner' perl -0777 -e 'my $s=<>; die unless $s=~/6.1-sol unknown/; die if $s=~/stale-owner/;' "$WORK/root-selected-owner"
+check 'same-PID sessionless stale context cannot overwrite the selected explicit owner' perl -0777 -e 'my $s=<>; die unless $s=~/6.2-sol unknown/; die if $s=~/stale-owner/;' "$WORK/root-selected-owner"
 
 ROOT="$WORK/root-repeated-clear"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-repeated-clear-codex"
 fixture compact-seed; fixture root-context
 root_rollouts=("$CODEX_HOME"/sessions/*/*/*/rollout-fixture-00000000-0000-4000-8000-000000000001.jsonl)
 cp "${root_rollouts[0]}" "$ROOT/root-snapshot.jsonl"
 poll; fixture root-truncate-empty; poll; fixture root-restore-identical; poll
-check 'identical root context restores after a clear despite identical identity/position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[1]{model} eq "" && $c[2]{model} eq "gpt-6.1-sol";'
+check 'identical root context restores after a clear despite identical identity/position' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==3 && $c[1]{model} eq "" && $c[2]{model} eq "gpt-6.2-sol";'
 fixture root-truncate-empty; poll
 check 'second identical truncation emits a second clear instead of retaining stale model' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==4 && $c[-1]{model} eq "";'
 fixture root-restore-identical; poll
-check 'second identical restoration uses a new persisted root revision' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==5 && $c[-1]{model} eq "gpt-6.1-sol";'
+check 'second identical restoration uses a new persisted root revision' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==5 && $c[-1]{model} eq "gpt-6.2-sol";'
 cp "$J" "$WORK/root-before-checkpoint-loss"
 rm "$ROOT/.loomy/logs/codex-native.idx"; poll
 check 'unchanged root recovery after checkpoint loss is append-free' cmp "$J" "$WORK/root-before-checkpoint-loss"
 fixture root-truncate-empty; poll
 check 'journal-recovered revision permits a fresh clear after checkpoint loss' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==6 && $c[-1]{model} eq "" && $c[-1]{context_revision}>$c[-2]{context_revision};'
 fixture root-restore-identical; poll
-check 'identical root restoration after checkpoint loss is observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==7 && $c[-1]{model} eq "gpt-6.1-sol";'
+check 'identical root restoration after checkpoint loss is observable' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==7 && $c[-1]{model} eq "gpt-6.2-sol";'
 cp "$J" "$WORK/root-before-checkpoint-corruption"
 fixture root-corrupt-index; poll
 check 'unchanged root recovery after checkpoint corruption is append-free' cmp "$J" "$WORK/root-before-checkpoint-corruption"
 fixture root-truncate-empty; poll; fixture root-restore-identical; poll
-check 'corrupted checkpoint cannot suppress subsequent clear or identical restoration' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==9 && $c[-2]{model} eq "" && $c[-1]{model} eq "gpt-6.1-sol" && $c[-2]{context_revision}>$c[-3]{context_revision}; for(@c){die unless exists($_->{context_revision}) && ($_->{parent_session}//"") eq "00000000-0000-4000-8000-000000000001";}'
+check 'corrupted checkpoint cannot suppress subsequent clear or identical restoration' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==9 && $c[-2]{model} eq "" && $c[-1]{model} eq "gpt-6.2-sol" && $c[-2]{context_revision}>$c[-3]{context_revision}; for(@c){die unless exists($_->{context_revision}) && ($_->{parent_session}//"") eq "00000000-0000-4000-8000-000000000001";}'
 fixture root-truncate-empty; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
 check 'lost checkpoint with already-truncated root clears the last journal snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==10 && $c[-1]{model} eq "";'
 fixture root-restore-identical; poll; fixture root-legacy-journal
 # The journal was rewritten in place: lose the backup too, or recovery from it depends on how many bytes the rewrite removed.
 rm -f "$ROOT/.loomy/logs/codex-native.idx" "$ROOT/.loomy/logs/codex-native.idx.bak"; poll
-check 'legacy revisionless root journal receives a conservative recovered snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==12 && exists($c[-1]{context_revision}) && $c[-1]{context_revision}>=11 && $c[-1]{model} eq "gpt-6.1-sol";'
+check 'legacy revisionless root journal receives a conservative recovered snapshot' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==12 && exists($c[-1]{context_revision}) && $c[-1]{context_revision}>=11 && $c[-1]{model} eq "gpt-6.2-sol";'
 cp "$J" "$WORK/root-legacy-recovered"; rm "$ROOT/.loomy/logs/codex-native.idx"; poll
 check 'legacy snapshot makes the next lost-checkpoint recovery append-free' cmp "$J" "$WORK/root-legacy-recovered"
 
 ROOT="$WORK/root-freshness-cycle"; J="$ROOT/.loomy/logs/events.jsonl"; export CODEX_HOME="$WORK/root-freshness-cycle-codex"
 fixture compact-seed; fixture root-context; poll; fixture root-large; poll
-check 'growing root changes current to catching-up without losing actual model' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==2 && $c[0]{context_freshness} eq "current" && $c[1]{context_freshness} eq "catching_up" && $c[1]{model} eq "gpt-6.1-sol" && $c[1]{context_revision}>$c[0]{context_revision};'
+check 'growing root changes current to catching-up without losing actual model' json_check 'my @c=grep {$_->{type} eq "session_context"} @native; die unless @c==2 && $c[0]{context_freshness} eq "current" && $c[1]{context_freshness} eq "catching_up" && $c[1]{model} eq "gpt-6.2-sol" && $c[1]{context_revision}>$c[0]{context_revision};'
 cp "$J" "$WORK/root-freshness-before-upgrade"; fixture root-legacy-freshness-index; poll
 check 'old checkpoint recovers its last freshness from bounded journal replay without appending' cmp "$J" "$WORK/root-freshness-before-upgrade"
 check 'root completes first bounded catch-up' drain_root

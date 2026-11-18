@@ -29,7 +29,7 @@ for mode in codex advisor unknown catchup; do
         else check 'unknown model is translated' grep -q 'MODÈLE INCONNU\|MODèLE INCONNU' "$output"; fi
       fi
       if [[ "$mode" == catchup ]]; then
-        check 'model identity row stays separate from freshness' perl -ne 'if (/GPT-6\.1-SOL.*(main session|session principale)/) { $found=1 } END { die unless $found }' "$output"
+        check 'model identity row stays separate from freshness' perl -ne 'if (/GPT-6\.2-SOL.*(main session|session principale)/) { $found=1 } END { die unless $found }' "$output"
       fi
     done
   done

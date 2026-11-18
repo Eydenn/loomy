@@ -110,7 +110,7 @@ check 'recap folds ten finished turns into one agent and its last turn, with the
 check 'long bridge titles end on a complete word within 60 characters and preserve the failed glyph and word' perl -CSD -0777 -e '
   use utf8; my $s=<>; my ($a)=$s=~/^  ┣━ (A deliberately[^\n]*)$/m; die "missing failed bridge" unless $a;
   die "missing outcome: $a" unless $a=~/ ✗ failed · /;
-  my ($title)=$a=~/^(.*?) (?:6\.1-sol|✗)/; die "title exceeds 60: $a" unless defined $title && length($title)<=60;
+  my ($title)=$a=~/^(.*?) (?:6\.2-sol|✗)/; die "title exceeds 60: $a" unless defined $title && length($title)<=60;
   die "unclean title: $title" unless $title=~/several…$/;
   die "second sentence shown" if $a=~/Second sentence/;
 ' "$WORK/full"

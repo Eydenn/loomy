@@ -10,7 +10,7 @@ sub row { my ($type,$sec,$id,$task,%extra)=@_; return {%{base($id,$task)},type=>
 sub write_rows { my ($append,@rows)=@_; open my $j,($append ? '>>' : '>'),"$root/.loomy/logs/events.jsonl" or die $!; print $j encode_json($_),"\n" for @rows; close $j or die $! }
 if ($action eq 'seed') {
     make_path("$root/.loomy/logs");
-    my @rows=({type=>'session',event=>'start',tool=>'codex',session=>'display-owner',pid=>0+$pid,ts=>ts(0),model=>'gpt-6.1-sol',effort=>'high'});
+    my @rows=({type=>'session',event=>'start',tool=>'codex',session=>'display-owner',pid=>0+$pid,ts=>ts(0),model=>'gpt-6.2-sol',effort=>'high'});
     for my $pair (['abort','aborted_task'],['superseded','superseded_task'],['response','response_task']) {
         push @rows,row('delegation_start',1,@$pair);
         my ($status,$outcome)=$pair->[0] eq 'abort' ? ('interrupted','interrupted') : $pair->[0] eq 'superseded' ? ('unknown','unknown') : ('ok','unknown');

@@ -18,7 +18,7 @@ if (($ARGV[1]//"") eq 'legacy') {
     put($now-900,'phase',phase=>'brief');
     put($now-800,'session',event=>'start',tool=>'claude',session=>'legacy-fixture',pid=>0);
     put($now-790,'request',id=>'request-one',session=>'legacy-fixture',excerpt=>'Structural request title');
-    my %d=(id=>'bridge-fixture',session=>'legacy-fixture',pid=>0,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'Structural bridge task');
+    my %d=(id=>'bridge-fixture',session=>'legacy-fixture',pid=>0,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.2-sol',effort=>'high',task=>'Structural bridge task');
     put($now-700,'delegation_start',%d);
     put($now-600,'usage',scope=>'lead',family=>'claude',tool=>'claude',messages=>2,cost_usd=>0.2,tokens_in=>100,tokens_out=>10,model=>'claude-sonnet-5-5');
     put($now-590,'advisor',family=>'claude',calls=>1,cost_usd=>0.1,tokens_in=>50,tokens_out=>5,model=>'claude-opus-5-5');
@@ -73,9 +73,9 @@ put($now-350000,'session_observed',%empty,surface=>'cli',state=>'idle',source_ac
 put($now-350000,'session_context',%empty,model=>'gpt-6-luna',effort=>'medium');
 
 # Pre-schema bridge delegations without a session: one never ended (its launcher is long gone), one finished.
-put($now-370000,'delegation_start',id=>'dlegacy001',pid=>4194002,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'Legacy bridge run never ended');
+put($now-370000,'delegation_start',id=>'dlegacy001',pid=>4194002,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.2-sol',effort=>'high',task=>'Legacy bridge run never ended');
 put($now-371000,'delegation_start',id=>'dlegacy002',pid=>4194003,bridge=>'codex',role=>'executor',family=>'codex',model=>'gpt-6-luna',effort=>'max',task=>'Legacy bridge run finished');
 put($now-370500,'delegation',id=>'dlegacy002',bridge=>'codex',family=>'codex',status=>'ok',outcome=>'unknown',duration_s=>500);
-put($now-369000,'delegation_start',id=>'dfailed-long',pid=>4194004,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.1-sol',effort=>'high',task=>'A deliberately long structural bridge title with several complete words before the boundary. Second sentence excluded.');
+put($now-369000,'delegation_start',id=>'dfailed-long',pid=>4194004,bridge=>'codex',role=>'developer',family=>'codex',model=>'gpt-6.2-sol',effort=>'high',task=>'A deliberately long structural bridge title with several complete words before the boundary. Second sentence excluded.');
 put($now-368900,'delegation',id=>'dfailed-long',bridge=>'codex',family=>'codex',status=>'error',outcome=>'failed',duration_s=>100);
 close $j or die $!;

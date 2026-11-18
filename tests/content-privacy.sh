@@ -94,7 +94,7 @@ put(project / '.loomy/brief.md', '---\nname: PRIVATE_BRIEF\ntype: web\nstage: mv
 put(project / '.loomy/VERSION', '0.17.6\n')
 put(project / '.loomy/state', 'phase=build\nPRIVATE_STATE\n')
 events = [dict(type='delegation', ts='2026-10-27T12:00:00Z', id=f'event-{n:02}',
-               role='developer', tool='codex', model='gpt-6.1-sol', outcome='ok',
+               role='developer', tool='codex', model='gpt-6.2-sol', outcome='ok',
                task='PRIVATE_TASK', excerpt='PRIVATE_EXCERPT', why='PRIVATE_WHY',
                checkpoint_value={'task': 'PRIVATE_NESTED'}, unknown='PRIVATE_UNKNOWN')
           for n in range(1, 21)]

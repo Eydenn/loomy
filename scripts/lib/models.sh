@@ -29,7 +29,7 @@ if [[ ${#_ui_probe} != 1 ]]; then
 fi
 unset _ui_probe _l _locs
 
-AI_CATALOG_DATE="2026-10-13"
+AI_CATALOG_DATE="2026-11-18"
 AI_CATALOG_SOURCE="built-in"
 AI_PRICES_EXTRA=""   # downloaded catalog prices: "model=input output cache;…"
 AI_PRICES_LONG_EXTRA=""  # downloaded long-prompt prices: "model=threshold input output cache;…"
@@ -39,9 +39,11 @@ AI_ROUTE_EXTRA=""    # downloaded catalog routing: "family:role=TIER effort;…"
 AI_CHAIN_CLAUDE_TOP="claude-opus-5-5"
 AI_CHAIN_CLAUDE_MID="claude-sonnet-5-5"
 AI_CHAIN_CLAUDE_FAST="claude-haiku-5-5"
-AI_CHAIN_CODEX_TOP="gpt-6.1-sol"
-AI_CHAIN_CODEX_MID="gpt-6.1-sol"
+AI_CHAIN_CODEX_TOP="gpt-6.2-sol"
+AI_CHAIN_CODEX_MID="gpt-6.2-sol"
 AI_CHAIN_CODEX_FAST="gpt-6-luna"
+# Premium models validated for explicit use only (--model, AI_MODEL_*, model.<family>.<tier> pin): never in an automatic chain.
+AI_ONDEMAND_CODEX="gpt-6.2-astra"
 # Announced models are probed daily for availability; catalog validation is required before routing.
 # "family:tier:model" entries; the catalog can replace them.
 AI_UPCOMING=""
@@ -81,6 +83,8 @@ _ai_catalog_load() {
       # Every model id starts with a letter or digit (never an option for the CLIs).
       [[ " $v" == *" -"* ]] && continue
       [[ -n "$v" ]] && eval "AI_CHAIN_${k}=\"\$v\""
+    elif [[ "$line" =~ ^ondemand\.codex=([A-Za-z0-9][A-Za-z0-9._\ -]*)$ ]]; then
+      AI_ONDEMAND_CODEX="$(printf '%s' "${BASH_REMATCH[1]}" | tr -s ' ' | sed 's/^ //; s/ $//')"
     elif [[ "$line" =~ ^upcoming\.(claude|codex)\.(top|mid|fast)=([A-Za-z0-9][A-Za-z0-9._-]*)$ ]]; then
       up_new="${up_new:+$up_new }${BASH_REMATCH[1]}:${BASH_REMATCH[2]}:${BASH_REMATCH[3]}"
     elif [[ "$line" =~ ^price\.([A-Za-z0-9][A-Za-z0-9._-]*)=([0-9.]+\ [0-9.]+\ [0-9.]+)$ ]]; then
@@ -128,6 +132,8 @@ for _key in CLAUDE_TOP CLAUDE_MID CLAUDE_FAST CODEX_TOP CODEX_MID CODEX_FAST; do
   eval "AI_VALIDATED_${_key}=\"\$AI_CHAIN_${_key}\""
 done
 unset _key
+# On-demand premium models are valid for explicit selection only; the chains above are untouched.
+[[ -z "$AI_ONDEMAND_CODEX" ]] || AI_VALIDATED_CODEX_TOP="${AI_VALIDATED_CODEX_TOP:+$AI_VALIDATED_CODEX_TOP }$AI_ONDEMAND_CODEX"
 _ai_local_chains
 # Announced models are probed for availability; routing promotion requires catalog validation.
 
@@ -221,6 +227,7 @@ ai_price() {
     claude-haiku-4-5*) echo "1 5 0.10" ;;
     claude-haiku-5-5*) echo "0.10 0.50 0.01" ;;   # prompts up to 100K tokens (ai_price_long beyond)
     gpt-6-astra*) echo "10 50 1.00" ;;
+    gpt-6.2-sol*) echo "2 10 0.10" ;;   # same Sol-tier price assumed: no published 6.2 figure yet
     gpt-6.1-sol*) echo "2 10 0.10" ;;
     gpt-6-sol*) echo "2 10 0.20" ;;
     gpt-6-luna*) echo "0.10 0.50 0.01" ;;

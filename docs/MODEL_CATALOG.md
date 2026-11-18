@@ -1,6 +1,6 @@
 # Model catalog and routing rationale
 
-Routing policy updated on **2026-10-13**; performance figures checked on **2026-10-08** (Claude Haiku 5.5 added on 2026-10-08, GPT-6.1 Sol on 2026-09-30, Claude Sonnet 5.5 on 2026-09-28; the rest as of 2026-09-23). The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
+Routing policy updated on **2026-11-18**; performance figures checked on **2026-10-08** (GPT-6.2 Sol adopted on 2026-11-18, Claude Haiku 5.5 added on 2026-10-08, GPT-6.1 Sol on 2026-09-30, Claude Sonnet 5.5 on 2026-09-28; the rest as of 2026-09-23). The routing engine (`scripts/lib/models.sh`) applies the conclusions below.
 Models change every few weeks: see [Updating the catalog](#updating-the-catalog).
 
 Sources are listed at the end. "AA" means Artificial Analysis (independent measurements). "Vendor" means figures published by OpenAI or Anthropic.
@@ -10,7 +10,8 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 | Model | Input / output price ($ per million tokens) | Cache read | Cost per task of the AA intelligence index (by effort) | AA agentic coding index | Terminal-Bench 4.0 | Positioning |
 |---|---|---|---|---|---|---|
 | GPT-6-Luna | 0.10 / 0.50 | 0.01 | **$0.07** (max) | 41 | 13% | cheapest capable executor |
-| GPT-6.1-Sol | 2 / 10 | 0.10 | about $1.50 per DeepSWE task (high) | not published yet | DeepSWE 75.2% (vendor), OSWorld 2.0 71.4% | Codex workhorse from 2026-09-30; close to Astra for a fifth of the cost |
+| GPT-6.2-Sol | 2 / 10 (assumed: same Sol tier as 6.1, no published 6.2 figure yet) | 0.10 | not measured yet | not published yet | not published yet | Codex workhorse and top tier from 2026-11-18; replaces 6.1 Sol |
+| GPT-6.1-Sol | 2 / 10 | 0.10 | about $1.50 per DeepSWE task (high) | not published yet | DeepSWE 75.2% (vendor), OSWorld 2.0 71.4% | superseded by 6.2 Sol on 2026-11-18; historical pricing only |
 | GPT-6-Sol | 2 / 10 | 0.20 | $0.13 (low) → $1.06 (max) | 57 ($2.99/task) | 43% | workhorse |
 | GPT-6-Astra | 10 / 50 (fast 20 / 100) | 1.00 | $0.82 (low) → $3.26 (max) | **62** ($7.09/task) | 59% | OpenAI's frontier model, computer use |
 | Claude Haiku 5.5 | 0.10 / 0.50 (prompt over 100K tokens: 0.50 / 2.50) | 0.01 (0.05) | $0.02 (low) → $0.21 (max); intelligence from 29 to 43, 38 at high for $0.08 | not published yet | 33% (AA; vendor: 39.2%) | Claude explorer and full-Claude executor from 2026-10-08 |
@@ -43,7 +44,10 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
    - Consequence: it takes the head of the Claude `mid` chain (developer, reviewer, executor, documenter on the Claude side), without a superseded Sonnet fallback. The lead agent and the high-stakes specialists stay on Opus 5.5 at high, which is still cheaper for the same level of reasoning. To be reviewed once independent agentic coding figures are out.
 8. **GPT-6.1 Sol (2026-09-29) replaces GPT-6 Sol at the same price, with cheaper cache reads ($0.10).**
    - Vendor figures: DeepSWE v1.1 75.2% for about $1.50 per task, against 74.8% for about $7.70 with Astra and 68.8% with GPT-6 Sol; OSWorld 2.0 71.4% (Astra 73.5%); fewer hallucinations at low effort (7.7% against 11.4%).
-   - Consequence: it heads the Codex `mid` chain (developer, reviewer, debugger on the Codex side, the audit's cross review), without a superseded Sol fallback. From 0.7.2 it also takes the top tier (lead agent, architect, security on the Codex side): Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Astra is no longer an automatic fallback; an explicit override remains possible: `loomy config set model.codex.top gpt-6-astra` (`auto` to go back).
+   - Consequence: it heads the Codex `mid` chain (developer, reviewer, debugger on the Codex side, the audit's cross review), without a superseded Sol fallback. From 0.7.2 it also takes the top tier (lead agent, architect, security on the Codex side): Astra was found less reliable lately in real use, and 6.1 Sol matches it on DeepSWE for a fifth of the cost. Astra is no longer an automatic fallback; an explicit override remains possible: `loomy config set model.codex.top gpt-6.2-astra` (`auto` to go back).
+8b. **GPT-6.2 Sol (validated 2026-11-18) replaces GPT-6.1 Sol** at the head of the Codex `top` and `mid` chains, with no superseded 6.1 fallback.
+   - Evidence: it is present in Codex's local model cache (`~/.codex/models_cache.json`, priority 1, `supported_in_api`, context 500K) and `codex exec -m gpt-6.2-sol` answered on 2026-11-18. No vendor or AA figure is available locally, so the price is assumed equal to 6.1 Sol's ($2 / $10, cache read $0.10); correct `price.gpt-6.2-sol` when the published rate differs.
+   - GPT-6.2 Astra is **premium, on demand**: validated for explicit use only (`ondemand.codex=gpt-6.2-astra`; `--model gpt-6.2-astra` on a bridge, `AI_MODEL_CODEX_TOP=gpt-6.2-astra`, or `loomy config set model.codex.top gpt-6.2-astra`), never in an automatic chain, and the routing split is unchanged. No evaluation was run (no quota spent); the cache gives no price or benchmark, so none is recorded. GPT-6.2 Terra and Luna do not exist on this account ("model is not supported"); Luna stays GPT-6-Luna. GPT-6.1 Terra is not routed.
 9. **Sonnet 5.5 medium as the Thrifty lead agent** (test of 2026-09-29, below): same result as Opus 5.5 medium for about half the lead agent's cost, and faster. Anthropic recommends Sonnet 5.5 at `medium` for well-specified agentic work and Opus 5.5 for long work needing judgment: the architect, debugger and security roles stay on Opus.
 10. **Opus 5.5 produces about 1.6 times more output tokens** than Opus 5 at max effort. Its price cut keeps the cost per task stable, hence an effort capped at `high` for everyday specialist work.
 11. **Claude Haiku 5.5 (2026-10-07) takes the cheap Claude work.**
@@ -57,19 +61,19 @@ Sources are listed at the end. "AA" means Artificial Analysis (independent measu
 
 | Role | Full Claude Code | Full Codex | Hybrid, Claude lead | Hybrid, Codex lead | Why |
 |---|---|---|---|---|---|
-| Lead agent | Opus 5.5 high | Sol 6.1 high | Opus 5.5 high | Sol 6.1 high | best reasoning to plan, delegate and verify |
-| Architect | Opus 5.5 high | Sol 6.1 high | Opus 5.5 high | Opus 5.5 high (bridge) | Opus leads on reasoning and office work |
-| Debugger | Opus 5.5 high | Sol 6.1 xhigh | Opus 5.5 high | Opus 5.5 high (bridge) | Terminal-Bench: Opus 59.6%, Sol 43% |
-| Security | Opus 5.5 high | Sol 6.1 high | Opus 5.5 high | Opus 5.5 high (bridge) | high-stakes judgement |
-| Reviewer | Sonnet 5.5 high | Sol 6.1 high | Sol 6.1 high (Codex) | Sonnet 5.5 high (Claude) | cross-family review in hybrid |
-| Developer | Sonnet 5.5 medium | Sol 6.1 high | Sonnet 5.5 medium | Sol 6.1 high | same price; stays on the main tool |
+| Lead agent | Opus 5.5 high | Sol 6.2 high | Opus 5.5 high | Sol 6.2 high | best reasoning to plan, delegate and verify |
+| Architect | Opus 5.5 high | Sol 6.2 high | Opus 5.5 high | Opus 5.5 high (bridge) | Opus leads on reasoning and office work |
+| Debugger | Opus 5.5 high | Sol 6.2 xhigh | Opus 5.5 high | Opus 5.5 high (bridge) | Terminal-Bench: Opus 59.6%, Sol 43% |
+| Security | Opus 5.5 high | Sol 6.2 high | Opus 5.5 high | Opus 5.5 high (bridge) | high-stakes judgement |
+| Reviewer | Sonnet 5.5 high | Sol 6.2 high | Sol 6.2 high (Codex) | Sonnet 5.5 high (Claude) | cross-family review in hybrid |
+| Developer | Sonnet 5.5 medium | Sol 6.2 high | Sonnet 5.5 medium | Sol 6.2 high | same price; stays on the main tool |
 | Executor | Haiku 5.5 high | Luna max | Luna max (Codex) | Luna max | Luna: DeepSWE 66.6% for $0.22; Haiku 5.5 high: Luna max level, 33% on Terminal-Bench |
 | Explorer | Haiku 5.5 medium | Luna low | Haiku 5.5 medium | Luna low | cheap searches, on the main tool |
-| Documenter | Sonnet 5.5 low | Sol 6.1 low | Sonnet 5.5 low | Sol 6.1 low | accuracy over price (Luna is wrong too often) |
+| Documenter | Sonnet 5.5 low | Sol 6.2 low | Sonnet 5.5 low | Sol 6.2 low | accuracy over price (Luna is wrong too often) |
 
 Profiles:
-- `econome` puts a Claude lead agent on Sonnet 5.5 `medium` (a Codex lead stays on Sol 6.1, one notch lower) and lowers the specialists' effort by one notch.
-- `qualite` raises it by one notch (the full Codex debugger moves to Sol 6.1 xhigh), puts reviews on the best model and moves the executor to Sol or Sonnet high.
+- `econome` puts a Claude lead agent on Sonnet 5.5 `medium` (a Codex lead stays on Sol 6.2, one notch lower) and lowers the specialists' effort by one notch.
+- `qualite` raises it by one notch (the full Codex debugger moves to Sol 6.2 xhigh), puts reviews on the best model and moves the executor to Sol or Sonnet high.
 
 Run `loomy-route.sh --profile <profile> all` to see the exact matrices.
 
@@ -102,9 +106,9 @@ Models change often: the catalog is updated **without a new Loomy version**. The
 One value per line, read strictly (never executed):
 
 ```
-date=2026-10-15                                   # required: a catalog is only used when newer
+date=2026-11-18                                   # required: a catalog is only used when newer
 model.claude.mid=claude-sonnet-5-5                  # validated current model
-model.codex.top=gpt-6.1-sol                       # no obsolete fallback
+model.codex.top=gpt-6.2-sol                       # no obsolete fallback
 price.claude-sonnet-5-5=2 10 0.10                 # $ per million tokens: input, output, cache read
 price_long.claude-haiku-5-5=100000 0.50 2.50 0.05 # optional: rate of a request whose prompt is longer (whole request)
 route.claude.explorer=MID low                     # optional: rebalance a role (TOP|MID|FAST tier, effort)
@@ -112,7 +116,7 @@ route.claude.explorer=MID low                     # optional: rebalance a role (
 
 ### Availability belongs to the provider
 
-Automatic chains contain only validated current models: Codex top/mid `gpt-6.1-sol`, fast `gpt-6-luna`; Claude top `claude-opus-5-5`, mid `claude-sonnet-5-5`, fast `claude-haiku-5-5`. Astra has a poor price/performance ratio; GPT-6 Sol, Sonnet 5 and Haiku 4.5 are superseded. Their prices remain readable for historical journals.
+Automatic chains contain only validated current models: Codex top/mid `gpt-6.2-sol`, fast `gpt-6-luna`; Claude top `claude-opus-5-5`, mid `claude-sonnet-5-5`, fast `claude-haiku-5-5`. GPT-6.2 Astra is validated for explicit use only (premium, on demand); GPT-6.1 Sol, GPT-6 Sol, Sonnet 5 and Haiku 4.5 are superseded (obsolete: never an automatic fallback). Their prices remain readable for historical journals.
 
 Quota, credits, plan exhaustion and rate limits saturate the whole provider. Before each delegation Loomy reads the current quota windows; only 100 % / reached blocks a provider (95 % still allows a real attempt); an actual refusal also records provider availability until its reset. The bridge hands the same role to the other installed provider with room once, using that provider's routed current model and retaining explicit effort overrides and permissions. It never retries another model of the saturated provider.
 
@@ -143,7 +147,25 @@ A model announced but not out yet goes in the catalog as `upcoming.<tool>.<tier>
 - `loomy models` lists the announced models; `loomy doctor --live` tests them too.
 - Its routing (which roles beyond its tier) is decided once real figures are out, with the usual protocol below.
 
-Currently announced: none. Claude Haiku 5.5, announced on 2026-09-22, came out on 2026-10-07 and was probed this way until then (finding 11).
+Currently announced: none. On-demand premium models (validated for explicit use, never routed automatically): `gpt-6.2-astra` (finding 8b). Claude Haiku 5.5, announced on 2026-09-22, came out on 2026-10-07 and was probed this way until then (finding 11).
+
+### Codex cache metadata, GPT-6.2 Sol and Astra (2026-11-18)
+
+Source: `~/.codex/models_cache.json` (fetched 2026-11-18T09:37Z, Codex CLI 0.169.0). The cache carries **no price and no benchmark**; the rows below are all it says. Astra's price is not recorded in the catalog until a published rate exists (a user report that it is cheaper is unverified).
+
+| Field | GPT-6.2-Sol | GPT-6.2-Astra |
+|---|---|---|
+| Description | Fast, go-to model for coding and everyday work | Our most capable model for complex coding and professional work |
+| Cache priority (lower = listed first) | 1 | 2 |
+| Context window / maximum / effective share | 500,000 / 872,000 / 95% | 272,000 / 872,000 / 95% |
+| Efforts supported | low, medium, high, xhigh, max, ultra (ultra = automatic task delegation) | same six |
+| Default effort | medium | low |
+| Speed tier | `fast` / service tier `priority` ("Fast": 2x speed, increased usage); not the default | same, and `priority` is the default service tier |
+| Input modalities | text, image, audio | text, image |
+| API / visibility | supported in API, listed | supported in API, listed |
+| Other | verbosity default low, tool mode `code_mode_only`, multi-agent v2 (effort xhigh), no `upgrade` target | same |
+
+For comparison, GPT-6.1-Sol: priority 3, context 500,000, default effort medium, marked "Previous generation", its availability notice reads "near-Astra performance at a lower cost".
 
 ### Protocol when a new model comes out
 
@@ -155,7 +177,7 @@ Currently announced: none. Claude Haiku 5.5, announced on 2026-09-22, came out o
 6. **Publish**: commit and push to `main`. Everyone gets it with `loomy update --catalog`; the home screen tells them.
 7. **Carry the validated chain into `scripts/lib/models.sh`** (built-in values) in the next Loomy version; old prices can remain for journal cost reading. A test checks that the repository catalog and the built-in values stay consistent.
 
-For an explicit expert override using a validated current model on one machine: `AI_MODEL_CODEX_FAST=gpt-6.1-sol loomy route`.
+For an explicit expert override using a validated current model on one machine: `AI_MODEL_CODEX_FAST=gpt-6.2-sol loomy route`.
 
 ## Sources
 - [GPT-6 Sol and Luna launch (VentureBeat)](https://venturebeat.com/technology/openai-releases-gpt-6-sol-and-luna-models-slashing-api-costs-50-or-more)

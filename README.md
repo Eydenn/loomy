@@ -39,7 +39,7 @@ Loomy frames each project, then a lead agent on the best model routes every requ
 | | |
 |---|---|
 | 🎯&nbsp;**Quality** | The best reasoning plans, decides and reviews; every change can be cross-reviewed by the other model family; the project's characteristics (accounts, payments, sensitive data…) set the checks the agents must do. |
-| 💰&nbsp;**Cost** | Each piece of work goes to the cheapest role that does it reliably (GPT-6-Luna for bounded tasks, Sonnet 5.5 or GPT-6.1 Sol for everyday work, Opus 5.5 for architecture and security). Tokens, cost and subscription quotas are measured; work moves to the other tool before a quota runs out. |
+| 💰&nbsp;**Cost** | Each piece of work goes to the cheapest role that does it reliably (GPT-6-Luna for bounded tasks, Sonnet 5.5 or GPT-6.2 Sol for everyday work, Opus 5.5 for architecture and security). Tokens, cost and subscription quotas are measured; work moves to the other tool before a quota runs out. |
 | 🧠&nbsp;**Continuity** | Work state, durable documentation and one commit per finished request keep the thread across sessions, compactions and tools. Optional private results add local task/result continuity; authored continuity documents can travel through the private backup. |
 | 🧩&nbsp;**Method** | A project type and its key characteristics set up the structure, the roles and the official skills (Anthropic and OpenAI) the agents need, added as the project evolves. |
 | 👀&nbsp;**Visibility** | The lead agent on the left, the dispatch on the right: phases, delegations, agent tree and costs live, in the terminal or beside the desktop app. |
@@ -504,7 +504,7 @@ flowchart TB
   L --> AR["🏛️ Architect<br/>Opus 5.5 · high"]:::deep
   L --> DB["🐞 Debugger<br/>Opus 5.5 · high"]:::deep
   L --> SE["🔒 Security<br/>Opus 5.5 · high"]:::deep
-  L --> RV["🔍 Reviewer<br/>GPT-6-Sol 6.1 · high ⇄"]:::std
+  L --> RV["🔍 Reviewer<br/>GPT-6.2-Sol · high ⇄"]:::std
   L --> DV["🛠️ Developer<br/>Sonnet 5.5 · medium"]:::std
   L --> EX["⚙️ Executor<br/>GPT-6-Luna · max ⇄"]:::fast
   L --> XP["🔎 Explorer<br/>Haiku 5.5 · medium"]:::fast
@@ -521,21 +521,21 @@ flowchart TB
 
 | Role | 🟠 Full Claude | 🔵 Full Codex | 🟣 Hybrid, Claude lead | 🟣 Hybrid, Codex lead |
 |---|---|---|---|---|
-| 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Sol 6.1 · high | **Opus 5.5 · high** | Sol 6.1 · high |
-| 🏛️&nbsp;Architect | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🐞&nbsp;Debugger | Opus 5.5 · high | Sol 6.1 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔒&nbsp;Security | Opus 5.5 · high | Sol 6.1 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
-| 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol 6.1 · high | Sol 6.1 · high ⇄ | Sonnet 5.5 · high ⇄ |
-| 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol 6.1 · high | Sonnet 5.5 · medium | Sol 6.1 · high |
+| 🎯&nbsp;**Lead&nbsp;agent** | Opus 5.5 · high | Sol 6.2 · high | **Opus 5.5 · high** | Sol 6.2 · high |
+| 🏛️&nbsp;Architect | Opus 5.5 · high | Sol 6.2 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🐞&nbsp;Debugger | Opus 5.5 · high | Sol 6.2 · xhigh | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔒&nbsp;Security | Opus 5.5 · high | Sol 6.2 · high | Opus 5.5 · high | Opus 5.5 · high ⇄ |
+| 🔍&nbsp;Reviewer | Sonnet 5.5 · high | Sol 6.2 · high | Sol 6.2 · high ⇄ | Sonnet 5.5 · high ⇄ |
+| 🛠️&nbsp;Developer | Sonnet 5.5 · medium | Sol 6.2 · high | Sonnet 5.5 · medium | Sol 6.2 · high |
 | ⚙️&nbsp;Executor | **Haiku 5.5 · high** | **Luna · max** | **Luna · max** ⇄ | **Luna · max** |
 | 🔎&nbsp;Explorer | Haiku 5.5 · medium | Luna · low | Haiku 5.5 · medium | Luna · low |
-| 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol 6.1 · low | Sonnet 5.5 · low | Sol 6.1 · low |
+| 📚&nbsp;Documenter | Sonnet 5.5 · low | Sol 6.2 · low | Sonnet 5.5 · low | Sol 6.2 · low |
 
 **Budget profiles.** The lead agent always stays on the top model; only role efforts and models change.
 
 | Profile | Effect |
 |---|---|
-| 💚&nbsp;Thrifty | Claude lead on Sonnet 5.5 `medium` (Codex lead on Sol 6.1 `medium`), specialists at `medium`, execution on fast models |
+| 💚&nbsp;Thrifty | Claude lead on Sonnet 5.5 `medium` (Codex lead on Sol 6.2 `medium`), specialists at `medium`, execution on fast models |
 | 💛&nbsp;Balanced&nbsp;*(default)* | the matrix above |
 | ❤️&nbsp;Max&nbsp;quality | lead agent and specialists at `xhigh`, reviews on the top model, execution on Sol or Sonnet `high` |
 
@@ -633,7 +633,8 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
 | Model | 💵 Price ($ per million tokens, in / out) | Cost per AA task | AA Coding Agent Index | Terminal-Bench 4.0 | 🏷️ Role |
 |---|---|---|---|---|---|
 | GPT&#8209;6&#8209;Luna | **0.10 / 0.50** | **$0.07** | 41 | 🔻 13 % | executor, explorer |
-| GPT&#8209;6.1&#8209;Sol | 2 / 10 | about $1.50 per DeepSWE task | — | DeepSWE 75.2 % (vendor) | every Codex role except execution, from 0.7.2 |
+| GPT&#8209;6.2&#8209;Sol | 2 / 10 (assumed, as 6.1) | not measured yet | — | — | every Codex role except execution, from 0.17.10 |
+| GPT&#8209;6.1&#8209;Sol | 2 / 10 | about $1.50 per DeepSWE task | — | DeepSWE 75.2 % (vendor) | historical; excluded from automatic routing |
 | GPT&#8209;6&#8209;Sol | 2 / 10 | $0.13 → $1.06 | 57 | 43 % | historical; excluded from automatic routing |
 | GPT&#8209;6&#8209;Astra | 10 / 50 | $0.82 → $3.26 | **62** | 59 % | historical; excluded from automatic routing |
 | Claude&nbsp;Sonnet&nbsp;5.5 | 2 / 10 | $0.41 → $7.60 | — | 70.6 % (vendor) | developer, reviewer (Claude), Thrifty lead agent |
@@ -645,7 +646,7 @@ Skills give the agents a proven method for a kind of work (browser tests, deploy
   - It scores 66.6 % on bounded fixes for $0.22, against $2.74 for Sol.
   - On long autonomous terminal work it drops to 13 %.
   - So it executes precise tickets under the lead agent, nothing more.
-- 🐎 **GPT-6.1 Sol runs the Codex side.** It matches Astra on DeepSWE (75.2 % against 74.8 %) for about a fifth of the cost, and Astra was found less reliable lately in real use: only validated current models are routed. A saturated provider hands the role to the other once; when neither can serve it, the delegation pauses until the expected reset.
+- 🐎 **GPT-6.2 Sol runs the Codex side.** Its predecessor 6.1 Sol matched Astra on DeepSWE (75.2 % against 74.8 %) for about a fifth of the cost (no 6.2 benchmark is published yet), and Astra was found less reliable lately in real use: only validated current models are routed. A saturated provider hands the role to the other once; when neither can serve it, the delegation pauses until the expected reset.
 
 ---
 
@@ -784,7 +785,7 @@ For contributors: interface strings are written in English in the code (`t "Engl
 
 The catalog lives in `catalog/models.conf` (published, fetched by `loomy update --catalog`) and `scripts/lib/models.sh` (built-in values): model chains per tier, prices, minimum CLI versions. The update protocol is in `docs/MODEL_CATALOG.md`.
 
-For an explicit expert override using a validated current model on one machine: `AI_MODEL_CODEX_FAST=gpt-6.1-sol loomy route`, or pin it with `loomy config set model.codex.fast gpt-6.1-sol`. If the Codex CLI is installed somewhere unusual, give its path with `LOOMY_CODEX_BIN`.
+For an explicit expert override using a validated current model on one machine: `AI_MODEL_CODEX_FAST=gpt-6.2-sol loomy route`, or pin it with `loomy config set model.codex.fast gpt-6.2-sol`. If the Codex CLI is installed somewhere unusual, give its path with `LOOMY_CODEX_BIN`.
 
 </details>
 
@@ -837,7 +838,7 @@ loomy/
 - **Questions**: scope, depth (quick, standard, deep), and deliverables: report only, report and fix plan, or fixes as well on a `loomy/audit-fixes` branch.
 - **Method**: [Cloudflare's official security-audit skill](https://github.com/cloudflare/security-audit-skill) (MIT), installed for this repository only when you agree.
 - **Team**, through Loomy's bridges, every delegation logged:
-  - the auditor (security role: Opus 5.5, or GPT-6.1 Sol with a Codex lead) leads;
+  - the auditor (security role: Opus 5.5, or GPT-6.2 Sol with a Codex lead) leads;
   - an explorer maps the attack surface, on a rigorous model (Sonnet 5.5 medium, or GPT-6-Sol): a missed entry point is never analysed;
   - Claude Sonnet 5.5 at high effort, rigorous, re-checks every finding independently;
   - the other model family (GPT-6-Sol) gives a second opinion on Critical and High findings;

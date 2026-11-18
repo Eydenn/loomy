@@ -5,6 +5,7 @@
 #   loomy privacy local                    excluded from Git on this machine (invisible in the repository)
 #   loomy privacy private [--name NAME | --remote URL]   excluded from the project, backed up in a separate private repository
 #   loomy privacy sync                     backs up the AI files to the private repository
+#   loomy privacy adopt                    verifies an existing .loomy/ai.git (created by an older Loomy or copied) and trusts it
 #   loomy privacy restore <URL|account/repo>   gets the AI files back on another machine
 #   loomy privacy content [structural|legacy-excerpts]
 #   loomy privacy labels [recommended|set SOURCE[,SOURCE...]|off]
@@ -32,7 +33,7 @@ while [[ $# -gt 0 ]]; do
     --remote) REMOTE="${2:-}"; shift ;;
     --name) AI_REPO_OPT="${2:-}"; shift ;;
     --quiet) QUIET=1 ;;
-    versioned|local|private|sync|apply|show) CMD="$1" ;;
+    versioned|local|private|sync|apply|show|adopt) CMD="$1" ;;
     inventory) CMD=inventory ;;
     --json) INVENTORY_JSON=1 ;;
     --paths) INVENTORY_PATHS=1 ;;
@@ -435,6 +436,10 @@ AI_REPO="$(loomy_slug "$AI_REPO")"
 create_companion() {
   local url="$REMOTE" owner
   if privacy_companion_ready "$ROOT"; then return 0; fi
+  if privacy_companion_present "$ROOT"; then
+    ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "a .loomy/ai.git is here but Loomy did not create it")"
+    return 1
+  fi
   if [[ -z "$url" ]]; then
     if ! command -v gh >/dev/null 2>&1 || ! gh auth status >/dev/null 2>&1; then
       ui_err "$(t "Can't create the private repository %s" "$AI_REPO")" "$(t "gh missing or not logged in: gh auth login, or give an existing repository with --remote URL")"
@@ -458,6 +463,7 @@ create_companion() {
     url="https://github.com/$owner/$AI_REPO.git"
   fi
   loomy_git_user init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
+  privacy_companion_record "$ROOT" || { ui_err "$(t "Can't record the private repository")" "${XDG_CONFIG_HOME:-~/.config}/loomy"; return 1; }
   privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
   privacy_companion_config "$ROOT"
@@ -466,7 +472,11 @@ create_companion() {
 
 do_sync() {
   local p paths=() msg
-  privacy_companion_ready "$ROOT" || { ui_err "$(t "No private repository for this project")" "$(t "loomy privacy private")"; return 1; }
+  if ! privacy_companion_ready "$ROOT"; then
+    if privacy_companion_present "$ROOT"; then ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "nothing was committed or pushed")"
+    else ui_err "$(t "No private repository for this project")" "$(t "loomy privacy private")"; fi
+    return 1
+  fi
   # A path that disappeared (START.md archived at the end of the setup) is staged too when the companion
   # repository tracks it, so its deletion is committed; a missing, untracked path would make `git add` fail.
   for p in $LOOMY_AI_PATHS; do
@@ -554,6 +564,8 @@ show_state() {
       pending="$(privacy_pending "$ROOT")"
       if [[ "$pending" == "0" ]]; then ui_kv "$(t "Backup")" "${C_GREEN}$(t "up to date")${C_RESET}"
       else ui_kv "$(t "Backup")" "${C_YELLOW}$(t "%s change(s) to back up" "$pending")${C_RESET} ${C_DIM}→ loomy privacy sync${C_RESET}"; fi
+    elif privacy_companion_present "$ROOT"; then
+      ui_kv "$(t "Private repository")" "${C_YELLOW}$(t "not verified")${C_RESET} ${C_DIM}→ loomy privacy adopt${C_RESET}"
     else
       ui_kv "$(t "Private repository")" "${C_YELLOW}$(t "missing on this machine")${C_RESET} ${C_DIM}→ $(t "loomy privacy restore <account/repo>, or loomy privacy private to create it")${C_RESET}"
     fi
@@ -587,13 +599,29 @@ case "$CMD" in
     if [[ "$MODE" != "private" ]]; then t "This project doesn't use a separate private repository (mode: %s)." "$(privacy_label "$MODE")" >&2; echo >&2; exit 1; fi
     do_sync || exit 1
     ;;
+  adopt)
+    # Explicit, user-run: validates a .loomy/ai.git Loomy did not create (older Loomy, a copied folder) and records it.
+    if privacy_companion_ready "$ROOT"; then t "The private repository is already verified (.loomy/ai.git)." ; echo; exit 0; fi
+    if problems="$(privacy_companion_adopt "$ROOT")"; then
+      ui_ok "$(t "Private repository verified")" ".loomy/ai.git"
+    else
+      ui_err "$(t "Private repository refused")" ".loomy/ai.git"
+      while IFS= read -r line; do [[ -z "$line" ]] || ui_rail "    ${C_DIM}$line${C_RESET}"; done <<<"$problems"
+      ui_end "$(t "nothing was run or recorded; remove or fix what is listed, then loomy privacy adopt again")"
+      exit 1
+    fi
+    ;;
   restore)
     [[ -n "$ARG" ]] || { t "Usage: loomy privacy restore <URL | account/repo>" >&2; echo >&2; exit 2; }
     if privacy_companion_ready "$ROOT"; then t "The private repository is already here (.loomy/ai.git): loomy privacy sync" >&2; echo >&2; exit 1; fi
+    if privacy_companion_present "$ROOT"; then t "Private history not verified · run loomy privacy adopt" >&2; echo >&2; exit 1; fi
     url="$ARG"
     if [[ "$ARG" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && ! -e "$ARG" ]]; then url="https://github.com/$ARG.git"; fi
     ROOT="$(privacy_companion_worktree "$ROOT")" || { t "Can't restore: %s" "$url" >&2; echo >&2; exit 1; }
-    git clone --bare -q "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
+    loomy_git_user clone --bare -q "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
+    # The user cloned it themselves: record it, then drop anything a repository could carry beyond its objects.
+    rm -rf "$(privacy_ai_git_dir "$ROOT")/hooks" "$(privacy_ai_git_dir "$ROOT")/info/attributes"
+    privacy_companion_record "$ROOT" || { t "Can't clone: %s" "$url" >&2; echo >&2; rm -rf "$(privacy_ai_git_dir "$ROOT")"; exit 1; }
     privacy_companion_config "$ROOT"
     # Filter historical runtime paths before either backing up local files or materializing the old commit.
     if ! privacy_companion_restore_index "$ROOT"; then

@@ -53,10 +53,11 @@ loomy privacy versioned
 loomy privacy local
 loomy privacy private
 loomy privacy sync
+loomy privacy adopt
 loomy privacy restore <account/repo>
 ```
 
-AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository. These modes do not grant permission to retain task text. The content controls below apply to the current project; worktrees sharing its registered logs also share its policy.
+AI files visibility: `versioned`, `local`, `private`; `sync`, `restore` for the private repository. `adopt` verifies a `.loomy/ai.git` that Loomy did not create (older Loomy, a copied folder) and trusts it; a companion shipped by a clone is refused until you adopt it, and nothing runs against it meanwhile. These modes do not grant permission to retain task text. The content controls below apply to the current project; worktrees sharing its registered logs also share its policy.
 
 #### `loomy privacy content`
 

@@ -167,7 +167,7 @@ usage() {
   _h_cmd effort "$(t "[<role>] [level|--reset]")" "$(t "Reasoning effort of the lead agent (or a role) for this project: low, medium, high, xhigh, max")"
   _h_cmd route "$(t "[command]")" "$(t "Role → model → effort matrix (lead, get <role>, markdown, all, claude-agents, codex-profiles)")"
   _h_cmd delegate "$(t "<claude|codex> <role> [options] \"task\"")" "$(t "Hands a role to Claude or Codex through the bridges")"
-  _h_cmd privacy "[mode|sync|restore]" "$(t "AI files visibility: versioned, local, or in a separate private repository")"
+  _h_cmd privacy "[mode|sync|adopt|restore]" "$(t "AI files visibility: versioned, local, or in a separate private repository")"
   _h_cmd privacy "content|labels|results|label" "$(t "Project-local journal policy, task label grants and private result retention")"
   _h_cmd privacy "inventory [--json|--paths|--git-history|--host]" "$(t "Metadata-only inventory of where local activity is stored: no content read, nothing changed or removed")"
   _h_cmd worktrees "$(t "<task> [base]")" "$(t "Creates two separate worktrees for parallel mode")"

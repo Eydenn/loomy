@@ -87,7 +87,7 @@ Watch keeps running after a collector/reducer error and shows a footer warning. 
 
 | | 🟢 Minimum | ⭐ Ideal |
 |---|---|---|
-| **System** | macOS, bash ≥ 3.2 (the macOS one works), `git`; Linux: tested automatically (CI), not yet validated in real use | + `gh` logged in |
+| **System** | macOS, bash ≥ 3.2 (the macOS one works), `git` ≥ 2.15 (2.44 or newer recommended); Linux: tested automatically (CI), not yet validated in real use | + `gh` logged in |
 | **AI** | **one** CLI: Claude Code ≥ 2.1.280 **or** Codex ≥ 0.155, logged in | **both**, installed in the terminal and detected by `loomy doctor`: hybrid mode |
 | **Models** | those of your tool | all answer `loomy doctor --live` |
 | **Comfort** | none (built-in questionnaire, no dependency) | clipboard, to copy the start prompt |
@@ -345,6 +345,9 @@ On another machine, after cloning the project, get its AI files back:
 ```bash
 loomy privacy restore <your-account>/<project>-ai
 ```
+
+> [!NOTE]
+> Loomy only drives a `.loomy/ai.git` it created itself (recorded in `~/.config/loomy/companions`, outside the project): a clone can ship a look-alike with its own hooks. A companion made by an older Loomy, or copied from elsewhere, shows `Private history not verified · run loomy privacy adopt` in `loomy status` and `loomy doctor` and is not synced automatically; `loomy privacy adopt` checks its settings (no hooks, filters or commands) and trusts it.
 
 > [!WARNING]
 > A file already pushed to a public repository stays in its history. When you switch to local or private, `loomy privacy` lists the files still tracked and gives the command to stop tracking them without deleting them from your disk. `--remote <URL>` lets you use another host than GitHub for the private repository.

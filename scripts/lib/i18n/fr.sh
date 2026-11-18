@@ -2571,5 +2571,22 @@ _t_fr() {
     'run git status here, then loomy doctor --fix again') _T='lance git status ici, puis relance loomy doctor --fix' ;;
     'Git index could not be read: %s') _T='L’index Git n’a pas pu être lu : %s' ;;
     'OUT OF CREDITS: provider %s has no credits left. Add credits or switch provider/model, then relaunch. Do not wait: this is not a timed reset.') _T='PLUS DE CRÉDITS : le fournisseur %s n’a plus de crédits. Ajoute des crédits ou change de fournisseur/modèle, puis relance. N’attends pas : ce n’est pas une réinitialisation datée.' ;;
+    'Private history not verified · run loomy privacy adopt') _T='Historique privé non vérifié · lance loomy privacy adopt' ;;
+    '- Private history not verified: .loomy/ai.git was not created by Loomy, so it is never synced automatically. Tell the user in one line to review it and run: loomy privacy adopt.') _T='- Historique privé non vérifié : .loomy/ai.git n'\''a pas été créé par Loomy, il n'\''est donc jamais synchronisé automatiquement. Dis à l'\''utilisateur en une ligne de le vérifier et de lancer : loomy privacy adopt.' ;;
+    'too old') _T='trop ancien' ;;
+    'Loomy needs git 2.15 or newer (git 2.44+ recommended)') _T='Loomy demande git 2.15 ou plus récent (git 2.44+ recommandé)' ;;
+    'private history verified') _T='historique privé vérifié' ;;
+    'not synced automatically until then') _T='pas de sauvegarde automatique d'\''ici là' ;;
+    'a .loomy/ai.git is here but Loomy did not create it') _T='un .loomy/ai.git est présent mais Loomy ne l'\''a pas créé' ;;
+    'Can'\''t record the private repository') _T='Impossible d'\''enregistrer le dépôt privé' ;;
+    'nothing was committed or pushed') _T='rien n'\''a été validé ni poussé' ;;
+    'not verified') _T='non vérifié' ;;
+    'The private repository is already verified (.loomy/ai.git).') _T='Le dépôt privé est déjà vérifié (.loomy/ai.git).' ;;
+    'Private repository verified') _T='Dépôt privé vérifié' ;;
+    'Private repository refused') _T='Dépôt privé refusé' ;;
+    'nothing was run or recorded; remove or fix what is listed, then loomy privacy adopt again') _T='rien n'\''a été exécuté ni enregistré ; retire ou corrige ce qui est listé, puis relance loomy privacy adopt' ;;
+    'nothing is backed up automatically until then') _T='rien n'\''est sauvegardé automatiquement d'\''ici là' ;;
+    'the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt') _T='le projet suit .loomy/ai.git : arrête de le suivre (git rm -r --cached .loomy/ai.git), puis lance loomy privacy adopt' ;;
+    'if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)') _T='si .loomy/ai.git était suivi : après l'\''avoir retiré de l'\''index, lance loomy privacy adopt (la confiance est révoquée d'\''ici là)' ;;
   esac
 }

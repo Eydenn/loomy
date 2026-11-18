@@ -21,6 +21,8 @@ source "$SCRIPT_DIR/lib/repair.sh"
 source "$SCRIPT_DIR/lib/hooks.sh"
 # shellcheck source=lib/project.sh
 source "$SCRIPT_DIR/lib/project.sh"
+# shellcheck source=lib/privacy.sh
+source "$SCRIPT_DIR/lib/privacy.sh"
 
 usage() {
   i18n_lines >&2 <<'EOF'
@@ -101,6 +103,10 @@ ui_section "$(t "SYSTEM")"
 ui_ok "bash ${BASH_VERSION%%(*}" "$(uname -s)"
 if command -v git >/dev/null 2>&1; then
   ui_ok "git" "$(loomy_git --version | awk '{print $3}')"
+  # --no-optional-locks (every Loomy git probe) needs git 2.15; the lazy-fetch guard is only effective from 2.44.
+  if loomy_git --version | awk '{split($3, v, "."); exit !(v[1] + 0 < 2 || (v[1] + 0 == 2 && v[2] + 0 < 15))}'; then
+    ui_warn "git $(t "too old")" "$(t "Loomy needs git 2.15 or newer (git 2.44+ recommended)")"
+  fi
 else
   ui_err "git" "$(t "required — https://git-scm.com/downloads")"; MIN_OK=0
 fi
@@ -493,6 +499,14 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
   else
     ui_ok ".loomy/docs/" "$(t "present")"
   fi
+  if [[ "$(privacy_mode "$ROOT")" == "private" ]] && privacy_companion_present "$ROOT"; then
+    if privacy_companion_ready "$ROOT"; then ui_ok ".loomy/ai.git" "$(t "private history verified")"
+    else
+      ui_warn "$(t "Private history not verified · run loomy privacy adopt")" "$(t "not synced automatically until then")"
+      ui_info "$(t "fix: %s" "loomy privacy adopt")"
+      [[ "$(privacy_companion_why "$ROOT")" != tracked ]] || ui_info "$(t "the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt")"
+    fi
+  fi
   p_lead="${AI_LEAD:-${AI_ENV#hybrid-}}"
   if [[ "$p_lead" == "claude" ]]; then
     # Subagents of the roles the routing keeps on Claude (the same ones loomy-route.sh claude-agents generates).
@@ -531,10 +545,9 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
     if (( FIX )); then
       loomy_gitignore_sync "$ROOT"
       p_err=""
-      while IFS= read -r p_f; do
-        p_e="$(loomy_git -C "$ROOT" rm --cached --quiet --ignore-unmatch -- ":(literal)$p_f" 2>&1 >/dev/null | head -1)" || true
-        [[ -z "$p_err" ]] && p_err="$p_e"
-      done < <(printf '%s\n' "$p_tracked")
+      # update-index --force-remove drops exactly the listed index entries: no work-tree read (no clean filter on a
+      # stat-dirty file), NUL-separated paths from ls-files -z, works on entries modified in the work tree.
+      p_err="$(loomy_history_tracked_z "$ROOT" | loomy_git -C "$ROOT" --literal-pathspecs update-index --force-remove -z --stdin 2>&1 >/dev/null | head -1)" || true
       p_left="$(loomy_history_tracked "$ROOT")"
       if [[ -z "$p_left" ]]; then
         ui_ok "$(t "history files untracked")" "$(t "they stay on disk and leave the repository at the next commit")"

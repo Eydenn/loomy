@@ -53,10 +53,11 @@ loomy privacy versioned
 loomy privacy local
 loomy privacy private
 loomy privacy sync
+loomy privacy adopt
 loomy privacy restore <compte/dépôt>
 ```
 
-Visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé. Ces modes n'autorisent pas la conservation du texte des tâches. Les contrôles de contenu ci-dessous concernent le projet courant ; les worktrees partageant ses logs enregistrés partagent aussi sa politique.
+Visibilité des fichiers IA : `versioned`, `local`, `private` ; `sync`, `restore` pour le dépôt privé. `adopt` vérifie un `.loomy/ai.git` que Loomy n'a pas créé (ancienne version de Loomy, dossier copié) et lui fait confiance ; un dépôt livré par un clone est refusé tant que tu ne l'as pas adopté, et rien ne s'exécute contre lui entre-temps. Ces modes n'autorisent pas la conservation du texte des tâches. Les contrôles de contenu ci-dessous concernent le projet courant ; les worktrees partageant ses logs enregistrés partagent aussi sa politique.
 
 #### `loomy privacy content`
 

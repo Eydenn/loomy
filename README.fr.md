@@ -87,7 +87,7 @@ Le suivi continue après une erreur de collecte ou de réduction et affiche un a
 
 | | 🟢 Minimum | ⭐ Idéal |
 |---|---|---|
-| **Système** | macOS, bash ≥ 3.2 (celui de macOS convient), `git` ; Linux : testé automatiquement (intégration continue), pas encore validé en usage réel | + `gh` connecté |
+| **Système** | macOS, bash ≥ 3.2 (celui de macOS convient), `git` ≥ 2.15 (2.44 ou plus recommandé) ; Linux : testé automatiquement (intégration continue), pas encore validé en usage réel | + `gh` connecté |
 | **IA** | **une** CLI : Claude Code ≥ 2.1.280 **ou** Codex ≥ 0.155, connectée | **les deux**, installées dans le terminal et détectées par `loomy doctor` : mode hybride |
 | **Modèles** | ceux de ton outil | tous répondent à `loomy doctor --live` |
 | **Confort** | aucun (questionnaire intégré, sans dépendance) | presse-papiers, pour copier le prompt de démarrage |
@@ -345,6 +345,9 @@ Sur une autre machine, après avoir cloné le projet, récupérer ses fichiers I
 ```bash
 loomy privacy restore <ton-compte>/<projet>-ai
 ```
+
+> [!NOTE]
+> Loomy ne pilote qu'un `.loomy/ai.git` qu'il a créé lui-même (enregistré dans `~/.config/loomy/companions`, hors du projet) : un clone peut livrer un faux avec ses propres hooks. Un dépôt créé par une ancienne version de Loomy, ou copié d'ailleurs, affiche `Historique privé non vérifié · lance loomy privacy adopt` dans `loomy status` et `loomy doctor` et n'est pas sauvegardé automatiquement ; `loomy privacy adopt` vérifie ses réglages (ni hooks, ni filtres, ni commandes), affiche ses URL distantes, te demande de confirmer dans un terminal et lui fait confiance. Un dépôt qui change ensuite (réglages, URL distante, opération en cours, suivi par le projet) est refusé de nouveau jusqu'à un nouveau `adopt` ; les dépôts distants locaux ne sont acceptés que si tu les définis toi-même avec `loomy privacy private --remote`.
 
 > [!WARNING]
 > Un fichier déjà envoyé sur un dépôt public reste dans son historique. Quand tu passes en mode local ou privé, `loomy privacy` liste les fichiers encore suivis et donne la commande pour arrêter de les suivre sans les supprimer de ton disque. `--remote <URL>` permet d'utiliser un autre hébergeur que GitHub pour le dépôt privé.

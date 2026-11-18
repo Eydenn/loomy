@@ -164,6 +164,14 @@ loomy_history_tracked() {
   return 0
 }
 
+# loomy_history_tracked_z <root>: the same, NUL separated and raw (for update-index --force-remove -z --stdin).
+loomy_history_tracked_z() {
+  loomy_git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  loomy_history_specs_load || return 0
+  loomy_git -C "$1" ls-files -z -- "${LOOMY_HISTORY_SPECS[@]}" 2>/dev/null || true
+  return 0
+}
+
 # _lp_doc_lang <root>: fr or en, the language of the project's documents (brief: doc_language).
 _lp_doc_lang() { local l; l="$(_ai_brief_get "$1/.loomy/brief.md" doc_language 2>/dev/null)"; [[ "$l" == fr ]] && echo fr || echo en; }
 

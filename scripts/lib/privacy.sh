@@ -148,21 +148,163 @@ privacy_companion_worktree() (
   printf '%s\n' "$owner"
 )
 
-# Inherited repository-location variables (from a git hook, an IDE or a wrapper) would redirect the index, the object
-# store or the work tree of the companion repository to the project's own: they are cleared for every companion call.
-# Identity, config and transport variables (GIT_AUTHOR_*, GIT_CONFIG_*, GIT_SSH*, ...) are kept.
-_PRIVACY_GIT_LOCATION_VARS="GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_INDEX_VERSION GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX GIT_IMPLICIT_WORK_TREE GIT_QUARANTINE_PATH GIT_REPLACE_REF_BASE GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_NO_REPLACE_OBJECTS GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM"
-ai_git() {
-  local root v
-  root="$(privacy_companion_worktree "$1")" || return 1
-  shift
-  (
-    for v in $_PRIVACY_GIT_LOCATION_VARS; do unset "$v"; done
-    loomy_git_user --git-dir="$(privacy_ai_git_dir "$root")" --work-tree="$root" "$@"
-  )
+# Inherited repository-location, config and exec variables (from a git hook, an IDE or a wrapper) would redirect the index,
+# the object store or the work tree of the companion repository to the project's own, or run a program: they are cleared for
+# every companion call. Identity and transport variables (GIT_AUTHOR_*, GIT_SSH*, ...) are kept: they are the user's own.
+_PRIVACY_GIT_LOCATION_VARS="GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_INDEX_VERSION GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX GIT_IMPLICIT_WORK_TREE GIT_QUARANTINE_PATH GIT_REPLACE_REF_BASE GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_NO_REPLACE_OBJECTS GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_EXEC_PATH GIT_EXTERNAL_DIFF GIT_PAGER"
+
+# privacy_companion_present <root>: something sits at .loomy/ai.git (trusted or not).
+privacy_companion_present() { local d; d="$(privacy_ai_git_dir "$1")"; [[ -e "$d" || -L "$d" ]]; }
+
+# Companion provenance. A plain `git clone` can ship a `.loomy/ai.git` directory (git only refuses `.git` components), with its
+# own config, hooks and filters: it must never be driven automatically. Loomy records the real path, device/inode, a random
+# nonce (also stored 0600 inside the companion) and a digest of every remote url/pushurl of each companion IT creates, or the
+# user explicitly adopts, in the per-user config (outside any project). Trust is re-checked on EVERY call: the record, the
+# nonce, the unchanged remote URLs, the config allow-list and the absence of operations in progress. Any failure after the
+# record exists REVOKES it: trust only comes back through `loomy privacy adopt`.
+privacy_companions_file() { echo "${XDG_CONFIG_HOME:-$HOME/.config}/loomy/companions"; }
+privacy_verdict_file() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/loomy/companion-verdicts"; }
+_privacy_cpl() { perl "$(dirname "${BASH_SOURCE[0]}")/companion.pl" "$@"; }
+
+# privacy_companion_forget <root>: drops the record of the companion of <root> (the folder may already be gone).
+privacy_companion_forget() {
+  local real
+  real="$(cd "$1" 2>/dev/null && pwd -P)" || return 0
+  [[ -f "$(privacy_companions_file)" ]] || return 0
+  _privacy_cpl forget "$(privacy_companions_file)" "$real/.loomy/ai.git" 2>/dev/null || true
 }
 
-privacy_companion_ready() { [[ -d "$(privacy_ai_git_dir "$1")" ]]; }
+# privacy_companion_scan <ai.git dir> <adopt|ready>: audit lines from companion.pl (P problem, U url, L local, D digest).
+privacy_companion_scan() {
+  local d="$1"
+  [[ -f "$d/config" && ! -L "$d/config" ]] || { printf 'P\tconfig missing\n'; return 0; }
+  { loomy_git config --no-includes --file "$d/config" --list -z 2>/dev/null || printf 'x\0'; } | _privacy_cpl scan "$2"
+  _privacy_cpl files "$d"
+}
+
+# privacy_companion_record <root> [adopt]: audits the companion and records it as created or adopted by the user.
+# Created by Loomy: local remotes are allowed. Adopted ("adopt" mode): refused.
+privacy_companion_record() {
+  local root d out digest mode="${2:-ready}"
+  root="$(privacy_companion_worktree "$1")" || return 1
+  d="$(privacy_ai_git_dir "$root")"
+  out="$(privacy_companion_scan "$d" "$mode")" || return 1
+  grep -q '^P' <<<"$out" && return 1
+  digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
+  [[ -n "$digest" ]] || return 1
+  mkdir -p "$(dirname "$(privacy_companions_file)")" 2>/dev/null && chmod 700 "$(dirname "$(privacy_companions_file)")" 2>/dev/null || true
+  _privacy_cpl write "$(privacy_companions_file)" "$d" "$digest"
+}
+
+# privacy_companion_why <root>: why the companion is refused (empty when it is trusted). One of
+# missing | link | owner | tracked | unrecorded | changed. A tracked, changed or failing companion has its record revoked.
+privacy_companion_why() {
+  local root d out digest rec key cache
+  d="$(privacy_ai_git_dir "$1")"
+  if ! privacy_companion_present "$1"; then privacy_companion_forget "$1"; echo missing; return 0; fi
+  root="$(privacy_companion_worktree "$1")" || { echo unrecorded; return 0; }
+  d="$(privacy_ai_git_dir "$root")"
+  if [[ -L "$d" || ! -d "$d" ]]; then echo link; return 0; fi
+  if [[ ! -O "$d" ]]; then echo owner; return 0; fi
+  # Anything of it tracked by the project (any case spelling): it travelled with the clone. The record is revoked.
+  if [[ -n "$(loomy_git -C "$root" ls-files -z -- ':(icase).loomy/ai.git' 2>/dev/null | head -c 1 || true)" ]]; then
+    privacy_companion_forget "$root"; echo tracked; return 0
+  fi
+  rec="$(_privacy_cpl match "$(privacy_companions_file)" "$d" 2>/dev/null)" || { echo unrecorded; return 0; }
+  key="$(_privacy_cpl key "$d" "$rec")" || { echo changed; return 0; }
+  cache="$(privacy_verdict_file)"
+  if [[ -f "$cache" ]] && _privacy_cpl vhas "$cache" "$key" 2>/dev/null; then return 0; fi
+  out="$(privacy_companion_scan "$d" ready)"
+  digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
+  if grep -q '^P' <<<"$out" || [[ -z "$digest" || "$digest" != "$rec" ]]; then privacy_companion_forget "$root"; echo changed; return 0; fi
+  mkdir -p "$(dirname "$cache")" 2>/dev/null || true
+  _privacy_cpl vadd "$cache" "$key" 2>/dev/null || true
+  return 0
+}
+
+# privacy_companion_ready <root>: the companion exists AND is trusted. Foreign companions are never driven automatically.
+privacy_companion_ready() { [[ -z "$(privacy_companion_why "$1")" ]]; }
+
+# privacy_companion_note <root>: one-line note for a present but refused companion (empty otherwise).
+privacy_companion_note() {
+  case "$(privacy_companion_why "$1")" in
+    ''|missing) return 0 ;;
+    *) t "Private history not verified · run loomy privacy adopt"; echo ;;
+  esac
+}
+
+# privacy_companion_adopt <root>: validates a present companion, shows every remote URL, asks for confirmation on a
+# terminal, then records it. Explicit, user-run only. Problems on stdout (one per line); returns 1 when refused.
+privacy_companion_adopt() {
+  local root d why out urls answer
+  privacy_companion_present "$1" || { echo "no companion at .loomy/ai.git"; return 1; }
+  root="$(privacy_companion_worktree "$1")" || { echo "project layout not supported"; return 1; }
+  d="$(privacy_ai_git_dir "$root")"
+  if [[ -L "$d" || ! -d "$d" ]]; then echo "companion is a link"; return 1; fi
+  if [[ ! -O "$d" ]]; then echo "companion is not owned by you"; return 1; fi
+  if [[ -n "$(loomy_git -C "$root" ls-files -z -- ':(icase).loomy/ai.git' 2>/dev/null | head -c 1 || true)" ]]; then echo "companion is tracked by the project repository"; return 1; fi
+  out="$(privacy_companion_scan "$d" adopt)"
+  if grep -q '^P' <<<"$out"; then awk -F'\t' '$1=="P"{print $2}' <<<"$out"; return 1; fi
+  grep -q '^U'$'\t''origin'$'\t''url'$'\t' <<<"$out" || { echo "no remote.origin.url in the companion config"; return 1; }
+  urls="$(awk -F'\t' '$1=="U"{print $2" "$3" "$4}' <<<"$out")"
+  if [[ ! -t 0 || ! -t 2 ]]; then echo "adopt needs a terminal to confirm the remote URLs"; return 1; fi
+  printf '%s\n' "Remote URLs (fetch and push) this repository will use:" >&2
+  while IFS= read -r answer; do printf '  %s\n' "$answer" >&2; done <<<"${urls:-(none)}"
+  printf '%s' "Trust this repository and these URLs? [y/N] " >&2
+  IFS= read -r answer || answer=""
+  case "$answer" in y|Y|yes|YES) ;; *) echo "not confirmed"; return 1 ;; esac
+  privacy_companion_record "$root" adopt || { echo "cannot write the user config"; return 1; }
+}
+
+# Inherited repository-location, config and exec variables (from a git hook, an IDE or a wrapper) would redirect the index,
+# the object store or the work tree of the companion repository to the project's own, or run a program: they are cleared for
+# every companion call. Identity and transport variables (GIT_AUTHOR_*, GIT_SSH*, ...) are kept: they are the user's own.
+_PRIVACY_GIT_LOCATION_VARS="GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_INDEX_VERSION GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX GIT_IMPLICIT_WORK_TREE GIT_QUARANTINE_PATH GIT_REPLACE_REF_BASE GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_NO_REPLACE_OBJECTS GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_EXEC_PATH GIT_EXTERNAL_DIFF GIT_PAGER GIT_ASKPASS GIT_ALLOW_PROTOCOL"
+
+# Filter drivers named in the user's own global/system config (git-lfs...): a project .gitattributes could select one when the
+# companion adds a file. They are neutralised for every companion call (the companion's own config cannot define any).
+_privacy_filter_args() {
+  local n
+  [[ -z "${_PRIVACY_FILTER_ARGS_SET:-}" ]] || return 0
+  _PRIVACY_FILTER_ARGS=()
+  while IFS= read -r n; do
+    [[ -n "$n" ]] || continue
+    _PRIVACY_FILTER_ARGS+=(-c "$n.clean=" -c "$n.smudge=" -c "$n.process=" -c "$n.required=false")
+  done < <(cd / && loomy_git config --name-only --list 2>/dev/null | sed -n 's/^\(filter\.[^.]*\)\.[^.]*$/\1/p' | sort -u)
+  _PRIVACY_FILTER_ARGS_SET=1
+}
+
+# ai_git <root> <git args>: every companion call is hardened (the repository is only trusted after privacy_companion_ready):
+# no hooks, no fsmonitor, no pager, no signature check, no lazy fetch, only https/ssh transports (GIT_ALLOW_PROTOCOL beats a
+# repository's protocol.<name>.allow; `file` only when the config names a local remote), no ext:: or git://, no global or
+# system attributes, user filter drivers neutralised, no optional index lock for status.
+ai_git() {
+  local root v lock=() proto="https:ssh" gd
+  root="$(privacy_companion_worktree "$1")" || return 1
+  shift
+  gd="$(privacy_ai_git_dir "$root")"
+  [[ ! -L "$gd" ]] || return 1
+  [[ "${1:-}" != status ]] || lock=(--no-optional-locks)
+  # `file` joins the allowed transports only when a url or pushurl CONFIGURED in the companion config (after the user's global
+  # insteadOf) is a local path. Never resolved through the remote name: git also reads legacy remotes/ and branches/ files there.
+  case "${1:-}" in
+    fetch|ls-remote|push|pull)
+      while IFS= read -r v; do
+        [[ -n "$v" && "$v" != -* ]] || continue
+        if (cd / && unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR && loomy_git_user -c core.hooksPath=/dev/null ls-remote --get-url "$v" 2>/dev/null) | grep -Eq '^(/|\.\.?/|file://)'; then proto="https:ssh:file"; break; fi
+      done < <(loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.url 2>/dev/null; loomy_git config --no-includes --file "$gd/config" --get-all remote.origin.pushurl 2>/dev/null)
+      ;;
+  esac
+  _privacy_filter_args
+  (
+    for v in $_PRIVACY_GIT_LOCATION_VARS; do unset "$v"; done
+    export GIT_NO_LAZY_FETCH=1 GIT_ATTR_NOSYSTEM=1 GIT_ALLOW_PROTOCOL="$proto"
+    loomy_git_user -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.attributesFile=/dev/null -c core.pager=cat \
+      -c log.showSignature=false -c protocol.allow=never -c protocol.https.allow=always -c protocol.ssh.allow=always \
+      -c protocol.file.allow=user ${_PRIVACY_FILTER_ARGS[@]+"${_PRIVACY_FILTER_ARGS[@]}"} ${lock[@]+"${lock[@]}"} --no-pager \
+      --git-dir="$gd" --work-tree="$root" "$@"
+  )
+}
 
 # privacy_companion_config <root>: private repository settings and mandatory runtime exclusions.
 privacy_companion_config() {

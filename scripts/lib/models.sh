@@ -745,14 +745,28 @@ ai_start_prompt() {
 # Git chokepoint. EVERY git spawn of Loomy goes through one of these two helpers (guarded by tests/git-chokepoint.sh):
 # a repository's own config and hooks are untrusted input, and Loomy runs git on its own (statusline, hooks, delegation bridges).
 #   loomy_git       read-only probes and bookkeeping: core.fsmonitor=false, core.hooksPath=/dev/null, no lazy fetch of promisor
-#                   objects (GIT_NO_LAZY_FETCH=1), no optional index lock (--no-optional-locks, a no-op outside `status`).
+#                   objects (GIT_NO_LAZY_FETCH=1, honoured by git >= 2.44), no optional index lock (--no-optional-locks, git >= 2.15,
+#                   a no-op outside `status`), no signature verification (log.showSignature=false) and no pager. Inherited
+#                   repository-location, config and exec variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_OBJECT_DIRECTORY,
+#                   GIT_ALTERNATE_OBJECT_DIRECTORIES, GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT, GIT_EXEC_PATH, GIT_EXTERNAL_DIFF,
+#                   GIT_SSH_COMMAND, GIT_PAGER, GIT_COMMON_DIR, GIT_NAMESPACE, GIT_ASKPASS) are removed for the call, so a probe always describes the folder it was given.
 #   loomy_git_user  commands that create commits, branches, checkouts or worktrees on the user's behalf: the user's own hooks
-#                   keep running (post-checkout, commit hooks...), only fsmonitor and lazy fetch are hardened.
-# Both are plain `command git` with an env prefix: no extra process, stdout/stderr/exit status unchanged. Perl code that spawns
-# git (runtime-paths.pl, watch-health.pl, tracked-fix.pl, loomy-privacy.sh) hardens its own spawn the same way and is
-# allow-listed in the guard test. New code must use these helpers, never a raw `git`.
-loomy_git() { GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false -c core.hooksPath=/dev/null --no-optional-locks "$@"; }
-loomy_git_user() { GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false "$@"; }
+#                   keep running (post-checkout, commit hooks...), only fsmonitor is hardened. Lazy fetch stays on: a partial
+#                   (blobless) clone needs it to check out files.
+# Both are plain `command git` (loomy_git adds one `env` only when a variable above is actually set): stdout/stderr/exit status
+# unchanged. Perl code that spawns git (runtime-paths.pl, watch-health.pl, tracked-fix.pl, the inventory block of
+# loomy-privacy.sh) hardens its own spawn the same way and is allow-listed in the guard test. New code must use these helpers,
+# never a raw `git`. Residual: a clean/process filter or log.showSignature program set in the project's own .git/config would
+# still run on a stat-dirty file; that config cannot arrive with a plain clone (git never fetches .git/config).
+loomy_git() {
+  if [[ -n "${GIT_DIR+x}${GIT_WORK_TREE+x}${GIT_INDEX_FILE+x}${GIT_OBJECT_DIRECTORY+x}${GIT_ALTERNATE_OBJECT_DIRECTORIES+x}${GIT_CONFIG_PARAMETERS+x}${GIT_CONFIG_COUNT+x}${GIT_EXEC_PATH+x}${GIT_EXTERNAL_DIFF+x}${GIT_SSH_COMMAND+x}${GIT_PAGER+x}${GIT_COMMON_DIR+x}${GIT_NAMESPACE+x}${GIT_ASKPASS+x}" ]]; then
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT -u GIT_EXEC_PATH -u GIT_EXTERNAL_DIFF -u GIT_SSH_COMMAND -u GIT_PAGER -u GIT_COMMON_DIR -u GIT_NAMESPACE -u GIT_ASKPASS \
+      GIT_NO_LAZY_FETCH=1 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c log.showSignature=false --no-optional-locks --no-pager "$@"
+  else
+    GIT_NO_LAZY_FETCH=1 command git -c core.fsmonitor=false -c core.hooksPath=/dev/null -c log.showSignature=false --no-optional-locks --no-pager "$@"
+  fi
+}
+loomy_git_user() { command git -c core.fsmonitor=false "$@"; }
 
 # ai_project_root: root of the nearest Loomy project (folder containing .loomy, walking up from the current folder),
 # otherwise the Git root, otherwise the current folder. A Loomy project can thus live in a subfolder of a repository.

@@ -40,8 +40,9 @@ fi
 # metrics <root>: one line of key=value figures read from the project's log and files.
 metrics() {
   local r="$1" name phase tasks=0 tdone=0 audits=0 reviews=0 f st
-  name="$(_ai_brief_get "$r/.loomy/brief.md" name)"; name="${name:-$(basename "$r")}"
-  phase="$(sed -n 's/^phase=//p' "$r/.loomy/state" 2>/dev/null | head -1)"
+  # Tabs separate the figures below: a name or phase (cloned files) must not add fields.
+  name="$(_ai_brief_get "$r/.loomy/brief.md" name | ai_ctl_strip)"; name="${name:-$(basename "$r" | ai_ctl_strip)}"
+  phase="$(sed -n 's/^phase=//p' "$r/.loomy/state" 2>/dev/null | head -1 | ai_ctl_strip)"
   for f in "$r"/.loomy/tasks/*.md; do [[ -f "$f" ]] || continue; tasks=$(( tasks + 1 )); st="$(sed -n 's/^status: //p' "$f" | head -1)"; [[ "$st" == "done" ]] && tdone=$(( tdone + 1 )); done
   for f in "$r"/.loomy/audits/*/; do [[ -d "$f" ]] && audits=$(( audits + 1 )); done
   for f in "$r"/.loomy/reviews/*.md; do [[ -f "$f" ]] && reviews=$(( reviews + 1 )); done
@@ -63,6 +64,10 @@ metrics() {
         name, phase, first, last, bs, be, n, err, dur, cost, tok, tasks, tdone, audits, reviews, roles, models, adv, paused, handed }'
 }
 kv() { printf '%s\n' "$1" | tr '\t' '\n' | sed -n "s/^$2=//p" | head -1; }
+# kvn <metrics> <key>: a whole number (digits only, else 0), safe for arithmetic.
+kvn() { local v; v="$(kv "$1" "$2")"; if [[ "$v" =~ ^[0-9]{1,12}$ ]]; then printf '%s' "$(( 10#$v ))"; else printf 0; fi; }
+# kvf <metrics> <key>: a plain decimal number, else 0.
+kvf() { local v; v="$(kv "$1" "$2")"; if [[ "$v" =~ ^[0-9]{1,12}(\.[0-9]{1,6})?$ ]]; then printf '%s' "$v"; else printf 0; fi; }
 dur_label() { local d="${1:-0}"; if (( d >= 3600 )); then printf '%d h %02d min' $(( d / 3600 )) $(( d % 3600 / 60 )); elif (( d >= 60 )); then printf '%d min' $(( d / 60 )); else printf '%d s' "$d"; fi; }
 span() { local a b; a="$(ai_ts_epoch "$1")"; b="$(ai_ts_epoch "$2")"; [[ -n "$a" && -n "$b" ]] && (( b >= a )) && dur_label $(( b - a )); }
 
@@ -89,8 +94,8 @@ if (( ALL )); then
   for m in "${ROWS[@]}"; do
     ph="$(kv "$m" phase)"; [[ "$ph" == "done" ]] && ph="$(t "set up")" || ph="$(loomy_phase_label "$ph")"
     _ui_pad "$(kv "$m" name)" 22
-    ui_rail "${C_BOLD}${UI_PADDED}${C_RESET} $ph · $(t "%s task(s)" "$(kv "$m" tasks)") · $(t "%s delegation(s)" "$(kv "$m" n)") · $(ai_tokens_label "$(kv "$m" tok)") $(t "tokens") · \$$(kv "$m" cost) ${C_DIM}· $(t "last activity %s" "$(kv "$m" last | cut -c1-10)")${C_RESET}"
-    tn=$(( tn + $(kv "$m" n) )); tt=$(( tt + $(kv "$m" tok) )); tc="$(awk -v a="$tc" -v b="$(kv "$m" cost)" 'BEGIN { printf "%.2f", a + b }')"
+    ui_rail "${C_BOLD}${UI_PADDED}${C_RESET} $ph · $(t "%s task(s)" "$(kvn "$m" tasks)") · $(t "%s delegation(s)" "$(kvn "$m" n)") · $(ai_tokens_label "$(kvn "$m" tok)") $(t "tokens") · \$$(kvf "$m" cost) ${C_DIM}· $(t "last activity %s" "$(kv "$m" last | cut -c1-10)")${C_RESET}"
+    tn=$(( tn + $(kvn "$m" n) )); tt=$(( tt + $(kvn "$m" tok) )); tc="$(awk -v a="$tc" -v b="$(kvf "$m" cost)" 'BEGIN { printf "%.2f", a + b }')"
   done
   ui_rail ""
   ui_rail "$(t "Total"): $(t "%s delegation(s)" "$tn") · $(ai_tokens_label "$tt") $(t "tokens") · \$$tc ${C_DIM}($(t "list price, estimate"))${C_RESET}"
@@ -101,16 +106,16 @@ else
   if [[ "$ph" == "done" ]]; then ui_kv "Bootstrap" "${C_GREEN}$(t "done")${C_RESET}$(b="$(span "$(kv "$m" bs)" "$(kv "$m" be)")"; [[ -n "$b" ]] && printf ' · %s' "$(t "in %s" "$b")")"
   else ui_kv "Bootstrap" "$(loomy_phase_label "$ph")"; fi
   ui_kv "$(t "Activity")" "$(t "from %s to %s" "$(kv "$m" first | cut -c1-10)" "$(kv "$m" last | cut -c1-10)")"
-  ui_kv "$(t "Tasks")" "$(t "%s, %s done" "$(kv "$m" tasks)" "$(kv "$m" tdone)")"
-  ui_kv "$(t "Reviews")" "$(kv "$m" reviews) · $(t "Audits"): $(kv "$m" audits)"
+  ui_kv "$(t "Tasks")" "$(t "%s, %s done" "$(kvn "$m" tasks)" "$(kvn "$m" tdone)")"
+  ui_kv "$(t "Reviews")" "$(kvn "$m" reviews) · $(t "Audits"): $(kvn "$m" audits)"
   ui_section "$(t "DELEGATIONS")"
-  ui_kv "$(t "Total")" "$(kv "$m" n) · $(t "%s failed" "$(kv "$m" err)") · $(t "%s paused" "$(kv "$m" paused)") · $(t "%s handed over" "$(kv "$m" handed)") · $(t "working time %s" "$(dur_label "$(kv "$m" dur)")")"
+  ui_kv "$(t "Total")" "$(kvn "$m" n) · $(t "%s failed" "$(kvn "$m" err)") · $(t "%s paused" "$(kvn "$m" paused)") · $(t "%s handed over" "$(kvn "$m" handed)") · $(t "working time %s" "$(dur_label "$(kvn "$m" dur)")")"
   ui_kv "$(t "By role")" "$(kv "$m" roles | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
-  (( $(kv "$m" adv) > 0 )) && ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "$(kv "$m" adv)")"
+  (( $(kvn "$m" adv) > 0 )) && ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "$(kvn "$m" adv)")"
   ui_kv "$(t "By model")" "$(kv "$m" models | tr ',' '\n' | sort -t: -k2 -rn | head -6 | sed 's/:/ /' | paste -sd ',' - | sed 's/,/ · /g')"
   ui_section "$(t "USAGE")"
-  ui_kv "Tokens" "$(ai_tokens_label "$(kv "$m" tok)")"
-  ui_kv "$(t "Cost")" "\$$(kv "$m" cost) ${C_DIM}($(t "list price, estimate; with a subscription, the quota is what counts: loomy stats"))${C_RESET}"
+  ui_kv "Tokens" "$(ai_tokens_label "$(kvn "$m" tok)")"
+  ui_kv "$(t "Cost")" "\$$(kvf "$m" cost) ${C_DIM}($(t "list price, estimate; with a subscription, the quota is what counts: loomy stats"))${C_RESET}"
   if ls "$ROOT"/.loomy/tasks/*.md >/dev/null 2>&1; then
     ui_section "$(t "LATEST TASKS")"
     while IFS= read -r f; do
@@ -138,7 +143,7 @@ if (( MD )); then
       echo "|---|---|---|---|---|---|---|"
       for m in "${ROWS[@]}"; do
         ph="$(kv "$m" phase)"; [[ "$ph" == "done" ]] && ph="$(t "set up")" || ph="$(loomy_phase_label "$ph")"
-        echo "| $(md_cell "$(kv "$m" name)") | $ph | $(kv "$m" tasks) | $(kv "$m" n) | $(ai_tokens_label "$(kv "$m" tok)") | \$$(kv "$m" cost) | $(kv "$m" last | cut -c1-10) |"
+        echo "| $(md_cell "$(kv "$m" name)") | $ph | $(kvn "$m" tasks) | $(kvn "$m" n) | $(ai_tokens_label "$(kvn "$m" tok)") | \$$(kvf "$m" cost) | $(kv "$m" last | cut -c1-10) |"
       done
     else
       m="${ROWS[0]}"
@@ -147,13 +152,13 @@ if (( MD )); then
       ph="$(kv "$m" phase)"; b="$(span "$(kv "$m" bs)" "$(kv "$m" be)")"
       echo "| | |"; echo "|---|---|"
       if [[ "$ph" == "done" ]]; then echo "| Bootstrap | $(t "done")${b:+ ($(t "in %s" "$b"))} |"; else echo "| Bootstrap | $(loomy_phase_label "$ph") |"; fi
-      echo "| $(t "Tasks") | $(t "%s, %s done" "$(kv "$m" tasks)" "$(kv "$m" tdone)") |"
-      echo "| $(t "Delegations") | $(kv "$m" n) ($(t "%s failed" "$(kv "$m" err)") · $(t "%s paused" "$(kv "$m" paused)") · $(t "%s handed over" "$(kv "$m" handed)")) |"
-      echo "| $(t "Working time") | $(dur_label "$(kv "$m" dur)") |"
-      echo "| Tokens | $(ai_tokens_label "$(kv "$m" tok)") |"
-      echo "| $(t "Cost (estimate)") | \$$(kv "$m" cost) |"
-      echo "| $(t "Reviews · audits") | $(kv "$m" reviews) · $(kv "$m" audits) |"
-      (( $(kv "$m" adv) > 0 )) && echo "| $(t "Advisor") | $(t "%s consultation(s)" "$(kv "$m" adv)") |"
+      echo "| $(t "Tasks") | $(t "%s, %s done" "$(kvn "$m" tasks)" "$(kvn "$m" tdone)") |"
+      echo "| $(t "Delegations") | $(kvn "$m" n) ($(t "%s failed" "$(kvn "$m" err)") · $(t "%s paused" "$(kvn "$m" paused)") · $(t "%s handed over" "$(kvn "$m" handed)")) |"
+      echo "| $(t "Working time") | $(dur_label "$(kvn "$m" dur)") |"
+      echo "| Tokens | $(ai_tokens_label "$(kvn "$m" tok)") |"
+      echo "| $(t "Cost (estimate)") | \$$(kvf "$m" cost) |"
+      echo "| $(t "Reviews · audits") | $(kvn "$m" reviews) · $(kvn "$m" audits) |"
+      (( $(kvn "$m" adv) > 0 )) && echo "| $(t "Advisor") | $(t "%s consultation(s)" "$(kvn "$m" adv)") |"
       echo
       for dim in roles models; do
         [[ -n "$(kv "$m" "$dim")" ]] || continue

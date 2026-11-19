@@ -52,7 +52,7 @@ fi
 # ---------------------------------------------------------------- inside a project
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }
 while true; do
-  PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
+  PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 | ai_ctl_strip || true)"
   [[ -z "$PHASE" && ! -f "$ROOT/START.md" ]] && PHASE="done"
   [[ -z "$PHASE" ]] && PHASE="brief"
   idx="$(loomy_phase_index "$PHASE")"

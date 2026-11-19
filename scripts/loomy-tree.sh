@@ -67,9 +67,11 @@ loomy_native_accept() {
     T) for (( i=${#NS_T[@]}-1; i>=0; i-- )); do [[ "${NS_T[i]}" != "N|T|$key|"* ]] || { found=$i; break; }; done
        if (( found < 0 )); then
          loomy_native_read "$line" _ _ _ _ _ _ _ _ ended _
+         ai_uint ended
          i=${#NS_T[@]}
          while (( i > 0 )); do
            loomy_native_read "${NS_T[i-1]}" _ _ _ _ _ _ _ _ prior_end _
+           ai_uint prior_end
            (( ${ended:-0} > ${prior_end:-0} )) || break
            NS_T[i]="${NS_T[i-1]}"; i=$(( i - 1 ))
          done
@@ -878,6 +880,8 @@ loomy_live_accept() {
       SELECT) LV_SELECTION="$ts"; LV_SELECTED_SEQ="$id"; continue ;;
     esac
     LV_SEQ=$(( LV_SEQ + 1 ))
+    # Journal fields are untrusted: numbers are digits or 0 before any arithmetic.
+    ai_uint cost
     for (( i=0; i<${#LV_ID[@]}; i++ )); do
       [[ -z "$sid" || "${LV_SID[i]:-}" == "$sid" ]] || continue
       attributed=0
@@ -1044,6 +1048,7 @@ loomy_live_poll() {
   done < <(perl -MJSON::PP -MTime::Local=timegm -MErrno=EPERM -e "$AI_TITLE_PERL$AI_DISPLAY_CONTEXT_PERL"'
     binmode STDOUT, ":encoding(UTF-8)";
 
+    require $ENV{AI_EVENT_SCHEMA_LIB};
     my ($file,$key,$off,$selection,$preferred)=@ARGV; open my $f,"<",$file or exit;
     my $watch_tool=$ENV{LOOMY_WATCH_TOOL}//""; $preferred=$watch_tool if $watch_tool eq "codex" || $watch_tool eq "claude";
     my @st=stat($f); my $k="$st[0]:$st[1]";
@@ -1051,6 +1056,7 @@ loomy_live_poll() {
     while (my $l=<$f>) {
       last unless $l =~ /\n$/;
       my $d=eval { decode_json($l) }; next unless ref($d) eq "HASH";
+      Loomy::EventSchema::clean_event($d);
       my $raw=$d; $d=Loomy::DisplayContext::prepare($raw);
       $d={%$d,display_role=>$d->{role},display_fallback=>Loomy::DisplayContext::fallback($raw),role=>$raw->{role}};
       my $type=$d->{type}//""; next if ref($type) || $type eq "";
@@ -1098,7 +1104,11 @@ loomy_live_poll() {
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
       my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at display_role display_fallback));
-      for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
+      for (@v) { s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($_)) { s/[\x{80}-\x{9f}]/ /g } else { s/\xc2[\x80-\x9f]/ /g } }
+      # Numeric columns (pid, duration, cost, resume_at): digits only, or empty.
+      for my $i (5,13,24) { $v[$i]="" unless $v[$i] =~ /\A\d{1,12}\z/ }
+      $v[12]="" unless $v[12] =~ /\A(?:\d{1,12}(?:\.\d{1,6})?|—)\z/;
+      print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
   ' "$file" "$LV_FILE_KEY" "$LV_OFFSET" "${LV_SELECTION:-}" "${AI_LEAD:-}" 2>/dev/null)
@@ -1698,17 +1708,20 @@ if (( DIAGRAM )); then
   # Redrawn every second: helpers that write into variables instead of starting subprocesses.
   _tz="$(date +%z)"; TZOFF=$(( (10#${_tz:1:2} * 3600 + 10#${_tz:3:2} * 60) * ${_tz:0:1}1 ))
   ts2ep() {   # ISO UTC timestamp → EP (epoch), by calendar arithmetic
+    # Journal text: anything but the ISO form (a model or a ts shifted into this column) is epoch 0, never arithmetic.
+    [[ "${1-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]] || { EP=0; return 0; }
     local y=$(( 10#${1:0:4} )) m=$(( 10#${1:5:2} )) d=$(( 10#${1:8:2} )) H=$(( 10#${1:11:2} )) M=$(( 10#${1:14:2} )) S=$(( 10#${1:17:2} ))
     (( m <= 2 )) && { y=$(( y - 1 )); m=$(( m + 12 )); }
     EP=$(( (365 * y + y / 4 - y / 100 + y / 400 + (153 * (m - 3) + 2) / 5 + d - 719469) * 86400 + H * 3600 + M * 60 + S ))
   }
   hms() { local x; ts2ep "$1"; x=$(( (EP + TZOFF) % 86400 )); printf -v HMS '%02d:%02d:%02d' $(( x / 3600 )) $(( x % 3600 / 60 )) $(( x % 60 )); }
-  toklbl() { local n="${1%.*}"; n="${n:-0}"; if (( n >= 1000000 )); then printf -v TOK '%d.%dM' $(( n / 1000000 )) $(( n % 1000000 / 100000 )); elif (( n >= 1000 )); then printf -v TOK '%d.%dk' $(( n / 1000 )) $(( n % 1000 / 100 )); else TOK="$n"; fi; }
+  toklbl() { local n="${1%.*}"; [[ "$n" =~ ^[0-9]{1,12}$ ]] || n=0; if (( n >= 1000000 )); then printf -v TOK '%d.%dM' $(( n / 1000000 )) $(( n % 1000000 / 100000 )); elif (( n >= 1000 )); then printf -v TOK '%d.%dk' $(( n / 1000 )) $(( n % 1000 / 100 )); else TOK="$n"; fi; }
   # Tier counts use the reducer; advisor consultations are separate journal events.
   loomy_tree_routing
   if [[ -s "$J" ]]; then
     if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
     read -r a_n _ _ _ a_last a_tok <<<"$LEGACY_ADVISOR"
+    ai_uint a_n; ai_uint a_tok
     else
     read -r a_n a_tok a_last <<<"$(awk '
       function num(k) { if (match($0, "\"" k "\":[0-9]+")) { return substr($0, RSTART + length(k) + 3, RLENGTH - length(k) - 3) + 0 } return 0 }
@@ -2005,6 +2018,7 @@ if [[ -n "$ADV" ]]; then
   if [[ -s "$J" ]]; then
     if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
     read -r a_n _ _ _ a_last _ <<<"$LEGACY_ADVISOR"
+    ai_uint a_n
     else
     read -r a_n a_last <<<"$(awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       /"type":"advisor"/ { n += num("calls"); if (match($0, /"ts":"[^"]*"/)) l = substr($0, RSTART + 6, RLENGTH - 7) } END { print n + 0, l }' "$J")"
@@ -2069,7 +2083,7 @@ fi
 
 # ---------------------------------------------------------------- status line
 n_del=0; tok=0
-if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then read -r n_del tok <<<"$LEGACY_TOTAL"; else
+if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then read -r n_del tok <<<"$LEGACY_TOTAL"; ai_uint n_del; ai_uint tok; else
 [[ -s "$J" ]] && read -r n_del tok <<<"$(ai_journal_canonical <"$J" | awk 'function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
   /"type":"delegation",/ { n++ } /"type":"(delegation|usage|advisor)"/ && !/delegation_start/ && !/"bridge":"subagent"|"cost_in":"usage"/ { t += num("tokens_in") + num("tokens_out") } END { print n + 0, t + 0 }')"
 fi

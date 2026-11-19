@@ -591,7 +591,7 @@ _ai_brief_get() {
   local brief="$1" key="$2"
   [[ -f "$brief" ]] || return 0
   # Control characters removed: a brief can come from a cloned repository, its values must not drive the terminal.
-  sed -n '/^---$/,/^---$/p' "$brief" | sed -n "s/^$key:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//' | LC_ALL=C tr -d '\000-\010\013-\037\177'
+  sed -n '/^---$/,/^---$/p' "$brief" | sed -n "s/^$key:[[:space:]]*//p" | head -1 | sed 's/^"//; s/"$//' | LC_ALL=C tr -d '\000-\010\013-\037\177' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]//g'
 }
 
 # ---------------------------------------------------------------- delegation format

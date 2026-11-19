@@ -2656,6 +2656,7 @@ if [[ "${1:-}" == --section ]]; then
       run 'shared hook engine' bash "$HERE/hooks-repair.sh"
       run 'scoped hook consumers and rollback' bash "$HERE/hooks-cli.sh"
       ;;
+    'Journal injection') section 'Journal injection'; run 'runtime-file data never reaches arithmetic or the terminal' bash "$HERE/journal-injection.sh" ;;
     'Live collector ownership')
       section 'Live collector ownership'
       run 'owner election and records' bash "$HERE/collector-owner.sh"
@@ -2751,6 +2752,9 @@ run "hardened git spawns and static guard" bash "$HERE/git-chokepoint.sh"
 section "Hooks repair"
 run "shared hook engine" bash "$HERE/hooks-repair.sh"
 run "scoped hook consumers and rollback" bash "$HERE/hooks-cli.sh"
+
+section "Journal injection"
+run "runtime-file data never reaches arithmetic or the terminal" bash "$HERE/journal-injection.sh"
 
 section "Live collector ownership"
 run "owner election and records" bash "$HERE/collector-owner.sh"

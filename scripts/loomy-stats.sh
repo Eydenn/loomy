@@ -42,7 +42,7 @@ NAME="$(_ai_brief_get "$ROOT/.loomy/brief.md" name)"
 
 # One pass over the log: every figure the report needs, as tagged lines.
 DATA="$(ai_journal_all "$ROOT" | ai_journal_canonical | awk -v since="$SINCE" -v pc="$PC" -v px="$PX" '
-  function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+  function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/[|[:cntrl:]]/, "_", v); return v } return "" }
   function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
   {
     ts = field("ts"); if (ts == "" || (since != "" && substr(ts, 1, 10) < since)) next
@@ -79,6 +79,9 @@ DATA="$(ai_journal_all "$ROOT" | ai_journal_canonical | awk -v since="$SINCE" -v
 
 IFS='|' read -r _ FIRST LAST N ERR DUR TI TC TO API_COST PLAN_VAL LR LT LV SN ST SV FO SF SUF SP SB PAUSED HANDED RI <<<"$(printf '%s\n' "$DATA" | grep '^ALL|')"
 IFS='|' read -r _ NATIVE <<<"$(printf '%s\n' "$DATA" | grep '^NATIVE|')"
+# The journal is untrusted: the awk above keeps `|` and control characters out of the text fields, and every
+# counter is validated here before it reaches arithmetic.
+for _v in N ERR DUR TI TC TO LR LT SN ST FO SF SUF SP SB PAUSED HANDED RI NATIVE; do ai_uint "$_v"; done
 
 # Only timestamps and lifecycle metadata leave this reader; never request text.
 METRICS="$(ai_journal_all "$ROOT" | ai_journal_canonical | perl -MJSON::PP -MTime::Local=timegm -MCwd=realpath -MFile::Find -e '
@@ -145,6 +148,8 @@ METRICS="$(ai_journal_all "$ROOT" | ai_journal_canonical | perl -MJSON::PP -MTim
   printf "%d|%.0f|%.0f|%.2f",scalar(@requests),$duration,@requests ? $duration/@requests : 0,$wall>0 ? $sum/$wall : 0;
 ' "$ROOT" "${CODEX_HOME:-$HOME/.codex}/sessions" "$SINCE")"
 IFS='|' read -r REQUESTS REQUEST_TIME REQUEST_MEAN PARALLEL <<<"$METRICS"
+for _v in REQUESTS REQUEST_TIME REQUEST_MEAN; do ai_uint "$_v"; done
+[[ "$PARALLEL" =~ ^[0-9]{1,6}(\.[0-9]{1,2})?$ ]] || PARALLEL=0.00
 
 day_of() { local ep; ep="$(ai_ts_epoch "$1")"; [[ -n "$ep" ]] && { date -r "$ep" +%Y-%m-%d 2>/dev/null || date -d "@$ep" +%Y-%m-%d; }; }
 money() {   # money <amount> <on plan: 0|1|2>: real cost, or "≈ API value" when covered by a subscription
@@ -190,12 +195,15 @@ else
   if (( N > 0 )); then
     ui_section "$(t "BY ROLE")" "$(t "calls · average time · tokens · cost")"
     printf '%s\n' "$DATA" | grep '^ROLE|' | sort -t'|' -k4 -rn | while IFS='|' read -r _ r n d tk v p e; do
+      for _v in n d tk p e; do ai_uint "$_v"; done
+      (( n > 0 )) || continue
       ui_rail "$(printf '%-11s %4s  %9s  %8s  ' "$r" "$n" "$(dur_label $(( d / n )))" "$(ai_tokens_label "$tk")")$(money "$v" "$p")$( (( e > 0 )) && printf '  %s%s%s' "$C_RED" "$(t "%s failed" "$e")" "$C_RESET")"
     done
   fi
 
   ui_section "$(t "BY MODEL")" "$(t "calls · tokens in / cache / out · cache share · cost")"
   printf '%s\n' "$DATA" | grep '^MODEL|' | sort -t'|' -k8 -rn | while IFS='|' read -r _ m n u ti tc to v p; do
+    for _v in n u ti tc to p; do ai_uint "$_v"; done
     calls="$n"; (( u > 0 )) && calls="${n}+${u}r"
     cache=0; if (( ti + tc > 0 )); then cache=$(( tc * 100 / (ti + tc) )); fi
     ui_rail "$(printf '%-17s %6s  %7s / %7s / %7s  %3s %%  ' "$m" "$calls" "$(ai_tokens_label "$ti")" "$(ai_tokens_label "$tc")" "$(ai_tokens_label "$to")" "$cache")$(money "$v" "$p")"
@@ -204,6 +212,7 @@ else
 
   ui_section "$(t "BY DAY")" "$(t "last 14 days with activity")"
   printf '%s\n' "$DATA" | grep '^DAY|' | sort -t'|' -k2 -r | head -14 | while IFS='|' read -r _ d n tk va vp; do
+    ai_uint n; ai_uint tk
     amount=""
     (( ! PC || ! PX )) && amount="$(money "$va" 0)"
     (( PC || PX )) && amount="${amount:+$amount  }$(money "$vp" 1)"

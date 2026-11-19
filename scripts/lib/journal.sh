@@ -18,6 +18,8 @@ ai_journal_enabled() {
 AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
 AI_LIVE_STATE_LIB="${AI_CODEX_NATIVE_LIB%/*}/live-state.pl"
 AI_CLAUDE_NATIVE_LIB="${AI_CODEX_NATIVE_LIB%/*}/claude-native.pl"
+# Strict schema for events read from the journal (see event-schema.pl); the Perl readers load it from here.
+AI_EVENT_SCHEMA_LIB="${AI_CODEX_NATIVE_LIB%/*}/event-schema.pl"; export AI_EVENT_SCHEMA_LIB
 
 # A Stop hook proves the lead turn is idle; it does not close the reusable session.
 ai_journal_claude_idle() {
@@ -291,8 +293,10 @@ _ai_journal_write_checked() {
 # Canonical hook/transcript lifecycle; snapshots preserve state without new usage.
 ai_journal_canonical() {
   perl -MJSON::PP -e '
+    require $ENV{AI_EVENT_SCHEMA_LIB};
     my (@events,%native,%alias,%seen,%terminal,%owners,%lifetimes);
-    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; push @events,[$_,$e];
+    # Every event leaves here with schema-valid identifiers, timestamps and numbers (changed ones are re-encoded).
+    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; my $raw=$_; $raw=Loomy::EventSchema::encode($e)."\n" if Loomy::EventSchema::clean_event($e); push @events,[$raw,$e];
       my $pid=$e->{owner_pid}//$e->{pid};
       $owners{$e->{id}}=($e->{tool}//$e->{family}//"")."|$pid" if $e->{id} && defined($pid) && !ref($pid) && $pid =~ /^\d+$/ && $pid>1;
       $native{($e->{session}//"")."|".($e->{turn_id}//"")}=1 if ($e->{bridge}//"") eq "claude-native" && $e->{turn_id};
@@ -362,13 +366,16 @@ ai_usage_record() {
     }
     END { for (m in c) print m, i[m], f[m], h[m], r[m], o[m], c[m]
           for (m in an) print "ADVISOR", m, ain[m], aout[m], an[m] }' | while read -r model tin tw5 tw1 tcr tout n; do
+      # Transcript lines are data: a model name with a space would shift the columns into arithmetic.
       if [[ "$model" == "ADVISOR" ]]; then
+        [[ "$tw5" =~ ^[0-9]+$ && "$tw1" =~ ^[0-9]+$ && "$tcr" =~ ^[0-9]+$ ]] || continue
         # here: tin = advisor model, tw5 = input tokens, tw1 = output tokens, tcr = consultations
         price="$(ai_price "$tin")"; cost=""
         [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tw5" -v o="$tw1" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + o * q[2]) / 1000000 }')"
         ai_journal_write "$root" "\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"model\":\"$tin\",\"calls\":$tcr,\"tokens_in\":$tw5,\"tokens_cached\":0,\"tokens_out\":$tw1,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
         continue
       fi
+      [[ "$tin" =~ ^[0-9]+$ && "$tw5" =~ ^[0-9]+$ && "$tw1" =~ ^[0-9]+$ && "$tcr" =~ ^[0-9]+$ && "$tout" =~ ^[0-9]+$ && "$n" =~ ^[0-9]+$ ]] || continue
       price=""
       if [[ "$model" == *@long ]]; then model="${model%@long}"; price="$(ai_price_long "$model" | cut -d' ' -f2-)"; fi
       [[ -n "$price" ]] || price="$(ai_price "$model")"
@@ -460,6 +467,7 @@ AI_TITLE_PERL='use utf8;
 # JSON labels are already sanitized and clipped in Perl. Decode only this new
 # field for awk consumers, preserving the historical parser for legacy tasks.
 AI_DISPLAY_FIELD_AWK='
+function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); gsub(/\302[\200-\237]/, " ", v); return v }
 function display_task(   v,i,c,out) {
   if (!match($0, /"display_task":"([^"\\]|\\.)*"/)) return ""
   v=substr($0,RSTART+16,RLENGTH-17); out=""
@@ -468,7 +476,7 @@ function display_task(   v,i,c,out) {
     if (c=="\\") {i++; c=substr(v,i,1); if (c ~ /^[nrtbf]$/) c=" "}
     out=out c
   }
-  return out
+  return ctl(out)
 }
 '
 
@@ -521,7 +529,7 @@ sub key {
   my ($e)=@_; return join("|",map {text($_)} ($e->{tool}//$e->{family}//"",$e->{session}//"",$e->{id}//""));
 }
 sub clean {
-  my $s=text($_[0]); $s =~ s/[\x00-\x1f\x7f|]/ /g; return $s;
+  my $s=text($_[0]); $s =~ s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($s)) { $s =~ s/[\x{80}-\x{9f}]/ /g } else { $s =~ s/\xc2[\x80-\x9f]/ /g }; return $s;
 }
 sub scope_key { join("|",map {text($_[0]{$_})} qw(project_id target_kind target_id attempt_id)) }
 sub load_labels {
@@ -911,7 +919,7 @@ ai_journal_display_events() {
       elsif ($ty =~ /^lead_(failover|return)$/ && Loomy::DisplayContext::managed($e)) { $who="lead"; $what=$1 eq "failover" ? "handed over" : Loomy::DisplayContext::ui("returned","returned"); $extra=text($e->{master})." → ".text($e->{acting})." · ".Loomy::DisplayContext::reason($e) }
       elsif ($ty eq "usage" && ($e->{scope}//"") eq "lead") { $who="lead"; $what="replied"; $extra=($e->{messages}//0)." msg · $model" }
       else { next }
-      my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g } print join("|",@row),"\n";
+      my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($_)) { s/[\x{80}-\x{9f}]/ /g } else { s/\xc2[\x80-\x9f]/ /g } } print join("|",@row),"\n";
     }
   '
 }
@@ -928,23 +936,26 @@ ai_session_state() {
   local j line pid ts tool state="none" s hhmm
   j="$(ai_journal_file "$1")"
   [[ -s "$j" ]] || { echo "none"; return 0; }
-  while IFS='|' read -r kind pid ts tool; do
+  # US (0x1f) separates the fields and the awk keeps only plain characters in the text ones: journal text can
+  # neither shift the columns nor reach arithmetic or the terminal; the pid is validated here.
+  while IFS=$'\037' read -r kind pid ts tool; do
     [[ -n "$kind" ]] || continue
     if [[ "$kind" == "open" ]]; then
-      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then state="open|$ts|$tool"; break; fi
+      if ai_pid_ok "$pid" && kill -0 "$pid" 2>/dev/null; then state="open|$ts|$tool"; break; fi
     elif [[ "$state" == "none" ]]; then state="closed|$ts|$tool"; fi
   done < <(awk '
-    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/[^A-Za-z0-9_.:+ -]/, "", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
+    BEGIN { US = "\037" }
     /"type":"session"/ {
       key = field("session"); if (key == "") key = "pid" num("pid")
       # A resumed session (claude --continue) keeps its id: a new start cancels the previous end.
-      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool"); delete ended[key] }
-      else { ended[key] = field("ts") "|" field("tool"); last_end = field("ts") "|" field("tool") }
+      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") US field("ts") US field("tool"); delete ended[key] }
+      else { ended[key] = field("ts") US field("tool"); last_end = field("ts") US field("tool") }
     }
     END {
-      for (i = n; i >= 1 && i > n - 10; i--) if (!(order[i] in ended)) print "open|" start[order[i]]
-      if (last_end != "") print "end||" last_end
+      for (i = n; i >= 1 && i > n - 10; i--) if (!(order[i] in ended)) print "open" US start[order[i]]
+      if (last_end != "") print "end" US US last_end
     }' "$j" 2>/dev/null)
   [[ "$state" == "none" ]] && { echo "none"; return 0; }
   ts="$(printf '%s' "$state" | cut -d'|' -f2)"

@@ -45,7 +45,7 @@ _sk_row_ok() {
 }
 
 # _sk_clean <text>: the text without control characters (lock fields reach terminals and agent context).
-_sk_clean() { printf '%s' "$1" | LC_ALL=C tr -d '\000-\037\177'; }
+_sk_clean() { printf '%s' "$1" | ai_ctl_strip; }
 
 # skills_line <name>: the catalog line of a skill (name|source|path|commit|license|auto|keywords|summary).
 skills_line() { _sk_valid "$1" || return 0; grep -v '^#' "$(skills_catalog)" | grep -v '^date=' | awk -F'|' -v n="$1" '$1 == n { print; exit }'; }

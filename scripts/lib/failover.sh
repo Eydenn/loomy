@@ -13,7 +13,7 @@ if ! declare -F ai_journal_write >/dev/null 2>&1; then source "$(dirname "${BASH
 lf_file() { echo "$1/.loomy/failover"; }
 
 # lf_get <root> <key>
-lf_get() { sed -n "s/^$2=//p" "$(lf_file "$1")" 2>/dev/null | head -1 || true; }
+lf_get() { sed -n "s/^$2=//p" "$(lf_file "$1")" 2>/dev/null | head -1 | ai_ctl_strip || true; }
 
 # lf_active <root>: a relay is running (state present, acting tool differs from the master).
 lf_active() {
@@ -68,6 +68,7 @@ _lf_reason() {
   while read -r w p r; do
     [[ -n "$w" ]] || continue
     if [[ "$w" == "reached" ]]; then reached=1; continue; fi
+    ai_uint p; ai_uint r
     if (( p >= th )); then
       if [[ -z "$bw" ]] || (( p > bp )); then bw="$w"; bp="$p"; fi
       if [[ -z "$reset" ]] || (( r > reset )); then reset="$r"; fi
@@ -121,6 +122,8 @@ lf_end() {
   [[ "${2:-$(lf_get "$1" manual)}" != 1 ]] || extra=',"manual":true'
   [[ -z "$extra" ]] || reason_code=manual
   m="$(lf_get "$1" master)"; a="$(lf_get "$1" acting)"; s="$(lf_get "$1" since)"
+  # The state file can come from a cloned repository: tool names only, they are written into a JSON event.
+  [[ "$m" =~ ^[A-Za-z0-9._-]{1,32}$ ]] || m=unknown; [[ "$a" =~ ^[A-Za-z0-9._-]{1,32}$ ]] || a=unknown
   quota_window="$(lf_get "$1" quota_window)"; used_percent="$(lf_get "$1" used_percent)"
   case "$quota_window" in 5h|7d|daily|weekly|session|unknown) ;; *) quota_window=unknown ;; esac
   [[ "$used_percent" =~ ^[0-9]+$ ]] || used_percent=null

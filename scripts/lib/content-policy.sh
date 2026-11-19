@@ -133,7 +133,7 @@ _loomy_content_hint_load() {
       C\|*) LOOMY_CONTENT_HINT_SIGNATURE="${flag#C|}" ;;
       full) tv flag "display context full; label not saved" ;;
       gated) tv flag "Task history tracked by Git · run loomy doctor --fix" ;;
-      unverified) tv flag "Earlier privacy choices are not recorded on this machine · run loomy privacy labels" ;;
+      unverified) tv flag "Earlier privacy choices are not recorded on this machine · run loomy privacy labels recommended" ;;
       hint) tv flag "Task labels off · run loomy privacy labels recommended" ;;
     esac
     [[ "$flag" != C\|* ]] || continue

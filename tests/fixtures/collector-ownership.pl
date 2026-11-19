@@ -712,7 +712,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     }
     {   # RCUX: an unrecorded policy (0.17.9, moved project, hand edit) says why its choices were reset: privacy labels, status hint, first-use screen.
         my %msg=(en=>'Earlier privacy choices are not recorded on this machine · choose again',fr=>'Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · choisis à nouveau');
-        my %hmsg=(en=>'Earlier privacy choices are not recorded on this machine · run loomy privacy labels',fr=>'Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · lance loomy privacy labels');
+        my %hmsg=(en=>'Earlier privacy choices are not recorded on this machine · run loomy privacy labels recommended',fr=>'Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · lance loomy privacy labels recommended');
         my $granting=join('',map {"$_\n"} qw(version=1 journal_content=structural policy_generation=1 label_sources=claude-description label_max_graphemes=20 label_max_bytes=384 codex_component_max_chars=40 label_store_max_bytes=1048576 private_results=on results_max_records=200 results_max_record_bytes=1048576 results_max_total_bytes=16777216 results_max_age_days=30 grant_prompt_version=1));
         my $out=sub {my ($kind,$root,$lang)=@_; my %env=(LOOMY_LANG=>$lang,LOOMY_UI_LANG=>$lang);
             return run(['bash',"$repo/scripts/loomy-privacy.sh",'--root',$root,'labels'],env=>\%env)->{all} if $kind eq 'labels';

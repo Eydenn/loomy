@@ -300,7 +300,7 @@ fi
 case "$(privacy_mode "$ROOT")" in
   local) t "- Local AI files: never version AGENTS.md, CLAUDE.md, .claude/, .codex/, .loomy/ or START.md (never git add -f)."; echo ;;
   private) t "- AI files in a separate private repository: don't version them in the project repository; back them up at the end of each step with .loomy/scripts/loomy-privacy.sh sync."; echo
-    if privacy_companion_present "$ROOT" && ! privacy_companion_ready "$ROOT"; then t "- Private history not verified: .loomy/ai.git was not created by Loomy, so it is never synced automatically. Tell the user in one line to review it and run: loomy privacy adopt."; echo; fi ;;
+    if privacy_companion_present "$ROOT" && ! privacy_companion_ready "$ROOT"; then t "- Private history not verified: .loomy/ai.git is not trusted yet, so it is never synced automatically. Tell the user in one line to review it and run: loomy privacy adopt."; echo; fi ;;
 esac
 t "- Delegations: always run the bridges in the foreground and wait for them to finish (in the background they stop if the session closes). Announce each one in one line before (role, model, task, rough duration) and after (result, duration)."; echo
 if [[ "$(ai_delegation_format "$ROOT")" == "structured" ]]; then

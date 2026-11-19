@@ -712,6 +712,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     }
     {   # RCUX: an unrecorded policy (0.17.9, moved project, hand edit) says why its choices were reset: privacy labels, status hint, first-use screen.
         my %msg=(en=>'Earlier privacy choices are not recorded on this machine · choose again',fr=>'Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · choisis à nouveau');
+        my %hmsg=(en=>'Earlier privacy choices are not recorded on this machine · run loomy privacy labels',fr=>'Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · lance loomy privacy labels');
         my $granting=join('',map {"$_\n"} qw(version=1 journal_content=structural policy_generation=1 label_sources=claude-description label_max_graphemes=20 label_max_bytes=384 codex_component_max_chars=40 label_store_max_bytes=1048576 private_results=on results_max_records=200 results_max_record_bytes=1048576 results_max_total_bytes=16777216 results_max_age_days=30 grant_prompt_version=1));
         my $out=sub {my ($kind,$root,$lang)=@_; my %env=(LOOMY_LANG=>$lang,LOOMY_UI_LANG=>$lang);
             return run(['bash',"$repo/scripts/loomy-privacy.sh",'--root',$root,'labels'],env=>\%env)->{all} if $kind eq 'labels';
@@ -720,14 +721,14 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $x=project(1); put("$x/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$x/.loomy/logs/content-policy.conf";
         for my $lang (qw(en fr)) {
             like($out->('labels',$x,$lang),qr/\Q$msg{$lang}\E/,"RCUX privacy labels says the choices are not recorded ($lang)");
-            like($out->('hint',$x,$lang),qr/\Q$msg{$lang}\E/,"RCUX the status hint says so ($lang)");
+            like($out->('hint',$x,$lang),qr/\Q$hmsg{$lang}\E/,"RCUX the status hint says so, with the command ($lang)");
         }
         for my $lang (qw(en fr)) { my $fu=$out->('first',$x,$lang); like($fu,qr/\Q$msg{$lang}\E/,"RCUX the first-use screen says so ($lang)"); unlike($fu,qr/\b20\b.*(?:graphemes|graph)/,"RCUX and is not pre-filled from the unrecorded file ($lang)");
             unlink "$x/.loomy/logs/content-policy.conf"; put("$x/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$x/.loomy/logs/content-policy.conf"; Loomy::PolicyRecord::forget($x); }
         # Nothing shows for a verified policy or for a project without any policy.
         my $v=project(1); put("$v/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$v/.loomy/logs/content-policy.conf"; run(['perl',"$repo/scripts/lib/policy-record.pl",'record',$v]);
         my $n=project(1);
-        for my $lang (qw(en fr)) { for my $k (qw(labels hint)) { unlike($out->($k,$v,$lang),qr/\Q$msg{$lang}\E/,"RCUX verified policy: no reset line in $k ($lang)"); unlike($out->($k,$n,$lang),qr/\Q$msg{$lang}\E/,"RCUX no policy: no reset line in $k ($lang)") } }
+        for my $lang (qw(en fr)) { for my $k (qw(labels hint)) { my $m=$k eq 'hint' ? $hmsg{$lang} : $msg{$lang}; unlike($out->($k,$v,$lang),qr/\Q$m\E/,"RCUX verified policy: no reset line in $k ($lang)"); unlike($out->($k,$n,$lang),qr/\Q$m\E/,"RCUX no policy: no reset line in $k ($lang)") } }
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);

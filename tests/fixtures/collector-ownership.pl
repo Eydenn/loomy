@@ -516,7 +516,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     {   # LR7: no usable cache directory (symlinked base, foreign or unset HOME): the gate writes no stray file in the project or any cwd.
         my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
         my $other="$work/othercwd".++$pn; make_path($other); my $bad="$work/badcache".++$pn; make_path("$work/badtarget$pn"); symlink("$work/badtarget$pn",$bad) or die;
-        my $gw="$work/groupw".++$pn; make_path($gw,{mode=>0700}); chmod 0770,$gw;
+        my $gw="$work/groupw".++$pn; make_path($gw,{mode=>0700}); chmod 0777,$gw;
         for my $cfg ([$bad,undef],[$gw,'/nonexistent-home'],[undef,undef]) {
             for my $cwd ($x,$other) {
                 my @before=map {my $d=$_; [$d,manifest($d)]} ($x,$other,"$work/badtarget$pn");
@@ -555,7 +555,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $gate=sub {my ($root,$dirarg,%env)=@_; run(['perl','-e','require "$ARGV[0]/scripts/lib/journal-gate.pl"; exit(Loomy::JournalGate::check($ARGV[1]) ? 0 : 1)',$repo,$dirarg//"$root/.loomy/logs"],env=>{HOME=>$ENV{HOME},XDG_RUNTIME_DIR=>'/nonexistent',TMPDIR=>'/nonexistent',%env},timeout=>20)};   # no fallback directory unless a test names one
         my $tracked=sub {my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2; return $x};
         my $x=$tracked->();
-        my $gw="$work/lr8gw".++$pn; make_path($gw,{mode=>0700}); chmod 0770,$gw; my $o=$gate->($x,undef,XDG_CACHE_HOME=>$gw);
+        my $gw="$work/lr8gw".++$pn; make_path($gw,{mode=>0700}); chmod 0777,$gw; my $o=$gate->($x,undef,XDG_CACHE_HOME=>$gw);
         isnt($o->{rc},0,'LR8 group-writable cache base: still refused (Git answers)'); ok(!-e "$gw/loomy",'LR8 a group-writable cache base is not used');
         my $b="$work/lr8base".++$pn; make_path("$b/loomy",{mode=>0775}); chmod 0755,$b; chmod 0775,"$b/loomy";   # umask 002 left the loomy level group-writable
         $gate->($x,undef,XDG_CACHE_HOME=>$b); is(((stat "$b/loomy")[2]&07777),0700,'LR8 an owned loomy level created group-writable is tightened to 0700'); ok(-d "$b/loomy/gate",'LR8 and the cache is used');
@@ -639,7 +639,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
     }
     {   # LR8-2: a group-writable ~/.cache falls back to another per-user directory (XDG_RUNTIME_DIR): Git is asked once for three processes.
         my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
-        my $gw="$work/gw775".++$pn; make_path($gw,{mode=>0700}); chmod 0775,$gw; my $rt="$work/rt".++$pn; make_path($rt,{mode=>0700});
+        my $gw="$work/gw775".++$pn; make_path($gw,{mode=>0700}); chmod 0777,$gw; my $rt="$work/rt".++$pn; make_path($rt,{mode=>0700});
         my $gl="$work/git-fallback"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
         for (1..3) { run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$gw,XDG_RUNTIME_DIR=>$rt,TMPDIR=>"/nonexistent",PATH=>"$work/fakegit:$ENV{PATH}"}) }
         my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,1,'LR8-2 group-writable cache base: the verdict is cached in XDG_RUNTIME_DIR'); ok(!-e "$gw/loomy" && -d "$rt/loomy/gate",'LR8-2 nothing is created in the group-writable base');
@@ -688,7 +688,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         like($o->{all},qr/Latest delegations: architect \(gpt-6\.2-sol, ok\)\./,'LR8-3 a valid shipped row reaches the context'); unlike($o->{all},qr/IGNORE ALL|aaaaaaaa|weird status/,'LR8-3 instruction-like, long or off-list fields are dropped');
         # Quarantine base: a group-writable state folder is refused, nothing is untracked; a read-only one too, and the message names it.
         my $q=project(1); put("$q/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$q/.loomy/logs/content-policy.conf"; git($q,'add','-f','.loomy/logs/content-policy.conf'); commit_all($q); sleep 2.2;
-        my $gw="$work/stategw".++$pn; make_path($gw,{mode=>0700}); chmod 0775,$gw;
+        my $gw="$work/stategw".++$pn; make_path($gw,{mode=>0700}); chmod 0777,$gw;
         $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$q,'--fix'],env=>{XDG_STATE_HOME=>$gw}); like($d->{all},qr/Could not move the shipped files/,'LR8-3 a group-writable state folder is refused'); like($d->{all},qr/\Q$gw\E/,'LR8-3 and named');
         like(`git -C '$q' ls-files .loomy/logs`,qr/content-policy\.conf/,'LR8-3 nothing under .loomy/logs is untracked when the quarantine fails'); ok(!-e "$gw/loomy",'LR8-3 nothing is created in the refused base'); like($pol->($q),$off,'LR8-3 the shipped policy is not trusted either way'); isnt($d->{rc},0,'LR8-3 doctor exits non-zero');
         SKIP: { skip 'root ignores directory modes',3 if $> == 0;
@@ -700,8 +700,15 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
           my $ent="$ENV{XDG_CONFIG_HOME}/loomy/policies/".sha256_hex($r4); ok(-e $ent,'LR8-4 its entry exists');
           run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_prepare "$2"','_',$repo,$r4]); like($pol->($r4),$on,'LR8-4 the journal preparation (it used to chmod every file) keeps the record valid');
           git($r4,'add','-f','.loomy/logs/content-policy.conf'); commit_all($r4); sleep 2.2; run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r4,'--fix']); ok(!-e $ent,'LR8-4 doctor --fix drops the consent record with the quarantined policy');
-          my $g="$work/cfgdoc".++$pn; make_path($g,{mode=>0700}); chmod 0775,$g; my $dd=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r4],env=>{XDG_CONFIG_HOME=>$g});
+          my $g="$work/cfgdoc".++$pn; make_path($g,{mode=>0700}); chmod 0777,$g; my $dd=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r4],env=>{XDG_CONFIG_HOME=>$g});
           like($dd->{all},qr/Unsafe content directory/,'LR8-4 doctor names a group-writable config folder'); like($dd->{all},qr/\Q$g\E/,'LR8-4 with its path'); }
+        # LR8-5: a group-writable (0775) state folder is accepted only for a private group, decided by the real group of this machine.
+        { require "$repo/scripts/lib/private-group.pl"; my $gid=(getpwuid($<))[3]; my $priv=Loomy::PrivateGroup::private_group($gid) ? 1 : 0;
+          my $r5=project(1); put("$r5/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$r5/.loomy/logs/content-policy.conf"; git($r5,'add','-f','.loomy/logs/content-policy.conf'); commit_all($r5); sleep 2.2;
+          my $sg="$work/state775".++$pn; make_path($sg,{mode=>0700}); chmod 0775,$sg; chown -1,$gid,$sg;
+          my $d5=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r5,'--fix'],env=>{XDG_STATE_HOME=>$sg});
+          if ($priv) { like($d5->{all},qr/removed from the Git index/,'LR8-5 private group (this machine): a 0775 state folder is accepted and the fix works'); ok(-d "$sg/loomy/quarantine",'LR8-5 and used') }
+          else { like($d5->{all},qr/Could not move the shipped files/,'LR8-5 shared group (this machine): a 0775 state folder is refused'); ok(!-e "$sg/loomy",'LR8-5 and untouched') } }
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);

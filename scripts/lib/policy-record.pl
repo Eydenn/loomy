@@ -1,7 +1,9 @@
 # User-owned consent record (ADR-0012). A content-policy.conf is a consent: only a policy that this machine's Loomy wrote
 # is trusted. Every write of the file records, outside the project, ${XDG_CONFIG_HOME:-~/.config}/loomy/policies/<sha256
-# of the project root realpath>: the device:inode and the change time (ctime, taken after the final rename: a byte-identical
-# file that lands on a reused inode cannot match it) of the policy file and the sha256 of its content. A reader trusts a
+# of the project root realpath>: the device:inode of the policy file and the sha256 of its content. Loomy writes a random
+# record_nonce line into every policy it writes, so the hash covers bytes nobody else can predict: a byte-identical file
+# landing on a reused inode cannot match. Metadata changes (an xattr from a sync tool, a touch, a restore that keeps the
+# inode) do not matter. A reader trusts a
 # policy only when the entry matches that root, inode and content; any other file (shipped by a clone, tracked or not,
 # left after `doctor --fix`, hand edited, replaced) reads as absent: defaults, no grant, first-use consent pending.
 # The directory is 0700 and each entry 0600; an entry is written through a temp file renamed into place under an flock
@@ -14,6 +16,7 @@ use Digest::SHA ();
 use Fcntl ();
 use Time::HiRes ();
 my $SEQ=0;
+my $LIB=__FILE__; $LIB =~ s{/[^/]+\z}{}; require "$LIB/private-group.pl";
 # The records directory, or undef. Missing levels are created 0700. Every level must be a real directory of ours (never a
 # symlink; the base alone may be one, to a directory of ours, for dotfile managers); the base must not be group or world
 # writable (anyone who can write there can swap what is under it: no fallback, the policy is then never trusted and
@@ -26,13 +29,13 @@ sub _base {
 # The base folder when it exists and breaks the rule above, else undef (doctor says so in one line).
 sub unsafe_base {
     my $base=_base(); return unless defined $base; my @s=stat($base); return unless @s && -d _;
-    return ($s[4]!=$< || ($s[2]&022)) ? $base : undef;
+    return ($s[4]!=$< || !Loomy::PrivateGroup::mode_ok($s[2],$s[5])) ? $base : undef;
 }
 sub _dir {
     my $create=shift; my $base=_base(); return unless defined $base;
     my @s=lstat($base);
     if (!@s) { return unless $create; my $o=umask 0077; my $m=mkdir($base,0700); umask $o; return unless $m; @s=lstat($base) }
-    @s=stat($base) if -l _; return unless @s && -d _ && $s[4]==$< && !($s[2]&022);
+    @s=stat($base) if -l _; return unless @s && -d _ && $s[4]==$< && Loomy::PrivateGroup::mode_ok($s[2],$s[5]);
     my $cur=$base;
     for my $l ("loomy","policies") {
         my $n="$cur/$l"; @s=lstat($n);
@@ -47,18 +50,18 @@ sub _name {
     my $root=shift; return unless defined $root && !ref $root && length $root; my $r=Cwd::abs_path($root); return unless defined $r;
     return Digest::SHA::sha256_hex($r);
 }
-# "$dev:$ino:$ctime" of a stat array (Time::HiRes: fractional ctime, microsecond text).
-sub _id { my @s=@_; return unless @s>10; return "$s[0]:$s[1]:".sprintf("%.6f",$s[10]) }
+# "$dev:$ino" of a stat array.
+sub _id { my @s=@_; return unless @s>1; return "$s[0]:$s[1]" }
 # Writes (replaces) the entry of $root for the file with this id (see _id) and content hash. Dies on failure.
 sub record {
-    my ($root,$id,$sha)=@_; my $n=_name($root); die "content policy record unavailable\n" unless defined $n && defined $id && $id =~ /\A\d+:\d+:\d+\.\d+\z/ && $sha =~ /\A[0-9a-f]{64}\z/;
+    my ($root,$id,$sha)=@_; my $n=_name($root); die "content policy record unavailable\n" unless defined $n && defined $id && $id =~ /\A\d+:\d+\z/ && $sha =~ /\A[0-9a-f]{64}\z/;
     my $d=_dir(1); die "content policy record unavailable\n" unless defined $d;
     sysopen(my $dh,$d,Fcntl::O_RDONLY()) or die "content policy record unavailable\n";
     flock($dh,Fcntl::LOCK_EX()) or die "content policy record unavailable\n";
     my $tmp="$d/.$n.$$.".(++$SEQ); my $o=umask 0077;
     my $ok=sysopen(my $h,$tmp,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_EXCL()|Fcntl::O_NOFOLLOW(),0600);
     if ($ok) {
-        my $line="v2\n$id\n$sha\n"; $ok=defined(syswrite($h,$line)) && close($h);
+        my $line="v3\n$id\n$sha\n"; $ok=defined(syswrite($h,$line)) && close($h);
         $ok=rename($tmp,"$d/$n") if $ok; unlink $tmp unless $ok;
     }
     umask $o; close $dh; die "content policy record unavailable\n" unless $ok;
@@ -71,11 +74,11 @@ sub _entry {
     my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[3]==1 && !($s[2]&022) && $s[7]<=160;
     sysread($h,my $raw,161); close $h; return $raw;
 }
-# True when the entry of $root names exactly this file (device, inode, ctime) and content.
+# True when the entry of $root names exactly this file (device, inode) and content.
 sub trusted {
     my ($root,$id,$sha)=@_; return 0 unless defined $id && defined $sha;
     my $raw=_entry($root); return 0 unless defined $raw;
-    my ($v,$eid,$hash)=split /\n/,$raw; return 0 unless defined $v && defined $eid && defined $hash && $v eq "v2";
+    my ($v,$eid,$hash)=split /\n/,$raw; return 0 unless defined $v && defined $eid && defined $hash && $v eq "v3";
     return ($eid eq $id && $hash eq $sha) ? 1 : 0;
 }
 # Trust of a policy already read: ($root, stat array from Time::HiRes, raw bytes).
@@ -83,7 +86,7 @@ sub trusted_read { my ($root,$st,$raw)=@_; return 0 unless ref($st) eq 'ARRAY' &
 # The policy file of $root as it is now: (stat array, raw) of a regular private file of ours opened without following a link, or ().
 sub _file {
     my $path=shift; sysopen(my $h,$path,Fcntl::O_RDONLY()|Fcntl::O_NOFOLLOW()|Fcntl::O_NONBLOCK()) or return;
-    my @s=Time::HiRes::stat($h); return unless @s && -f $h && $s[4]==$< && $s[3]==1 && $s[7]<=16384;
+    my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[3]==1 && $s[7]<=16384;
     sysread($h,my $raw,16385); close $h; return unless defined $raw && length($raw)<=16384;
     return (\@s,$raw);
 }

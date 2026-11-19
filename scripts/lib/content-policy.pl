@@ -70,9 +70,12 @@ sub parse_policy {
     my %p;
     for (split /\n/, $raw, -1) {
         next if $_ eq '';
+        # record_nonce: random bytes Loomy writes so the consent record's hash covers content nobody can predict (ADR-0012); no meaning here.
+        if (/\Arecord_nonce=([0-9a-f]{32})\z/) { die "invalid content policy\n" if exists $p{record_nonce}; $p{record_nonce}=$1; next }
         die "invalid content policy\n" unless /\A([a-z_]+)=(\S+)\z/ && $KEY{$1} && !exists($p{$1});
         $p{$1}=$2;
     }
+    delete $p{record_nonce};
     return _validate_policy(\%p);
 }
 
@@ -522,7 +525,7 @@ sub _save_policy {
     return $p if join('\n',map {$p->{$_}} @KEYS) eq join('\n',map {$stored->{policy}{$_}} @KEYS);
     die "content generation exhausted\n" if $stored->{policy}{policy_generation}>=$MAX_GENERATION;
     $p->{policy_generation}=$stored->{policy}{policy_generation}+1;
-    _atomic($c,$POLICY,join('',map {"$_=$p->{$_}\n"} @KEYS),$stored->{stat}); return $p;
+    _atomic($c,$POLICY,join('',map {"$_=$p->{$_}\n"} @KEYS).'record_nonce='.unpack('H*',_random(16))."\n",$stored->{stat}); return $p;
 }
 
 # All translations are supplied by content-policy.sh from the public i18n dictionary.

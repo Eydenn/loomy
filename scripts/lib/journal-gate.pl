@@ -25,6 +25,7 @@ use Digest::SHA ();
 use Cwd ();
 my $REFUSAL_TTL=30; my %memo; my $SEQ=0;
 my $LIB=__FILE__; $LIB =~ s{/[^/]+\z}{};
+require "$LIB/private-group.pl";
 # The project root of "<root>/.loomy/logs", or undef when the directory is not exactly that after normalising (trailing
 # slashes dropped; ".loomy/logs" read against the cwd): the caller then refuses. An empty root or a case variant of the
 # names is not recognised either (a case-folding filesystem would still reach the real directory), so it fails closed.
@@ -70,7 +71,8 @@ sub _cdir_in {
             my $old=umask 0077; my $made=mkdir($x,0700); umask $old; return unless $made; @s=lstat($x);
         }
         return unless @s && -d _ && !-l _ && $s[4]==$<;
-        if ($s[2]&022) { return if $i==0; chmod(0700,$x) or return; @s=lstat($x); return unless @s && -d _ && !($s[2]&022) }
+        if ($i==0) { return unless Loomy::PrivateGroup::mode_ok($s[2],$s[5]) }   # the base: not world writable, group writable only for the user's private group
+        elsif ($s[2]&022) { chmod(0700,$x) or return; @s=lstat($x); return unless @s && -d _ && !($s[2]&022) }
         $i++;
     }
     return "$base/loomy/gate";

@@ -18,6 +18,7 @@ use POSIX ();
 my ($root)=@ARGV; $root=abs_path($root//".")//exit 1;
 my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+\z}{};
 require "$lib/runtime-paths.pl";
+require "$lib/policy-record.pl"; require "$lib/private-group.pl";
 my $ctx=eval { Loomy::RuntimePaths::resolve($root) };
 $root=$ctx->{root} if ref($ctx) eq "HASH" && defined $ctx->{root};
 my ($hits,$why,$links)=Loomy::RuntimePaths::tracked_runtime_paths($root,20);
@@ -44,7 +45,7 @@ sub _quarantine_dir {
             if (!@s) { mkdir($next,0700) or die "mkdir\n"; @s=lstat($next) }
             if (-l _) { my @t=stat($next); die "link\n" unless @t && -d _ }
             elsif (!-d _) { die "notdir\n" }
-            if ($i==$#parts) { my @t=stat($next); die "writable\n" unless @t && -d _ && $t[4]==$< && !($t[2]&022) }   # the state base itself: not group or world writable
+            if ($i==$#parts) { my @t=stat($next); die "writable\n" unless @t && -d _ && $t[4]==$< && Loomy::PrivateGroup::mode_ok($t[2],$t[5]) }   # the state base itself: not world writable, group writable only for a private group
             $cur=$next;
         }
         my @levels=("loomy","quarantine",Digest::SHA::sha256_hex($_[0]),POSIX::strftime("%Y%m%dT%H%M%SZ",gmtime));
@@ -128,6 +129,7 @@ for my $m (@moves) {
     my @s=lstat($m->[1]); next unless @s;
     unless ($s[0]==$m->[3] && $s[1]==$m->[4] && unlink($m->[1])) { print "error\tquarantine\n"; exit 1 }
 }
+eval { Loomy::PolicyRecord::forget($root) } if grep {$_->[0] =~ m{(?:\A|/)content-policy\.conf\z}} @moves;   # the policy file left the project: its consent record goes too
 my @show=grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @$hits; @show=@show[0..2] if @show>3;
 my $qshow=defined $qdir && $qdir =~ m{\A[\x20-\x7e]+\z} ? $qdir : "-"; $qshow =~ s/\t/ /g;
 print "removed\t".scalar(@$hits)."\t".join(", ",@show)."\t$qshow\n";

@@ -70,9 +70,12 @@ sub parse_policy {
     my %p;
     for (split /\n/, $raw, -1) {
         next if $_ eq '';
+        # record_nonce: random bytes Loomy writes so the consent record's hash covers content nobody can predict (ADR-0012); no meaning here.
+        if (/\Arecord_nonce=([0-9a-f]{32})\z/) { die "invalid content policy\n" if exists $p{record_nonce}; $p{record_nonce}=$1; next }
         die "invalid content policy\n" unless /\A([a-z_]+)=(\S+)\z/ && $KEY{$1} && !exists($p{$1});
         $p{$1}=$2;
     }
+    delete $p{record_nonce};
     return _validate_policy(\%p);
 }
 
@@ -265,14 +268,19 @@ sub _atomic {
         print {$h} $bytes or die "content write failed\n";
         $h->flush && $h->sync or die "content write failed\n";
         my $written=[stat($h)];
-        # The consent record first (the temp file's inode is the policy's after the rename): a policy is never left unrecorded.
-        Loomy::PolicyRecord::record($ctx->{root},$written->[0],$written->[1],sha256_hex($bytes)) if $name eq $POLICY;
         close $h or die "content write failed\n";
         _assert_context($ctx);
         die "content file changed\n" unless _same($written,_private_stat($tmp));
         die "content file changed\n" unless _same_or_absent($before,_private_stat($name));
-        rename $tmp,$name or die "content write failed\n"; 1;
-    }; my $err=$@; close $h if defined(fileno($h)); unlink $tmp unless $ok; die $err unless $ok;
+        rename $tmp,$name or die "content write failed\n";
+        # The consent record after the rename, keyed on the final file (inode and change time, taken now) and its content: a
+        # byte-identical file landing on a reused inode cannot match. Before the record exists, or if this fails, the policy is
+        # absent (consent asked again): fail closed.
+        if ($name eq $POLICY) {
+            my @f=stat($name); die "content write failed\n" unless @f;
+            Loomy::PolicyRecord::record($ctx->{root},Loomy::PolicyRecord::_id(@f),sha256_hex($bytes));
+        }
+        1;    }; my $err=$@; close $h if defined(fileno($h)); unlink $tmp unless $ok; die $err unless $ok;
 }
 sub _same_or_absent { return !@{$_[0]} && !@{$_[1]} || _same(@_) }
 sub _random {
@@ -312,7 +320,7 @@ sub _stored {
             # ADR-0012: a policy is a consent, trusted only when this machine's Loomy wrote it (user-owned record: same
             # root, inode and content). Any other file, whatever its layout, reads as absent; its stat is kept so that
             # a writer replaces it atomically.
-            if (defined($raw) && !Loomy::PolicyRecord::trusted_read($ctx->{root},$stat,$raw)) {$unverified=1; $p=defaults()}
+            if (defined($raw) && !Loomy::PolicyRecord::trusted_read($ctx->{root},$stat,$raw)) {$unverified=1; $p=defaults(); eval {Loomy::PolicyRecord::forget_if_stale($ctx->{root})}}
             else {$p=defined($raw) ? parse_policy($raw) : defaults()}
             1};
         return {policy=>$p,source=>(defined($raw) && !$unverified) ? 'project' : 'default',valid=>1,stat=>$stat,($unverified ? (unverified=>1) : ())} if $ok;
@@ -517,7 +525,7 @@ sub _save_policy {
     return $p if join('\n',map {$p->{$_}} @KEYS) eq join('\n',map {$stored->{policy}{$_}} @KEYS);
     die "content generation exhausted\n" if $stored->{policy}{policy_generation}>=$MAX_GENERATION;
     $p->{policy_generation}=$stored->{policy}{policy_generation}+1;
-    _atomic($c,$POLICY,join('',map {"$_=$p->{$_}\n"} @KEYS),$stored->{stat}); return $p;
+    _atomic($c,$POLICY,join('',map {"$_=$p->{$_}\n"} @KEYS).'record_nonce='.unpack('H*',_random(16))."\n",$stored->{stat}); return $p;
 }
 
 # All translations are supplied by content-policy.sh from the public i18n dictionary.

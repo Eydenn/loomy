@@ -102,6 +102,16 @@ sub local_problem { my ($v, $p, $roots) = @_;
   }
   for my $k (keys %$mine) { return 'local_in' if $rid{$k} }
   '' }
+# remote_host URL: host of an ssh:// or scp-like URL (lowercase, no brackets, no user, no port), undef for other URLs.
+sub remote_host { my $v = shift; my $h;
+  if ($v =~ m{\Assh://(?:[^@/]*@)?(\[[^\]]*\]|[^:/]*)(?::\d*)?(?:/|\z)}i) { $h = $1 }
+  elsif ($v !~ m{\A[A-Za-z][A-Za-z0-9+.-]*://} && $v =~ m{\A(?:[^@/:]*@)?(\[[^\]]*\]|[^:/]+):}) { $h = $1 }
+  return unless defined $h; $h =~ s/\A\[(.*)\]\z/$1/; $h =~ s/\.\z//; lc $h }
+# self_host HOST: loopback names and addresses, and this machine's own (short) host name.
+sub self_host { my $h = shift; return 0 unless length $h;
+  return 1 if $h eq 'localhost' || $h eq 'localhost.localdomain' || $h =~ /\.localhost\z/ || $h =~ /\A127\.\d+\.\d+\.\d+\z/ || $h eq '0.0.0.0' || $h =~ /\A(?:0*:)*0*1\z/ || $h =~ /\A(?:0*:)+\z/;
+  require Sys::Hostname; my $n = lc(eval { Sys::Hostname::hostname() } // ''); return 0 unless length $n; (my $short = $n) =~ s/\..*//s;
+  $h eq $n || $h eq $short }
 # rentry PATH: record entry "uid:dev:ino:hexpath" for a local remote.
 sub rentry { my $p = shift; my @s = stat($p); return unless @s; join(':', $s[4], $s[0], $s[1], unpack('H*', $p)) }
 if ($cmd eq 'canon') { my $u = $a[0] // ''; my $lp = $u; my $isl = $lp =~ s{\Afile://}{}i || $lp =~ m{\A(?:/|\./|\.\./)};
@@ -132,6 +142,9 @@ if ($cmd eq 'scan') {
       $ok = $remote{$var} ? 1 : 0;
       if ($ok && ($var eq 'url' || $var eq 'pushurl')) {
         my $isl = $v =~ m{\A(?:/|\./|\.\./|file://)}i ? 1 : 0;
+        # Adopt: an ssh or scp-like remote that points back at this machine would run a shipped repository's hooks through the user's
+        # own sshd, exactly like a local path. (Remotes Loomy records itself through `private --remote` are not affected.)
+        if ($strict && !$isl) { my $h = remote_host($v); if (defined $h && self_host($h)) { $local_bad = 1; $skip = 1; $ok = 0; print "P\tlocal_host\t", esc("remote.$sub.$var"), "\n" } }
         my $lp = $v; $lp =~ s{\Afile://}{}i if $isl;
         # Local paths may hold spaces and valid UTF-8 (no controls, no bidi controls); network URLs are printable ASCII only.
         $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v =~ /\A(?:ext|fd)\b/i || ($isl ? ($lp eq '' || esc($lp) ne $lp) : $v !~ /\A[\x21-\x7e]+\z/);

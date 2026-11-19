@@ -430,6 +430,18 @@ for how in create adopt; do
   if [[ -z "$(git -C "$RC" for-each-ref 2>/dev/null)" ]]; then ok "retarget ($how): replaced directory received no ref"; else ko "retarget ($how): push reached the replaced directory"; fi
 done
 
+# ── 3f. LR8-B3: an ssh remote that points back at this machine runs a shipped repository's hooks through the user's own sshd ──
+HN="$(hostname)"; HS="${HN%%.*}"
+n=0
+for u in 'ssh://localhost/x.git' 'user@127.0.0.1:x.git' 'ssh://[::1]/x.git' "$HN:x.git" "$HS:x.git" 'ssh://u@LOCALHOST:22/x.git' 'ssh://a.localhost/x.git'; do
+  n=$(( n + 1 )); D="$WORK/self-$n"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$u"
+  pty_adopt y "$D" >"$OUT" 2>&1; rc=$?
+  if (( rc != 0 )) && ! ready_at "$D" && grep -qE 'this machine|not allowed' "$OUT"; then ok "ssh remote to this machine refused at adopt: $u"; else ko "ssh remote to this machine adopted: $u"; fi
+done
+D="$WORK/self-ok"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url 'ssh://git@github.com/x/y.git'
+pty_adopt y "$D" >"$OUT" 2>&1; rc=$?
+if (( rc == 0 )) && ready_at "$D"; then ok 'ssh://git@github.com/x/y.git still adopts'; else ko 'a normal ssh remote was refused'; fi
+
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1
 git init -q -b main plsrc && printf 'one\n' >plsrc/f && git -C plsrc add f && git -C plsrc commit -qm one && git -C plsrc config uploadpack.allowFilter true && git -C plsrc config uploadpack.allowAnySHA1InWant true

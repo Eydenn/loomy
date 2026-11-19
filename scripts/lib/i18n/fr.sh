@@ -2622,5 +2622,6 @@ _t_fr() {
     'local remote refused: /proc and /dev paths are not allowed (%s)') _T='dépôt distant local refusé : les chemins /proc et /dev sont interdits (%s)' ;;
     'local remote refused: not a git directory by itself (needs HEAD, objects, refs; no .git inside, no sibling .git) (%s)') _T='dépôt distant local refusé : ce n'\''est pas un dépôt git à lui seul (il faut HEAD, objects, refs ; pas de .git dedans, pas de .git voisin) (%s)' ;;
     'local remote refused: contains the project or its worktrees (%s)') _T='dépôt distant local refusé : contient le projet ou ses worktrees (%s)' ;;
+    'remote host is this machine, so its hooks would run through your own ssh: refused (%s)') _T='hôte distant = cette machine, ses hooks passeraient par ton propre ssh : refusé (%s)' ;;
   esac
 }

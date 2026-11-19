@@ -217,6 +217,7 @@ privacy_problem_text() {
     local_special) t "local remote refused: /proc and /dev paths are not allowed (%s)" "$2" ;;
     local_nogit) t "local remote refused: not a git directory by itself (needs HEAD, objects, refs; no .git inside, no sibling .git) (%s)" "$2" ;;
     local_anc) t "local remote refused: contains the project or its worktrees (%s)" "$2" ;;
+    local_host) t "remote host is this machine, so its hooks would run through your own ssh: refused (%s)" "$2" ;;
     local_pct) t "local remote refused: use a plain absolute path, not an escaped file:// URL (%s)" "$2" ;;
     local_remedy) t "use the real absolute path of a bare repository outside the project and its worktrees: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt" ;;
     redirect) t "redirecting file present: %s" "$2" ;;

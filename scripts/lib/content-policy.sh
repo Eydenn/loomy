@@ -39,6 +39,7 @@ _loomy_content_ui() {
   tv LOOMY_CONTENT_UI_HINT "Task labels off · run loomy privacy labels recommended"
   tv LOOMY_CONTENT_UI_LABEL_FULL "display context full; label not saved"
   tv LOOMY_CONTENT_UI_GATED "Task history tracked by Git · run loomy doctor --fix"
+  tv LOOMY_CONTENT_UI_UNVERIFIED "Earlier privacy choices are not recorded on this machine · choose again"
   tv LOOMY_CONTENT_UI_PRIVACY "Journal: %s · task labels: %s · private results: %s · checkpoint/scratch repair pending"
   tv LOOMY_CONTENT_UI_OLD_COPIES "Old copies may contain text · loomy privacy inventory"
   tv LOOMY_CONTENT_UI_RESULT_FACTS "Existing results are unchanged; this command changes future capture only."
@@ -67,7 +68,7 @@ _loomy_content_ui() {
   export LOOMY_CONTENT_UI_STRUCTURE LOOMY_CONTENT_UI_LEGACY LOOMY_CONTENT_UI_ON LOOMY_CONTENT_UI_OFF
   export LOOMY_CONTENT_UI_LOWER_LABEL_CAPS LOOMY_CONTENT_UI_LOWER_RESULT_CAPS
   export LOOMY_CONTENT_UI_HUMAN_REQUIRED LOOMY_CONTENT_UI_CONFIRMATION_ABORTED LOOMY_CONTENT_UI_OPERATION_FAILED
-  export LOOMY_CONTENT_UI_AGENT_ANCESTOR LOOMY_CONTENT_UI_GATED
+  export LOOMY_CONTENT_UI_AGENT_ANCESTOR LOOMY_CONTENT_UI_GATED LOOMY_CONTENT_UI_UNVERIFIED
   export LOOMY_CONTENT_UI_CLARITY_LEGACY LOOMY_CONTENT_UI_EXCLUDED_LEGACY
   export LOOMY_CONTENT_UI_SELECTED_SOURCES LOOMY_CONTENT_UI_SELECTED_NONE LOOMY_CONTENT_UI_POLICY_STATE LOOMY_CONTENT_UI_DEFAULT_SOURCE
   export LOOMY_CONTENT_UI_PROJECT_SOURCE LOOMY_CONTENT_UI_ENV_SOURCE LOOMY_CONTENT_UI_DENIED_SOURCE LOOMY_CONTENT_UI_VETO_SOURCE
@@ -123,8 +124,8 @@ _loomy_content_hint_load() {
         qw(content-policy.conf display-context-full)),"\n";
       my $p=Loomy::ContentPolicy::effective_policy($ARGV[1]);
       print "full\n" if Loomy::ContentPolicy::label_health($ARGV[1]) eq "full";
-      print "gated\n" if $p->{gated};
-      print "hint\n" if !$p->{gated} && (!$p->{grant_prompt_version} || $p->{label_sources} eq "none")' "$LOOMY_CONTENT_POLICY_LIB" "$1")" || return 0
+      print "gated\n" if $p->{gated}; print "unverified\n" if $p->{unverified};
+      print "hint\n" if !$p->{gated} && !$p->{unverified} && (!$p->{grant_prompt_version} || $p->{label_sources} eq "none")' "$LOOMY_CONTENT_POLICY_LIB" "$1")" || return 0
   fi
   LOOMY_CONTENT_HINT=""
   for flag in $flags; do
@@ -132,6 +133,7 @@ _loomy_content_hint_load() {
       C\|*) LOOMY_CONTENT_HINT_SIGNATURE="${flag#C|}" ;;
       full) tv flag "display context full; label not saved" ;;
       gated) tv flag "Task history tracked by Git · run loomy doctor --fix" ;;
+      unverified) tv flag "Earlier privacy choices are not recorded on this machine · choose again" ;;
       hint) tv flag "Task labels off · run loomy privacy labels recommended" ;;
     esac
     [[ "$flag" != C\|* ]] || continue

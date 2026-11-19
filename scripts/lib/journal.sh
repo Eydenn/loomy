@@ -69,8 +69,8 @@ AI_JOURNAL_PREPARE_PL='
     }
     for my $d (@dirs) { sysopen my $f,$d,O_RDONLY|O_NOFOLLOW or return 0; chmod 0700,$f or return 0 }
     push @files,"$dir/events.jsonl" unless -e "$dir/events.jsonl";
-    # chmod only when the mode differs: even a same-mode chmod moves the change time, which the consent record of
-    # content-policy.conf is bound to (ADR-0012).
+    # chmod only when the mode differs: no needless metadata write on every hook (the consent record of content-policy.conf
+    # no longer depends on it: ADR-0012 binds device:inode, content hash and a nonce).
     for my $p (@files) { sysopen my $f,$p,O_RDWR|O_CREAT|O_NOFOLLOW,0600 or return 0; my @m=stat($f); chmod 0600,$f or return 0 unless @m && ($m[2]&07777)==0600 }
     return 1;
   }

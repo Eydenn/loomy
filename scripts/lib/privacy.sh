@@ -168,6 +168,8 @@ _privacy_mkdir700() {
   [[ "$parent" == "$d" ]] || _privacy_mkdir700 "$parent"
   mkdir -m 700 "$d" 2>/dev/null || true
 }
+# privacy_canonical_remote <url>: a local remote (absolute, ./, ../ or file://) that exists becomes its canonical absolute path; anything else is unchanged.
+privacy_canonical_remote() { _privacy_cpl canon "$1"; }
 _privacy_cpl() { perl "$(dirname "${BASH_SOURCE[0]}")/companion.pl" "$@"; }
 
 # privacy_companion_forget <root>: drops the record of the companion of <root> (the folder may already be gone).
@@ -176,6 +178,16 @@ privacy_companion_forget() {
   real="$(cd "$1" 2>/dev/null && pwd -P)" || return 0
   [[ -f "$(privacy_companions_file)" ]] || return 0
   _privacy_cpl forget "$(privacy_companions_file)" "$real/.loomy/ai.git" 2>/dev/null || true
+}
+
+# _privacy_worktree_roots <root>: fills _PRIVACY_WT with every worktree path git lists for the project (cold paths only: adopt and record).
+_privacy_worktree_roots() {
+  local f
+  _PRIVACY_WT=()
+  while IFS= read -r -d '' f; do
+    case "$f" in "worktree "*) _PRIVACY_WT+=("${f#worktree }") ;; esac
+  done < <(loomy_git -C "$1" worktree list --porcelain -z 2>/dev/null)
+  return 0
 }
 
 # privacy_companion_scan <ai.git dir> <adopt|ready> [root...]: audit lines from companion.pl (P code arg, U url, L local, D digest).
@@ -201,8 +213,12 @@ privacy_problem_text() {
     local_in) t "local remote refused: inside the project (%s)" "$2" ;;
     local_dir) t "local remote refused: not an existing directory (%s)" "$2" ;;
     local_own) t "local remote refused: not owned by you (%s)" "$2" ;;
+    local_canon) t "local remote refused: not a canonical path, no symlink, '.', '..' or trailing slash allowed (%s)" "$2" ;;
+    local_special) t "local remote refused: /proc and /dev paths are not allowed (%s)" "$2" ;;
+    local_nogit) t "local remote refused: not a git directory by itself (needs HEAD, objects, refs; no .git inside, no sibling .git) (%s)" "$2" ;;
+    local_anc) t "local remote refused: contains the project or its worktrees (%s)" "$2" ;;
     local_pct) t "local remote refused: use a plain absolute path, not an escaped file:// URL (%s)" "$2" ;;
-    local_remedy) t "use an absolute path outside the project: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt" ;;
+    local_remedy) t "use the real absolute path of a bare repository outside the project and its worktrees: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt" ;;
     redirect) t "redirecting file present: %s" "$2" ;;
     attributes) t "attributes present: %s" "$2" ;;
     legacy) t "legacy remote file present: %s" "$2" ;;
@@ -230,20 +246,21 @@ privacy_companion_record() {
   PRIVACY_RECORD_WHY=""
   root="$(privacy_companion_worktree "$1")" || return 1
   d="$(privacy_ai_git_dir "$root")"
-  out="$(privacy_companion_scan "$d" "$mode" "$root" "$(privacy_git_root "$root")")" || return 1
+  _privacy_worktree_roots "$root"
+  out="$(privacy_companion_scan "$d" "$mode" "$root" "$(privacy_git_root "$root")" ${_PRIVACY_WT[@]+"${_PRIVACY_WT[@]}"})" || return 1
   if grep -q '^P' <<<"$out"; then PRIVACY_RECORD_WHY="$(privacy_problems_print <<<"$out")"; return 1; fi
   digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
   [[ -n "$digest" ]] || return 1
   cdir="$(dirname "$(privacy_companions_file)")"
   _privacy_mkdir700 "$cdir"
   [[ ! -O "$cdir" ]] || chmod 700 "$cdir" 2>/dev/null || true
-  _privacy_cpl write "$(privacy_companions_file)" "$d" "$digest"
+  _privacy_cpl write "$(privacy_companions_file)" "$d" "$digest" "$(awk -F'\t' '$1=="R"{print $2}' <<<"$out")"
 }
 
 # privacy_companion_why <root>: why the companion is refused (empty when it is trusted). One of
 # missing | link | owner | tracked | unrecorded | changed. A tracked, changed or failing companion has its record revoked.
 privacy_companion_why() {
-  local root d out digest rec key cache
+  local root d out digest rec rinfo key cache scanned
   d="$(privacy_ai_git_dir "$1")"
   if ! privacy_companion_present "$1"; then privacy_companion_forget "$1"; echo missing; return 0; fi
   root="$(privacy_companion_worktree "$1")" || { echo unrecorded; return 0; }
@@ -255,12 +272,17 @@ privacy_companion_why() {
     privacy_companion_forget "$root"; echo tracked; return 0
   fi
   rec="$(_privacy_cpl match "$(privacy_companions_file)" "$d" 2>/dev/null)" || { echo unrecorded; return 0; }
+  rinfo="${rec#*$'\t'}"; rec="${rec%%$'\t'*}"
+  # A local remote is checked on EVERY call, outside the verdict cache: git resolves its path again at each push, so a retargeted
+  # symlink or a replaced directory (another device/inode) must stop the push. A few stats, no git spawn.
+  if [[ -n "$rinfo" && "$rinfo" != "-" ]] && ! _privacy_cpl rcheck "$root" "$rinfo" 2>/dev/null; then privacy_companion_forget "$root"; echo changed; return 0; fi
   key="$(_privacy_cpl key "$d" "$rec")" || { echo changed; return 0; }
   cache="$(privacy_verdict_file)"
   if [[ -f "$cache" ]] && _privacy_cpl vhas "$cache" "$key" 2>/dev/null; then return 0; fi
-  out="$(privacy_companion_scan "$d" ready)"
+  out="$(privacy_companion_scan "$d" ready "$root")"
   digest="$(awk -F'\t' '$1=="D"{print $2}' <<<"$out")"
-  if grep -q '^P' <<<"$out" || [[ -z "$digest" || "$digest" != "$rec" ]]; then privacy_companion_forget "$root"; echo changed; return 0; fi
+  scanned="$(awk -F'\t' '$1=="R"{print $2}' <<<"$out")"
+  if grep -q '^P' <<<"$out" || [[ -z "$digest" || "$digest" != "$rec" || "$scanned" != "$rinfo" ]]; then privacy_companion_forget "$root"; echo changed; return 0; fi
   _privacy_mkdir700 "$(dirname "$cache")"
   _privacy_cpl vadd "$cache" "$key" 2>/dev/null || true
   return 0
@@ -288,7 +310,8 @@ privacy_companion_adopt() {
   if [[ -L "$d" || ! -d "$d" ]]; then _privacy_say "companion is a link"; return 1; fi
   if [[ ! -O "$d" ]]; then _privacy_say "companion is not owned by you"; return 1; fi
   if [[ -n "$(loomy_git -C "$root" ls-files -z -- ':(icase).loomy/ai.git' 2>/dev/null | head -c 1 || true)" ]]; then _privacy_say "companion is tracked by the project repository"; return 1; fi
-  out="$(privacy_companion_scan "$d" adopt "$root" "$(privacy_git_root "$root")")"
+  _privacy_worktree_roots "$root"
+  out="$(privacy_companion_scan "$d" adopt "$root" "$(privacy_git_root "$root")" ${_PRIVACY_WT[@]+"${_PRIVACY_WT[@]}"})"
   if grep -q '^P' <<<"$out"; then privacy_problems_print <<<"$out"; return 1; fi
   grep -q '^U'$'\t''origin'$'\t''url'$'\t' <<<"$out" || { _privacy_say "no remote.origin.url in the companion config"; return 1; }
   urls="$(awk -F'\t' '$1=="U"{print $2" "$3" "$4}' <<<"$out")"
@@ -296,7 +319,7 @@ privacy_companion_adopt() {
   { t "Remote URLs (fetch and push) this repository will use:"; echo; } >&2
   while IFS= read -r answer; do printf '  %s\n' "$answer" >&2; done <<<"${urls:-$(t "(none)")}"
   t "Trust this repository and these URLs? [y/N] " >&2
-  IFS= read -r answer || answer=""
+  IFS= read -r -t 300 answer || answer=""   # no answer in 5 minutes counts as "no": adopt never blocks forever
   # y/yes in English, o/oui in French, any case (the prompt shows the key of the current language).
   answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
   case "$answer" in y|yes|o|oui) ;; *) _privacy_say "not confirmed"; return 1 ;; esac

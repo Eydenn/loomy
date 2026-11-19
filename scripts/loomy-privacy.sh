@@ -462,6 +462,8 @@ create_companion() {
     fi
     url="https://github.com/$owner/$AI_REPO.git"
   fi
+  # A local remote is stored as its canonical absolute path (git resolves the stored path again at every push).
+  url="$(privacy_canonical_remote "$url")"
   loomy_git_user init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
   privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
@@ -638,6 +640,8 @@ case "$CMD" in
     loomy_git_user clone --bare -q -- "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
     # The user cloned it themselves: record it, then drop anything a repository could carry beyond its objects.
     rm -rf "$(privacy_ai_git_dir "$ROOT")/hooks" "$(privacy_ai_git_dir "$ROOT")/info/attributes"
+    cur="$(loomy_git config --no-includes --file "$(privacy_ai_git_dir "$ROOT")/config" --get remote.origin.url 2>/dev/null || true)"
+    if [[ -n "$cur" ]]; then canon="$(privacy_canonical_remote "$cur")"; [[ "$canon" == "$cur" ]] || ai_git "$ROOT" config remote.origin.url "$canon"; fi
     privacy_companion_config "$ROOT"
     privacy_companion_record "$ROOT" || {
       t "Can't clone: %s" "$url" >&2; echo >&2

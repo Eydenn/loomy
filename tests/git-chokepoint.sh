@@ -150,29 +150,36 @@ bash "$REPO/bin/loomy" privacy adopt >"$OUT" 2>&1; rc=$?
 if (( rc != 0 )) && grep -q 'terminal' "$OUT"; then ok 'adopt without a terminal refuses (no silent trust)'; else ko 'adopt trusted without a terminal'; fi
 ready_at() { bash -c 'source "$1/scripts/lib/privacy.sh"; privacy_companion_ready "$2"' _ "$REPO" "$1" >/dev/null 2>&1; }
 pty_adopt() { python3 - "$REPO" "$1" "$2" <<'PYEOF'
-import os, pty, sys, select
+import os, pty, sys, select, signal, time
 repo, ans, root = sys.argv[1:4]
 pid, fd = pty.fork()
 if pid == 0:
     os.chdir(root); os.execvp('bash', ['bash', repo + '/bin/loomy', 'privacy', 'adopt'])
-out = b''; sent = False
-while True:
-    r, _, _ = select.select([fd], [], [], 20)
-    if not r:
-        os.kill(pid, 9); break
-    try: d = os.read(fd, 4096)
-    except OSError: break
-    if not d: break
-    out += d
-    if not sent and (b'[y/N]' in out or b'[o/N]' in out): os.write(fd, (ans + '\n').encode()); sent = True
-_, st = os.waitpid(pid, 0)
-sys.stdout.write(out.decode(errors='replace')); sys.exit(os.WEXITSTATUS(st))
+# The child is a session leader: its process group holds every grandchild (loomy-privacy.sh...). Whatever happens, the whole group is
+# killed and reaped, so a stuck prompt can never leave processes behind. Overall deadline 60 s.
+out = b''; sent = False; deadline = time.time() + 60; status = 1
+try:
+    while time.time() < deadline:
+        r, _, _ = select.select([fd], [], [], 5)
+        if not r: continue
+        try: d = os.read(fd, 4096)
+        except OSError: break
+        if not d: break
+        out += d
+        if not sent and (b'[y/N]' in out or b'[o/N]' in out): os.write(fd, (ans + '\n').encode()); sent = True
+finally:
+    try: os.killpg(pid, signal.SIGKILL)
+    except OSError: pass
+    try: _, st = os.waitpid(pid, 0); status = os.WEXITSTATUS(st) if os.WIFEXITED(st) else 1
+    except OSError: pass
+sys.stdout.write(out.decode(errors='replace')); sys.exit(status)
 PYEOF
 }
 # [LR8-B] an outside absolute local remote (older Loomy: `privacy private --remote /path`) adopts after a "y", then syncs
-git --git-dir="$G/.loomy/ai.git" config remote.origin.url "$BARE"
+BARE_C="$(cd "$BARE" && pwd -P)"
+git --git-dir="$G/.loomy/ai.git" config remote.origin.url "$BARE_C"
 pty_adopt n "$G" >"$OUT" 2>&1; rc=$?
-if (( rc != 0 )) && grep -q "$BARE" "$OUT" && ! ready_at "$G"; then ok 'outside local remote: adopt shows the path and refuses when not confirmed'; else ko 'outside local remote: n was not refused'; fi
+if (( rc != 0 )) && grep -q "$BARE_C" "$OUT" && ! ready_at "$G"; then ok 'outside local remote: adopt shows the path and refuses when not confirmed'; else ko 'outside local remote: n was not refused'; fi
 pty_adopt y "$G" >"$OUT" 2>&1; rc=$?
 if (( rc == 0 )) && ready_at "$G"; then ok 'outside local remote created by an older Loomy: adopt after y trusts it'; else ko 'outside local remote: adopt refused'; fi
 printf 'd\n' >>"$G/AGENTS.md"; bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1; rc=$?
@@ -315,7 +322,7 @@ if LC_ALL=C grep -q $'pr\xc3\xa9' "$OUT" && ! LC_ALL=C grep -q $'\xc2\x9b' "$OUT
 cd "$WORK" || exit 1
 # a clone ships ./evil.git (relative) or points at an absolute path inside the project: both refused with the remedy
 for kind in rel in; do
-  D="$WORK/loc-$kind"; mk_comp "$D"; git init -q --bare -b main "$D/evil.git"
+  D="$WORK/loc-$kind"; mk_comp "$D"; D="$(cd "$D" && pwd -P)"; git init -q --bare -b main "$D/evil.git"
   printf '#!/bin/sh\necho pre-receive >>"%s"\ncat >/dev/null\nexit 0\n' "$MARK2" >"$D/evil.git/hooks/pre-receive"; chmod +x "$D/evil.git/hooks/pre-receive"
   if [[ $kind == rel ]]; then u=./evil.git; pat='not an absolute path'; else u="$D/evil.git"; pat='inside the project'; fi
   git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$u"
@@ -326,7 +333,7 @@ done
 # an absolute symlink that leads into the project is still inside it
 D="$WORK/loc-link"; mk_comp "$D"; git init -q --bare -b main "$D/evil.git"; ln -s "$D/evil.git" "$WORK/loc-link-out"
 git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$WORK/loc-link-out"
-adopt_refused "$D" 'inside the project' 'local remote (symlink into the project): adopt refuses'
+adopt_refused "$D" 'canonical path' 'local remote (symlink into the project): adopt refuses'
 D="$WORK/loc-none"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url "$WORK/does-not-exist.git"
 adopt_refused "$D" 'not an existing directory' 'local remote (missing directory): adopt refuses'
 # spaces and non-ASCII letters in a local path: create, record, then adopt after the record is lost
@@ -341,7 +348,7 @@ for name in "My Drive" "Dépôts privés"; do
   if (( rc == 0 )) && ready_at "$P2"; then ok "path with '$name': adopt after y works"; else ko "path with '$name': adopt failed"; fi
 done
 # file:// form of the same space path
-git --git-dir="$P2/.loomy/ai.git" config remote.origin.url "file://$WORK/Dépôts privés/r.git"
+git --git-dir="$P2/.loomy/ai.git" config remote.origin.url "file://$(cd "$WORK/Dépôts privés/r.git" && pwd -P)"
 pty_adopt y "$P2" >"$OUT" 2>&1; rc=$?
 if (( rc == 0 )) && ready_at "$P2"; then ok 'file:// path with spaces and accents: adopt works'; else ko 'file:// path with spaces: adopt failed'; fi
 # control characters stay refused in a local path (C1 U+009B, bidi U+202E, TAB) and never reach the terminal raw
@@ -371,6 +378,58 @@ if grep -q 'loomy privacy adopt' <<<"$r" && grep -q 'loomy privacy inventory' <<
 r="$(LOOMY_LANG=fr bash "$REPO/bin/loomy" privacy --help 2>&1)"; printf '%s\n' "$r" >"$OUT"
 if grep -q 'vérifie un .loomy/ai.git' <<<"$r"; then ok 'privacy --help: the adopt line is translated'; else ko 'privacy --help: adopt line not translated'; fi
 
+# ── 3e. LR8-B2: git resolves a local remote again at push time; canonical path, a git dir by itself, outside every worktree, re-checked on every use ──
+cd "$WORK" || exit 1
+evil_bare() {  # evil_bare <dir>: bare repository whose pre-receive hook leaves a marker
+  git init -q --bare -b main "$1"; printf '#!/bin/sh\necho pre-receive >>"%s"\ncat >/dev/null\nexit 0\n' "$MARK2" >"$1/hooks/pre-receive"; chmod +x "$1/hooks/pre-receive"
+}
+retarget() {  # retarget <dir> <url> <pattern> <label>: adopt refuses, sync runs no hook
+  git --git-dir="$1/.loomy/ai.git" config remote.origin.url "$2"
+  adopt_refused "$1" "$3" "$4: adopt refuses"
+  ( cd "$1" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 "$4: sync runs no receive hook"
+}
+if [ -d /proc/self ]; then
+  D="$WORK/px"; mk_comp "$D"; D="$(cd "$D" && pwd -P)"; evil_bare "$D/...git"
+  retarget "$D" "/proc/self/cwd/.." '/proc' 'Linux /proc/self/cwd/.. with a shipped ...git'
+fi
+D="$WORK/dd/proj"; mkdir -p "$WORK/dd"; mk_comp "$D"; D="$(cd "$D" && pwd -P)"; evil_bare "$D/../proj.git"
+retarget "$D" "$D/.." 'canonical path' '<abs>/proj/.. with proj.git'
+D="$WORK/sl"; mk_comp "$D"; D="$(cd "$D" && pwd -P)"; ln -s .. "$D/m"; evil_bare "$D/m.git"; git -C "$D" add m >/dev/null 2>&1
+retarget "$D" "$D/m" 'canonical path' 'tracked symlink m -> .. with m.git'
+D="$WORK/anc"; mkdir -p "$WORK/anc-top"; git init -q --bare -b main "$WORK/anc-top"; mkdir -p "$WORK/anc-top/proj"; mk_comp "$WORK/anc-top/proj"
+A="$(cd "$WORK/anc-top" && pwd -P)"
+retarget "$WORK/anc-top/proj" "$A" 'contains the project' 'a git dir that contains the project'
+# a remote inside a second worktree of the same repository
+D="$WORK/wt-main"; mk_comp "$D"; D="$(cd "$D" && pwd -P)"
+( cd "$D" && git -c core.hooksPath=/dev/null commit -q --allow-empty -m i && git worktree add -q "$WORK/wt-second" -b wt2 ) >/dev/null 2>&1
+W2="$(cd "$WORK/wt-second" && pwd -P)"; git init -q --bare -b main "$W2/r.git"
+retarget "$D" "$W2/r.git" 'inside the project' 'remote inside a second worktree'
+# not a git dir by itself: a plain folder, a working repository, a sibling <p>.git
+D="$WORK/ng"; mk_comp "$D"; mkdir -p "$WORK/ng-plain"; retarget "$D" "$(cd "$WORK/ng-plain" && pwd -P)" 'not a git directory' 'plain folder as remote'
+git init -q -b main "$WORK/ng-work"; retarget "$D" "$(cd "$WORK/ng-work" && pwd -P)" 'not a git directory' 'working repository (has .git inside) as remote'
+git init -q --bare -b main "$WORK/ng-sib"; git init -q --bare -b main "$WORK/ng-sib.git"; retarget "$D" "$(cd "$WORK/ng-sib" && pwd -P)" 'not a git directory' 'remote with a sibling <p>.git'
+# a recorded local remote that changes identity afterwards is refused on the very next use, nothing is pushed
+for how in create adopt; do
+  P3="$WORK/ret-$how"; RB="$WORK/ret-$how-remote.git"; mkdir -p "$P3/.loomy"; git init -q -b main "$P3"; git init -q --bare -b main "$RB"
+  printf -- '---\nname: rt\nai_files: local\n---\n' >"$P3/.loomy/brief.md"; echo 0.17.10 >"$P3/.loomy/VERSION"; printf 'a\n' >"$P3/AGENTS.md"
+  ( cd "$P3" && bash "$REPO/bin/loomy" privacy private --remote "$RB" >"$OUT" 2>&1 )
+  if [[ $how == adopt ]]; then rm -f "$WORK/config/loomy/companions"; pty_adopt y "$P3" >"$OUT" 2>&1; fi
+  if ready_at "$P3"; then ok "retarget ($how): trusted before the change"; else ko "retarget ($how): not trusted to begin with"; fi
+  RC="$(cd "$RB" && pwd -P)"
+  if [[ "$(git --git-dir="$P3/.loomy/ai.git" config remote.origin.url)" == "$RC" ]]; then ok "retarget ($how): the stored remote is the canonical path"; else ko "retarget ($how): remote not canonical"; fi
+  mv "$RC" "$RC.old"; ln -s "$RC.old" "$RC"
+  if ! ready_at "$P3"; then ok "retarget ($how): symlink swapped in, ready refuses"; else ko "retarget ($how): symlink swap not caught"; fi
+  rm -f "$RC"; mv "$RC.old" "$RC"
+  ( cd "$P3" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); rc=$?
+  if (( rc != 0 )) && grep -q 'not verified' "$OUT"; then ok "retarget ($how): revoked, only adopt restores it"; else ko "retarget ($how): trust came back without adopt"; fi
+  pty_adopt y "$P3" >"$OUT" 2>&1
+  if ready_at "$P3"; then ok "retarget ($how): adopt after the swap back trusts it"; else ko "retarget ($how): re-adopt failed"; fi
+  mv "$RC" "$RC.old2"; evil_bare "$RC"
+  if ! ready_at "$P3"; then ok "retarget ($how): another directory (new dev:ino) refuses"; else ko "retarget ($how): replaced directory not caught"; fi
+  ( cd "$P3" && bash "$REPO/bin/loomy" privacy sync >"$OUT" 2>&1 ); no_marker2 "retarget ($how): nothing pushed to the replaced directory"
+  if [[ -z "$(git -C "$RC" for-each-ref 2>/dev/null)" ]]; then ok "retarget ($how): replaced directory received no ref"; else ko "retarget ($how): push reached the replaced directory"; fi
+done
+
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1
 git init -q -b main plsrc && printf 'one\n' >plsrc/f && git -C plsrc add f && git -C plsrc commit -qm one && git -C plsrc config uploadpack.allowFilter true && git -C plsrc config uploadpack.allowAnySHA1InWant true
@@ -385,5 +444,7 @@ printf '%s\n' "$r" >"$OUT"
 if [[ "$r" == "$WORK/plain" ]] || [[ "$r" == *"/plain" ]]; then ok 'loomy_git ignores an inherited GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE / GIT_CONFIG_COUNT'; else ko 'loomy_git followed inherited GIT variables'; fi
 no_marker2 'inherited GIT_CONFIG_COUNT fsmonitor did not run'
 
+# the PTY helper kills its whole process group: nothing of this run may be left behind
+if pgrep -f "$WORK" >/dev/null 2>&1; then : >"$OUT"; ko 'processes of this run are still alive'; else ok 'no process left behind by the PTY helper'; fi
 printf '\nGit chokepoint: %s passed, %s failed\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

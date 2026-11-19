@@ -282,7 +282,7 @@ check 'pause after policy revocation saves no new task/result and reports unavai
  source "$1/scripts/lib/models.sh"; source "$1/scripts/lib/memory.sh"; source "$1/scripts/lib/usage.sh"
  ROOT="$2"; DELEG_ID=revoked; ROLE=reviewer; MODEL=gpt-6.2-sol; EFFORT=high; SANDBOX=read-only; STARTED=1
  TASK="new sensitive task"; RESUME_DESCRIPTOR=""; LABEL_JSON=""; FORMAT_JSON=""
- perl -pi -e "s/private_results=on/private_results=off/" "$ROOT/.loomy/logs/content-policy.conf"
+ perl -pi -e "s/private_results=on/private_results=off/" "$ROOT/.loomy/logs/content-policy.conf"; perl "$1/scripts/lib/policy-record.pl" record "$ROOT"
  msg=$(ai_delegate_memory_record paused "new sensitive result" 123 2>&1)
  [[ "$msg" == *"original task required to resume"* && ! -e "$ROOT/.loomy/memory/private-results-v1" ]]
 ' _ "$REPO" "$P"
@@ -294,7 +294,7 @@ check 'revoking capture preserves an earlier authorized task without claiming a 
  RESUME_DESCRIPTOR=$(printf "%s\0" "$ROLE" codex "$MODEL" "$EFFORT" "$SANDBOX" equilibre why label "" "" | _lm_backend descriptor "$ROOT")
  ai_delegate_memory_record running
  cp -p "$ROOT/.loomy/memory/private-results-v1/retained.json" "$ROOT/body-before"
- perl -pi -e "s/private_results=on/private_results=off/" "$ROOT/.loomy/logs/content-policy.conf"
+ perl -pi -e "s/private_results=on/private_results=off/" "$ROOT/.loomy/logs/content-policy.conf"; perl "$1/scripts/lib/policy-record.pl" record "$ROOT"
  ai_delegate_memory_record paused "new result must not be captured" 123
  cmp "$ROOT/body-before" "$ROOT/.loomy/memory/private-results-v1/retained.json" || exit 1
  text=$(loomy_memory_show "$ROOT")

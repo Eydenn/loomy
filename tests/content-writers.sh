@@ -29,7 +29,7 @@ my $allow=Loomy::ContentPolicy::check_allowlist("$repo/scripts/lib/content-allow
 sub put {my ($p,$s)=@_; open my $h,'>',$p or die $!; binmode $h; print $h $s; close $h; chmod 0600,$p or die}
 sub bytes {my $p=shift; return '' unless -f $p; open my $h,'<',$p or die; local $/; return <$h>}
 sub root {my $r="$work/$_[0]"; make_path("$r/.loomy/logs",{mode=>0700}); return $r}
-sub conf {my ($r,%v)=@_; my $p={%{Loomy::ContentPolicy::defaults()},%v}; put("$r/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p))}
+sub conf {my ($r,%v)=@_; my $p={%{Loomy::ContentPolicy::defaults()},%v}; put("$r/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p)); Loomy::PolicyRecord::record_file($r)}   # the consent record vouches for this fixture policy (ADR-0012)
 sub events {my $r=shift; return map {decode_json($_)} grep {length} split /\n/,bytes("$r/.loomy/logs/events.jsonl")}
 sub append {my ($r,$e,$label)=@_; Loomy::LiveState::journal_append("$r/.loomy/logs/events.jsonl",$e,'2026-10-26T00:00:00Z',$label)}
 sub extras {
@@ -297,6 +297,7 @@ def seed_policy(root, **changes):
     raw = run(['perl', '-e', 'require $ARGV[0]; my $p=Loomy::ContentPolicy::defaults(); print "$_=$p->{$_}\\n" for sort keys %$p;', str(repo/'scripts/lib/content-policy.pl')])
     policy = dict(x.split('=',1) for x in raw.splitlines()); policy.update({k:str(v) for k,v in changes.items()})
     path = directory/'content-policy.conf'; path.write_text(''.join(f'{k}={v}\n' for k,v in policy.items())); path.chmod(0o600)
+    run(['perl', str(repo/'scripts/lib/policy-record.pl'), 'record', str(root)])   # the consent record vouches for this fixture policy (ADR-0012)
 # Keep structural hooks cheap without caching a grant: the next transaction must
 # still read the live policy, while the Unicode codec is only needed for text.
 codec_root=work/'codec'; seed_policy(codec_root)

@@ -58,6 +58,7 @@ ROOT="$(cd "$ROOT" && pwd)"
 
 MIN_OK=1          # minimum requirements met
 IDEAL_MISSING=""  # missing ideal items, comma separated
+FIX_REFUSED=0     # a requested fix that was refused (submodule on disk, quarantine impossible): the exit status says so
 
 missing_ideal() { IDEAL_MISSING="${IDEAL_MISSING:+$IDEAL_MISSING, }$1"; }
 
@@ -160,7 +161,12 @@ loomy_doctor_tracking() {
                 ui_ok "$(t '%s tracked runtime file(s) removed from the Git index' "$fix_n")" "${fix_names:+$fix_names · }$(t 'files stay on disk; commit, then reopen live tracking')"
               fi ;;
             none) ui_info "$(t 'No tracked runtime file left.')" ;;
-            error) if [[ "$fix_n" == quarantine ]]; then ui_warn "$(t 'Could not move the shipped files out of the project')" "$(t 'check ~/.local/state is writable, then loomy doctor --fix again')"
+            error) FIX_REFUSED=1
+              if [[ "$fix_n" == gitlink ]]; then ui_warn "$(t '%s is a Git submodule' "${fix_names:-.loomy/logs}")" "$(t 'delete it, then run loomy doctor --fix')"
+              elif [[ "$fix_n" == quarantine ]]; then
+                fix_state="${XDG_STATE_HOME:-${HOME:+$HOME/.local/state}}"
+                if [[ -n "$fix_state" ]]; then ui_warn "$(t 'Could not move the shipped files out of the project')" "$(t 'check %s is writable and private, then loomy doctor --fix again' "$fix_state")"
+                else ui_warn "$(t 'Could not move the shipped files out of the project')" "$(t 'set HOME or XDG_STATE_HOME, then loomy doctor --fix again')"; fi
               else ui_warn "$(t 'Could not remove them from the Git index')" "$(t 'run git status here, then loomy doctor --fix again')"; fi ;;
             *) ui_warn "$(t 'Could not remove them from the Git index')" "$(t 'run git status here, then loomy doctor --fix again')" ;;
           esac
@@ -277,7 +283,7 @@ loomy_doctor_content() {
           my ($logs,$ds)=Loomy::ContentPolicy::_dir("logs","$root/.loomy/logs");
           chdir $logs or die "content directory unavailable\n";
           my $stored=Loomy::ContentPolicy::_stored({logs=>$logs,root=>$root});
-          ($state,$policy)=@{$stored}{qw(source policy)}; $state="gated" if $stored->{gated};   # grants ignored while the logs are tracked
+          ($state,$policy)=@{$stored}{qw(source policy)}; $state="gated" if $stored->{gated}; $state="unverified" if $stored->{unverified};   # grants ignored while the logs are tracked
           $health=eval {
             my ($raw)=Loomy::ContentPolicy::_read("display-context-full",128);
             defined($raw) ? "full" : "ok";
@@ -305,6 +311,7 @@ loomy_doctor_content() {
   case "$state" in
     project) ui_ok "$(t 'Content policy valid')" "$path" ;;
     default) ui_info "$(t 'No content policy file; structural defaults apply: %s' "$path")" ;;
+    unverified) ui_warn "$(t 'Policy file not written by Loomy on this machine: ignored')" "$(t 'run loomy privacy labels recommended')" ;;
     gated) ui_warn "$(t 'Stored grants ignored: task history is tracked by Git')" "$(t 'run loomy doctor --fix')" ;;
     invalid)
       ui_warn "$(t 'Invalid content policy')" "$path"
@@ -321,7 +328,7 @@ loomy_doctor_content() {
     legacy-excerpts) journal="$(t 'legacy excerpts (project scope)')" ;;
   esac
   [[ "$labels" != none ]] || labels="$(t 'none selected')"
-  if [[ "$state" == invalid || "$state" == unsafe || "$state" == gated ]]; then
+  if [[ "$state" == invalid || "$state" == unsafe || "$state" == gated || "$state" == unverified ]]; then
     ui_info "$(t 'Safe defaults — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
   else
     ui_info "$(t 'Stored grants — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
@@ -546,7 +553,10 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
   # History / work files tracked by Git (committed before the rule): reported, untracked only with --fix.
   # shellcheck source=lib/project.sh
   source "$SCRIPT_DIR/lib/project.sh"
-  p_tracked="$(loomy_history_tracked "$ROOT")"
+  # Paths under .loomy/logs are runtime state, not history: tracked-fix.pl handles them (quarantine first, then untrack). Untracking
+  # them here would leave shipped files in place and trusted when that quarantine fails.
+  p_notlogs() { grep -v '^\.loomy/logs\(/\|$\)' || true; }
+  p_tracked="$(loomy_history_tracked "$ROOT" | p_notlogs)"
   if [[ -n "$p_tracked" ]]; then
     p_tn="$(printf '%s\n' "$p_tracked" | grep -c . || true)"
     ui_warn "$(t "%s Loomy history file(s) tracked by Git" "$p_tn")" "$(printf '%s\n' "$p_tracked" | head -5 | paste -sd ' ' -)"
@@ -555,8 +565,8 @@ if (( ! COMPACT )) && [[ -f "$ROOT/.loomy/brief.md" ]]; then
       p_err=""
       # update-index --force-remove drops exactly the listed index entries: no work-tree read (no clean filter on a
       # stat-dirty file), NUL-separated paths from ls-files -z, works on entries modified in the work tree.
-      p_err="$(loomy_history_tracked_z "$ROOT" | loomy_git -C "$ROOT" --literal-pathspecs update-index --force-remove -z --stdin 2>&1 >/dev/null | head -1)" || true
-      p_left="$(loomy_history_tracked "$ROOT")"
+      p_err="$(loomy_history_tracked_z "$ROOT" | perl -0ne 'print unless m{\A\.loomy/logs(?:/|\z)}' | loomy_git -C "$ROOT" --literal-pathspecs update-index --force-remove -z --stdin 2>&1 >/dev/null | head -1)" || true
+      p_left="$(loomy_history_tracked "$ROOT" | p_notlogs)"
       if [[ -z "$p_left" ]]; then
         ui_ok "$(t "history files untracked")" "$(t "they stay on disk and leave the repository at the next commit")"
       else
@@ -652,7 +662,7 @@ if (( MIN_OK )); then
   else ui_ok "$(t "Minimum met")" ""; ui_info "$(t "for the ideal: %s" "$IDEAL_MISSING")"; fi
   if (( LIVE )); then doctor_end "$(t "guided fixes: loomy doctor --fix")"
   else doctor_end "$(t "live model test: loomy doctor --live · guided fixes: loomy doctor --fix")"; fi
-  exit 0
+  exit "$FIX_REFUSED"
 fi
 ui_err "$(t "Minimum not met")" "$(t "fix the ✗ items above")"
 doctor_end "$(t "guided fixes: loomy doctor --fix")"

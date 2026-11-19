@@ -2559,7 +2559,7 @@ draining	termine son lot
 Files committed under .loomy/logs (%s): %s	Fichiers versionnés sous .loomy/logs (%s) : %s
 runtime files belong outside Git	les fichiers d’exécution n’ont pas leur place dans Git
 Tracked runtime file · run loomy doctor	Fichier d’exécution suivi par Git · lance loomy doctor
-Live tracking is unavailable: %s is tracked by Git. Run git rm --cached -f -- %s, commit, then reopen this view.	Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached -f -- %s, valide, puis rouvre cette vue.
+Live tracking is unavailable: %s is tracked by Git. Run loomy doctor --fix, then reopen this view.	Le suivi en direct est indisponible : %s est suivi par Git. Lance loomy doctor --fix, puis rouvre cette vue.
 Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view.	Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance loomy doctor --fix, puis rouvre cette vue.
 a tracked file is shipped with this clone	un fichier suivi par Git est livré avec ce clone
 tracked by Git (shipped with this clone)	suivi par Git (livré avec ce clone)
@@ -2596,4 +2596,9 @@ Stored grants ignored: task history is tracked by Git	Autorisations enregistrée
 run loomy doctor --fix	lance loomy doctor --fix
 copies kept in %s · commit, then reopen live tracking	copies gardées dans %s ; valide, puis rouvre le suivi en direct
 Could not move the shipped files out of the project	Impossible de sortir du projet les fichiers livrés
-check ~/.local/state is writable, then loomy doctor --fix again	vérifie que ~/.local/state est accessible en écriture, puis relance loomy doctor --fix
+check %s is writable and private, then loomy doctor --fix again	vérifie que %s est accessible en écriture et privé, puis relance loomy doctor --fix
+set HOME or XDG_STATE_HOME, then loomy doctor --fix again	définis HOME ou XDG_STATE_HOME, puis relance loomy doctor --fix
+Policy file not written by Loomy on this machine: ignored	Fichier de politique non écrit par Loomy sur cette machine : ignoré
+run loomy privacy labels recommended	lance loomy privacy labels recommended
+%s is a Git submodule	%s est un sous-module Git
+delete it, then run loomy doctor --fix	supprime-le, puis relance loomy doctor --fix

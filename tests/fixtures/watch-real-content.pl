@@ -14,6 +14,7 @@ my $policy={%{Loomy::ContentPolicy::defaults()},policy_generation=>1,grant_promp
     label_sources=>($mode eq 'off' ? 'none' : Loomy::ContentPolicy::recommended_sources())};
 open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die $!;
 print $c "$_=$policy->{$_}\n" for sort keys %$policy; close $c or die $!;
+Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
 my $project=Loomy::ContentPolicy::effective_policy($root)->{project_id};
 sub label {
     my ($kind,$target,$attempt,$source,$text)=@_;

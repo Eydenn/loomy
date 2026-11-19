@@ -29,6 +29,7 @@ set result [catch {
             set root [file join $work $surface-$bg]
             # The watch persists its view in the config dir: one per cell, so 'a' always starts from the tree.
             file mkdir [file join $work config-$surface-$bg]
+            set env(XDG_CONFIG_HOME) $work/config-$surface-$bg   ;# the consent record (ADR-0012) is read from the watch's config folder
             exec perl $fixture seed $root $projects $surface $bg 2>@1
             exec perl $fixture hooks $root $projects $surface $bg 2>@1
             content_decline $repo $work $root

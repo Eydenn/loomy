@@ -82,9 +82,11 @@ loomy_content_command() (
   perl "$LOOMY_CONTENT_POLICY_LIB" "$@"
 )
 # The shell fast paths below read the policy file directly: only when the leak barrier allows this project's logs (cached
-# verdict, nothing stored), otherwise the full backend path runs and treats the file as absent.
+# verdict, nothing stored) AND the user-owned consent record vouches for the file (ADR-0012: same root, inode, content);
+# otherwise the full backend path runs and treats the file as absent.
 _loomy_content_gate_ok() {
-  perl -e 'require "$ARGV[0]/journal-gate.pl"; exit(Loomy::JournalGate::check("$ARGV[1]/.loomy/logs",1) ? 0 : 1)' "${LOOMY_CONTENT_POLICY_LIB%/*}" "$1" 2>/dev/null
+  perl -e 'require "$ARGV[0]/journal-gate.pl"; require "$ARGV[0]/policy-record.pl";
+    exit((Loomy::JournalGate::check("$ARGV[1]/.loomy/logs",1) && Loomy::PolicyRecord::verify_file($ARGV[1])) ? 0 : 1)' "${LOOMY_CONTENT_POLICY_LIB%/*}" "$1" 2>/dev/null
 }
 loomy_content_first_use() {
   # A completed screen must not start Perl or load its translations again.

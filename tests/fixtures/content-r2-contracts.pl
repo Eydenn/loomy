@@ -49,7 +49,7 @@ sub project {
 }
 sub conf {
     my ($root,%changes)=@_; my $p={%{Loomy::ContentPolicy::defaults()},%changes};
-    put("$root/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p));
+    put("$root/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p)); Loomy::PolicyRecord::record_file($root);   # ADR-0012
 }
 sub manifest {
     my ($root)=@_; my %result;
@@ -136,7 +136,7 @@ for my $field ('identity','policy') {
         my $root=project("$field-$attack",1,{journal_content=>'legacy-excerpts',private_results=>'on',label_sources=>'explicit-lead'});
         my $path=$field eq 'identity' ? "$root/.loomy/project-id" : "$root/.loomy/logs/content-policy.conf";
         my $target="$root/foreign-target"; put($target,bytes($path)); unlink $path or die;
-        if ($attack eq 'malformed') {put($path,'INVALID_PRIVATE_CANARY')}
+        if ($attack eq 'malformed') {put($path,'INVALID_PRIVATE_CANARY'); Loomy::PolicyRecord::record_file($root) if $field eq 'policy'}   # a file Loomy wrote that went invalid (an unrecorded one is ignored, ADR-0012)
         elsif ($attack eq 'oversized') {put($path,'x'x($field eq 'identity' ? 129 : 16385))}
         elsif ($attack eq 'symlink') {symlink $target,$path or die}
         elsif ($attack eq 'hardlink') {link $target,$path or die}

@@ -45,6 +45,7 @@ if ($action eq 'seed' || $action eq 'compact-seed') {
         open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die;
         print $c "$_=$p->{$_}\n" for sort keys %$p; close $c;
         chmod 0600,"$root/.loomy/logs/content-policy.conf" or die;
+        Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
     }
     open my $f,'>',$clock or die $!; print $f "$now\n"; close $f or die $!;
     my $owner={ts=>ts(-60),type=>'session',event=>'start',tool=>'codex',pid=>0+$pid};

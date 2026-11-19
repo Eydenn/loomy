@@ -389,7 +389,7 @@ STUB
 
   # These legacy signal fixtures select by task text; the structural pairs above must keep prose absent.
   (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
-    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
+    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf"); perl "$REPO/scripts/lib/policy-record.pl" record "$op"
   local bridge_pid child_pid attempts codex_pid_file="$WORK/codex-child.pid" claude_pid_file="$WORK/claude-child.pid"
   printf '{"ts":"%s","type":"session","event":"start","tool":"claude","session":"interrupted-bridge-test","pid":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$J"
   # `command` skips the watchdog wrappers (perl/bash functions): the signal must reach the bridge itself, not a wrapper subshell.
@@ -463,7 +463,7 @@ interrupted_delegation_tests() {
   local J="$op/.loomy/logs/events.jsonl"
   mkdir -p "${J%/*}"
   (umask 077; perl -e 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{journal_content}="legacy-excerpts";
-    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf")
+    print "$_=$p->{$_}\n" for sort keys %$p' "$REPO/scripts/lib/content-policy.pl" >"$op/.loomy/logs/content-policy.conf"); perl "$REPO/scripts/lib/policy-record.pl" record "$op"
   cat >"$cli_dir/stub" <<'STUB'
 #!/usr/bin/env bash
 case "${1:-}" in
@@ -2234,7 +2234,7 @@ has "loomy memory: result listed" "three CSV files"
 run "loomy memory show" bash -c "cd '$SM' && '$LOOMY' memory show"
 has "loomy memory show: full text of the latest" "Map the CSV schemas"
 # The disclosed policy limits replace the unbounded historical Markdown pruning.
-perl -pi -e 's/results_max_records=200/results_max_records=2/' "$SM/.loomy/logs/content-policy.conf"
+perl -pi -e 's/results_max_records=200/results_max_records=2/' "$SM/.loomy/logs/content-policy.conf"; perl "$REPO/scripts/lib/policy-record.pl" record "$SM"
 for i in 1 2 3; do bash -c 'source "$1/scripts/lib/memory.sh"; loomy_memory_save "$2" "p$3" reviewer m ok task result' _ "$REPO" "$SM" "$i"; done
 [[ "$(find "$SM/.loomy/memory/private-results-v1" -name '[!.]*.json' | wc -l | tr -d ' ')" == 2 ]] && ok "memory: oldest unpinned private results pruned" || ko "memory: private retention cap not applied"
 # Robustness (cross review): odd roles, invalid retention, symbolic links, lowercase fields, ranks, sessions by tool.

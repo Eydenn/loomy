@@ -39,6 +39,7 @@ if ($action eq 'seed') {
     open my $policy,'>',"$root/.loomy/logs/content-policy.conf" or die;
     print $policy "$_=$p->{$_}\n" for sort keys %$p; close $policy or die;
     chmod 0600,"$root/.loomy/logs/content-policy.conf" or die;
+    Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
     open my $f,'>',"$root/.loomy/brief.md" or die; print $f "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $f;
     for my $surface (qw(cli app)) {
         my $id="cx-$surface"; my $m=meta($id,'','',$surface eq 'app' ? 'vscode' : 'cli');

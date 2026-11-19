@@ -157,6 +157,7 @@ sub _phys_root {
 # judged too, on its own index (whose stat is part of the cached key); if that cannot be established, refused.
 sub verdict {
     my ($dir,$fresh)=@_; my ($root,$nd)=_norm($dir); return (0,undef) unless defined $root; $dir=$nd;
+    return (0,undef) if lstat("$root/.loomy/.git") || lstat("$dir/.git");   # a nested repository under the runtime directory (a submodule checkout shipped by a clone): never written, never trusted
     my $alias=(-l "$root/.loomy" || -l $dir) ? 1 : 0;   # the directory written is another project's: never stored in it, cached per user instead
     my @roots=($root);
     if ($alias) {

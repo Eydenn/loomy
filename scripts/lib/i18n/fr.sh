@@ -2556,7 +2556,7 @@ _t_fr() {
     'Files committed under .loomy/logs (%s): %s') _T='Fichiers versionnés sous .loomy/logs (%s) : %s' ;;
     'runtime files belong outside Git') _T='les fichiers d’exécution n’ont pas leur place dans Git' ;;
     'Tracked runtime file · run loomy doctor') _T='Fichier d’exécution suivi par Git · lance loomy doctor' ;;
-    'Live tracking is unavailable: %s is tracked by Git. Run git rm --cached -f -- %s, commit, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance git rm --cached -f -- %s, valide, puis rouvre cette vue.' ;;
+    'Live tracking is unavailable: %s is tracked by Git. Run loomy doctor --fix, then reopen this view.') _T='Le suivi en direct est indisponible : %s est suivi par Git. Lance loomy doctor --fix, puis rouvre cette vue.' ;;
     'Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view.') _T='Le suivi en direct est indisponible : un fichier suivi par Git sous .loomy/logs. Lance loomy doctor --fix, puis rouvre cette vue.' ;;
     'a tracked file is shipped with this clone') _T='un fichier suivi par Git est livré avec ce clone' ;;
     'tracked by Git (shipped with this clone)') _T='suivi par Git (livré avec ce clone)' ;;
@@ -2593,6 +2593,11 @@ _t_fr() {
     'run loomy doctor --fix') _T='lance loomy doctor --fix' ;;
     'copies kept in %s · commit, then reopen live tracking') _T='copies gardées dans %s ; valide, puis rouvre le suivi en direct' ;;
     'Could not move the shipped files out of the project') _T='Impossible de sortir du projet les fichiers livrés' ;;
-    'check ~/.local/state is writable, then loomy doctor --fix again') _T='vérifie que ~/.local/state est accessible en écriture, puis relance loomy doctor --fix' ;;
+    'check %s is writable and private, then loomy doctor --fix again') _T='vérifie que %s est accessible en écriture et privé, puis relance loomy doctor --fix' ;;
+    'set HOME or XDG_STATE_HOME, then loomy doctor --fix again') _T='définis HOME ou XDG_STATE_HOME, puis relance loomy doctor --fix' ;;
+    'Policy file not written by Loomy on this machine: ignored') _T='Fichier de politique non écrit par Loomy sur cette machine : ignoré' ;;
+    'run loomy privacy labels recommended') _T='lance loomy privacy labels recommended' ;;
+    '%s is a Git submodule') _T='%s est un sous-module Git' ;;
+    'delete it, then run loomy doctor --fix') _T='supprime-le, puis relance loomy doctor --fix' ;;
   esac
 }

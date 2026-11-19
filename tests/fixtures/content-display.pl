@@ -21,6 +21,7 @@ $policy->{grant_prompt_version}=1;
 open my $p,'>',"$root/.loomy/logs/content-policy.conf" or die $!;
 print $p "$_=$policy->{$_}\n" for sort keys %$policy;
 close $p or die $!;
+Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
 my $project=Loomy::ContentPolicy::effective_policy($root)->{project_id};
 my $now=time;
 sub ts { strftime('%Y-%m-%dT%H:%M:%SZ',gmtime($now+$_[0])) }

@@ -207,7 +207,7 @@ ai_owner_note() {
       AI_OWNER_KIND=problem
       case "$reason" in
         tracked-runtime)
-          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run git rm --cached -f -- %s, commit, then reopen this view." "$file" "$file"
+          if [[ "${AI_OWNER_LONG:-0}" == 1 && -n "$file" ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: %s is tracked by Git. Run loomy doctor --fix, then reopen this view." "$file"   # never git rm --cached: that leaves the shipped file in place and trusted (doctor --fix quarantines it first)
           elif [[ "${AI_OWNER_LONG:-0}" == 1 ]]; then tv AI_OWNER_NOTE "Live tracking is unavailable: a tracked file under .loomy/logs. Run loomy doctor --fix, then reopen this view."
           else tv AI_OWNER_NOTE "Tracked runtime file · run loomy doctor"; fi ;;
         unsafe-lock)

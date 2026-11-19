@@ -17,6 +17,8 @@ if {[info exists env(LOOMY_TEST_SUITE)] && $env(LOOMY_TEST_SUITE) == 1} {set bud
 set budget [test_time_budget $budget]
 log_user 0
 set result [catch {
+    # the consent record (ADR-0012) lives in the config folder the watch will read: fixtures and the watch share it
+    set env(XDG_CONFIG_HOME) [file join $work config]
     exec perl $fixture seed $root $sessions [pid] 2>@1
     exec perl $fixture app $root $sessions [pid] 2>@1
     exec perl $fixture second-lead $root $sessions [pid] 2>@1

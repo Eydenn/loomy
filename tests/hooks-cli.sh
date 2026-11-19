@@ -501,6 +501,7 @@ check('SessionStart (custom)' in text and 'PostToolUse (ambiguous)' in text,
 check('--hook' not in text and 'PRIVATE_' not in text,
       'doctor never prints arbitrary hook command text')
 put(diagnostics / '.loomy/logs/content-policy.conf', 'PRIVATE_INVALID_POLICY\n', mode=0o600)
+run('perl', repo / 'scripts/lib/policy-record.pl', 'record', diagnostics)   # a file Loomy wrote that went invalid: reported as invalid (an unrecorded one is ignored, ADR-0012)
 put(diagnostics / '.loomy/logs/display-context-full', 'full\n', mode=0o600)
 before = manifest(diagnostics)
 result = run('bash', repo / 'scripts/loomy-doctor.sh', '--root', diagnostics, success=False)

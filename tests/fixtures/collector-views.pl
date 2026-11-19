@@ -325,7 +325,7 @@ my $main=project(1); my $cx=codex_source($main); my $cl=claude_source($main,'cla
     my $dc=doctor($clone);
     like($dc->{all},qr{\.loomy/logs/collector-owner-v1\.json.*tracked by Git \(shipped with this clone\).*fix: loomy doctor --fix}s,'L04 doctor names a clone-shipped collector-owner-v1.json with its remedy');
     like($dc->{all},qr{Files committed under \.loomy/logs \(1\)},'L04 doctor reports committed .loomy/logs content');
-    like(status($clone)->{all},qr{collector-owner-v1\.json is tracked by Git\. Run git rm --cached -f -- \S*collector-owner-v1\.json},'L04 status names the shipped record with the git rm --cached -f -- remedy');
+    like(status($clone)->{all},qr{collector-owner-v1\.json is tracked by Git\. Run loomy doctor --fix, then reopen},'L04 status names the shipped record with the git rm --cached -f -- remedy');
 }
 {
     # busy/bootstrap-busy mean retry, never "another owner".

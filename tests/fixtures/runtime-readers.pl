@@ -62,7 +62,7 @@ sub project {
 }
 sub conf {
     my ($root,%extra)=@_;
-    put("$root/.loomy/logs/content-policy.conf",policy_bytes(%extra));
+    put("$root/.loomy/logs/content-policy.conf",policy_bytes(%extra)); Loomy::PolicyRecord::record_file($root);   # ADR-0012
 }
 sub policy_bytes {
     my (%extra)=@_;
@@ -420,7 +420,7 @@ readonly('unsupported identity mode',$work,sub {
 # and journal diagnostics. Strict snapshot/export keeps its narrower boundary.
 for my $identity (0,1) {
     my $invalid=project("invalid-policy-$identity",$identity,0); full($invalid);
-    put("$invalid/.loomy/logs/content-policy.conf","version=unknown\n");
+    put("$invalid/.loomy/logs/content-policy.conf","version=unknown\n"); Loomy::PolicyRecord::record_file($invalid);   # a file Loomy wrote that went invalid (an unrecorded one is ignored, ADR-0012)
     readonly("identity=$identity malformed policy inspection",$work,sub {
         my $p=Loomy::ContentPolicy::effective_policy($invalid);
         is($p->{valid},0,"identity=$identity malformed policy remains invalid");
@@ -457,6 +457,7 @@ for my $identity (0,1) {
                 $reads++;
                 unless ($swapped) {
                     put("$atomic/.loomy/logs/replacement",policy_bytes(policy_generation=>21,results_max_records=>199));
+                    Loomy::PolicyRecord::record_file($atomic,"$atomic/.loomy/logs/replacement");   # what a real writer does before the rename
                     rename "$atomic/.loomy/logs/replacement",$path or die;
                     $swapped=1;
                 }

@@ -37,6 +37,7 @@ if ($action eq 'seed') {
         open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die;
         print $c "$_=$p->{$_}\n" for sort keys %$p; close $c;
         chmod 0600,"$root/.loomy/logs/content-policy.conf" or die;
+        Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
     }
     open my $brief,'>',"$root/.loomy/brief.md" or die $!;
     print $brief "---\nai_mode: SOLO\nai_lead: codex\n---\n"; close $brief;

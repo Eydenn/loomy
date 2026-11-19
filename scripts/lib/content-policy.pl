@@ -13,6 +13,7 @@ use Time::HiRes qw(stat lstat sleep);
 
 my $LIB = abs_path(__FILE__); $LIB =~ s{/[^/]+$}{};
 require "$LIB/runtime-paths.pl";
+require "$LIB/policy-record.pl";
 my $JSON = JSON::PP->new->utf8->canonical;
 my @SOURCES = qw(explicit-user explicit-lead claude-description codex-path-slug codex-nickname codex-role);
 my @KEYS = qw(version journal_content policy_generation label_sources label_max_graphemes label_max_bytes
@@ -264,6 +265,8 @@ sub _atomic {
         print {$h} $bytes or die "content write failed\n";
         $h->flush && $h->sync or die "content write failed\n";
         my $written=[stat($h)];
+        # The consent record first (the temp file's inode is the policy's after the rename): a policy is never left unrecorded.
+        Loomy::PolicyRecord::record($ctx->{root},$written->[0],$written->[1],sha256_hex($bytes)) if $name eq $POLICY;
         close $h or die "content write failed\n";
         _assert_context($ctx);
         die "content file changed\n" unless _same($written,_private_stat($tmp));
@@ -303,8 +306,16 @@ sub _stored {
     return {policy=>defaults(),source=>'default',valid=>1,stat=>[],gated=>1} unless _label_gate($ctx->{root},1);   # gated: the callers say why the grants are ignored
     my ($raw,$stat,$p);
     for (1..3) {
-        my $ok=eval {($raw,$stat)=_read($POLICY,16384); $p=defined($raw) ? parse_policy($raw) : defaults(); 1};
-        return {policy=>$p,source=>defined($raw) ? 'project' : 'default',valid=>1,stat=>$stat} if $ok;
+        my $unverified=0;
+        my $ok=eval {
+            ($raw,$stat)=_read($POLICY,16384);
+            # ADR-0012: a policy is a consent, trusted only when this machine's Loomy wrote it (user-owned record: same
+            # root, inode and content). Any other file, whatever its layout, reads as absent; its stat is kept so that
+            # a writer replaces it atomically.
+            if (defined($raw) && !Loomy::PolicyRecord::trusted_read($ctx->{root},$stat,$raw)) {$unverified=1; $p=defaults()}
+            else {$p=defined($raw) ? parse_policy($raw) : defaults()}
+            1};
+        return {policy=>$p,source=>(defined($raw) && !$unverified) ? 'project' : 'default',valid=>1,stat=>$stat,($unverified ? (unverified=>1) : ())} if $ok;
         # An atomic writer may replace the inode during an unlocked preflight.
         # Retry that race only; malformed/unsafe files remain closed immediately.
         last unless $@ eq "content file changed\n";
@@ -458,6 +469,7 @@ sub _snapshot_read {
         $p=_effective($c,$stored);
         $p->{identity_state}=$identity; $p->{policy_state}=$stored->{source};
         $p->{gated}=1 if $stored->{gated};
+        $p->{unverified}=1 if $stored->{unverified};
         if (!$c->{loomy} || $identity eq 'invalid' || ($mode eq 'strict' && ($identity ne 'present' || !$stored->{valid}))) {
             # Keep origin diagnostics, not a usable grant or invented identity.
             $p={%{defaults()},project=>$p->{project},source=>'invalid',valid=>0,journal_enabled=>0,

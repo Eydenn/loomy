@@ -57,7 +57,7 @@ sub dies_code {
 sub project {
     my ($name,$git)=@_; my $root="$work/$name"; make_path("$root/.loomy/logs",{mode=>0700}); chmod 0700,"$root/.loomy","$root/.loomy/logs";
     # Explicit compatibility policy: structural journals omit cwd_relative.
-    {my $p={%{Loomy::ContentPolicy::defaults()},journal_content=>'legacy-excerpts'}; put("$root/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p)); chmod 0600,"$root/.loomy/logs/content-policy.conf"}
+    {my $p={%{Loomy::ContentPolicy::defaults()},journal_content=>'legacy-excerpts'}; put("$root/.loomy/logs/content-policy.conf",join('',map {"$_=$p->{$_}\n"} sort keys %$p)); chmod 0600,"$root/.loomy/logs/content-policy.conf"; Loomy::PolicyRecord::record_file($root)}
     if ($git) {
         git($root,'init','--quiet'); git($root,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','--quiet','--allow-empty','-m','fixture');
     }

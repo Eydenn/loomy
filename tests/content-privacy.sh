@@ -426,9 +426,11 @@ for state in ('missing', 'valid', 'invalid', 'fifo', 'symlink', 'hardlink', 'ove
     if state == 'valid':
         p = dict(policy, label_sources='explicit-user,explicit-lead', private_results='on')
         put(conf, ''.join(f'{k}={v}\n' for k, v in p.items()))
+        run('perl', str(repo / 'scripts/lib/policy-record.pl'), 'record', str(doctor_root))   # a file Loomy wrote (ADR-0012)
         put(marker, 'full\n')
     elif state == 'invalid':
         put(conf, 'PRIVATE_POLICY_EXCEPTION\n')
+        run('perl', str(repo / 'scripts/lib/policy-record.pl'), 'record', str(doctor_root))   # a file Loomy wrote (ADR-0012)
         put(marker, 'full\n')
     elif state == 'fifo':
         os.mkfifo(conf)

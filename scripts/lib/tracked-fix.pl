@@ -20,32 +20,47 @@ my $lib=abs_path(__FILE__); $lib =~ s{/[^/]+\z}{};
 require "$lib/runtime-paths.pl";
 my $ctx=eval { Loomy::RuntimePaths::resolve($root) };
 $root=$ctx->{root} if ref($ctx) eq "HASH" && defined $ctx->{root};
-my ($hits,$why)=Loomy::RuntimePaths::tracked_runtime_paths($root,20);
+my ($hits,$why,$links)=Loomy::RuntimePaths::tracked_runtime_paths($root,20);
 if ($why eq "timeout" || $why eq "index-error") { print "error\t$why\n"; exit 1 }
 unless (@$hits) { print "none\n"; exit 0 }
-# Quarantine directory (created only when something is to be moved). Returns the path or undef.
+# A submodule (gitlink) standing for .loomy or .loomy/logs, or anything under them, may have been checked out by a
+# recursive clone with files of its own: it is never untracked automatically while it is on disk. The user deletes the
+# directory, then runs the fix again (the index entry alone is then removed).
+{ my @present=grep { lstat("$root/$_") } @{$links//[]};
+  if (@present) { my ($n)=grep {/\A[A-Za-z0-9._\/-]{1,120}\z/} @present; print "error\tgitlink\t".($n//"-")."\n"; exit 1 } }
+# Quarantine directory (created only when something is to be moved). Same rule as the gate's cache directory: the state
+# base must not be group or world writable (refused), a level of ours below it is tightened to 0700, every level a real
+# directory of ours; the files are then created relative to the final directory, pinned by chdir and re-checked by stat.
+# Returns the path or undef (the caller prints the failure line).
 sub _quarantine_dir {
     my $home=$ENV{HOME}; my $base=$ENV{XDG_STATE_HOME};
     $base=(defined $home && $home =~ m{\A/}) ? "$home/.local/state" : undef unless defined $base && $base =~ m{\A/};
     return unless defined $base; $base =~ s{/+\z}{};
-    my $old=umask 0077; my $cur="";
-    for my $c (grep {length} split m{/},$base) {   # missing ancestors of the state directory are created 0700
-        my $next="$cur/$c"; my @s=lstat($next);
-        if (!@s) { mkdir($next,0700) or do { umask $old; return }; @s=lstat($next) }
-        if (-l _) { my @t=stat($next); unless (@t && -d _) { umask $old; return } }
-        elsif (!-d _) { umask $old; return }
-        $cur=$next;
-    }
-    my @levels=("loomy","quarantine",Digest::SHA::sha256_hex($_[0]),POSIX::strftime("%Y%m%dT%H%M%SZ",gmtime));
-    for my $i (0..$#levels) {
-        my $l=$levels[$i]; my $next="$cur/$l"; my @s=lstat($next);
-        if (!@s) { mkdir($next,0700) or do { umask $old; return }; @s=lstat($next) }
-        elsif ($i==$#levels) { $next.="-$$"; mkdir($next,0700) or do { umask $old; return }; @s=lstat($next) }
-        unless (@s && -d _ && !-l _ && $s[4]==$<) { umask $old; return }
-        if ($s[2]&022) { chmod(0700,$next) or do { umask $old; return } }
-        $cur=$next;
-    }
-    umask $old; return $cur;
+    my $old=umask 0077; my $cur=""; my $res;
+    $res=eval {
+        my @parts=grep {length} split m{/},$base;
+        for my $i (0..$#parts) {   # missing ancestors of the state directory are created 0700
+            my $next="$cur/$parts[$i]"; my @s=lstat($next);
+            if (!@s) { mkdir($next,0700) or die "mkdir\n"; @s=lstat($next) }
+            if (-l _) { my @t=stat($next); die "link\n" unless @t && -d _ }
+            elsif (!-d _) { die "notdir\n" }
+            if ($i==$#parts) { my @t=stat($next); die "writable\n" unless @t && -d _ && $t[4]==$< && !($t[2]&022) }   # the state base itself: not group or world writable
+            $cur=$next;
+        }
+        my @levels=("loomy","quarantine",Digest::SHA::sha256_hex($_[0]),POSIX::strftime("%Y%m%dT%H%M%SZ",gmtime));
+        for my $i (0..$#levels) {
+            my $next="$cur/$levels[$i]"; my @s=lstat($next);
+            if (!@s) { mkdir($next,0700) or die "mkdir\n"; @s=lstat($next) }
+            elsif ($i==$#levels) { $next.="-$$"; mkdir($next,0700) or die "mkdir\n"; @s=lstat($next) }
+            die "level\n" unless @s && -d _ && !-l _ && $s[4]==$<;
+            if ($s[2]&022) { chmod(0700,$next) or die "chmod\n"; @s=lstat($next); die "level\n" unless @s && !($s[2]&022) }
+            $cur=$next;
+        }
+        my @pin=lstat($cur); chdir($cur) or die "chdir\n"; my @here=stat(".");
+        die "pin\n" unless @pin && @here && $pin[0]==$here[0] && $pin[1]==$here[1] && $here[4]==$< && !($here[2]&022);
+        $cur;
+    };
+    umask $old; return $res;
 }
 # The regular files and symlinks among the reported paths, safe to move: every parent a real directory (never a
 # symlink), nothing outside the project. Directories (a gitlink standing for .loomy/logs) are left alone.
@@ -55,8 +70,10 @@ for my $h (@$hits) {
     my @parts=split m{/},$h; my $leaf=pop @parts; my $d=$root; my $ok=1;
     for my $c (@parts) { $d.="/$c"; my @s=lstat($d); unless (@s && -d _ && !-l _) { $ok=0; last } }
     next unless $ok;
-    next if $h =~ m{\A\.loomy/logs/(?:events\.jsonl|archive/[^/]+\.jsonl)\z};   # the journal is the user's own history: untracked, kept in place (it is data, not state Loomy trusts)
     my @s=lstat("$root/$h"); next unless @s;
+    # The journal is the user's own history: untracked, kept in place (data, not state Loomy trusts), but only a real regular
+    # file; a tracked link standing there is removed like any other hit (it would keep journaling off and be followed by readers).
+    next if $h =~ m{\A\.loomy/logs/(?:events\.jsonl|archive/[^/]+\.jsonl)\z} && -f _ && !-l _;
     next unless -f _ || -l _;
     push @moves,[$h,"$root/$h",(-l _ ? "link" : "file"),$s[0],$s[1]];
 }
@@ -68,7 +85,7 @@ if (@moves) {
         $n++; (my $safe=$m->[0]) =~ s{.*/}{}; $safe =~ s/[^A-Za-z0-9._-]/_/g; $safe=substr($safe,0,80);
         (my $shown=$m->[0]) =~ s/[^\x20-\x7e]/?/g;
         if ($m->[2] eq "link") { my $t=readlink($m->[1]); $t="?" unless defined $t; $t =~ s/[^\x20-\x7e]/?/g; push @index,"$n\t$shown\t(symlink to $t, removed)"; next }
-        my $dest="$qdir/".sprintf("%03d",$n)."-$safe";
+        my $dest=sprintf("%03d",$n)."-$safe";   # relative: the quarantine directory is the pinned cwd
         my $old=umask 0077;
         my $ok=sysopen(my $in,$m->[1],Fcntl::O_RDONLY()|Fcntl::O_NOFOLLOW()|Fcntl::O_NONBLOCK());
         my @fs=$ok ? stat($in) : ();
@@ -86,7 +103,7 @@ if (@moves) {
         push @index,"$n\t$shown";
     }
     my $old=umask 0077;
-    if (sysopen(my $ix,"$qdir/paths.txt",Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_EXCL()|Fcntl::O_NOFOLLOW(),0600)) { print $ix map {"$_\n"} @index; close $ix }
+    if (sysopen(my $ix,"paths.txt",Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_EXCL()|Fcntl::O_NOFOLLOW(),0600)) { print $ix map {"$_\n"} @index; close $ix }
     umask $old;
 }
 delete @ENV{grep {/\AGIT_/} keys %ENV}; $ENV{GIT_NO_LAZY_FETCH}=1;

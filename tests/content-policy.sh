@@ -49,7 +49,7 @@ sub project {
 sub put {my ($p,$s)=@_; open my $f,'>',$p or die $!; binmode $f; print $f $s; close $f; chmod 0600,$p or die $!}
 sub bytes {my ($p)=@_; return '' unless -f $p; open my $f,'<',$p or die $!; local $/; return <$f>}
 sub conf {my (%extra)=@_; my $p={%{Loomy::ContentPolicy::defaults()},%extra}; return join('',map {"$_=$p->{$_}\n"} sort keys %$p)}
-sub seed {my ($r,%p)=@_; put("$r/.loomy/logs/content-policy.conf",conf(%p))}
+sub seed {my ($r,%p)=@_; put("$r/.loomy/logs/content-policy.conf",conf(%p)); Loomy::PolicyRecord::record_file($r)}   # a policy Loomy wrote: the user-owned consent record vouches for it (ADR-0012)
 sub policy {return Loomy::ContentPolicy::effective_policy($_[0])}
 # Group-writable parents are accepted only in the user's primary group: temp directories may inherit another one.
 sub primary_group {chown -1,(getpwuid($<))[3],@_}
@@ -150,6 +150,7 @@ is((stat($lock))[2]&0777,0600,'new lock is private');
         my $s=$read_stat->(@_);
         if ($_[0] eq 'content-policy.conf' && !$swapped++) {
             put("$a/.loomy/logs/replacement",conf(policy_generation=>21,results_max_records=>199));
+            Loomy::PolicyRecord::record_file($a,"$a/.loomy/logs/replacement");   # what a real writer does before the rename
             rename "$a/.loomy/logs/replacement","$a/.loomy/logs/content-policy.conf" or die $!;
         }
         return $s;
@@ -403,6 +404,7 @@ for my $pre_move (0,1) {
     my $ref=label($a,'Durable label'); my $id=policy($a)->{project_id};
     unlink "$a/.loomy/project-id" if $pre_move; # simulate old path-hash deployment
     my $moved="$a-renamed"; rename $a,$moved or die;
+    Loomy::PolicyRecord::record_file($moved);   # a moved project is a new root for the consent record (ADR-0012): the grant is re-recorded, as consent would be
     is(policy($moved)->{project_id},$id,'project identity survives rename including existing legacy refs');
     ok(!-e "$moved/.loomy/project-id",'a reader never stores the identity') if $pre_move;
     is(Loomy::ContentPolicy::resolve_label($moved,$ref)->{text},'Durable label','legacy label reference resolves after moving');
@@ -1019,6 +1021,7 @@ if grep -qE '^(journal_content|label_sources|private_results|source|scope|policy
 mkdir -p "$WORK/invalid-policy/.loomy/logs"; chmod 0755 "$WORK/invalid-policy/.loomy"; chmod 0700 "$WORK/invalid-policy/.loomy/logs"
 printf 'not a valid policy\n' >"$WORK/invalid-policy/.loomy/logs/content-policy.conf"
 chmod 600 "$WORK/invalid-policy/.loomy/logs/content-policy.conf"
+perl "$REPO/scripts/lib/policy-record.pl" record "$WORK/invalid-policy"   # a file Loomy owns that went invalid; an unrecorded one would simply be ignored (ADR-0012)
 if bash "$WORK/entry.sh" "$REPO" "$WORK/invalid-policy" privacy labels off >"$WORK/invalid-policy.out" 2>&1; then exit 1; fi
 grep -Fq "$WORK/invalid-policy/.loomy/logs/content-policy.conf" "$WORK/invalid-policy.out"
 if bash "$WORK/entry.sh" "$REPO" "$WORK/default-en" privacy results invalid >"$WORK/invalid-argument.out" 2>&1; then exit 1; fi
@@ -1047,6 +1050,7 @@ cp "$work/hint-calls" "$work/hint-calls-before"
 for ((i=0; i<200; i++)); do loomy_content_hint_refresh "$root" "$LOOMY_CONTENT_HINT_SIGNATURE"; done
 cmp "$work/hint-calls-before" "$work/hint-calls"
 cp "$work/answer-en-y/.loomy/logs/content-policy.conf" "$root/.loomy/logs/content-policy.conf"
+command perl "$repo/scripts/lib/policy-record.pl" record "$root"   # the consent record vouches for the copied policy (ADR-0012)
 # In this shell (not a command substitution) so the direct call also clears the cached hint.
 loomy_content_status_hint "$root" >"$work/direct-hint"
 [[ ! -s "$work/direct-hint" && -z "$LOOMY_CONTENT_HINT" ]]
@@ -1054,7 +1058,9 @@ policy_sig="$(content_sig)"
 loomy_content_hint_refresh "$root" "$policy_sig"
 [[ -z "$LOOMY_CONTENT_HINT" ]]
 [[ "$LOOMY_CONTENT_HINT_SIGNATURE" == "$policy_sig" ]]
-[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 0 ]]
+# ADR-0012: a recorded policy is vouched for by ONE small verification process (barrier + consent record) per
+# re-evaluation; an unchanged signature still costs nothing (the 200-call loops below).
+[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 2 ]]
 # Completed first use must return before its origin check or full dictionary.
 loomy_content_human_tty() { echo 'completed first use checked origin' >&2; return 99; }
 loomy_content_first_use "$root"
@@ -1064,19 +1070,19 @@ for ((i=0; i<200; i++)); do loomy_content_hint_refresh "$root" "$LOOMY_CONTENT_H
 cmp "$work/hint-calls-before" "$work/hint-calls"
 command perl -MTime::HiRes=stat,utime -e 'my $f=$ARGV[0]; my $s=int((stat($f))[9]); utime($s+0.1,$s+0.1,$f)' "$root/.loomy/logs/content-policy.conf"
 loomy_content_hint_refresh "$root" "$(content_sig)"
-[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 0 ]]
+[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 3 ]]
 command perl -MTime::HiRes=stat,utime -e 'my $f=$ARGV[0]; my $s=int((stat($f))[9]); utime($s+0.2,$s+0.2,$f)' "$root/.loomy/logs/content-policy.conf"
 loomy_content_hint_refresh "$root" "$(content_sig)"
-[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 0 ]]
+[[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 4 ]]
 printf 'display context full; label not saved\n' >"$root/.loomy/logs/display-context-full"
 chmod 600 "$root/.loomy/logs/display-context-full"
 loomy_content_hint_refresh "$root" "$(content_sig)"
 [[ "$LOOMY_CONTENT_HINT" == 'display context full; label not saved' ]]
-[[ "$(grep -c '^perl$' "$work/hint-calls")" == 1 ]]
+[[ "$(grep -c '^perl$' "$work/hint-calls")" == 5 ]]
 command rm "$root/.loomy/logs/display-context-full"
 loomy_content_hint_refresh "$root" "$(content_sig)"
 [[ -z "$LOOMY_CONTENT_HINT" ]]
-[[ "$(grep -c '^perl$' "$work/hint-calls")" == 1 ]]
+[[ "$(grep -c '^perl$' "$work/hint-calls")" == 6 ]]
 command rm "$root/.loomy/logs/content-policy.conf"
 loomy_content_hint_refresh "$root" "$(content_sig)"
 [[ "$LOOMY_CONTENT_HINT" == 'Task labels off · run loomy privacy labels recommended' ]]

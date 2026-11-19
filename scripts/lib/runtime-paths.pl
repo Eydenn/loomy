@@ -116,8 +116,11 @@ sub _git_run {
 # Hardened git: no fsmonitor, no hooks, GIT_* cleared, then GIT_NO_LAZY_FETCH=1 (a hostile partial clone cannot make
 # ls-files contact a promisor remote).
 my $FC=eval q{ use feature 'fc'; sub { fc($_[0]) } } || sub { lc $_[0] };
+# Index paths of the last scan that are submodule (gitlink) entries, or a .git entry inside .loomy or .loomy/logs: a nested
+# repository the clone fills with its own files. `doctor --fix` never untracks those automatically (see tracked-fix.pl).
+my @GITLINKS;
 sub _scan {
-    my ($root,$all,$secs)=@_; $secs||=2;
+    my ($root,$all,$secs)=@_; $secs||=2; @GITLINKS=();
     return ([],"index-error") unless defined $root && $root =~ m{\A/};   # a relative or missing root cannot be judged: fail closed
     # lstat inside the alarm window: a stalled mount or a symlink to one cannot outlive the bound.
     my $t0=Time::HiRes::time(); my $prev=alarm 0; my $in_repo=0;
@@ -142,13 +145,13 @@ sub _scan {
         while (defined(my $rec=<$git>)) {
             chomp $rec; next unless $rec =~ /\A(\d{6}) [0-9a-f]+ \d\t(.*)\z/s; my ($mode,$path)=($1,$2);
             my ($a,$b)=split m{/},$path,3;
-            if ($path =~ m{\A\.loomy/logs(?:/|\z)}i) { push @hits,$path; last unless $all; next }   # ASCII spelling, even when the directory does not exist yet
+            if ($path =~ m{\A\.loomy/logs(?:/|\z)}i) { push @hits,$path; push @GITLINKS,$path if $mode eq '160000'; last unless $all; next }   # ASCII spelling, even when the directory does not exist yet
             next unless @loomy;
             my $ia=($c1{$a}//=[lstat("$root/$a")]); next unless $same->($ia,\@loomy);
-            if (!defined $b) { if ($mode eq '160000' || $mode eq '120000') { push @hits,$path; last unless $all } next }
+            if (!defined $b) { if ($mode eq '160000' || $mode eq '120000') { push @hits,$path; push @GITLINKS,$path if $mode eq '160000'; last unless $all } next }
             if (@logs) { my $ib=($c2{"$a/$b"}//=[lstat("$root/$a/$b")]); next unless $same->($ib,\@logs) }
             else { my $d=$b; utf8::decode($d); next unless $FC->($d) eq "logs" }
-            push @hits,$path; last unless $all;
+            push @hits,$path; push @GITLINKS,$path if $mode eq '160000'; last unless $all;
             last if @hits>=100000;
         }
         alarm 0; 1;
@@ -158,13 +161,14 @@ sub _scan {
     my $closed=close $git; my $status=$?;
     if ($prev) { my $left=$prev-int(Time::HiRes::time()-$t0); alarm($left>0 ? $left : 1) }
     return ([],"timeout") if $timed_out;
+    for my $n (".loomy/.git",".loomy/logs/.git") { if (lstat("$root/$n")) { push @hits,$n; push @GITLINKS,$n } }   # a nested repository under the runtime directory
     return (\@hits,"tracked") if @hits;
     return ([],"index-error") if !$closed || $status;
     return ([],"");
 }
 sub tracked_runtime { my ($hits,$why)=_scan($_[0],0,2); return @$hits ? ($hits->[0],"tracked") : ("",$why) }
 # Every offending index path (raw bytes) for `loomy doctor --fix`; bounded by $secs (default 10) instead of 2 s.
-sub tracked_runtime_paths { my ($hits,$why)=_scan($_[0],1,$_[1]||10); return ($hits,$why) }
+sub tracked_runtime_paths { my ($hits,$why)=_scan($_[0],1,$_[1]||10); return ($hits,$why,[@GITLINKS]) }
 sub _git {my ($raw)=_git_run($_[0],0,@_[1..$#_]); return $raw}
 sub _relation {
     my ($root,$cache)=@_;

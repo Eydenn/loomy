@@ -27,6 +27,7 @@ if ($structural) {
     my $p={%{Loomy::ContentPolicy::defaults()},label_sources=>'explicit-lead',policy_generation=>1,grant_prompt_version=>1};
     open my $c,'>',"$root/.loomy/logs/content-policy.conf" or die $!;
     print $c "$_=$p->{$_}\n" for sort keys %$p; close $c or die $!;
+    Loomy::PolicyRecord::record_file($root);   # the consent record vouches for this fixture policy (ADR-0012)
     my $project=Loomy::ContentPolicy::effective_policy($root)->{project_id}; my %refs;
     for my $e (@rows) {
         $e->{content_policy}='structural-v1'; $e->{policy_generation}=1;

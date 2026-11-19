@@ -281,8 +281,12 @@ if [[ -n "$mem_dig" ]]; then
   printf '%s\n' "$mem_dig"
 elif [[ -s "$J" ]] && grep -q '"type":"delegation",' "$J" 2>/dev/null; then
   last="$(ai_journal_canonical <"$J" | perl -MJSON::PP -e '
+    # The journal may be a clone-shipped file: role, model and status are restricted to short plain tokens (status to the
+    # values a delegation can have) and a row that does not fit is dropped, so nothing instruction-like reaches the context.
     my @rows; while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH" && ($e->{type}//"") eq "delegation";
-      push @rows,join("",$e->{role}//"", " (",$e->{model}//"",", ",$e->{status}//"", ")"); shift @rows if @rows>3;
+      my ($r,$m,$st)=map {defined($_) && !ref($_) ? $_ : ""} @{$e}{qw(role model status)};
+      next unless $r =~ /\A[A-Za-z0-9._:-]{1,40}\z/ && $m =~ /\A[A-Za-z0-9._:-]{1,40}\z/ && $st =~ /\A(?:ok|error|interrupted|unknown|paused|blocked|unavailable)\z/;
+      push @rows,join("",$r," (",$m,", ",$st,")"); shift @rows if @rows>3;
     } print join(", ",@rows);
   ')"
   [[ -n "$last" ]] && { t "- Latest delegations: %s." "$last"; echo; }

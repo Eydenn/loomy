@@ -66,6 +66,7 @@ class DisplayChecks:
         # These are synthetic preexisting grants. No policy/grant writer is run.
         policy = self.run(["perl", "-e", 'require shift; my $p=Loomy::ContentPolicy::defaults(); $p->{label_sources}=Loomy::ContentPolicy::recommended_sources(); $p->{grant_prompt_version}=1; print "$_=$p->{$_}\\n" for sort keys %$p', str(repo / "scripts/lib/content-policy.pl")])
         self.private_write(self.logs / "content-policy.conf", policy)
+        self.run(["perl", str(repo / "scripts/lib/policy-record.pl"), "record", str(self.root)])   # the consent record vouches for it (ADR-0012)
         self.passed = 0
         self.failures = []
 

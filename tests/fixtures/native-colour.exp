@@ -10,6 +10,8 @@ set home [file join $work home]
 set sessions [file join $work codex sessions]
 file mkdir $home [file join $work config]
 set fixture [file join $repo tests fixtures codex-native.pl]
+# the consent record (ADR-0012) lives in the config folder the watch will read: fixtures and the watch share it
+set env(XDG_CONFIG_HOME) [file join $work config]
 exec perl $fixture seed $root $sessions [pid]
 content_decline $repo $work $root
 log_user 0

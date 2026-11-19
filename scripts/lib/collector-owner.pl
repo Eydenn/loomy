@@ -11,6 +11,7 @@ use Time::HiRes qw(stat lstat);
 
 my $LIB = abs_path(__FILE__); $LIB =~ s{/[^/]+$}{};
 require "$LIB/runtime-paths.pl";
+require "$LIB/journal-gate.pl";
 # JSON::PP is loaded only for records the exact fast parser cannot read; the
 # writer's own flat, canonical format is encoded and decoded by hand.
 my $JSON;
@@ -386,10 +387,19 @@ sub _clean_stale_tmp {
     closedir($dir);
     return $removed;
 }
+# The leak barrier (journal-gate.pl) for this project's logs: a logs directory that gained tracked entries (or whose
+# state cannot be verified) is never written again, by an owner already elected as much as by a new election.
+sub _gate {
+    my ($ctx,$nostore) = @_;
+    my $ok = eval { Loomy::JournalGate::check("$ctx->{root}/.loomy/logs",$nostore) ? 1 : 0 };
+    _abort('unsafe-runtime') unless $ok;
+    return 1;
+}
 sub _write_record {
     my ($state,$next,$nosync) = @_;
     my $raw = _encode_record($next)."\n";
     _abort('invalid-record') if length($raw) > $MAX_RECORD;
+    _gate($state->{ctx});
     _current($state->{ctx});
     _in_dir($state->{ctx}{logs},sub {
         _storage_here($state);
@@ -472,6 +482,7 @@ sub try_acquire {
         $ok = eval {
           ACQUIRE: {
             $ctx = _acquisition_gate_context($context);
+            _gate($ctx,1);   # (nothing stored: this may be a follower) before the bootstrap lock, the logs directory and the collector lock exist
             if (!defined($ctx->{loomy})) { $facts=_facts('unavailable','missing-runtime'); last ACQUIRE }
             unless (flock($ctx->{loomy},LOCK_EX|LOCK_NB)) {
                 _abort('io-error') unless $! == EAGAIN || $! == EWOULDBLOCK;
@@ -681,8 +692,10 @@ sub release {
     assert_owner($guard);
     my $state = _auth($guard);
     my $next = {%{$state->{record}},state=>'released'};
-    # Advisory record: the lock release is the authority, so no fsync here.
-    my $ok=eval { _write_record($state,$next,1); 1 };
+    # Advisory record: the lock release is the authority, so no fsync here. A logs directory the barrier now refuses
+    # keeps its record as it is: the lock is dropped without rewriting it.
+    my $barred = eval { Loomy::JournalGate::check("$state->{ctx}{root}/.loomy/logs") ? 0 : 1 } // 1;
+    my $ok=$barred || eval { _write_record($state,$next,1); 1 };
     unless ($ok) { _close_state($state,'FENCED'); die "collector owner IO_ERROR\n" }
     # Runtime handles close first; the lifetime lock descriptor closes last.
     _close_state($state,'RELEASED');

@@ -473,7 +473,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         for (1..3) { $o=run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$f],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
         my $calls=() = bytes($gl) =~ /ls/g; is($calls,1,'S1 cache: (c) a Git that cannot answer is asked once, then the refusal is cached');
         ok(!-s "$f/.loomy/logs/events.jsonl",'S1 cache: (c) and nothing is written (fail closed)');
-        ok(!-e "$f/.loomy/logs/gate-v1",'LR7 a refusal never writes into the project'); my @mk=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/r-*"); is(scalar(@mk),1,'LR7 the refusal marker lives in the per-user cache directory'); ok(-z $mk[0] && $mk[0] =~ m{/r-[0-9a-f]{64}\z},'LR7 empty marker named by a hash');
+        ok(!-e "$f/.loomy/logs/gate-v1",'LR7 a refusal never writes into the project'); my @mk=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/r-".sha256_hex($f)); is(scalar(@mk),1,'LR7 the refusal marker lives in the per-user cache directory'); ok(-z $mk[0] && $mk[0] =~ m{/r-[0-9a-f]{64}\z},'LR7 empty marker named by a hash');
         unlink @mk;
     }
     {   # LR7: a tracked verdict stores nothing, and a shipped tracked gate-v1 is never replaced.
@@ -501,7 +501,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
         my $gl="$work/git-tracked"; unlink $gl; my @before=glob("$ENV{XDG_CACHE_HOME}/loomy/gate/t-*");
         my $o=$j->('ai_journal_prepare',$x); isnt($o->{rc},0,'LR7 tracked: refused');
-        my @t=grep {my $f=$_; !grep {$_ eq $f} @before} glob("$ENV{XDG_CACHE_HOME}/loomy/gate/t-*"); is(scalar(@t),1,'LR7 the tracked verdict is cached in the per-user directory'); is(bytes($t[0]),'tracked','LR7 with the value tracked');
+        my @t=grep {my $f=$_; !grep {$_ eq $f} @before} glob("$ENV{XDG_CACHE_HOME}/loomy/gate/t-*"); is(scalar(@t),1,'LR7 the tracked verdict is cached in the per-user directory'); like(bytes($t[0]),qr/\A[0-9a-f]{64}\ntracked\n\z/,'LR7 with the verdict key and the value tracked');
         ok(!-e "$x/.loomy/logs/gate-v1",'LR7 and nothing about it is written in the project');
         put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
         run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_write "$2" "\"type\":\"phase\",\"phase\":\"x\""','_',$repo,$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"});
@@ -537,6 +537,57 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         $E{codex}{run}->($w); $E{claude}{run}->($w); $E{reducer}{run}->($w);
         is_deeply(manifest("$m/.loomy"),$before,'LR7 aliased worktree: direct codex, claude and reducer entries create nothing in the main logs');
         ok(!-e "$m/.loomy/logs/collector.lock" && !-e "$m/.loomy/logs/collector-owner-v1.json",'LR7 aliased worktree: no collector lock or owner record in main');
+    }
+    {   # LR8: an owner already elected stops writing (and a new election refuses) once logs gained tracked entries.
+        my $track=sub {my $x=shift; put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2};
+        my $x=project(1); codex_source($x); status($x); sleep 2.2; my $ctx=Loomy::RuntimePaths::resolve($x); my $a=Loomy::CollectorOwner::try_acquire($ctx,'fixture-build',1); is($a->{status},'owned','LR8 owner elected');
+        $track->($x); my $m=manifest("$x/.loomy/logs");
+        my $ok=eval {Loomy::CollectorOwner::begin_drain($a->{guard}); 1}; ok(!$ok && $@ =~ /collector owner (?:FENCED|IO_ERROR)/,'LR8 begin_drain over logs that became tracked is refused: the owner stops');
+        is_deeply(manifest("$x/.loomy/logs"),$m,'LR8 and the owner record and lock are not rewritten');
+        my $y=project(1); codex_source($y); status($y); sleep 2.2; my $ctxy=Loomy::RuntimePaths::resolve($y); my $b=Loomy::CollectorOwner::try_acquire($ctxy,'fixture-build',1); is($b->{status},'owned','LR8 second owner elected');
+        $track->($y); $m=manifest("$y/.loomy/logs");
+        $ok=eval {Loomy::CollectorOwner::release($b->{guard}); 1}; ok($ok,'LR8 release over tracked logs drops the lock'); is_deeply(manifest("$y/.loomy/logs"),$m,'LR8 without rewriting the record');
+        my $z=project(1); $track->($z); my $mz=manifest("$z/.loomy/logs"); my $c=Loomy::CollectorOwner::try_acquire(Loomy::RuntimePaths::resolve($z),'fixture-build',1);
+        isnt($c->{status},'owned','LR8 a new election over tracked logs is refused'); is_deeply(manifest("$z/.loomy/logs"),$mz,'LR8 and creates no lock or record');
+        eval {Loomy::CollectorOwner::release($c->{guard})} if $c->{guard};
+    }
+    {   # LR8: cache directory hardening, one marker per root, fail-closed spellings, aliased-worktree cost.
+        my $gate=sub {my ($root,$dirarg,%env)=@_; run(['perl','-e','require "$ARGV[0]/scripts/lib/journal-gate.pl"; exit(Loomy::JournalGate::check($ARGV[1]) ? 0 : 1)',$repo,$dirarg//"$root/.loomy/logs"],env=>{HOME=>$ENV{HOME},%env},timeout=>20)};
+        my $tracked=sub {my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2; return $x};
+        my $x=$tracked->();
+        my $gw="$work/lr8gw".++$pn; make_path($gw,{mode=>0700}); chmod 0770,$gw; my $o=$gate->($x,undef,XDG_CACHE_HOME=>$gw);
+        isnt($o->{rc},0,'LR8 group-writable cache base: still refused (Git answers)'); ok(!-e "$gw/loomy",'LR8 a group-writable cache base is not used');
+        my $b="$work/lr8base".++$pn; make_path("$b/loomy",{mode=>0775}); chmod 0755,$b; chmod 0775,"$b/loomy";   # umask 002 left the loomy level group-writable
+        $gate->($x,undef,XDG_CACHE_HOME=>$b); is(((stat "$b/loomy")[2]&07777),0700,'LR8 an owned loomy level created group-writable is tightened to 0700'); ok(-d "$b/loomy/gate",'LR8 and the cache is used');
+        # One tracked marker per root, replaced in place; old per-key files are pruned.
+        my $c="$work/lr8cache".++$pn; make_path("$c/loomy/gate",{mode=>0700}); chmod 0700,"$c","$c/loomy","$c/loomy/gate"; my $old=("ab" x 32); put("$c/loomy/gate/t-$old","tracked");
+        my $y=$tracked->(); for my $i (1..3) { put("$y/.loomy/logs/f$i","x\n"); git($y,'add','-f',".loomy/logs/f$i"); commit_all($y); sleep 2.2; $gate->($y,undef,XDG_CACHE_HOME=>$c) }
+        my @t=glob("$c/loomy/gate/t-*"); is(scalar(@t),1,'LR8 one tracked marker per root however often the index changes (legacy per-key file pruned)');
+        like(bytes($t[0]),qr/\A[0-9a-f]{64}\ntracked\n\z/,'LR8 holding the verdict key'); ok($t[0] =~ m{/t-[0-9a-f]{64}\z},'LR8 named by the hash of the root'); is(scalar(grep {!/\A(?:t|r|o)-[0-9a-f]{64}\z/} map {s{.*/}{}r} glob("$c/loomy/gate/*")),0,'LR8 no temp file left');
+        # A planted hard link (or FIFO) at a marker name is replaced, never written through.
+        my $victim="$work/lr8victim".++$pn; put($victim,"precious\n"); utime(1,1,$victim); my $d="$work/lr8plant".++$pn; make_path("$d/loomy/gate",{mode=>0700}); chmod 0700,"$d","$d/loomy","$d/loomy/gate";
+        my $z=$tracked->(); my $h=sha256_hex($z); link($victim,"$d/loomy/gate/r-$h") or die; link($victim,"$d/loomy/gate/t-$h") or die;
+        put("$work/fakegit/git","#!/bin/sh\ncase \"\$*\" in *ls-files*) exit 128;; esac\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        $o=$gate->($z,undef,XDG_CACHE_HOME=>$d,PATH=>"$work/fakegit:$ENV{PATH}"); isnt($o->{rc},0,'LR8 Git that cannot answer: refused'); is(bytes($victim),"precious\n",'LR8 a hard link planted at a marker name is not written through');
+        unlink "$d/loomy/gate/r-$h","$d/loomy/gate/t-$h"; system('mkfifo',"$d/loomy/gate/t-$h")==0 or die; $o=$gate->($z,undef,XDG_CACHE_HOME=>$d); isnt($o->{rc},0,'LR8 a FIFO at a marker name neither hangs nor allows');
+        # Spellings that are not exactly <root>/.loomy/logs fail closed.
+        for my $sp ("$x/.loomy/logs/","$x/.LOOMY/logs","$x/.loomy/Logs","/.loomy/logs","relative/dir","$x/.loomy/logs/../logs") { isnt($gate->($x,$sp)->{rc},0,"LR8 the spelling $sp is refused") }
+        my $r=run(['perl','-e','require "$ARGV[0]/scripts/lib/runtime-paths.pl"; my @r=Loomy::RuntimePaths::tracked_runtime($ARGV[1]); print "$r[1]\n"',$repo,'relative/root']); is($r->{out},"index-error\n",'LR8 tracked_runtime fails closed for a non-absolute root');
+    }
+    {   # LR8: a linked worktree with .loomy symlinked to the main checkout: the ok verdict is cached per user (Git asked once), and hooks write nothing into main.
+        my $m=project(1); my $w="$work/wt".++$pn; git($m,'worktree','add','--quiet','-b',"wt$pn",$w); symlink("$m/.loomy","$w/.loomy") or die; sleep 2.2;
+        my $gl="$work/git-alias"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        for (1..3) { run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$w],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
+        my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,1,'LR8 aliased worktree: the ok verdict is cached, Git is asked once for three processes');
+        ok(!-e "$m/.loomy/logs/gate-v1",'LR8 and nothing is stored through the alias');
+        put("$m/.loomy/brief.md","brief\n"); put("$m/.loomy/logs/events.jsonl","orig\n"); git($m,'add','-f','.loomy/logs/events.jsonl'); commit_all($m);
+        my %payload=('agent-start'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_input":{"subagent_type":"developer","description":"d","prompt":"p"}}',
+            'agent-return'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_response":{"agentId":"a1"}}','subagent'=>'{"session_id":"s1","agent_id":"a1","agent_type":"developer","last_assistant_message":"STATUS: done"}',
+            'prompt'=>'{"session_id":"s1","prompt":"hello"}');
+        for my $hook (sort keys %payload) {
+            my $in="$work/hook-in-wt"; put($in,$payload{$hook});
+            unchanged("LR8 aliased worktree: hook $hook","$m/.loomy",sub {run(['bash','-c','cd "$2" && bash "$1/scripts/loomy-context.sh" --hook "$3" --root "$2" <"$4"','_',$repo,$w,$hook,$in],env=>{LOOMY_PROJECT_ROOT=>$w})});
+        }
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);

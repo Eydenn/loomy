@@ -663,10 +663,32 @@ ok(!exists($path->{cwd_relative}),'legacy path cannot escape project');
     my $g=sub {system('git','-C',$a,'-c','core.hooksPath=/dev/null','-c','user.name=F','-c','user.email=f@example.invalid',@_)==0 or die "git @_"};
     $g->('init','--quiet'); $g->('add','-f','.loomy/logs/display-context-v1.jsonl'); $g->('commit','--quiet','-m','ships labels'); sleep 2.2;
     my $before=bytes($sf); my $ok=eval {label($a,'leak'); 1};
-    ok(!$ok && $@ =~ /tracked by Git/,'LR7 tracked display-context-v1.jsonl: the label is refused'); is(bytes($sf),$before,'LR7 and the tracked store is byte for byte unchanged');
+    ok(!$ok && $@ =~ /tracked by Git|not granted/,'LR7 tracked display-context-v1.jsonl: the label is refused (the policy of a tracked logs directory grants nothing)'); is(bytes($sf),$before,'LR7 and the tracked store is byte for byte unchanged');
     ok(!-e "$a/.loomy/logs/display-context.lock",'LR7 and no label lock is created');
     $g->('rm','--cached','--quiet','.loomy/logs/display-context-v1.jsonl'); sleep 2.2;
     ok(eval {label($a,'fine'); 1},'LR7 untracked again: the label is saved');
+}
+{   # LR8: policy reader and writers pass the barrier. A clone can ship content-policy.conf; checked out 0600 under umask 077 it
+    # looked private. In a tracked logs directory it is absent (defaults, no pre-granted consent), and nothing is created there.
+    my $a=project('tracked-policy'); seed($a,private_results=>'on',label_sources=>'claude-description',grant_prompt_version=>1);
+    my $g=sub {system('git','-C',$a,'-c','core.hooksPath=/dev/null','-c','user.name=F','-c','user.email=f@example.invalid',@_)==0 or die "git @_"};
+    $g->('init','--quiet'); $g->('add','-f','.loomy/logs/content-policy.conf'); $g->('commit','--quiet','-m','ships a policy'); sleep 2.2;
+    my $p=policy($a);
+    is($p->{private_results},'off','LR8 a tracked content-policy.conf does not pre-grant private results');
+    is($p->{label_sources},'none','LR8 nor label sources'); ok(!$p->{grant_prompt_version},'LR8 nor the first-use consent');
+    my $before=bytes("$a/.loomy/logs/content-policy.conf"); my @names=sort map {s{.*/}{}r} glob("$a/.loomy/logs/*");
+    for my $w ([change_policy=>sub {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10})}],
+               [with_policy=>sub {Loomy::ContentPolicy::with_policy($a,sub {1})}],
+               [first_use=>sub {Loomy::ContentPolicy::first_use($a)}]) {
+        my $ok=eval {$w->[1]->(); 1}; ok(!$ok || $w->[0] eq 'first_use','LR8 '.$w->[0].' over a tracked logs directory does not write');
+        is(bytes("$a/.loomy/logs/content-policy.conf"),$before,"LR8 $w->[0] leaves the tracked policy byte for byte");
+        is_deeply([sort map {s{.*/}{}r} glob("$a/.loomy/logs/*")],\@names,"LR8 $w->[0] creates no lock or file in the tracked logs");
+    }
+    my $err=do {my $ok=eval {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10}); 1}; $@};
+    like($err,qr/tracked by Git or Git cannot say.*loomy doctor --fix/,'LR8 the refusal names the remedy');
+    $g->('rm','--cached','--quiet','.loomy/logs/content-policy.conf'); sleep 2.2;
+    is(policy($a)->{private_results},'on','LR8 untracked again: the project policy is read');
+    ok(eval {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10}); 1},'LR8 and the writer works');
 }
 done_testing();
 PERL

@@ -98,12 +98,13 @@ sub load {
     # install would load the guard module twice and invalidate every guard it issues.
     require Cwd; $dir=Cwd::abs_path($dir)//$dir; $lib=$dir;
     require "$dir/live-state.pl"; require "$dir/codex-native.pl"; require "$dir/claude-native.pl";
-    require "$dir/runtime-paths.pl"; require "$dir/collector-owner.pl";
+    require "$dir/runtime-paths.pl"; require "$dir/journal-gate.pl"; require "$dir/collector-owner.pl";
     Loomy::LiveState::require_owner(1);   # a lost election can never take the legacy unguarded path
     return 1;
 }
 # Clone-shipped runtime state tracked in the repository index (see Loomy::RuntimePaths::tracked_runtime):
-# returns ($path,$why) with $why tracked or timeout. Memo bounds: an answer is reused for 30 s of wall clock, so a
+# returns ($path,$why) with $why tracked or timeout. This only NAMES a refusal for the user, after Loomy::JournalGate::check
+# (the barrier, never memoized beyond its own 2 s) said no; it is not the verdict. Memo bounds: an answer is reused for 30 s of wall clock, so a
 # watch that keeps retrying a lost election asks the index at most every 30 s (while git is unresponsive each
 # question can cost the 2 s bound, so at most 2 s of freeze per 30 s); a clock that moves backwards keeps the
 # last answer until it catches up; a watch that already OWNS the collector does not ask again (it is rechecked only
@@ -112,7 +113,7 @@ my %tracked_memo;
 sub tracked_runtime {
     my $root=shift; return ("","") unless defined $root && $root =~ m{\A/};
     my $m=$tracked_memo{$root}; my $d=$m ? time-$m->[0] : -1;
-    return @{$m->[1]} if $m && $d<30 && $d>=-30;
+    return @{$m->[1]} if $m && $d<30 && $d>=-30 && ($m->[1][1]//"") ne "";   # only a refusal is reused: it is a reason, never the verdict
     my @r=Loomy::RuntimePaths::tracked_runtime($root); $tracked_memo{$root}=[time,\@r]; return @r;
 }
 # One election. busy/bootstrap-busy means retry (a follower inspecting holds the gate briefly),
@@ -125,7 +126,9 @@ sub elect {
     unless (ref($ctx) eq "HASH") { @r{qw(role status reason)}=("follower","unsafe","invalid-context"); return \%r }
     # A clone can ship checkpoints, shards or markers: they would be trusted (and chmod 0600 by the
     # preparation, erasing the signal). Refuse before any preparation; mode is deliberately not a criterion.
-    my ($t,$why)=tracked_runtime($ctx->{root}//$root);
+    # The barrier decides (cached, fail closed); the index is asked again only to name the refusal.
+    my ($t,$why)=("","");
+    unless (eval { Loomy::JournalGate::check(($ctx->{root}//$root)."/.loomy/logs",1) }) { ($t,$why)=tracked_runtime($ctx->{root}//$root); $why="index-error" if $why eq "" }
     # A path that cannot be shown as is (altered characters, too long) is reported without a name.
     if ($why eq "tracked") { @r{qw(role status reason file)}=("follower","unsafe","tracked-runtime",$t =~ m{\A[A-Za-z0-9._/-]{1,120}\z} ? $t : ""); return \%r }
     if ($why eq "timeout" || $why eq "index-error") { @r{qw(role status reason)}=("follower","unsafe",($why eq "timeout" ? "index-timeout" : "index-error")); return \%r }

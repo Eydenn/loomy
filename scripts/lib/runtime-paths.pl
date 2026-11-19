@@ -118,7 +118,7 @@ sub _git_run {
 my $FC=eval q{ use feature 'fc'; sub { fc($_[0]) } } || sub { lc $_[0] };
 sub _scan {
     my ($root,$all,$secs)=@_; $secs||=2;
-    return ([],"") unless defined $root && $root =~ m{\A/};
+    return ([],"index-error") unless defined $root && $root =~ m{\A/};   # a relative or missing root cannot be judged: fail closed
     # lstat inside the alarm window: a stalled mount or a symlink to one cannot outlive the bound.
     my $t0=Time::HiRes::time(); my $prev=alarm 0; my $in_repo=0;
     my $probed=eval {

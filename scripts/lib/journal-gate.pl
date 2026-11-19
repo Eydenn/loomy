@@ -8,7 +8,11 @@
 # track. A Git that cannot answer is a refusal (fail closed); that refusal is remembered 30 s by an empty marker file
 # outside the project (per-user cache directory, named by sha256 of the project root) so each hook does not rerun
 # `git ls-files`; the marker is dropped by the next conclusive verdict. A tracked verdict is cached in the same
-# per-user directory, named by the verdict key (so any index or identity change invalidates it), never in the project. Nothing is cached when logs does not exist yet,
+# per-user directory in one file per project root (t-<sha256 root>, the verdict key inside, so any index or identity
+# change invalidates it), never in the project; the ok verdict of an aliased .loomy or logs (a linked worktree) is cached
+# there too (o-<sha256 root>), never through the alias. Cache files are written by temp file and rename and read
+# no-follow, non-blocking, regular, ours, one link. A group/world writable cache base is not used (memo only). A directory
+# that is not exactly <root>/.loomy/logs is refused. Nothing is cached when logs does not exist yet,
 # when the Git directory is not a valid repository, or when the index changed in the last 2 s (racily clean). An answer
 # that needed Git is kept 2 s in the process (a long-lived writer does not spawn Git per write); a cache hit is never
 # memoized, so an owner re-checks at every poll and sees a file that became tracked at once.
@@ -18,21 +22,31 @@ use warnings;
 use Fcntl ();
 use Time::HiRes ();
 use Digest::SHA ();
-my $REFUSAL_TTL=30; my %memo;
+my $REFUSAL_TTL=30; my %memo; my $SEQ=0;
 my $LIB=__FILE__; $LIB =~ s{/[^/]+\z}{};
-sub _root {
-    my $dir=shift; my $root=$dir; $root =~ s{/\.loomy/logs\z}{} or return;
-    unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
-    return $root;
+# The project root of "<root>/.loomy/logs", or undef when the directory is not exactly that after normalising (trailing
+# slashes dropped; ".loomy/logs" read against the cwd): the caller then refuses. An empty root or a case variant of the
+# names is not recognised either (a case-folding filesystem would still reach the real directory), so it fails closed.
+sub _norm {
+    my $dir=shift; return unless defined $dir && !ref $dir; $dir =~ s{/+\z}{} if length($dir)>1;
+    my $root;
+    if ($dir eq ".loomy/logs") { require Cwd; $root=Cwd::getcwd() }
+    elsif ($dir =~ m{\A(.+)/\.loomy/logs\z}s) {
+        $root=$1; unless ($root =~ m{\A/}) { require Cwd; $root=Cwd::getcwd()."/$root"; $root =~ s{/\.(?=/|\z)}{}g }
+    } else { return }
+    return unless defined $root && length $root;
+    return ($root,"$root/.loomy/logs");
 }
 sub _ident {
-    my ($root,$dir,$idx)=@_; my @a=lstat("$root/.loomy"); my @b=lstat($dir);
-    return Digest::SHA::sha256_hex(join("|","v2",$idx,join(",",@a[0,1]),join(",",@b[0,1])));
+    my ($root,$dir,$idx,$alias)=@_;
+    my @a=$alias ? stat("$root/.loomy") : lstat("$root/.loomy"); my @b=$alias ? stat($dir) : lstat($dir);
+    return Digest::SHA::sha256_hex(join("|",$alias ? "v3a" : "v2",$idx,join(",",@a[0,1]),join(",",@b[0,1])));
 }
 # Per-user cache directory outside the project: $XDG_CACHE_HOME (absolute) or ~/.cache, then loomy/gate. Levels that are
 # missing are created 0700 (create only); every existing level must be a real directory (never a symlink) owned by the
-# user and not group/world writable (the base only not world writable, as ~/.cache is usually 0755); HOME must be ours
-# to create the base. Returns the directory or undef.
+# user. The base must not be group or world writable (anyone who can write there can swap what is under it: the cache
+# is then unusable and the in-process memo answers, Git is asked again). A loomy or gate level we own that was created
+# group/world writable (umask 002) is tightened to 0700. HOME must be ours to create the base. Returns the directory or undef.
 sub _cdir {
     my $create=shift; my $base=$ENV{XDG_CACHE_HOME}; $base=defined $ENV{HOME} && $ENV{HOME} =~ m{\A/} ? "$ENV{HOME}/.cache" : "" unless defined $base && $base =~ m{\A/};
     return unless length $base;
@@ -42,29 +56,59 @@ sub _cdir {
         if (!@s) {
             return unless $create;
             if ($i==0 && defined $ENV{HOME}) { my @h=stat($ENV{HOME}); return unless @h && -d _ && $h[4]==$< }
-            return unless mkdir($x,0700); @s=lstat($x);
+            my $old=umask 0077; my $made=mkdir($x,0700); umask $old; return unless $made; @s=lstat($x);
         }
-        return unless @s && -d _ && !-l _ && $s[4]==$< && !($s[2]&($i ? 022 : 002));
+        return unless @s && -d _ && !-l _ && $s[4]==$<;
+        if ($s[2]&022) { return if $i==0; chmod(0700,$x) or return; @s=lstat($x); return unless @s && -d _ && !($s[2]&022) }
         $i++;
     }
     return "$base/loomy/gate";
 }
-# Marker file: "r-<sha256 of the root>" is the 30 s refusal, "t-<verdict key>" the tracked verdict (the key changes with
-# the index stat and the identity of .loomy and .loomy/logs, so any change invalidates it). Both are empty-ish and hold
-# no path.
+# Marker files in that directory, all small and path-free: "r-<sha256 of the root>" the 30 s refusal (empty),
+# "t-<sha256 of the root>" the tracked verdict and "o-<sha256 of the root>" the ok verdict of an aliased logs directory
+# (content "<verdict key>\n<value>\n"; the key changes with the index stat and the identity of .loomy and .loomy/logs,
+# so any change invalidates it). One file per root and kind, replaced by rename: growth is bounded by the number of projects.
 sub _marker {
     my ($name,$create)=@_; my $d=_cdir($create); return undef unless defined $d; return "$d/$name";
 }
+# Never opens an existing name for writing: a private temp file (O_EXCL, no symlink follow) renamed into place.
 sub _mark {
-    my ($path,$val)=@_; return unless defined $path && length $path;
-    if (sysopen(my $h,$path,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_TRUNC()|Fcntl::O_NOFOLLOW(),0600)) { syswrite($h,$val); close $h; utime(time,time,$path) }
+    my ($path,$val)=@_; return unless defined $path && length $path; $val//="";
+    (my $d=$path) =~ s{/[^/]*\z}{}; my $tmp="$d/.m$$.".(++$SEQ).".".int(Time::HiRes::time()*1000);
+    my $old=umask 0077;
+    if (sysopen(my $h,$tmp,Fcntl::O_WRONLY()|Fcntl::O_CREAT()|Fcntl::O_EXCL()|Fcntl::O_NOFOLLOW(),0600)) {
+        my $ok=length($val) ? syswrite($h,$val) : 1; close $h;
+        if ($ok && rename($tmp,$path)) { umask $old; return 1 }
+        unlink $tmp;
+    }
+    umask $old; return;
 }
-# ($key,$value) of the cache file, or ().
+# (handle,stat) of a marker that is a regular file of ours with a single link, or (): O_NOFOLLOW|O_NONBLOCK (a planted
+# FIFO or symlink never blocks or redirects), then fstat.
+sub _open_marker {
+    my $path=shift; return unless defined $path;
+    sysopen(my $h,$path,Fcntl::O_RDONLY()|Fcntl::O_NOFOLLOW()|Fcntl::O_NONBLOCK()) or return;
+    my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[3]==1 && !($s[2]&022);
+    return ($h,\@s);
+}
+# ($key,$value) of a cache file (a marker or the project's gate-v1), or ().
 sub _read {
-    my $path=shift; sysopen(my $h,$path,Fcntl::O_RDONLY()|Fcntl::O_NOFOLLOW()) or return;
-    my @s=stat($h); return unless @s && -f $h && $s[4]==$< && $s[7]<=1024;
-    sysread($h,my $raw,1025); my ($k,$v)=split /\n/,$raw; return unless defined $k && defined $v;
+    my $path=shift; my ($h,$s)=_open_marker($path) or return; return unless $s->[7]<=1024;
+    sysread($h,my $raw,1025); close $h; my ($k,$v)=split /\n/,$raw; return unless defined $k && defined $v;
     return ($k,$v);
+}
+# Mtime of a refusal marker, or undef.
+sub _marker_age {
+    my $path=shift; my ($h,$s)=_open_marker($path) or return; close $h; return $s->[9];
+}
+# Old per-key t-<64 hex> files (7 bytes, "tracked"): dropped when a root's marker is written. Bounded scan.
+sub _prune_legacy {
+    my $d=shift; opendir(my $dh,$d) or return; my ($seen,$n)=(0,0);
+    while (defined(my $f=readdir $dh)) {
+        last if ++$seen>512 || $n>=64; next unless $f =~ /\At-[0-9a-f]{64}\z/;
+        my @s=lstat("$d/$f"); next unless @s && -f _ && $s[4]==$< && $s[7]==7; $n++ if unlink("$d/$f");
+    }
+    closedir $dh;
 }
 # A directory Git itself would accept: HEAD, objects and refs, here or in the common directory of a worktree.
 sub _valid_gitdir {
@@ -90,31 +134,37 @@ sub _index {
     return (0,"$top|$gd|".(@i ? join(",",@i[0,1,7,9,10]) : "none"));
 }
 # Returns (allowed, [file key, file value] to store or undef, cache-hit flag). Store is only for "ok". No memo.
+# A dir that is not exactly <root>/.loomy/logs, or a missing root, is refused.
 sub verdict {
-    my ($dir,$fresh)=@_; my $root=_root($dir) or return (1,undef);
+    my ($dir,$fresh)=@_; my ($root,$nd)=_norm($dir); return (0,undef) unless defined $root; $dir=$nd;
     my ($norepo,$idx)=_index($root); return (1,undef) if $norepo;
-    my $existed=-d $dir && !-l $dir && !-l "$root/.loomy";   # never stored while logs is absent, nor through an aliased .loomy or logs (the directory written is another project's)
-    my $now=time; my $key=($existed && defined $idx) ? _ident($root,$dir,$idx) : undef;
-    if ($existed && !$fresh && defined $key) {
+    my $alias=(-l "$root/.loomy" || -l $dir) ? 1 : 0;   # the directory written is another project's: never stored in it, cached per user instead
+    my $existed=-d $dir;
+    my $now=time; my $key=($existed && defined $idx) ? _ident($root,$dir,$idx,$alias) : undef;
+    my $rh=Digest::SHA::sha256_hex($root);
+    if ($existed && !$fresh && defined $key && !$alias) {
         my ($k,$v)=_read("$dir/gate-v1");
         return (1,undef,1) if defined $k && $k eq $key && $v eq "ok";   # third value: answered from the cache file, no memo needed
     }
-    my $tk=defined $key ? _marker("t-$key") : undef;
-    if (!$fresh && defined $tk) { my @t=lstat($tk); return (0,undef,1) if @t && -f _ && $t[4]==$< && $t[7]==7 }   # tracked verdict cached outside the project
-    my $mk=_marker("r-".Digest::SHA::sha256_hex($root));
+    if (!$fresh && defined $key) {
+        my ($k,$v)=_read(_marker(($alias ? "o-" : "t-").$rh));   # verdict cached outside the project
+        if (defined $k && $k eq $key) { return (0,undef,1) if $v eq "tracked"; return (1,undef,1) if $v eq "ok" && $alias }
+    }
+    my $mk=_marker("r-$rh");
     unless ($fresh || !defined $mk) {
-        my @m=lstat($mk); return (0,undef) if @m && -f _ && $m[4]==$< && $m[9]<=$now+1 && $now-$m[9]<$REFUSAL_TTL;
+        my $m=_marker_age($mk); return (0,undef) if defined $m && $m<=$now+1 && $now-$m<$REFUSAL_TTL;
     }
     my ($path,$why)=eval { require "$LIB/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
     $why="index-error" unless defined $why;
     if ($why eq "timeout" || $why eq "index-error") {
-        my $rm=_marker("r-".Digest::SHA::sha256_hex($root),1); _mark($rm,"");
+        my $rm=_marker("r-$rh",1); _mark($rm,"");
         return (0,undef);
     }
     unlink $mk if defined $mk;
     my $allowed=$why eq "tracked" ? 0 : 1;
-    if (!$allowed && defined $key) { my $tm=_marker("t-$key",1); _mark($tm,"tracked") }
-    return ($allowed,($allowed && defined $key) ? [$key,"ok"] : undef);
+    if (!$allowed && defined $key) { my $tm=_marker("t-$rh",1); if (_mark($tm,"$key\ntracked\n")) { (my $d=$tm) =~ s{/[^/]*\z}{}; _prune_legacy($d) } }
+    elsif ($allowed && $alias && defined $key) { my $om=_marker("o-$rh",1); _mark($om,"$key\nok\n") }
+    return ($allowed,($allowed && defined $key && !$alias) ? [$key,"ok"] : undef);
 }
 sub store {
     my ($dir,$s)=@_; return unless $s && $s->[1] eq "ok" && -d $dir && !-l $dir;
@@ -126,10 +176,13 @@ sub store {
     umask $old;
 }
 # The question every journal writer asks: may this logs directory be written?
+# With $nostore (an election, which may end as a follower that must leave the logs directory untouched) a positive
+# answer is read from the cache but not stored in the project.
 sub check {
-    my $dir=shift; my $m=$memo{$dir}; return $m->[1] if $m && Time::HiRes::time()<$m->[0];
-    my ($allowed,$s,$hit)=verdict($dir); store($dir,$s) if $s;
-    $memo{$dir}=[Time::HiRes::time()+2,$allowed] unless $s || $hit;   # a cache hit costs stats only: never memoized, so a later poll sees a change at once
+    my ($dir,$nostore)=@_; my $k=$nostore ? "n:$dir" : $dir;   # a no-store answer never serves a storing caller (it would defer the store and keep a stale ok)
+    my $m=$memo{$k}; return $m->[1] if $m && Time::HiRes::time()<$m->[0];
+    my ($allowed,$s,$hit)=verdict($dir); store($dir,$s) if $s && !$nostore;
+    $memo{$k}=[Time::HiRes::time()+2,$allowed] unless ($s && !$nostore) || $hit;   # a cache hit costs stats only: never memoized, so a later poll sees a change at once
     return $allowed;
 }
 1;

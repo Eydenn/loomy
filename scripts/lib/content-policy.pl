@@ -106,6 +106,9 @@ sub _context {
     my ($root,$create)=@_;
     my $c=Loomy::RuntimePaths::resolve($root,\&_private_group);
     die "unsafe content directory\n" unless $c->{loomy}; $root=$c->{root};
+    # Leak barrier: creating (or later renaming into) a tracked or unverifiable .loomy/logs is refused before anything
+    # is made there (the lock files, content-policy.conf), whatever the writer.
+    die "content policy not saved: .loomy/logs is tracked by Git or Git cannot say; run loomy doctor --fix\n" if $create && !_label_gate($root);
     my $cwd; sysopen $cwd,'.',O_RDONLY or die "content directory unavailable\n";
     chdir $c->{loomy} or die "content directory unavailable\n";
     my ($logs,$ds,$project_id); my $ok=eval {
@@ -295,6 +298,9 @@ sub _lock {
 }
 sub _stored {
     my ($ctx)=@_; return {policy=>defaults(),source=>'default',valid=>1,stat=>[]} unless $ctx->{logs};
+    # A policy file in a logs directory the barrier refuses (tracked by Git, or Git cannot say) may have been shipped by
+    # a clone, checked out private and so passing the permission checks: it is absent, never trusted, never a consent.
+    return {policy=>defaults(),source=>'default',valid=>1,stat=>[]} unless _label_gate($ctx->{root},1);
     my ($raw,$stat,$p);
     for (1..3) {
         my $ok=eval {($raw,$stat)=_read($POLICY,16384); $p=defined($raw) ? parse_policy($raw) : defaults(); 1};
@@ -584,6 +590,7 @@ sub change_policy {
 sub first_use {
     my ($root)=@_; return 0 unless human_tty();
     my $pre=load_policy($root); return 0 unless $pre->{valid} && !$pre->{policy}{grant_prompt_version};
+    return 0 unless _label_gate(eval {Loomy::RuntimePaths::resolve($root)->{root}} // $root,1);   # no consent screen that could not be saved
     my $c=_context($root,1);
     return _in_context($c,sub {
         # A distinct, non-blocking screen lock suppresses duplicate screens;
@@ -694,8 +701,8 @@ sub latest_label {
 # Leak barrier (journal-gate.pl): display-context-v1.jsonl lives in .loomy/logs, so it is never written (nor its lock
 # created) when the project tracks runtime state in its Git index or Git cannot say.
 sub _label_gate {
-    my ($root)=@_; my $r=abs_path($root); return 1 unless defined $r;   # an unusable root fails later, as before
-    require "$LIB/journal-gate.pl"; return Loomy::JournalGate::check("$r/.loomy/logs");
+    my ($root,$readonly)=@_; my $r=abs_path($root); return 1 unless defined $r;   # an unusable root fails later, as before
+    require "$LIB/journal-gate.pl"; return Loomy::JournalGate::check("$r/.loomy/logs",$readonly);   # a reader never stores the verdict in the project
 }
 sub _save_label {
     my ($c,$p,$input,$last)=@_; die "invalid label scope\n" unless _scope($input,$c->{project_id});

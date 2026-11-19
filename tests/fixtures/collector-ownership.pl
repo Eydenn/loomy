@@ -552,7 +552,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         eval {Loomy::CollectorOwner::release($c->{guard})} if $c->{guard};
     }
     {   # LR8: cache directory hardening, one marker per root, fail-closed spellings, aliased-worktree cost.
-        my $gate=sub {my ($root,$dirarg,%env)=@_; run(['perl','-e','require "$ARGV[0]/scripts/lib/journal-gate.pl"; exit(Loomy::JournalGate::check($ARGV[1]) ? 0 : 1)',$repo,$dirarg//"$root/.loomy/logs"],env=>{HOME=>$ENV{HOME},%env},timeout=>20)};
+        my $gate=sub {my ($root,$dirarg,%env)=@_; run(['perl','-e','require "$ARGV[0]/scripts/lib/journal-gate.pl"; exit(Loomy::JournalGate::check($ARGV[1]) ? 0 : 1)',$repo,$dirarg//"$root/.loomy/logs"],env=>{HOME=>$ENV{HOME},XDG_RUNTIME_DIR=>'/nonexistent',TMPDIR=>'/nonexistent',%env},timeout=>20)};   # no fallback directory unless a test names one
         my $tracked=sub {my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2; return $x};
         my $x=$tracked->();
         my $gw="$work/lr8gw".++$pn; make_path($gw,{mode=>0700}); chmod 0770,$gw; my $o=$gate->($x,undef,XDG_CACHE_HOME=>$gw);
@@ -578,7 +578,7 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
         my $m=project(1); my $w="$work/wt".++$pn; git($m,'worktree','add','--quiet','-b',"wt$pn",$w); symlink("$m/.loomy","$w/.loomy") or die; sleep 2.2;
         my $gl="$work/git-alias"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
         for (1..3) { run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$w],env=>{PATH=>"$work/fakegit:$ENV{PATH}"}) }
-        my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,1,'LR8 aliased worktree: the ok verdict is cached, Git is asked once for three processes');
+        my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,2,'LR8 aliased worktree: the ok verdict is cached (one Git call per root, the worktree and the main checkout), not asked again by the next processes');
         ok(!-e "$m/.loomy/logs/gate-v1",'LR8 and nothing is stored through the alias');
         put("$m/.loomy/brief.md","brief\n"); put("$m/.loomy/logs/events.jsonl","orig\n"); git($m,'add','-f','.loomy/logs/events.jsonl'); commit_all($m);
         my %payload=('agent-start'=>'{"tool_name":"Agent","session_id":"s1","tool_use_id":"t1","tool_input":{"subagent_type":"developer","description":"d","prompt":"p"}}',
@@ -589,11 +589,74 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
             unchanged("LR8 aliased worktree: hook $hook","$m/.loomy",sub {run(['bash','-c','cd "$2" && bash "$1/scripts/loomy-context.sh" --hook "$3" --root "$2" <"$4"','_',$repo,$w,$hook,$in],env=>{LOOMY_PROJECT_ROOT=>$w})});
         }
     }
+    {   # LR8-2: an aliased worktree is judged on the physical root's index too; the tracked verdict of an alias is cached; skill-install.log is never written through a link.
+        my $gate=sub {my ($d,%env)=@_; run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$d],env=>{%env})};
+        my $m=project(1); my $w="$work/wta".++$pn; git($m,'worktree','add','--quiet','-b',"wta$pn",$w); symlink("$m/.loomy",
+            "$w/.loomy") or die; sleep 2.2;
+        is($gate->($w)->{rc},0,'LR8-2 aliased worktree over an untracked main: allowed (and cached per user)');
+        put("$m/.loomy/logs/events.jsonl","orig\n"); git($m,'add','-f','.loomy/logs/events.jsonl'); commit_all($m); sleep 2.2;
+        isnt($gate->($w)->{rc},0,'LR8-2 main tracks its logs afterwards: the aliased worktree is refused (the physical root index is judged, the cached ok is not reused)');
+        my $gl="$work/git-alias2"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        $gate->($w,PATH=>"$work/fakegit:$ENV{PATH}") for 1..3; my $calls=() = bytes($gl) =~ /ls-files/g;
+        is($calls,0,'LR8-2 the tracked verdict of an alias is cached: later hooks spawn no Git');
+        # skill-install.log through `loomy audit` in the aliased worktree.
+        make_path("$work/npxstub"); put("$work/npxstub/npx","#!/bin/sh\necho NPX-OUTPUT\nexit 0\n"); chmod 0755,"$work/npxstub/npx";
+        my $audit=sub {my $root=shift; run(['bash',"$repo/scripts/loomy-audit.sh",'--root',$root,'--print','--yes','--tool','claude'],env=>{PATH=>"$work/npxstub:$ENV{PATH}"})};
+        my $sentinel="$work/sentinel".++$pn; put($sentinel,"SENTINEL\n");
+        for my $kind (qw(file symlink)) {
+            my $mm=project(1); my $ww="$work/wtb".++$pn; git($mm,'worktree','add','--quiet','-b',"wtb$pn",$ww); symlink("$mm/.loomy","$ww/.loomy") or die;
+            my $log="$mm/.loomy/logs/skill-install.log"; if ($kind eq 'file') {put($log,"tracked log\n")} else {symlink($sentinel,$log) or die}
+            git($mm,'add','-f','.loomy/logs/skill-install.log'); commit_all($mm); sleep 2.2;
+            my $before=manifest("$mm/.loomy/logs"); my $r=$audit->($ww);
+            is_deeply(manifest("$mm/.loomy/logs"),$before,"LR8-2 loomy audit from an aliased worktree: main's tracked skill-install.log ($kind) and its logs are untouched");
+            is(bytes($sentinel),"SENTINEL\n","LR8-2 the sentinel outside the project is untouched ($kind)");
+        }
+        {   # Untracked, so the gate allows: the writer itself never follows a symlink and never truncates in place.
+            my $mm=project(1); my $log="$mm/.loomy/logs/skill-install.log"; symlink($sentinel,$log) or die; sleep 2.2;
+            $audit->($mm); is(bytes($sentinel),"SENTINEL\n",'LR8-2 an untracked skill-install.log symlink is not followed'); ok(-f $log && !-l $log && bytes($log) =~ /NPX-OUTPUT/,'LR8-2 and is replaced by the new log');
+            my $m2=project(1); put("$m2/.loomy/logs/skill-install.log","old\n"); my @i0=stat("$m2/.loomy/logs/skill-install.log"); sleep 2.2; $audit->($m2);
+            my @i1=stat("$m2/.loomy/logs/skill-install.log"); isnt($i1[1],$i0[1],'LR8-2 the log is replaced by rename, never opened in place');
+        }
+    }
+    {   # LR8-2: doctor --fix moves the shipped files into a per-user quarantine (0700 levels, 0600 files); the next session starts clean.
+        my $x=project(1); my $logs="$x/.loomy/logs"; my $sentinel="$work/sentinelq".++$pn; put($sentinel,"SENTINEL\n");
+        put("$logs/content-policy.conf",join('',map {"$_\n"} qw(version=1 journal_content=structural policy_generation=1 label_sources=claude-description label_max_graphemes=96 label_max_bytes=384 codex_component_max_chars=40 label_store_max_bytes=1048576 private_results=on results_max_records=200 results_max_record_bytes=1048576 results_max_total_bytes=16777216 results_max_age_days=30 grant_prompt_version=1)));
+        chmod 0600,"$logs/content-policy.conf"; put("$logs/display-context-v1.jsonl","{}\n"); put("$logs/gate-v1","k\nok\n"); symlink($sentinel,"$logs/link-to-sentinel") or die;
+        git($x,'add','-f','.loomy/logs'); commit_all($x); sleep 2.2;
+        my $pol=sub {my $o=run(['perl','-e','require "$ARGV[0]/scripts/lib/content-policy.pl"; my $p=Loomy::ContentPolicy::effective_policy($ARGV[1]); print join(" ",map {"$_=".($p->{$_}//"")} qw(private_results label_sources grant_prompt_version)),"\n"',$repo,$x]); $o->{out}};
+        like($pol->(),qr/private_results=off label_sources=none grant_prompt_version=0\s*$/,'LR8-2 while tracked the shipped policy is ignored');
+        my $pv=run(['bash',"$repo/scripts/loomy-privacy.sh",'--root',$x,'labels']); like($pv->{all},qr/Task history tracked by Git · run loomy doctor --fix/,'LR8-2 loomy privacy labels names the cause and the remedy over tracked logs');
+        my $dd=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x]); like($dd->{all},qr/Stored grants ignored: task history is tracked by Git/,'LR8-2 doctor says the stored grants are ignored while tracked'); unlike($dd->{all},qr/Stored grants \x{2014} journal/,'LR8-2 and does not print them as active');
+        my $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); like($d->{all},qr/removed from the Git index/,'LR8-2 doctor --fix runs');
+        my @q=glob("$ENV{XDG_STATE_HOME}/loomy/quarantine/".sha256_hex($x)."/*"); is(scalar(@q),1,'LR8-2 a quarantine directory is created per root and time'); my $q=$q[0]//'';
+        like($d->{all},qr/\Q$q\E/,'LR8-2 doctor prints its path');
+        ok(!grep({!(((stat $_)[2]&07777)==0700)} ($q,"$ENV{XDG_STATE_HOME}/loomy","$ENV{XDG_STATE_HOME}/loomy/quarantine","$ENV{XDG_STATE_HOME}/loomy/quarantine/".sha256_hex($x))),'LR8-2 every level is 0700');
+        my @f=glob("$q/*-content-policy.conf"); is(scalar(@f),1,'LR8-2 the shipped policy is in the quarantine'); ok(@f && ((stat $f[0])[2]&07777)==0600 && bytes($f[0]) =~ /private_results=on/,'LR8-2 mode 0600, content kept');
+        is(scalar(grep {((stat $_)[2]&07777)==0600} glob("$q/*")),scalar(my @all=glob("$q/*")),'LR8-2 every quarantined file is 0600');
+        ok(!-e "$logs/content-policy.conf" && !-e "$logs/display-context-v1.jsonl" && !-e "$logs/gate-v1" && !-l "$logs/link-to-sentinel",'LR8-2 the shipped files and the tracked symlink left the project'); is(bytes($sentinel),"SENTINEL\n",'LR8-2 a tracked symlink is removed, never followed');
+        sleep 2.2; like($pol->(),qr/private_results=off label_sources=none grant_prompt_version=0\s*$/,'LR8-2 the next session reads no policy: no private result is captured, first-use consent is pending');
+        my $d2=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); unlike($d2->{all},qr/quarantine/i,'LR8-2 a second run has nothing to move');
+    }
+    {   # LR8-2: a group-writable ~/.cache falls back to another per-user directory (XDG_RUNTIME_DIR): Git is asked once for three processes.
+        my $x=project(1); put("$x/.loomy/logs/events.jsonl","orig\n"); git($x,'add','-f','.loomy/logs/events.jsonl'); commit_all($x); sleep 2.2;
+        my $gw="$work/gw775".++$pn; make_path($gw,{mode=>0700}); chmod 0775,$gw; my $rt="$work/rt".++$pn; make_path($rt,{mode=>0700});
+        my $gl="$work/git-fallback"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        for (1..3) { run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$gw,XDG_RUNTIME_DIR=>$rt,TMPDIR=>"/nonexistent",PATH=>"$work/fakegit:$ENV{PATH}"}) }
+        my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,1,'LR8-2 group-writable cache base: the verdict is cached in XDG_RUNTIME_DIR'); ok(!-e "$gw/loomy" && -d "$rt/loomy/gate",'LR8-2 nothing is created in the group-writable base');
+        unlink $gl; for (1..3) { run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_gate "$2"','_',$repo,$x],env=>{XDG_CACHE_HOME=>$gw,XDG_RUNTIME_DIR=>"/nonexistent",TMPDIR=>$gw,PATH=>"$work/fakegit:$ENV{PATH}"}) }
+        $calls=() = bytes($gl) =~ /ls-files/g; is($calls,3,'LR8-2 with no usable per-user directory Git is asked again at each process (memo only)');
+    }
+    {   # LR8-2: an allowed answer also serves a no-store caller (one Git call, not two, right after an index change).
+        my $x=project(1); put("$x/.loomy/brief.md","b\n"); git($x,'add','-f','.loomy/brief.md'); sleep 2.2; git($x,'add','-f','.loomy/brief.md'); commit_all($x);   # index changed just now
+        my $gl="$work/git-memo"; unlink $gl; put("$work/fakegit/git","#!/bin/sh\necho \"\$*\" >> '$gl'\nexec /usr/bin/git \"\$@\"\n"); chmod 0755,"$work/fakegit/git";
+        run(['perl','-e','require "$ARGV[0]/scripts/lib/journal-gate.pl"; my $d="$ARGV[1]/.loomy/logs"; Loomy::JournalGate::check($d); Loomy::JournalGate::check($d,1)',$repo,$x],env=>{PATH=>"$work/fakegit:$ENV{PATH}"});
+        my $calls=() = bytes($gl) =~ /ls-files/g; is($calls,1,'LR8-2 a storing answer serves the no-store caller: one Git call');
+    }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);
         put("$x/.loomy/logs/codex-native.idx","{\"changed\":1}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); put("$x/.loomy/logs/codex-native.idx","{\"again\":2}\n");   # MM: staged and modified in the work tree
         my $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$x,'--fix']); like($d->{all},qr/removed from the Git index/,'S1 fix: an MM entry is removed');
-        ok(-f "$x/.loomy/logs/codex-native.idx",'S1 fix: and the file stays'); is(scalar(grep {/\.loomy\/logs/} split /\0/,`git -C '$x' ls-files -z`),0,'S1 fix: nothing left under .loomy/logs');
+        ok(!-e "$x/.loomy/logs/codex-native.idx" && scalar(grep {bytes($_) eq "{\"again\":2}\n"} glob("$ENV{XDG_STATE_HOME}/loomy/quarantine/".sha256_hex($x)."/*/*-codex-native.idx")),'S1 fix: and the file moves into the per-user quarantine (the work tree content, MM state included)'); is(scalar(grep {/\.loomy\/logs/} split /\0/,`git -C '$x' ls-files -z`),0,'S1 fix: nothing left under .loomy/logs');
         for my $mode (qw(160000 120000)) {
             my $y=project(1); put("$y/.loomy/memory/STATE.md","s\n"); put("$y/.loomy/memory/DEAD-ENDS.md","d\n"); git($y,'add','-f','.loomy/memory'); commit_all($y);
             my $blob=`git -C '$y' hash-object -w --stdin </dev/null`; chomp $blob;

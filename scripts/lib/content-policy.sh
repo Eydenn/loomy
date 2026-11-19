@@ -38,6 +38,7 @@ _loomy_content_ui() {
   tv LOOMY_CONTENT_UI_CONFIRM "Allow these exact fields and limits for this project? [y/N]"
   tv LOOMY_CONTENT_UI_HINT "Task labels off · run loomy privacy labels recommended"
   tv LOOMY_CONTENT_UI_LABEL_FULL "display context full; label not saved"
+  tv LOOMY_CONTENT_UI_GATED "Task history tracked by Git · run loomy doctor --fix"
   tv LOOMY_CONTENT_UI_PRIVACY "Journal: %s · task labels: %s · private results: %s · checkpoint/scratch repair pending"
   tv LOOMY_CONTENT_UI_OLD_COPIES "Old copies may contain text · loomy privacy inventory"
   tv LOOMY_CONTENT_UI_RESULT_FACTS "Existing results are unchanged; this command changes future capture only."
@@ -66,7 +67,7 @@ _loomy_content_ui() {
   export LOOMY_CONTENT_UI_STRUCTURE LOOMY_CONTENT_UI_LEGACY LOOMY_CONTENT_UI_ON LOOMY_CONTENT_UI_OFF
   export LOOMY_CONTENT_UI_LOWER_LABEL_CAPS LOOMY_CONTENT_UI_LOWER_RESULT_CAPS
   export LOOMY_CONTENT_UI_HUMAN_REQUIRED LOOMY_CONTENT_UI_CONFIRMATION_ABORTED LOOMY_CONTENT_UI_OPERATION_FAILED
-  export LOOMY_CONTENT_UI_AGENT_ANCESTOR
+  export LOOMY_CONTENT_UI_AGENT_ANCESTOR LOOMY_CONTENT_UI_GATED
   export LOOMY_CONTENT_UI_CLARITY_LEGACY LOOMY_CONTENT_UI_EXCLUDED_LEGACY
   export LOOMY_CONTENT_UI_SELECTED_SOURCES LOOMY_CONTENT_UI_SELECTED_NONE LOOMY_CONTENT_UI_POLICY_STATE LOOMY_CONTENT_UI_DEFAULT_SOURCE
   export LOOMY_CONTENT_UI_PROJECT_SOURCE LOOMY_CONTENT_UI_ENV_SOURCE LOOMY_CONTENT_UI_DENIED_SOURCE LOOMY_CONTENT_UI_VETO_SOURCE
@@ -80,11 +81,16 @@ loomy_content_command() (
   _loomy_content_ui
   perl "$LOOMY_CONTENT_POLICY_LIB" "$@"
 )
+# The shell fast paths below read the policy file directly: only when the leak barrier allows this project's logs (cached
+# verdict, nothing stored), otherwise the full backend path runs and treats the file as absent.
+_loomy_content_gate_ok() {
+  perl -e 'require "$ARGV[0]/journal-gate.pl"; exit(Loomy::JournalGate::check("$ARGV[1]/.loomy/logs",1) ? 0 : 1)' "${LOOMY_CONTENT_POLICY_LIB%/*}" "$1" 2>/dev/null
+}
 loomy_content_first_use() {
   # A completed screen must not start Perl or load its translations again.
   [[ -t 0 && -t 1 ]] || return 0
   local row
-  if [[ -f "$1/.loomy/logs/content-policy.conf" && ! -L "$1/.loomy/logs/content-policy.conf" && -r "$1/.loomy/logs/content-policy.conf" ]]; then
+  if [[ -f "$1/.loomy/logs/content-policy.conf" && ! -L "$1/.loomy/logs/content-policy.conf" && -r "$1/.loomy/logs/content-policy.conf" ]] && _loomy_content_gate_ok "$1"; then
     while IFS= read -r row || [[ -n "$row" ]]; do [[ "$row" != grant_prompt_version=1 ]] || return 0; done <"$1/.loomy/logs/content-policy.conf"
   fi
   loomy_content_human_tty || return 0
@@ -97,7 +103,7 @@ _loomy_content_hint_load() {
   LOOMY_CONTENT_HINT_SIGNATURE='-|-'
   if [[ -f "$1/.loomy/logs/content-policy.conf" && ! -L "$1/.loomy/logs/content-policy.conf" \
       && -r "$1/.loomy/logs/content-policy.conf" && ! -e "$1/.loomy/logs/display-context-full" \
-      && ! -L "$1/.loomy/logs/display-context-full" ]]; then
+      && ! -L "$1/.loomy/logs/display-context-full" ]] && _loomy_content_gate_ok "$1"; then
     while IFS= read -r row || [[ -n "$row" ]]; do
       [[ "$row" != grant_prompt_version=1 ]] || grant_prompt=1
       case "$row" in
@@ -115,13 +121,15 @@ _loomy_content_hint_load() {
         qw(content-policy.conf display-context-full)),"\n";
       my $p=Loomy::ContentPolicy::effective_policy($ARGV[1]);
       print "full\n" if Loomy::ContentPolicy::label_health($ARGV[1]) eq "full";
-      print "hint\n" if !$p->{grant_prompt_version} || $p->{label_sources} eq "none"' "$LOOMY_CONTENT_POLICY_LIB" "$1")" || return 0
+      print "gated\n" if $p->{gated};
+      print "hint\n" if !$p->{gated} && (!$p->{grant_prompt_version} || $p->{label_sources} eq "none")' "$LOOMY_CONTENT_POLICY_LIB" "$1")" || return 0
   fi
   LOOMY_CONTENT_HINT=""
   for flag in $flags; do
     case "$flag" in
       C\|*) LOOMY_CONTENT_HINT_SIGNATURE="${flag#C|}" ;;
       full) tv flag "display context full; label not saved" ;;
+      gated) tv flag "Task history tracked by Git · run loomy doctor --fix" ;;
       hint) tv flag "Task labels off · run loomy privacy labels recommended" ;;
     esac
     [[ "$flag" != C\|* ]] || continue

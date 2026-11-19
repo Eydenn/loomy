@@ -22,6 +22,7 @@ use warnings;
 use Fcntl ();
 use Time::HiRes ();
 use Digest::SHA ();
+use Cwd ();
 my $REFUSAL_TTL=30; my %memo; my $SEQ=0;
 my $LIB=__FILE__; $LIB =~ s{/[^/]+\z}{};
 # The project root of "<root>/.loomy/logs", or undef when the directory is not exactly that after normalising (trailing
@@ -42,20 +43,30 @@ sub _ident {
     my @a=$alias ? stat("$root/.loomy") : lstat("$root/.loomy"); my @b=$alias ? stat($dir) : lstat($dir);
     return Digest::SHA::sha256_hex(join("|",$alias ? "v3a" : "v2",$idx,join(",",@a[0,1]),join(",",@b[0,1])));
 }
-# Per-user cache directory outside the project: $XDG_CACHE_HOME (absolute) or ~/.cache, then loomy/gate. Levels that are
-# missing are created 0700 (create only); every existing level must be a real directory (never a symlink) owned by the
-# user. The base must not be group or world writable (anyone who can write there can swap what is under it: the cache
-# is then unusable and the in-process memo answers, Git is asked again). A loomy or gate level we own that was created
-# group/world writable (umask 002) is tightened to 0700. HOME must be ours to create the base. Returns the directory or undef.
+# Per-user cache directory outside the project, the first usable of: $XDG_CACHE_HOME (absolute) or ~/.cache; then
+# $XDG_RUNTIME_DIR (Linux, 0700); then $TMPDIR (macOS /var/folders/.../T). In each, "loomy/gate". Levels that are missing
+# are created 0700 (create only); every existing level must be a real directory (never a symlink) owned by the user. The
+# base must not be group or world writable (anyone who can write there can swap what is under it, as under a 0775
+# ~/.cache with umask 002: that base is skipped, the next one is tried, and with none the in-process memo answers and Git
+# is asked again). A loomy or gate level we own that was created group/world writable is tightened to 0700. For the
+# cache base HOME must be ours to create it; the fallback bases must already exist. Returns the directory or undef.
 sub _cdir {
-    my $create=shift; my $base=$ENV{XDG_CACHE_HOME}; $base=defined $ENV{HOME} && $ENV{HOME} =~ m{\A/} ? "$ENV{HOME}/.cache" : "" unless defined $base && $base =~ m{\A/};
+    my $create=shift; my @bases;
+    my $b=$ENV{XDG_CACHE_HOME}; $b=defined $ENV{HOME} && $ENV{HOME} =~ m{\A/} ? "$ENV{HOME}/.cache" : "" unless defined $b && $b =~ m{\A/};
+    push @bases,[$b,1] if length $b;
+    for my $v (qw(XDG_RUNTIME_DIR TMPDIR)) { my $x=$ENV{$v}; push @bases,[$x,0] if defined $x && $x =~ m{\A/} }
+    for my $e (@bases) { my $d=_cdir_in($e->[0],$create,$e->[1]); return $d if defined $d }
+    return;
+}
+sub _cdir_in {
+    my ($base,$create,$home)=@_; $base =~ s{/+\z}{};
     return unless length $base;
     my $i=0;
     for my $x ($base,"$base/loomy","$base/loomy/gate") {
         my @s=lstat($x);
         if (!@s) {
             return unless $create;
-            if ($i==0 && defined $ENV{HOME}) { my @h=stat($ENV{HOME}); return unless @h && -d _ && $h[4]==$< }
+            if ($i==0) { return unless $home; if (defined $ENV{HOME}) { my @h=stat($ENV{HOME}); return unless @h && -d _ && $h[4]==$< } }
             my $old=umask 0077; my $made=mkdir($x,0700); umask $old; return unless $made; @s=lstat($x);
         }
         return unless @s && -d _ && !-l _ && $s[4]==$<;
@@ -133,29 +144,53 @@ sub _index {
     my @i=stat("$gd/index"); return (0,undef) if @i && time-$i[9]<2;
     return (0,"$top|$gd|".(@i ? join(",",@i[0,1,7,9,10]) : "none"));
 }
+# The physical root of a logs directory reached through a symlink (a linked worktree whose .loomy is the main checkout's),
+# or undef when it cannot be established (the answer is then a refusal). Resolved, it must still be <root>/.loomy/logs.
+sub _phys_root {
+    my $dir=shift; require Cwd; my $p=Cwd::abs_path($dir);
+    unless (defined $p) { (my $par=$dir) =~ s{/[^/]*\z}{}; my $q=Cwd::abs_path($par); $p="$q/logs" if defined $q && $dir =~ m{/logs\z} }
+    return unless defined $p && $p =~ m{\A(.+)/\.loomy/logs\z}s;
+    return $1;
+}
 # Returns (allowed, [file key, file value] to store or undef, cache-hit flag). Store is only for "ok". No memo.
-# A dir that is not exactly <root>/.loomy/logs, or a missing root, is refused.
+# A dir that is not exactly <root>/.loomy/logs, or a missing root, is refused. Through an alias the physical root is
+# judged too, on its own index (whose stat is part of the cached key); if that cannot be established, refused.
 sub verdict {
     my ($dir,$fresh)=@_; my ($root,$nd)=_norm($dir); return (0,undef) unless defined $root; $dir=$nd;
-    my ($norepo,$idx)=_index($root); return (1,undef) if $norepo;
     my $alias=(-l "$root/.loomy" || -l $dir) ? 1 : 0;   # the directory written is another project's: never stored in it, cached per user instead
-    my $existed=-d $dir;
-    my $now=time; my $key=($existed && defined $idx) ? _ident($root,$dir,$idx,$alias) : undef;
+    my @roots=($root);
+    if ($alias) {
+        my $p=_phys_root($dir); return (0,undef) unless defined $p;
+        my $rr=Cwd::abs_path($root); $rr=$root unless defined $rr; push @roots,$p if $p ne $rr;
+    }
+    my ($allnorepo,@idx)=(1);
+    for my $r (@roots) { my ($n,$i)=_index($r); $allnorepo=0 unless $n; push @idx,($n ? "norepo" : $i) }
+    return (1,undef) if $allnorepo;
+    my $existed=-d $dir; my $ix=(grep {!defined} @idx) ? undef : join("|",@idx);
+    my $now=time; my $key=($existed && defined $ix) ? _ident($root,$dir,$ix,$alias) : undef;
     my $rh=Digest::SHA::sha256_hex($root);
     if ($existed && !$fresh && defined $key && !$alias) {
         my ($k,$v)=_read("$dir/gate-v1");
         return (1,undef,1) if defined $k && $k eq $key && $v eq "ok";   # third value: answered from the cache file, no memo needed
     }
     if (!$fresh && defined $key) {
-        my ($k,$v)=_read(_marker(($alias ? "o-" : "t-").$rh));   # verdict cached outside the project
-        if (defined $k && $k eq $key) { return (0,undef,1) if $v eq "tracked"; return (1,undef,1) if $v eq "ok" && $alias }
+        for my $kind ($alias ? ("t-","o-") : ("t-")) {
+            my ($k,$v)=_read(_marker("$kind$rh"));   # verdict cached outside the project
+            next unless defined $k && $k eq $key;
+            return (0,undef,1) if $v eq "tracked"; return (1,undef,1) if $v eq "ok" && $kind eq "o-";
+        }
     }
     my $mk=_marker("r-$rh");
     unless ($fresh || !defined $mk) {
         my $m=_marker_age($mk); return (0,undef) if defined $m && $m<=$now+1 && $now-$m<$REFUSAL_TTL;
     }
-    my ($path,$why)=eval { require "$LIB/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($root) };
-    $why="index-error" unless defined $why;
+    my $why="";
+    for my $r (@roots) {
+        my ($path,$w)=eval { require "$LIB/runtime-paths.pl"; Loomy::RuntimePaths::tracked_runtime($r) };
+        $w="index-error" unless defined $w;
+        if ($w eq "timeout" || $w eq "index-error") { $why=$w; last }
+        $why="tracked" if $w eq "tracked";
+    }
     if ($why eq "timeout" || $why eq "index-error") {
         my $rm=_marker("r-$rh",1); _mark($rm,"");
         return (0,undef);
@@ -179,8 +214,9 @@ sub store {
 # With $nostore (an election, which may end as a follower that must leave the logs directory untouched) a positive
 # answer is read from the cache but not stored in the project.
 sub check {
-    my ($dir,$nostore)=@_; my $k=$nostore ? "n:$dir" : $dir;   # a no-store answer never serves a storing caller (it would defer the store and keep a stale ok)
-    my $m=$memo{$k}; return $m->[1] if $m && Time::HiRes::time()<$m->[0];
+    my ($dir,$nostore)=@_; my $k=$nostore ? "n:$dir" : $dir;   # a no-store answer never serves a storing caller (it would defer the store and keep a stale ok); any answer serves a no-store one
+    my $m=$memo{$dir}; $m=$memo{$k} if $nostore && !($m && Time::HiRes::time()<$m->[0]);
+    return $m->[1] if $m && Time::HiRes::time()<$m->[0];
     my ($allowed,$s,$hit)=verdict($dir); store($dir,$s) if $s && !$nostore;
     $memo{$k}=[Time::HiRes::time()+2,$allowed] unless ($s && !$nostore) || $hit;   # a cache hit costs stats only: never memoized, so a later poll sees a change at once
     return $allowed;

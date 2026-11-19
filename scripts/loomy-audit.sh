@@ -162,8 +162,18 @@ elif (( INSTALL )) && (( ! RESUME )); then
     had_c=0; [[ -d "$ROOT/.claude/skills" ]] && had_c=1
     had_a=0; [[ -d "$ROOT/.agents/skills" ]] && had_a=1
     ui_info "$(t "installing the security-audit skill (npx skills add)…")"
-    skill_log=/dev/null; ai_journal_gate "$ROOT" && skill_log="$ROOT/.loomy/logs/skill-install.log"   # never write into tracked runtime state
+    # Never write into tracked runtime state, and never through a symlink or in place: the output goes to a private
+    # new file in the logs directory (mktemp: O_EXCL), then replaces skill-install.log by rename (a symlink standing
+    # there is replaced, not followed).
+    skill_log=/dev/null; skill_tmp=""
+    if ai_journal_gate "$ROOT" && [[ -d "$ROOT/.loomy/logs" ]]; then
+      skill_tmp="$(umask 077; mktemp "$ROOT/.loomy/logs/skill-install.XXXXXXXX" 2>/dev/null)" && skill_log="$skill_tmp" || skill_tmp=""
+    fi
     (cd "$ROOT" && npx -y skills add https://github.com/cloudflare/security-audit-skill --skill security-audit -y) >"$skill_log" 2>&1 || true
+    if [[ -n "$skill_tmp" ]]; then
+      ai_journal_gate "$ROOT" && perl -e 'rename($ARGV[0],$ARGV[1])' "$skill_tmp" "$ROOT/.loomy/logs/skill-install.log" 2>/dev/null
+      rm -f "$skill_tmp" 2>/dev/null || true
+    fi
     (( had_c )) || [[ ! -d "$ROOT/.claude/skills" ]] || exclude_add "/.claude/skills/"
     (( had_a )) || [[ ! -d "$ROOT/.agents/skills" ]] || exclude_add "/.agents/skills/"
     [[ -d "$ROOT/.claude/skills/security-audit" ]] && exclude_add "/.claude/skills/security-audit/"

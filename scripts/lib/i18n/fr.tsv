@@ -2591,3 +2591,9 @@ nothing was run or recorded; remove or fix what is listed, then loomy privacy ad
 nothing is backed up automatically until then	rien n'est sauvegardé automatiquement d'ici là
 the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt	le projet suit .loomy/ai.git : arrête de le suivre (git rm -r --cached .loomy/ai.git), puis lance loomy privacy adopt
 if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)	si .loomy/ai.git était suivi : après l'avoir retiré de l'index, lance loomy privacy adopt (la confiance est révoquée d'ici là)
+Task history tracked by Git · run loomy doctor --fix	Historique des tâches suivi par Git · lance loomy doctor --fix
+Stored grants ignored: task history is tracked by Git	Autorisations enregistrées ignorées : l'historique des tâches est suivi par Git
+run loomy doctor --fix	lance loomy doctor --fix
+copies kept in %s · commit, then reopen live tracking	copies gardées dans %s ; valide, puis rouvre le suivi en direct
+Could not move the shipped files out of the project	Impossible de sortir du projet les fichiers livrés
+check ~/.local/state is writable, then loomy doctor --fix again	vérifie que ~/.local/state est accessible en écriture, puis relance loomy doctor --fix

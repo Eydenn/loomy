@@ -300,7 +300,7 @@ sub _stored {
     my ($ctx)=@_; return {policy=>defaults(),source=>'default',valid=>1,stat=>[]} unless $ctx->{logs};
     # A policy file in a logs directory the barrier refuses (tracked by Git, or Git cannot say) may have been shipped by
     # a clone, checked out private and so passing the permission checks: it is absent, never trusted, never a consent.
-    return {policy=>defaults(),source=>'default',valid=>1,stat=>[]} unless _label_gate($ctx->{root},1);
+    return {policy=>defaults(),source=>'default',valid=>1,stat=>[],gated=>1} unless _label_gate($ctx->{root},1);   # gated: the callers say why the grants are ignored
     my ($raw,$stat,$p);
     for (1..3) {
         my $ok=eval {($raw,$stat)=_read($POLICY,16384); $p=defined($raw) ? parse_policy($raw) : defaults(); 1};
@@ -457,6 +457,7 @@ sub _snapshot_read {
         _assert_snapshot_context($c);
         $p=_effective($c,$stored);
         $p->{identity_state}=$identity; $p->{policy_state}=$stored->{source};
+        $p->{gated}=1 if $stored->{gated};
         if (!$c->{loomy} || $identity eq 'invalid' || ($mode eq 'strict' && ($identity ne 'present' || !$stored->{valid}))) {
             # Keep origin diagnostics, not a usable grant or invented identity.
             $p={%{defaults()},project=>$p->{project},source=>'invalid',valid=>0,journal_enabled=>0,
@@ -701,12 +702,12 @@ sub latest_label {
 # Leak barrier (journal-gate.pl): display-context-v1.jsonl lives in .loomy/logs, so it is never written (nor its lock
 # created) when the project tracks runtime state in its Git index or Git cannot say.
 sub _label_gate {
-    my ($root,$readonly)=@_; my $r=abs_path($root); return 1 unless defined $r;   # an unusable root fails later, as before
+    my ($root,$readonly)=@_; return 0 unless defined $root; my $r=abs_path($root); return 1 unless defined $r;   # an unusable root fails later, as before
     require "$LIB/journal-gate.pl"; return Loomy::JournalGate::check("$r/.loomy/logs",$readonly);   # a reader never stores the verdict in the project
 }
 sub _save_label {
     my ($c,$p,$input,$last)=@_; die "invalid label scope\n" unless _scope($input,$c->{project_id});
-    die "label not saved: .loomy/logs is tracked by Git or Git cannot say\n" unless _label_gate($c->{root});
+    die "label not saved: .loomy/logs is tracked by Git or Git cannot say; run loomy doctor --fix\n" unless _label_gate($c->{root});
     my %granted=map {$_=>1} @{_sources($p->{label_sources})};
     my $source=$input->{source}//''; die "label source not granted\n" unless $SOURCE{$source} && $granted{$source};
     die "human content confirmation required\n" if $source eq 'explicit-user' && !human_tty();
@@ -744,10 +745,11 @@ sub _save_label {
 sub save_label {
     my ($root,$input)=@_;
     # Capture is a consumer of a grant. Even a forged source name never creates consent.
+    # The barrier first: over a tracked logs directory the grants read as absent, and "not granted" would name the wrong cause.
+    die "label not saved: .loomy/logs is tracked by Git or Git cannot say; run loomy doctor --fix\n" unless _label_gate($root);
     my $pre=effective_policy($root); my %granted=map {$_=>1} @{_sources($pre->{label_sources})};
     die "label source not granted\n" unless $granted{$input->{source}//''};
     die "human content confirmation required\n" if ($input->{source}//'') eq 'explicit-user' && !human_tty();
-    die "label not saved: .loomy/logs is tracked by Git or Git cannot say\n" unless _label_gate($root);
     my $c=_context($root,1); return _in_context($c,sub {
         my $labels=_lock($c,'display-context.lock');
         my $lock=_lock($c); my $p=_effective($c,_stored($c));
@@ -1328,6 +1330,7 @@ sub _cli {
     if ($cmd eq 'hint') {
         my $p=effective_policy($root);
         _say('LABEL_FULL') if label_health($root) eq 'full';
+        if ($p->{gated}) {_say('GATED'); return}
         _say('HINT') if !$p->{grant_prompt_version} || $p->{label_sources} eq 'none'; return;
     }
     if ($cmd eq 'show') {
@@ -1349,6 +1352,7 @@ sub _cli {
         _describe({root=>$p->{project}//$root},$p);
         my %source=(default=>'DEFAULT_SOURCE',project=>'PROJECT_SOURCE',environment=>'ENV_SOURCE',
             'environment-denied'=>'DENIED_SOURCE','tasks-veto'=>'VETO_SOURCE');
+        _say('GATED') if $p->{gated};   # the grants read as absent: say why, with the remedy
         _say('POLICY_STATE',$ENV{'LOOMY_CONTENT_UI_'.$source{$p->{source}}},$p->{policy_generation});
         _say('OLD_COPIES');
         if ($cmd eq 'results') { _say('RESULT_FACTS'); }

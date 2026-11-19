@@ -686,6 +686,8 @@ ok(!exists($path->{cwd_relative}),'legacy path cannot escape project');
     }
     my $err=do {my $ok=eval {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10}); 1}; $@};
     like($err,qr/tracked by Git or Git cannot say.*loomy doctor --fix/,'LR8 the refusal names the remedy');
+    ok(policy($a)->{gated},'LR8 the policy is marked gated so callers can say why the grants are ignored');
+    my $lerr=do {my $ok=eval {label($a,'leak'); 1}; $@}; like($lerr,qr/tracked by Git.*loomy doctor --fix/,'LR8 a label save names the cause and the remedy first (not "not granted")');
     $g->('rm','--cached','--quiet','.loomy/logs/content-policy.conf'); sleep 2.2;
     is(policy($a)->{private_results},'on','LR8 untracked again: the project policy is read');
     ok(eval {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10}); 1},'LR8 and the writer works');

@@ -2588,5 +2588,11 @@ _t_fr() {
     'nothing is backed up automatically until then') _T='rien n'\''est sauvegardé automatiquement d'\''ici là' ;;
     'the project tracks .loomy/ai.git: untrack it (git rm -r --cached .loomy/ai.git), then run loomy privacy adopt') _T='le projet suit .loomy/ai.git : arrête de le suivre (git rm -r --cached .loomy/ai.git), puis lance loomy privacy adopt' ;;
     'if .loomy/ai.git was tracked: after untracking, run loomy privacy adopt (trust is revoked until then)') _T='si .loomy/ai.git était suivi : après l'\''avoir retiré de l'\''index, lance loomy privacy adopt (la confiance est révoquée d'\''ici là)' ;;
+    'Task history tracked by Git · run loomy doctor --fix') _T='Historique des tâches suivi par Git · lance loomy doctor --fix' ;;
+    'Stored grants ignored: task history is tracked by Git') _T='Autorisations enregistrées ignorées : l'\''historique des tâches est suivi par Git' ;;
+    'run loomy doctor --fix') _T='lance loomy doctor --fix' ;;
+    'copies kept in %s · commit, then reopen live tracking') _T='copies gardées dans %s ; valide, puis rouvre le suivi en direct' ;;
+    'Could not move the shipped files out of the project') _T='Impossible de sortir du projet les fichiers livrés' ;;
+    'check ~/.local/state is writable, then loomy doctor --fix again') _T='vérifie que ~/.local/state est accessible en écriture, puis relance loomy doctor --fix' ;;
   esac
 }

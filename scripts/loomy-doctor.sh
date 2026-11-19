@@ -151,10 +151,17 @@ loomy_doctor_tracking() {
         if (( FIX )); then
           # Only what the gate itself reports leaves the index (raw paths as argv, files stay on disk).
           fix_out="$(perl "$SCRIPT_DIR/lib/tracked-fix.pl" "$ROOT" 2>/dev/null </dev/null)" || true
-          IFS=$'\t' read -r fix_kind fix_n fix_names <<<"$fix_out"
+          IFS=$'\t' read -r fix_kind fix_n fix_names fix_q <<<"$fix_out"
           case "$fix_kind" in
-            removed) ui_ok "$(t '%s tracked runtime file(s) removed from the Git index' "$fix_n")" "${fix_names:+$fix_names · }$(t 'files stay on disk; commit, then reopen live tracking')" ;;
+            removed)
+              if [[ -n "${fix_q:-}" && "$fix_q" != "-" ]]; then
+                ui_ok "$(t '%s tracked runtime file(s) removed from the Git index' "$fix_n")" "${fix_names:+$fix_names · }$(t 'copies kept in %s · commit, then reopen live tracking' "$fix_q")"
+              else
+                ui_ok "$(t '%s tracked runtime file(s) removed from the Git index' "$fix_n")" "${fix_names:+$fix_names · }$(t 'files stay on disk; commit, then reopen live tracking')"
+              fi ;;
             none) ui_info "$(t 'No tracked runtime file left.')" ;;
+            error) if [[ "$fix_n" == quarantine ]]; then ui_warn "$(t 'Could not move the shipped files out of the project')" "$(t 'check ~/.local/state is writable, then loomy doctor --fix again')"
+              else ui_warn "$(t 'Could not remove them from the Git index')" "$(t 'run git status here, then loomy doctor --fix again')"; fi ;;
             *) ui_warn "$(t 'Could not remove them from the Git index')" "$(t 'run git status here, then loomy doctor --fix again')" ;;
           esac
         else
@@ -269,8 +276,8 @@ loomy_doctor_content() {
         if (lstat("logs")) {
           my ($logs,$ds)=Loomy::ContentPolicy::_dir("logs","$root/.loomy/logs");
           chdir $logs or die "content directory unavailable\n";
-          my $stored=Loomy::ContentPolicy::_stored({logs=>$logs});
-          ($state,$policy)=@{$stored}{qw(source policy)};
+          my $stored=Loomy::ContentPolicy::_stored({logs=>$logs,root=>$root});
+          ($state,$policy)=@{$stored}{qw(source policy)}; $state="gated" if $stored->{gated};   # grants ignored while the logs are tracked
           $health=eval {
             my ($raw)=Loomy::ContentPolicy::_read("display-context-full",128);
             defined($raw) ? "full" : "ok";
@@ -298,6 +305,7 @@ loomy_doctor_content() {
   case "$state" in
     project) ui_ok "$(t 'Content policy valid')" "$path" ;;
     default) ui_info "$(t 'No content policy file; structural defaults apply: %s' "$path")" ;;
+    gated) ui_warn "$(t 'Stored grants ignored: task history is tracked by Git')" "$(t 'run loomy doctor --fix')" ;;
     invalid)
       ui_warn "$(t 'Invalid content policy')" "$path"
       missing_ideal "$(t 'Content policy health')"
@@ -313,7 +321,7 @@ loomy_doctor_content() {
     legacy-excerpts) journal="$(t 'legacy excerpts (project scope)')" ;;
   esac
   [[ "$labels" != none ]] || labels="$(t 'none selected')"
-  if [[ "$state" == invalid || "$state" == unsafe ]]; then
+  if [[ "$state" == invalid || "$state" == unsafe || "$state" == gated ]]; then
     ui_info "$(t 'Safe defaults — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"
   else
     ui_info "$(t 'Stored grants — journal: %s · label sources: %s · private results: %s' "$journal" "$labels" "$(t "$results")")"

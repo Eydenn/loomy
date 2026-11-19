@@ -219,7 +219,7 @@ privacy_problem_text() {
     local_anc) t "local remote refused: contains the project or its worktrees (%s)" "$2" ;;
     local_host) t "remote host is this machine, so its hooks would run through your own ssh: refused (%s)" "$2" ;;
     local_pct) t "local remote refused: use a plain absolute path, not an escaped file:// URL (%s)" "$2" ;;
-    local_remedy) t "use the real absolute path of a bare repository outside the project and its worktrees: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt" ;;
+    local_remedy) t "Use a bare repo outside the project, then adopt again:"; echo; echo "  git --git-dir=.loomy/ai.git remote set-url origin <path>"; echo "  loomy privacy adopt"; return 0 ;;
     redirect) t "redirecting file present: %s" "$2" ;;
     attributes) t "attributes present: %s" "$2" ;;
     legacy) t "legacy remote file present: %s" "$2" ;;
@@ -301,7 +301,7 @@ privacy_companion_note() {
 }
 
 # privacy_companion_adopt <root>: validates a present companion, shows every remote URL, asks for confirmation on a
-# terminal, then records it. Explicit, user-run only. Problems on stdout (one per line, translated); returns 1 when refused.
+# terminal, then records it. Explicit, user-run only. Problems on stdout (one per line, translated); returns 1 when refused, 2 when the user did not confirm (nothing to fix).
 privacy_companion_adopt() {
   local root d out urls answer
   _privacy_say() { t "$@"; echo; }
@@ -323,7 +323,7 @@ privacy_companion_adopt() {
   IFS= read -r -t 300 answer || answer=""   # no answer in 5 minutes counts as "no": adopt never blocks forever
   # y/yes in English, o/oui in French, any case (the prompt shows the key of the current language).
   answer="$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')"
-  case "$answer" in y|yes|o|oui) ;; *) _privacy_say "not confirmed"; return 1 ;; esac
+  case "$answer" in y|yes|o|oui) ;; *) return 2 ;; esac
   privacy_companion_record "$root" adopt || { _privacy_say "cannot write the user config"; return 1; }
 }
 

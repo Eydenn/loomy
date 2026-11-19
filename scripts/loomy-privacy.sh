@@ -624,6 +624,9 @@ case "$CMD" in
     if problems="$(privacy_companion_adopt "$ROOT")"; then
       ui_ok "$(t "Private repository verified")" ".loomy/ai.git"
     else
+      rc=$?
+      # No confirmation (n, empty answer, end of input, timeout): nothing was refused, nothing is listed.
+      if (( rc == 2 )); then ui_end "$(t "Not adopted · nothing changed")"; exit 1; fi
       ui_err "$(t "Private repository refused")" ".loomy/ai.git"
       while IFS= read -r line; do [[ -z "$line" ]] || ui_rail "    ${C_DIM}$line${C_RESET}"; done <<<"$problems"
       ui_end "$(t "nothing was run or recorded; remove or fix what is listed, then loomy privacy adopt again")"

@@ -2603,7 +2603,7 @@ local remote refused: inside the project (%s)	dépôt distant local refusé : da
 local remote refused: not an existing directory (%s)	dépôt distant local refusé : dossier inexistant (%s)
 local remote refused: not owned by you (%s)	dépôt distant local refusé : il ne t'appartient pas (%s)
 local remote refused: use a plain absolute path, not an escaped file:// URL (%s)	dépôt distant local refusé : utilise un chemin absolu simple, pas une URL file:// encodée (%s)
-use the real absolute path of a bare repository outside the project and its worktrees: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt	utilise le chemin absolu réel d'un dépôt nu hors du projet et de ses worktrees : git --git-dir=.loomy/ai.git remote set-url origin <chemin>, puis loomy privacy adopt
+Use a bare repo outside the project, then adopt again:	Utilise un dépôt nu hors du projet, puis relance adopt :
 redirecting file present: %s	fichier de redirection présent : %s
 attributes present: %s	attributs présents : %s
 legacy remote file present: %s	ancien fichier de dépôt distant présent : %s
@@ -2619,7 +2619,7 @@ adopt needs a terminal to confirm the remote URLs	adopt demande un terminal pour
 Remote URLs (fetch and push) this repository will use:	URL distantes (lecture et envoi) que ce dépôt utilisera :
 (none)	(aucune)
 Trust this repository and these URLs? [y/N] 	Faire confiance à ce dépôt et à ces URL ? [o/N] 
-not confirmed	non confirmé
+Not adopted · nothing changed	Pas adopté · rien n'a changé
 cannot write the user config	impossible d'écrire la configuration utilisateur
 local remote refused: not a canonical path, no symlink, '.', '..' or trailing slash allowed (%s)	dépôt distant local refusé : chemin non canonique, ni lien symbolique, ni '.', '..', ni barre finale (%s)
 local remote refused: /proc and /dev paths are not allowed (%s)	dépôt distant local refusé : les chemins /proc et /dev sont interdits (%s)

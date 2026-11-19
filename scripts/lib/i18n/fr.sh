@@ -2600,7 +2600,7 @@ _t_fr() {
     'local remote refused: not an existing directory (%s)') _T='dépôt distant local refusé : dossier inexistant (%s)' ;;
     'local remote refused: not owned by you (%s)') _T='dépôt distant local refusé : il ne t'\''appartient pas (%s)' ;;
     'local remote refused: use a plain absolute path, not an escaped file:// URL (%s)') _T='dépôt distant local refusé : utilise un chemin absolu simple, pas une URL file:// encodée (%s)' ;;
-    'use the real absolute path of a bare repository outside the project and its worktrees: git --git-dir=.loomy/ai.git remote set-url origin <path>, then loomy privacy adopt') _T='utilise le chemin absolu réel d'\''un dépôt nu hors du projet et de ses worktrees : git --git-dir=.loomy/ai.git remote set-url origin <chemin>, puis loomy privacy adopt' ;;
+    'Use a bare repo outside the project, then adopt again:') _T='Utilise un dépôt nu hors du projet, puis relance adopt :' ;;
     'redirecting file present: %s') _T='fichier de redirection présent : %s' ;;
     'attributes present: %s') _T='attributs présents : %s' ;;
     'legacy remote file present: %s') _T='ancien fichier de dépôt distant présent : %s' ;;
@@ -2616,7 +2616,7 @@ _t_fr() {
     'Remote URLs (fetch and push) this repository will use:') _T='URL distantes (lecture et envoi) que ce dépôt utilisera :' ;;
     '(none)') _T='(aucune)' ;;
     'Trust this repository and these URLs? [y/N] ') _T='Faire confiance à ce dépôt et à ces URL ? [o/N] ' ;;
-    'not confirmed') _T='non confirmé' ;;
+    'Not adopted · nothing changed') _T='Pas adopté · rien n'\''a changé' ;;
     'cannot write the user config') _T='impossible d'\''écrire la configuration utilisateur' ;;
     'local remote refused: not a canonical path, no symlink, '\''.'\'', '\''..'\'' or trailing slash allowed (%s)') _T='dépôt distant local refusé : chemin non canonique, ni lien symbolique, ni '\''.'\'', '\''..'\'', ni barre finale (%s)' ;;
     'local remote refused: /proc and /dev paths are not allowed (%s)') _T='dépôt distant local refusé : les chemins /proc et /dev sont interdits (%s)' ;;

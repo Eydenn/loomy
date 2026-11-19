@@ -442,6 +442,14 @@ D="$WORK/self-ok"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.
 pty_adopt y "$D" >"$OUT" 2>&1; rc=$?
 if (( rc == 0 )) && ready_at "$D"; then ok 'ssh://git@github.com/x/y.git still adopts'; else ko 'a normal ssh remote was refused'; fi
 
+# ── 3g. LR8-B4: a plain "no" is neutral; a local-remote refusal shows the offending value ──
+D="$WORK/ux-no"; mk_comp "$D"
+pty_adopt n "$D" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'Not adopted' "$OUT" && ! grep -q 'refused' "$OUT" && ! ready_at "$D"; then ok 'adopt answered n: neutral "Not adopted" line, no red refusal'; else ko 'adopt n: wrong ending'; fi
+D="$WORK/ux-val"; mk_comp "$D"; git --git-dir="$D/.loomy/ai.git" config remote.origin.url './my evil.git'
+pty_adopt y "$D" >"$OUT" 2>&1; rc=$?
+if (( rc != 0 )) && grep -q 'my evil.git' "$OUT" && ! grep -q '(remote.origin.url)' "$OUT" && grep -q 'set-url origin' "$OUT" && grep -q 'loomy privacy adopt' "$OUT"; then ok 'local remote refusal shows the escaped value and a short remedy'; else ko 'local remote refusal: value or remedy missing'; fi
+
 # ── 4. blobless partial clone: user-variant helpers keep lazy fetch (worktree add, checkout) ──
 cd "$WORK" || exit 1
 git init -q -b main plsrc && printf 'one\n' >plsrc/f && git -C plsrc add f && git -C plsrc commit -qm one && git -C plsrc config uploadpack.allowFilter true && git -C plsrc config uploadpack.allowAnySHA1InWant true

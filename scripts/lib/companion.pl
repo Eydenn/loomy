@@ -144,7 +144,7 @@ if ($cmd eq 'scan') {
         my $isl = $v =~ m{\A(?:/|\./|\.\./|file://)}i ? 1 : 0;
         # Adopt: an ssh or scp-like remote that points back at this machine would run a shipped repository's hooks through the user's
         # own sshd, exactly like a local path. (Remotes Loomy records itself through `private --remote` are not affected.)
-        if ($strict && !$isl) { my $h = remote_host($v); if (defined $h && self_host($h)) { $local_bad = 1; $skip = 1; $ok = 0; print "P\tlocal_host\t", esc("remote.$sub.$var"), "\n" } }
+        if ($strict && !$isl) { my $h = remote_host($v); if (defined $h && self_host($h)) { $local_bad = 1; $skip = 1; $ok = 0; print "P\tlocal_host\t", esc($v), "\n" } }
         my $lp = $v; $lp =~ s{\Afile://}{}i if $isl;
         # Local paths may hold spaces and valid UTF-8 (no controls, no bidi controls); network URLs are printable ASCII only.
         $ok = 0 if $v =~ /\A-/ || $v =~ /::/ || $v =~ /\A(?:ext|fd)\b/i || ($isl ? ($lp eq '' || esc($lp) ne $lp) : $v !~ /\A[\x21-\x7e]+\z/);
@@ -152,7 +152,7 @@ if ($cmd eq 'scan') {
         if ($ok && $isl) {
           $local = 1;
           my $why = local_problem($v, $lp, \@roots);
-          if ($why) { $ok = 0; $skip = 1; $local_bad = 1; print "P\t$why\t", esc("remote.$sub.$var"), "\n" } else { my $en = rentry($lp); $rent{$lp} = $en if defined $en }
+          if ($why) { $ok = 0; $skip = 1; $local_bad = 1; print "P\t$why\t", esc($v), "\n" } else { my $en = rentry($lp); $rent{$lp} = $en if defined $en }
         }
         push @u, [$sub, $var, $v] if $ok || $isl;
         if ($var eq 'url') { push @{ $urls{$sub} }, $v } else { push @{ $pushes{$sub} }, $v }

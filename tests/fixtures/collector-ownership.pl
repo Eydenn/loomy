@@ -695,6 +695,13 @@ sub commit_all {my ($root)=@_; git($root,'-c','user.name=F','-c','user.email=f@e
             my $ro="$work/statero".++$pn; make_path($ro,{mode=>0700}); chmod 0500,$ro; $d=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$q,'--fix'],env=>{XDG_STATE_HOME=>"$ro/state"}); chmod 0700,$ro;
             like($d->{all},qr/Could not move the shipped files/,'LR8-3 a read-only state folder: failure line'); like($d->{all},qr/\Q$ro\E\/state/,'LR8-3 naming the real state folder (XDG_STATE_HOME)');
             like(`git -C '$q' ls-files .loomy/logs`,qr/content-policy\.conf/,'LR8-3 and the history untrack leaves .loomy/logs alone'); }
+        # LR8-4: the consent record goes with the quarantined policy; an unsafe config folder is named by doctor.
+        { my $r4=project(1); put("$r4/.loomy/logs/content-policy.conf",$granting); chmod 0600,"$r4/.loomy/logs/content-policy.conf"; $rec->($r4); like($pol->($r4),$on,'LR8-4 recorded policy trusted before the fix');
+          my $ent="$ENV{XDG_CONFIG_HOME}/loomy/policies/".sha256_hex($r4); ok(-e $ent,'LR8-4 its entry exists');
+          run(['bash','-c','source "$1/scripts/lib/journal.sh"; ai_journal_prepare "$2"','_',$repo,$r4]); like($pol->($r4),$on,'LR8-4 the journal preparation (it used to chmod every file) keeps the record valid');
+          git($r4,'add','-f','.loomy/logs/content-policy.conf'); commit_all($r4); sleep 2.2; run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r4,'--fix']); ok(!-e $ent,'LR8-4 doctor --fix drops the consent record with the quarantined policy');
+          my $g="$work/cfgdoc".++$pn; make_path($g,{mode=>0700}); chmod 0775,$g; my $dd=run(['bash',"$repo/scripts/loomy-doctor.sh",'--root',$r4],env=>{XDG_CONFIG_HOME=>$g});
+          like($dd->{all},qr/Unsafe content directory/,'LR8-4 doctor names a group-writable config folder'); like($dd->{all},qr/\Q$g\E/,'LR8-4 with its path'); }
     }
     {   # LR6 doctor --fix: update-index removes exact entries, also on MM state, and never descendants of a D/F hit.
         my $x=project(1); codex_source($x); status($x); put("$x/.loomy/logs/codex-native.idx","{}\n"); git($x,'add','-f','.loomy/logs/codex-native.idx'); commit_all($x);

@@ -265,14 +265,19 @@ sub _atomic {
         print {$h} $bytes or die "content write failed\n";
         $h->flush && $h->sync or die "content write failed\n";
         my $written=[stat($h)];
-        # The consent record first (the temp file's inode is the policy's after the rename): a policy is never left unrecorded.
-        Loomy::PolicyRecord::record($ctx->{root},$written->[0],$written->[1],sha256_hex($bytes)) if $name eq $POLICY;
         close $h or die "content write failed\n";
         _assert_context($ctx);
         die "content file changed\n" unless _same($written,_private_stat($tmp));
         die "content file changed\n" unless _same_or_absent($before,_private_stat($name));
-        rename $tmp,$name or die "content write failed\n"; 1;
-    }; my $err=$@; close $h if defined(fileno($h)); unlink $tmp unless $ok; die $err unless $ok;
+        rename $tmp,$name or die "content write failed\n";
+        # The consent record after the rename, keyed on the final file (inode and change time, taken now) and its content: a
+        # byte-identical file landing on a reused inode cannot match. Before the record exists, or if this fails, the policy is
+        # absent (consent asked again): fail closed.
+        if ($name eq $POLICY) {
+            my @f=stat($name); die "content write failed\n" unless @f;
+            Loomy::PolicyRecord::record($ctx->{root},Loomy::PolicyRecord::_id(@f),sha256_hex($bytes));
+        }
+        1;    }; my $err=$@; close $h if defined(fileno($h)); unlink $tmp unless $ok; die $err unless $ok;
 }
 sub _same_or_absent { return !@{$_[0]} && !@{$_[1]} || _same(@_) }
 sub _random {
@@ -312,7 +317,7 @@ sub _stored {
             # ADR-0012: a policy is a consent, trusted only when this machine's Loomy wrote it (user-owned record: same
             # root, inode and content). Any other file, whatever its layout, reads as absent; its stat is kept so that
             # a writer replaces it atomically.
-            if (defined($raw) && !Loomy::PolicyRecord::trusted_read($ctx->{root},$stat,$raw)) {$unverified=1; $p=defaults()}
+            if (defined($raw) && !Loomy::PolicyRecord::trusted_read($ctx->{root},$stat,$raw)) {$unverified=1; $p=defaults(); eval {Loomy::PolicyRecord::forget_if_stale($ctx->{root})}}
             else {$p=defined($raw) ? parse_policy($raw) : defaults()}
             1};
         return {policy=>$p,source=>(defined($raw) && !$unverified) ? 'project' : 'default',valid=>1,stat=>$stat,($unverified ? (unverified=>1) : ())} if $ok;

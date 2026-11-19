@@ -150,8 +150,8 @@ is((stat($lock))[2]&0777,0600,'new lock is private');
         my $s=$read_stat->(@_);
         if ($_[0] eq 'content-policy.conf' && !$swapped++) {
             put("$a/.loomy/logs/replacement",conf(policy_generation=>21,results_max_records=>199));
-            Loomy::PolicyRecord::record_file($a,"$a/.loomy/logs/replacement");   # what a real writer does before the rename
             rename "$a/.loomy/logs/replacement","$a/.loomy/logs/content-policy.conf" or die $!;
+            Loomy::PolicyRecord::record_file($a);   # what a real writer does right after the rename
         }
         return $s;
     };
@@ -694,6 +694,25 @@ ok(!exists($path->{cwd_relative}),'legacy path cannot escape project');
     is(policy($a)->{private_results},'on','LR8 untracked again: the project policy is read');
     ok(eval {Loomy::ContentPolicy::change_policy($a,{label_max_graphemes=>10}); 1},'LR8 and the writer works');
 }
+{   # LR8-4: the consent record is bound to the final file (inode and change time), pruned when stale, and its folders are private.
+    my $a=project('record-ctime'); seed($a,label_sources=>'claude-description',grant_prompt_version=>1); my $f="$a/.loomy/logs/content-policy.conf";
+    is(policy($a)->{label_sources},'claude-description','LR8-4 a recorded policy is trusted');
+    my $cfg=$ENV{XDG_CONFIG_HOME}; my @rec=glob("$cfg/loomy/policies/[0-9a-f]*"); ok(scalar(grep {bytes($_) =~ /\Av2\n\d+:\d+:\d+\.\d+\n[0-9a-f]{64}\n\z/} @rec)>=1,'LR8-4 the entry holds device:inode:ctime and the content hash (v2)');
+    { my @s=stat($f); sleep 1.1; chmod 0600,$f; utime($s[8],$s[9],$f); }   # same inode, same bytes, new change time: what a byte-identical file on a reused inode looks like
+    is(policy($a)->{label_sources},'none','LR8-4 same inode and content but a different change time is not trusted');
+    my $n=Digest::SHA::sha256_hex(Cwd::abs_path($a)); ok(!-e "$cfg/loomy/policies/$n",'LR8-4 the stale entry is pruned once a reader sees the mismatch');
+    seed($a,label_sources=>'claude-description'); ok(-e "$cfg/loomy/policies/$n",'LR8-4 recorded again'); unlink $f; Loomy::PolicyRecord::forget($a); ok(!-e "$cfg/loomy/policies/$n",'LR8-4 the entry is dropped when the policy file is gone');
+    # A failed record leaves no temp file and the policy absent (fail closed).
+    my $b=project('record-fail'); my $gw="$work/cfg-gw"; make_path($gw,{mode=>0700}); chmod 0775,$gw;
+    { local $ENV{XDG_CONFIG_HOME}=$gw; my $ok=eval {Loomy::ContentPolicy::change_policy($b,{label_max_graphemes=>10}); 1}; ok(!$ok,'LR8-4 a write whose record cannot be made fails');
+      is(scalar(grep {/\/\.content-policy\.conf\./} glob("$b/.loomy/logs/.*")),0,'LR8-4 and leaves no temp file'); is(policy($b)->{label_max_graphemes},96,'LR8-4 and the unrecorded policy is not trusted');
+      is(Loomy::PolicyRecord::unsafe_base(),$gw,'LR8-4 doctor can name the group-writable config folder'); ok(!-e "$gw/loomy",'LR8-4 nothing is created in it'); }
+    # Levels: symlinked loomy level refused, loosened level of ours tightened, a symlinked base to our own directory accepted.
+    my $c1="$work/cfg-l1"; make_path("$c1/real"); symlink("$c1/real","$c1/loomy"); { local $ENV{XDG_CONFIG_HOME}=$c1; ok(!eval {Loomy::PolicyRecord::record($a,'1:2:3.000000',('a' x 64)); 1},'LR8-4 a symlinked loomy level is refused'); }
+    my $c2="$work/cfg-l2"; make_path("$c2/loomy/policies",{mode=>0775}); chmod 0775,"$c2/loomy","$c2/loomy/policies"; chmod 0755,$c2;
+    { local $ENV{XDG_CONFIG_HOME}=$c2; ok(eval {Loomy::PolicyRecord::record($a,'1:2:3.000000',('a' x 64)); 1},'LR8-4 a level of ours created group-writable is used'); is(((stat "$c2/loomy")[2]&07777),0700,'LR8-4 and tightened to 0700'); is(((stat "$c2/loomy/policies")[2]&07777),0700,'LR8-4 (policies)'); }
+    my $c3="$work/cfg-real3"; make_path($c3,{mode=>0700}); symlink($c3,"$work/cfg-link3"); { local $ENV{XDG_CONFIG_HOME}="$work/cfg-link3"; ok(eval {Loomy::PolicyRecord::record($a,'1:2:3.000000',('a' x 64)); 1},'LR8-4 a base that is a symlink to our own directory is accepted'); }
+}
 done_testing();
 PERL
 perl "$WORK/unit.pl" "$REPO" "$WORK"
@@ -1069,9 +1088,11 @@ cp "$work/hint-calls" "$work/hint-calls-before"
 for ((i=0; i<200; i++)); do loomy_content_hint_refresh "$root" "$LOOMY_CONTENT_HINT_SIGNATURE"; done
 cmp "$work/hint-calls-before" "$work/hint-calls"
 command perl -MTime::HiRes=stat,utime -e 'my $f=$ARGV[0]; my $s=int((stat($f))[9]); utime($s+0.1,$s+0.1,$f)' "$root/.loomy/logs/content-policy.conf"
+command perl "$repo/scripts/lib/policy-record.pl" record "$root"   # a touch changes the change time: the record is refreshed as a Loomy write would
 loomy_content_hint_refresh "$root" "$(content_sig)"
 [[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 3 ]]
 command perl -MTime::HiRes=stat,utime -e 'my $f=$ARGV[0]; my $s=int((stat($f))[9]); utime($s+0.2,$s+0.2,$f)' "$root/.loomy/logs/content-policy.conf"
+command perl "$repo/scripts/lib/policy-record.pl" record "$root"   # a touch changes the change time: the record is refreshed as a Loomy write would
 loomy_content_hint_refresh "$root" "$(content_sig)"
 [[ "$(grep -c '^perl$' "$work/hint-calls" || true)" == 4 ]]
 printf 'display context full; label not saved\n' >"$root/.loomy/logs/display-context-full"

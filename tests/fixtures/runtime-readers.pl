@@ -457,8 +457,8 @@ for my $identity (0,1) {
                 $reads++;
                 unless ($swapped) {
                     put("$atomic/.loomy/logs/replacement",policy_bytes(policy_generation=>21,results_max_records=>199));
-                    Loomy::PolicyRecord::record_file($atomic,"$atomic/.loomy/logs/replacement");   # what a real writer does before the rename
                     rename "$atomic/.loomy/logs/replacement",$path or die;
+                    Loomy::PolicyRecord::record_file($atomic);   # what a real writer does right after the rename
                     $swapped=1;
                 }
             }

@@ -299,6 +299,7 @@ loomy_doctor_content() {
       ($state,$policy,$health)=(defined($unsafe) ? "unsafe" : "invalid",Loomy::ContentPolicy::defaults(),"unavailable");
       $path=$unsafe if defined $unsafe;
     }
+    if (my $bad=Loomy::PolicyRecord::unsafe_base()) { ($state,$policy,$path)=("unsafe",Loomy::ContentPolicy::defaults(),$bad) }   # the consent record folder is not private: no policy is trusted
     my $display=Loomy::ContentPolicy::display_path($path);
     $display=Loomy::ContentPolicy::_encode_utf8($display) if utf8::is_utf8($display);
     print join("\t",$state,$display,@{$policy}{qw(journal_content label_sources private_results policy_generation)},$health),"\n";

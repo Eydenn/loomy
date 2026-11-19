@@ -468,7 +468,7 @@ AI_TITLE_PERL='use utf8;
 # JSON labels are already sanitized and clipped in Perl. Decode only this new
 # field for awk consumers, preserving the historical parser for legacy tasks.
 AI_DISPLAY_FIELD_AWK='
-function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); gsub(/\302[\200-\237]/, " ", v); return v }
+function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); return v }   # C1 controls are stripped upstream (event-schema.pl); gawk in UTF-8 also counts them as [[:cntrl:]], and a byte class is an invalid collation range there
 function display_task(   v,i,c,out) {
   if (!match($0, /"display_task":"([^"\\]|\\.)*"/)) return ""
   v=substr($0,RSTART+16,RLENGTH-17); out=""

@@ -607,7 +607,12 @@ watch_terminal_tests() {
   printf -- '---\nname: Watch regression\nai_mode: ORCHESTRATED\nai_lead: codex\nbudget: equilibre\n---\n' >"$wt/project/.loomy/brief.md"
   printf 'phase=done\n' >"$wt/project/.loomy/state"
   # A plain terminal (CI, no agent ancestor) would otherwise open the first-use screen before any frame.
+  # The consent record (ADR-0012) is read from the config folder of the process that needs it: record the decline in the
+  # folder the watch matrix passes as XDG_CONFIG_HOME, not in the suite's own (a Mac run under an agent never shows the
+  # first-use screen; a plain Linux terminal does, and the footer is never drawn).
+  local suite_config="${XDG_CONFIG_HOME:-}"; export XDG_CONFIG_HOME="$wt/config"
   run "watch PTY: human first-use No" test_content_decline "$REPO" "$wt/project"
+  if [[ -n "$suite_config" ]]; then export XDG_CONFIG_HOME="$suite_config"; else unset XDG_CONFIG_HOME; fi
   nowz="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf '{"ts":"%s","type":"session","event":"start","tool":"codex","session":"watch-test","pid":%s,"model":"gpt-6.2-sol","effort":"high"}\n' "$nowz" "$$" >"$wt/project/.loomy/logs/events.jsonl"
   printf '{"ts":"%s","type":"delegation_start","id":"run","session":"watch-test","pid":%s,"role":"developer","family":"codex","model":"gpt-6-luna","effort":"low","task":"Fix watch"}\n' "$nowz" "$$" >>"$wt/project/.loomy/logs/events.jsonl"

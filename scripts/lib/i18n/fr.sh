@@ -2634,5 +2634,7 @@ _t_fr() {
     'local remote refused: not a git directory by itself (needs HEAD, objects, refs; no .git inside, no sibling .git) (%s)') _T='dépôt distant local refusé : ce n'\''est pas un dépôt git à lui seul (il faut HEAD, objects, refs ; pas de .git dedans, pas de .git voisin) (%s)' ;;
     'local remote refused: contains the project or its worktrees (%s)') _T='dépôt distant local refusé : contient le projet ou ses worktrees (%s)' ;;
     'remote host is this machine, so its hooks would run through your own ssh: refused (%s)') _T='hôte distant = cette machine, ses hooks passeraient par ton propre ssh : refusé (%s)' ;;
+    'Earlier privacy choices are not recorded on this machine · choose again') _T='Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · choisis à nouveau' ;;
+    'Earlier privacy choices are not recorded on this machine · run loomy privacy labels') _T='Les choix de confidentialité précédents ne sont pas enregistrés sur cette machine · lance loomy privacy labels' ;;
   esac
 }

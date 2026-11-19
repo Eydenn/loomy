@@ -273,9 +273,9 @@ sub _atomic {
         die "content file changed\n" unless _same($written,_private_stat($tmp));
         die "content file changed\n" unless _same_or_absent($before,_private_stat($name));
         rename $tmp,$name or die "content write failed\n";
-        # The consent record after the rename, keyed on the final file (inode and change time, taken now) and its content: a
-        # byte-identical file landing on a reused inode cannot match. Before the record exists, or if this fails, the policy is
-        # absent (consent asked again): fail closed.
+        # The consent record after the rename, keyed on the final file (device:inode) and the sha256 of its content, which
+        # includes the random record_nonce line: a byte-identical file landing on a reused inode cannot match. Before the
+        # record exists, or if this fails, the policy is absent (consent asked again): fail closed.
         if ($name eq $POLICY) {
             my @f=stat($name); die "content write failed\n" unless @f;
             Loomy::PolicyRecord::record($ctx->{root},Loomy::PolicyRecord::_id(@f),sha256_hex($bytes));
@@ -621,6 +621,7 @@ sub first_use {
         my $stored=_stored($c);
         return 0 unless $stored->{valid} && !$stored->{policy}{grant_prompt_version};
         my $p={%{$stored->{policy}}};
+        _say('UNVERIFIED') if $stored->{unverified};   # the choices below start from the safe defaults, never from the unrecorded file
         _say('TITLE',display_path($c->{root})); _say($p->{journal_content} eq 'structural' ? 'CLARITY' : 'CLARITY_LEGACY');
         _say($_) for qw(SOURCES SOURCES_CODEX LABEL_CAPS);
         _say('LOWER_LABEL_CAPS',@$p{qw(label_max_graphemes label_max_bytes codex_component_max_chars label_store_max_bytes)})
@@ -1351,6 +1352,7 @@ sub _cli {
         my $p=effective_policy($root);
         _say('LABEL_FULL') if label_health($root) eq 'full';
         if ($p->{gated}) {_say('GATED'); return}
+        if ($p->{unverified}) {_say('UNVERIFIED'); return}
         _say('HINT') if !$p->{grant_prompt_version} || $p->{label_sources} eq 'none'; return;
     }
     if ($cmd eq 'show') {
@@ -1373,6 +1375,7 @@ sub _cli {
         my %source=(default=>'DEFAULT_SOURCE',project=>'PROJECT_SOURCE',environment=>'ENV_SOURCE',
             'environment-denied'=>'DENIED_SOURCE','tasks-veto'=>'VETO_SOURCE');
         _say('GATED') if $p->{gated};   # the grants read as absent: say why, with the remedy
+        _say('UNVERIFIED') if $p->{unverified};   # a policy this machine did not record (0.17.9, moved project, hand edit): ignored, say so
         _say('POLICY_STATE',$ENV{'LOOMY_CONTENT_UI_'.$source{$p->{source}}},$p->{policy_generation});
         _say('OLD_COPIES');
         if ($cmd eq 'results') { _say('RESULT_FACTS'); }

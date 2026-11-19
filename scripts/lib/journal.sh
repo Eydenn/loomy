@@ -295,8 +295,9 @@ ai_journal_canonical() {
   perl -MJSON::PP -e '
     require $ENV{AI_EVENT_SCHEMA_LIB};
     my (@events,%native,%alias,%seen,%terminal,%owners,%lifetimes);
-    # Every event leaves here with schema-valid identifiers, timestamps and numbers (changed ones are re-encoded).
-    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; my $raw=$_; $raw=Loomy::EventSchema::encode($e)."\n" if Loomy::EventSchema::clean_event($e); push @events,[$raw,$e];
+    # Every event leaves here as the schema-checked, re-encoded line: the raw input is never passed through (duplicate
+    # keys, nested objects and escapes would reach the awk readers).
+    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; Loomy::EventSchema::clean_event($e); push @events,[Loomy::EventSchema::encode($e)."\n",$e];
       my $pid=$e->{owner_pid}//$e->{pid};
       $owners{$e->{id}}=($e->{tool}//$e->{family}//"")."|$pid" if $e->{id} && defined($pid) && !ref($pid) && $pid =~ /^\d+$/ && $pid>1;
       $native{($e->{session}//"")."|".($e->{turn_id}//"")}=1 if ($e->{bridge}//"") eq "claude-native" && $e->{turn_id};

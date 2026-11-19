@@ -568,7 +568,7 @@ sub poll_locked {
                 {%$b,state=>$c->{state}}) if $c->{started} && !$c->{ended};
             {
                 my $duration=$c->{started} && ($c->{status}//'') ne 'interrupted' ? epoch($c->{ended})-epoch($c->{started}) : undef;
-                $emit->("end:$turn",'delegation',$c->{ended},{%$b,status=>$c->{status},outcome=>$c->{outcome},(defined $duration ? (duration_s=>$duration) : ())}) if $c->{ended};
+                $emit->("end:$turn",'delegation',$c->{ended},{%$b,status=>$c->{status},outcome=>$c->{outcome},(defined $duration ? (duration_s=>0+sprintf('%.3f',$duration)) : ())}) if $c->{ended};
             }
         }
     }

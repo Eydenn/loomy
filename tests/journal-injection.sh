@@ -147,6 +147,47 @@ check "watch tree diagram (spaces, advisor configured)" bash "$WORK/watch-view.s
 if grep -q 'opus' "$WORK/out.txt"; then ok "the watch tree shows the advisor line"; else ko "the watch tree lost the advisor line"; fi
 check "watch tree list (spaces)" bash "$WORK/watch-view.sh" "$REPO" "$P" list
 
+# ---- LR9-3: the schema chokepoint never passes raw text through. Duplicate keys (a JSON decoder keeps the last, awk
+# the first), nested objects and raw C1 bytes inside strings all used to reach the awk readers unchanged.
+hostile_journal3() {
+  local ts="$NOW" pid="$SLEEPER" c1; c1="$(printf 'a\xc2\x9bb')"
+  plant \
+   "{\"type\":\"phase\",\"phase\":\"brief\",\"ts\":\"2026-11-01T00:00:00Z\"}" \
+   "{\"type\":\"phase\",\"phase\":\"done\",\"ts\":\"2026-11-01T01:00:00Z $(sp dupts)\",\"ts\":\"2026-11-01T01:00:00Z\"}" \
+   "{\"type\":\"delegation\",\"id\":\"q1\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"$(sp dupmodel)\",\"status\":\"ok\",\"tokens_in\":5,\"model\":\"valid-model\",\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"q2\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"a\":{\"model\":\"$(sp nested)\",\"ts\":\"$ts $(sp nestts)\",\"b\":{\"model\":\"$(sp deep)\"}},\"l\":[{\"model\":\"$(sp inarr)\"}],\"model\":\"nested-model\",\"status\":\"ok\",\"tokens_in\":7,\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"q3\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"$c1\",\"status\":\"ok\",\"tokens_in\":9,\"task\":\"t $c1\",\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"q4\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"m4\",\"status\":\"ok\",\"tokens_in\":9,\"task\":\"t\",\"ts\":\"$c1 $ts\"}" \
+   "{\"type\":\"usage\",\"scope\":\"lead\",\"tool\":\"claude\",\"model\":\"$(sp usage2)\",\"model\":\"claude-opus-5-5\",\"messages\":2,\"ts\":\"$ts\"}"
+}
+hostile_journal3
+printf 'phase=done\nupdated=2026-11-01 01:00\n' >.loomy/state
+check "status (duplicate keys, nested objects, raw C1)" bash "$L" status
+check "status --compact (duplicate keys, nested objects, raw C1)" bash "$L" status --compact
+check "tree --once (duplicate keys, nested objects, raw C1)" bash "$L" tree --once
+check "stats (duplicate keys, nested objects, raw C1)" bash "$L" stats
+check "log (duplicate keys, nested objects, raw C1)" bash "$L" log -n 50
+check "report (duplicate keys, nested objects, raw C1)" bash "$L" report
+check "watch status view (duplicate keys, nested objects, raw C1)" bash "$WORK/watch-view.sh" "$REPO" "$P" status
+( cd "$P" && bash "$L" status >"$WORK/out2.txt" 2>&1 </dev/null )
+if grep -q 'valid-model' "$WORK/out2.txt"; then ok "status keeps the last (valid) value of a duplicated model key"; else ko "status lost the valid model of a duplicated key"; fi
+# Numbers stay numbers through the re-encoding (readers match "duration_s":12 and cost_usd digits).
+plant "{\"type\":\"delegation\",\"id\":\"n1\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"mn\",\"status\":\"ok\",\"duration_s\":12,\"tokens_in\":\"7\",\"cost_usd\":0.000010,\"ts\":\"$NOW\"}"
+if bash -c "source '$REPO/scripts/lib/journal.sh'; ai_journal_canonical <'$P/$J'" 2>/dev/null | grep -q '"cost_usd":0.00001,.*"duration_s":12,'; then ok "canonical keeps numbers as numbers (duration_s, small cost_usd)"; else ko "canonical changed the number format"; fi
+if bash -c "source '$REPO/scripts/lib/journal.sh'; ai_journal_canonical <'$P/$J'" 2>/dev/null | grep -q '"tokens_in":7'; then ok "canonical writes a numeric string field as a number"; else ko "canonical left tokens_in quoted"; fi
+# Real durations carry many decimals (Claude hooks write 10.1150000095367): kept, not zeroed. An empty resume_at stays
+# empty (the session log prints "until HH:MM" for a number), null stays null.
+plant "{\"type\":\"delegation\",\"id\":\"n2\",\"bridge\":\"claude-native\",\"family\":\"claude\",\"role\":\"developer\",\"model\":\"mn\",\"status\":\"paused\",\"duration_s\":10.1150000095367,\"resume_at\":\"\",\"ts\":\"$NOW\"}" \
+  "{\"type\":\"lead_failover\",\"master\":\"claude\",\"acting\":\"codex\",\"resume_at\":null,\"ts\":\"$NOW\"}" \
+  "{\"type\":\"delegation\",\"id\":\"n3\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"mn\",\"status\":\"paused\",\"duration_s\":1,\"resume_at\":\"-5\",\"ts\":\"$NOW\"}"
+CANON="$(bash -c "source '$REPO/scripts/lib/journal.sh'; ai_journal_canonical <'$P/$J'" 2>/dev/null)"
+if printf '%s\n' "$CANON" | grep -q '"duration_s":10.1150000095367'; then ok "a 13-decimal duration survives the schema"; else ko "the schema changed a 13-decimal duration"; fi
+if printf '%s\n' "$CANON" | grep -q '"resume_at":"",'; then ok "an empty resume_at stays empty"; else ko "an empty resume_at was rewritten"; fi
+if printf '%s\n' "$CANON" | grep -q '"resume_at":null'; then ok "a null resume_at stays null"; else ko "a null resume_at was rewritten"; fi
+if printf '%s\n' "$CANON" | grep 'n3' | grep -q '"resume_at":"",'; then ok "an invalid resume_at becomes empty, not epoch 0"; else ko "an invalid resume_at was kept or zeroed"; fi
+check "tree --once (empty resume_at)" bash "$L" tree --once
+if grep -q 'until' "$WORK/out.txt"; then ko "an empty resume_at printed an until-time"; else ok "an empty resume_at prints no until-time"; fi
+
 # The reported case: the task text ends the line, its last field was evaluated as arithmetic.
 plant "{\"type\":\"delegation_start\",\"id\":\"d4\",\"pid\":$SLEEPER,\"bridge\":\"codex\",\"role\":\"architect\",\"family\":\"codex\",\"model\":\"m\",\"task\":\"x|$(m reported)\",\"ts\":\"$NOW\"}"
 check "status (reported single line)" bash "$L" status

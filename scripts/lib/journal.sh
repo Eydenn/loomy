@@ -360,13 +360,16 @@ ai_usage_record() {
     }
     END { for (m in c) print m, i[m], f[m], h[m], r[m], o[m], c[m]
           for (m in an) print "ADVISOR", m, ain[m], aout[m], an[m] }' | while read -r model tin tw5 tw1 tcr tout n; do
+      # Transcript lines are data: a model name with a space would shift the columns into arithmetic.
       if [[ "$model" == "ADVISOR" ]]; then
+        [[ "$tw5" =~ ^[0-9]+$ && "$tw1" =~ ^[0-9]+$ && "$tcr" =~ ^[0-9]+$ ]] || continue
         # here: tin = advisor model, tw5 = input tokens, tw1 = output tokens, tcr = consultations
         price="$(ai_price "$tin")"; cost=""
         [[ -n "$price" ]] && cost="$(awk -v p="$price" -v a="$tw5" -v o="$tw1" 'BEGIN { split(p, q, " "); printf "%.6f", (a * q[1] + o * q[2]) / 1000000 }')"
         ai_journal_write "$root" "\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"$scope\",\"model\":\"$tin\",\"calls\":$tcr,\"tokens_in\":$tw5,\"tokens_cached\":0,\"tokens_out\":$tw1,\"cost_usd\":${cost:-0},\"cost_source\":\"estimate\""
         continue
       fi
+      [[ "$tin" =~ ^[0-9]+$ && "$tw5" =~ ^[0-9]+$ && "$tw1" =~ ^[0-9]+$ && "$tcr" =~ ^[0-9]+$ && "$tout" =~ ^[0-9]+$ && "$n" =~ ^[0-9]+$ ]] || continue
       price=""
       if [[ "$model" == *@long ]]; then model="${model%@long}"; price="$(ai_price_long "$model" | cut -d' ' -f2-)"; fi
       [[ -n "$price" ]] || price="$(ai_price "$model")"
@@ -430,6 +433,19 @@ ai_json_num() {
   echo "${v:-0}"
 }
 
+# ai_uint <variable name>: runtime files and journals are untrusted input, and Bash evaluates a variable's text
+# as an arithmetic expression ((( )), $(( )), [[ -gt ]], array subscripts: a[$(cmd)] runs cmd). Every number read
+# from a runtime file goes through here before any arithmetic: digits only (at most 12, normalized to decimal),
+# anything else becomes 0.
+ai_uint() {
+  local __ai_v="${!1-}"
+  if [[ "$__ai_v" =~ ^[0-9]{1,12}$ ]]; then printf -v "$1" '%s' "$(( 10#$__ai_v ))"; else printf -v "$1" '%s' 0; fi
+}
+# ai_pid_ok <value>: a positive process id (more than 1), safe for kill -0 (0 and negatives address groups).
+ai_pid_ok() { [[ "${1-}" =~ ^[0-9]{1,12}$ ]] && (( 10#$1 > 1 )); }
+# ai_ctl_strip: stdin without control characters (the terminal never sees an escape from a runtime file).
+ai_ctl_strip() { LC_ALL=C tr -d '\000-\037\177'; }
+
 # ai_task_excerpt <text>: task excerpt for the log (200 characters), empty when LOOMY_JOURNAL_TASKS=0.
 ai_task_excerpt() {
   local excerpt_root="${2:-${ROOT:-${root:-}}}"
@@ -458,6 +474,7 @@ AI_TITLE_PERL='use utf8;
 # JSON labels are already sanitized and clipped in Perl. Decode only this new
 # field for awk consumers, preserving the historical parser for legacy tasks.
 AI_DISPLAY_FIELD_AWK='
+function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); return v }
 function display_task(   v,i,c,out) {
   if (!match($0, /"display_task":"([^"\\]|\\.)*"/)) return ""
   v=substr($0,RSTART+16,RLENGTH-17); out=""
@@ -466,7 +483,7 @@ function display_task(   v,i,c,out) {
     if (c=="\\") {i++; c=substr(v,i,1); if (c ~ /^[nrtbf]$/) c=" "}
     out=out c
   }
-  return out
+  return ctl(out)
 }
 '
 
@@ -926,23 +943,26 @@ ai_session_state() {
   local j line pid ts tool state="none" s hhmm
   j="$(ai_journal_file "$1")"
   [[ -s "$j" ]] || { echo "none"; return 0; }
-  while IFS='|' read -r kind pid ts tool; do
+  # US (0x1f) separates the fields and the awk keeps only plain characters in the text ones: journal text can
+  # neither shift the columns nor reach arithmetic or the terminal; the pid is validated here.
+  while IFS=$'\037' read -r kind pid ts tool; do
     [[ -n "$kind" ]] || continue
     if [[ "$kind" == "open" ]]; then
-      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then state="open|$ts|$tool"; break; fi
+      if ai_pid_ok "$pid" && kill -0 "$pid" 2>/dev/null; then state="open|$ts|$tool"; break; fi
     elif [[ "$state" == "none" ]]; then state="closed|$ts|$tool"; fi
   done < <(awk '
-    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+    function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/[^A-Za-z0-9_.:+ -]/, "", v); return v } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
+    BEGIN { US = "\037" }
     /"type":"session"/ {
       key = field("session"); if (key == "") key = "pid" num("pid")
       # A resumed session (claude --continue) keeps its id: a new start cancels the previous end.
-      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") "|" field("ts") "|" field("tool"); delete ended[key] }
-      else { ended[key] = field("ts") "|" field("tool"); last_end = field("ts") "|" field("tool") }
+      if (index($0, "\"event\":\"start\"")) { n++; order[n] = key; start[key] = num("pid") US field("ts") US field("tool"); delete ended[key] }
+      else { ended[key] = field("ts") US field("tool"); last_end = field("ts") US field("tool") }
     }
     END {
-      for (i = n; i >= 1 && i > n - 10; i--) if (!(order[i] in ended)) print "open|" start[order[i]]
-      if (last_end != "") print "end||" last_end
+      for (i = n; i >= 1 && i > n - 10; i--) if (!(order[i] in ended)) print "open" US start[order[i]]
+      if (last_end != "") print "end" US US last_end
     }' "$j" 2>/dev/null)
   [[ "$state" == "none" ]] && { echo "none"; return 0; }
   ts="$(printf '%s' "$state" | cut -d'|' -f2)"

@@ -33,7 +33,7 @@ loomy_phase_label() {
     retire) t "Wrap-up"; echo ;; done) t "Done"; echo ;;
     scope) t "Scope"; echo ;; analyze) t "Analysis"; echo ;; validate) t "Validation of findings"; echo ;;
     report) t "Report"; echo ;; fix) t "Fixes"; echo ;;
-    plan) if [[ "$LOOMY_PHASE_MODE" == "task" ]]; then t "Plan"; echo; else t "Fix plan"; echo; fi ;; "") t "Not started"; echo ;; *) echo "$1" ;;
+    plan) if [[ "$LOOMY_PHASE_MODE" == "task" ]]; then t "Plan"; echo; else t "Fix plan"; echo; fi ;; "") t "Not started"; echo ;; *) printf '%s\n' "$1" | LC_ALL=C tr -d '\000-\037\177' ;;
   esac
 }
 

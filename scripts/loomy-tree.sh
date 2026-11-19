@@ -67,9 +67,11 @@ loomy_native_accept() {
     T) for (( i=${#NS_T[@]}-1; i>=0; i-- )); do [[ "${NS_T[i]}" != "N|T|$key|"* ]] || { found=$i; break; }; done
        if (( found < 0 )); then
          loomy_native_read "$line" _ _ _ _ _ _ _ _ ended _
+         ai_uint ended
          i=${#NS_T[@]}
          while (( i > 0 )); do
            loomy_native_read "${NS_T[i-1]}" _ _ _ _ _ _ _ _ prior_end _
+           ai_uint prior_end
            (( ${ended:-0} > ${prior_end:-0} )) || break
            NS_T[i]="${NS_T[i-1]}"; i=$(( i - 1 ))
          done
@@ -878,6 +880,8 @@ loomy_live_accept() {
       SELECT) LV_SELECTION="$ts"; LV_SELECTED_SEQ="$id"; continue ;;
     esac
     LV_SEQ=$(( LV_SEQ + 1 ))
+    # Journal fields are untrusted: numbers are digits or 0 before any arithmetic.
+    ai_uint cost
     for (( i=0; i<${#LV_ID[@]}; i++ )); do
       [[ -z "$sid" || "${LV_SID[i]:-}" == "$sid" ]] || continue
       attributed=0
@@ -1098,7 +1102,11 @@ loomy_live_poll() {
       $d->{duration_s}//="—" if ($d->{bridge}//"") eq "codex-native" && $d->{type} eq "delegation";
       $d->{requested}=defined $d->{requested} ? ($d->{requested}?"true":"false") : "";
       my @v=($d->{type}//"",$ep//0,map { defined $d->{$_} && !ref($d->{$_}) ? $d->{$_} : "" } qw(id event session pid tool role model effort task status duration_s cost_usd outcome excerpt requested off_routing bridge cost_in scope agent_id activity context_freshness resume_at display_role display_fallback));
-      for (@v) { s/[\x00-\x1f|]/ /g } print join("|",@v),"\n";
+      for (@v) { s/[\x00-\x1f\x7f|]/ /g }
+      # Numeric columns (pid, duration, cost, resume_at): digits only, or empty.
+      for my $i (5,13,24) { $v[$i]="" unless $v[$i] =~ /\A\d{1,12}\z/ }
+      $v[12]="" unless $v[12] =~ /\A(?:\d{1,12}(?:\.\d{1,6})?|—)\z/;
+      print join("|",@v),"\n";
     }
     print "OFFSET|$k|$pos\n";
   ' "$file" "$LV_FILE_KEY" "$LV_OFFSET" "${LV_SELECTION:-}" "${AI_LEAD:-}" 2>/dev/null)

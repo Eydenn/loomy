@@ -203,8 +203,8 @@ if [[ -z "$HOOK" || "$HOOK" == "start" ]] && [[ -z "${LOOMY_NO_REPAIR:-}" ]]; th
 
 # ---------------------------------------------------------------- contexte
 brief() { _ai_brief_get "$ROOT/.loomy/brief.md" "$1"; }
-PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
-UPDATED="$(sed -n 's/^updated=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 || true)"
+PHASE="$(sed -n 's/^phase=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 | ai_ctl_strip || true)"
+UPDATED="$(sed -n 's/^updated=//p' "$ROOT/.loomy/state" 2>/dev/null | head -1 | ai_ctl_strip || true)"
 [[ -z "$PHASE" && ! -f "$ROOT/START.md" ]] && PHASE="done"
 [[ -z "$PHASE" ]] && PHASE="brief"
 idx="$(loomy_phase_index "$PHASE")"
@@ -232,11 +232,11 @@ else
     t "- What the user needs to do now: %s" "$(loomy_phase_you "$PHASE")"; echo
   fi
 fi
-k_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/task.state" 2>/dev/null | head -1 || true)"
+k_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/task.state" 2>/dev/null | head -1 | ai_ctl_strip || true)"
 if [[ -n "$k_phase" && "$k_phase" != "done" ]]; then
-  t "- Current task #%s (%s), phase %s: plan and progress in %s. Continue it and record its phases with .loomy/scripts/loomy-status.sh --task set <phase>." "$(sed -n 's/^id=//p' "$ROOT/.loomy/task.state" | head -1)" "$(sed -n 's/^title=//p' "$ROOT/.loomy/task.state" | head -1)" "$k_phase" "$(sed -n 's/^file=//p' "$ROOT/.loomy/task.state" | head -1)"; echo
+  t "- Current task #%s (%s), phase %s: plan and progress in %s. Continue it and record its phases with .loomy/scripts/loomy-status.sh --task set <phase>." "$(sed -n 's/^id=//p' "$ROOT/.loomy/task.state" | head -1 | ai_ctl_strip)" "$(sed -n 's/^title=//p' "$ROOT/.loomy/task.state" | head -1 | ai_ctl_strip)" "$k_phase" "$(sed -n 's/^file=//p' "$ROOT/.loomy/task.state" | head -1 | ai_ctl_strip)"; echo
 fi
-a_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/audit.state" 2>/dev/null | head -1 || true)"
+a_phase="$(sed -n 's/^phase=//p' "$ROOT/.loomy/audit.state" 2>/dev/null | head -1 | ai_ctl_strip || true)"
 if [[ -n "$a_phase" && "$a_phase" != "done" ]]; then
   t "- A security audit is in progress (loomy audit, phase %s): its mission is in .loomy/audit.md; if the user is working on it, continue it and record its phases with .loomy/scripts/loomy-status.sh --audit set <phase>." "$a_phase"; echo
 fi

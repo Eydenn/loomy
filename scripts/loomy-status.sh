@@ -1002,19 +1002,23 @@ if [[ -s "$JOURNAL" ]]; then
   ui_section "$(t "ACTIVITY")"
   # Running delegations: a start without an end (a single read of the log), whose process is still running.
   now_s="$(date +%s)"
-  if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_RUNNING"; else
+  if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_RUNNING" | tr '|' '\037'; else
   ai_journal_canonical <"$JOURNAL" | ai_display_context_events "$ROOT" status | awk "$AI_DISPLAY_FIELD_AWK"'
-    function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return v } return "" }
+    function field(k,   v) { if (match($0, "\"" k "\":\"([^\"\\\\]|\\\\.)*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); gsub(/\\"/, "\"", v); return ctl(v) } return "" }
     function num(k,   v) { if (match($0, "\"" k "\":[0-9]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "" }
+    BEGIN { US = "\037" }
     /"bridge":"codex-native"/ { next }
     /"type":"delegation_start"/ { id = field("id"); order[++n] = id
-      line[id] = num("pid") "|" field("ts") "|" field("role") "|" field("model") "|" (display_task() != "" ? display_task() : substr(field("task"), 1, 60)); next }
+      line[id] = num("pid") US field("ts") US field("role") US field("model") US (display_task() != "" ? display_task() : substr(field("task"), 1, 60)); next }
     /"type":"delegation"/ { finished[field("id")] = 1; k = field("role") "|" field("model"); tot[k] += num("duration_s"); cnt[k]++ }
-    END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) { split(line[order[i]], f, "|"); k = f[3] "|" f[4]
-            print line[order[i]] "|" (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' ; fi |
-  while IFS='|' read -r pid ts role m task est; do
-    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null || continue
-    since="$(ai_ts_epoch "$ts")"
+    END { for (i = (n > 20 ? n - 19 : 1); i <= n; i++) if (!(order[i] in finished)) { split(line[order[i]], f, US); k = f[3] US f[4]
+            print line[order[i]] US (cnt[k] ? int(tot[k] / cnt[k]) : "") } }' ; fi |
+  # Fields are separated by US (0x1f); every field is stripped of control characters (US included) by the awk
+  # above, so journal text can neither shift the columns nor reach arithmetic: pid and est are validated here.
+  while IFS=$'\037' read -r pid ts role m task est; do
+    [[ "$pid" =~ ^[0-9]{1,12}$ ]] && (( 10#$pid > 1 )) && kill -0 "$pid" 2>/dev/null || continue
+    [[ "$est" =~ ^[0-9]{1,12}$ ]] || est=0
+    since="$(ai_ts_epoch "$ts")"; [[ "$since" =~ ^[0-9]{1,12}$ ]] || since=""
     # Spinner (one frame per loomy watch refresh), timer, and progress estimated from past delegations
     # of the same role on the same model.
     spin="${UI_SPIN[$(( ${LOOMY_TICK:-0} % 4 ))]}"
@@ -1132,12 +1136,17 @@ fi
     if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then n_shown=$LEGACY_COUNT; else n_shown="$(ai_journal_canonical <"$JOURNAL" | grep -c '"type":"delegation",' || true)"; fi
     (( n_shown > last_n )) && n_shown=$last_n
     row=0
-    if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_LAST" | tail -n "$last_n"; else
+    if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then printf '%s' "$LEGACY_LAST" | tail -n "$last_n" | tr '|' '\037'; else
     ai_journal_canonical <"$JOURNAL" | ai_display_context_events "$ROOT" status | grep '"type":"delegation"' | tail -"$last_n" | awk "$AI_DISPLAY_FIELD_AWK"'
-      function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return v } return "" }
+      function field(k,   v) { if (match($0, "\"" k "\":\"[^\"]*\"")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":\"", "", v); sub("\"$", "", v); return ctl(v) } return "" }
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v } return "0" }
-      { printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") (display_task() != "" ? display_task() : substr(field("task"), 1, 40)), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' ; fi |
-    while IFS='|' read -r t st role m d cost task fam tk oc bridge; do
+      { printf "%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", field("ts"), field("status"), field("role"), field("model"), num("duration_s"), num("cost_usd"), (field("failover_from") != "" ? "⇄ " : "") (display_task() != "" ? display_task() : substr(field("task"), 1, 40)), field("family"), num("tokens_in") + num("tokens_out"), field("outcome"), field("bridge") }' ; fi |
+    # Same contract as the running list above: US separator, text fields stripped of control characters by the
+    # awk, numbers validated before they can reach arithmetic or printf.
+    while IFS=$'\037' read -r t st role m d cost task fam tk oc bridge; do
+      [[ "$d" =~ ^[0-9]{1,12}(\.[0-9]{1,6})?$ ]] || d=0
+      [[ "$cost" =~ ^[0-9]{1,12}(\.[0-9]{1,6})?$ ]] || cost=0
+      [[ "$tk" =~ ^[0-9]{1,15}(\.[0-9]{1,6})?$ ]] || tk=0
       row=$(( row + 1 ))
       # Log in UTC, shown in local time.
       ep="$(ai_ts_epoch "$t")"

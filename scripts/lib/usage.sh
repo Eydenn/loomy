@@ -26,8 +26,9 @@ ai_quota() {
       local f; f="$(ai_claude_limits_file)"
       [[ -f "$f" ]] || return 0
       awk -F= -v now="$now" '
-        /^(five_hour|seven_day)_pct=/ { split($1, a, "_pct"); pct[a[1]] = $2 }
-        /^(five_hour|seven_day)_reset=/ { split($1, a, "_reset"); rst[a[1]] = $2 }
+        # Only whole numbers leave this reader: the file is data, and its numbers reach Bash arithmetic.
+        /^(five_hour|seven_day)_pct=[0-9]+$/ { split($1, a, "_pct"); pct[a[1]] = $2 }
+        /^(five_hour|seven_day)_reset=[0-9]+$/ { split($1, a, "_reset"); rst[a[1]] = $2 }
         END { if (("five_hour" in pct) && rst["five_hour"] > now) print 300, pct["five_hour"], rst["five_hour"]
               if (("seven_day" in pct) && rst["seven_day"] > now) print 10080, pct["seven_day"], rst["seven_day"] }' "$f"
       ;;
@@ -94,6 +95,7 @@ ai_quota_line() {
   while read -r w p r; do
     [[ -n "$w" ]] || continue
     if [[ "$w" == "reached" ]]; then out="${out:+$out · }${C_RED}$(t "limit reached (%s)" "$p")${C_RESET}"; continue; fi
+    ai_uint w; ai_uint p; ai_uint r
     c=""; (( p >= 80 )) && c="$C_YELLOW"; (( p >= 95 )) && c="$C_RED"
     out="${out:+$out · }$(_ai_window_label "$w") ${c}${C_BOLD}${p} %${C_RESET} ${C_DIM}($(t "resets %s" "$(_ai_reset_label "$r")"))${C_RESET}"
   done < <(ai_quota "$1")

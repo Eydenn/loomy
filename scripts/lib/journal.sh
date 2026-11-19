@@ -18,6 +18,8 @@ ai_journal_enabled() {
 AI_CODEX_NATIVE_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/codex-native.pl"
 AI_LIVE_STATE_LIB="${AI_CODEX_NATIVE_LIB%/*}/live-state.pl"
 AI_CLAUDE_NATIVE_LIB="${AI_CODEX_NATIVE_LIB%/*}/claude-native.pl"
+# Strict schema for events read from the journal (see event-schema.pl); the Perl readers load it from here.
+AI_EVENT_SCHEMA_LIB="${AI_CODEX_NATIVE_LIB%/*}/event-schema.pl"; export AI_EVENT_SCHEMA_LIB
 
 # A Stop hook proves the lead turn is idle; it does not close the reusable session.
 ai_journal_claude_idle() {
@@ -289,8 +291,10 @@ _ai_journal_write_checked() {
 # Canonical hook/transcript lifecycle; snapshots preserve state without new usage.
 ai_journal_canonical() {
   perl -MJSON::PP -e '
+    require $ENV{AI_EVENT_SCHEMA_LIB};
     my (@events,%native,%alias,%seen,%terminal,%owners,%lifetimes);
-    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; push @events,[$_,$e];
+    # Every event leaves here with schema-valid identifiers, timestamps and numbers (changed ones are re-encoded).
+    while (<STDIN>) {my $e=eval {decode_json($_)}; next unless ref($e) eq "HASH"; my $raw=$_; $raw=Loomy::EventSchema::encode($e)."\n" if Loomy::EventSchema::clean_event($e); push @events,[$raw,$e];
       my $pid=$e->{owner_pid}//$e->{pid};
       $owners{$e->{id}}=($e->{tool}//$e->{family}//"")."|$pid" if $e->{id} && defined($pid) && !ref($pid) && $pid =~ /^\d+$/ && $pid>1;
       $native{($e->{session}//"")."|".($e->{turn_id}//"")}=1 if ($e->{bridge}//"") eq "claude-native" && $e->{turn_id};
@@ -433,19 +437,6 @@ ai_json_num() {
   echo "${v:-0}"
 }
 
-# ai_uint <variable name>: runtime files and journals are untrusted input, and Bash evaluates a variable's text
-# as an arithmetic expression ((( )), $(( )), [[ -gt ]], array subscripts: a[$(cmd)] runs cmd). Every number read
-# from a runtime file goes through here before any arithmetic: digits only (at most 12, normalized to decimal),
-# anything else becomes 0.
-ai_uint() {
-  local __ai_v="${!1-}"
-  if [[ "$__ai_v" =~ ^[0-9]{1,12}$ ]]; then printf -v "$1" '%s' "$(( 10#$__ai_v ))"; else printf -v "$1" '%s' 0; fi
-}
-# ai_pid_ok <value>: a positive process id (more than 1), safe for kill -0 (0 and negatives address groups).
-ai_pid_ok() { [[ "${1-}" =~ ^[0-9]{1,12}$ ]] && (( 10#$1 > 1 )); }
-# ai_ctl_strip: stdin without control characters (the terminal never sees an escape from a runtime file).
-ai_ctl_strip() { LC_ALL=C tr -d '\000-\037\177'; }
-
 # ai_task_excerpt <text>: task excerpt for the log (200 characters), empty when LOOMY_JOURNAL_TASKS=0.
 ai_task_excerpt() {
   local excerpt_root="${2:-${ROOT:-${root:-}}}"
@@ -474,7 +465,7 @@ AI_TITLE_PERL='use utf8;
 # JSON labels are already sanitized and clipped in Perl. Decode only this new
 # field for awk consumers, preserving the historical parser for legacy tasks.
 AI_DISPLAY_FIELD_AWK='
-function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); return v }
+function ctl(v) { gsub(/[[:cntrl:]]/, " ", v); gsub(/\302[\200-\237]/, " ", v); return v }
 function display_task(   v,i,c,out) {
   if (!match($0, /"display_task":"([^"\\]|\\.)*"/)) return ""
   v=substr($0,RSTART+16,RLENGTH-17); out=""
@@ -536,7 +527,7 @@ sub key {
   my ($e)=@_; return join("|",map {text($_)} ($e->{tool}//$e->{family}//"",$e->{session}//"",$e->{id}//""));
 }
 sub clean {
-  my $s=text($_[0]); $s =~ s/[\x00-\x1f\x7f|]/ /g; return $s;
+  my $s=text($_[0]); $s =~ s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($s)) { $s =~ s/[\x{80}-\x{9f}]/ /g } else { $s =~ s/\xc2[\x80-\x9f]/ /g }; return $s;
 }
 sub scope_key { join("|",map {text($_[0]{$_})} qw(project_id target_kind target_id attempt_id)) }
 sub load_labels {
@@ -926,7 +917,7 @@ ai_journal_display_events() {
       elsif ($ty =~ /^lead_(failover|return)$/ && Loomy::DisplayContext::managed($e)) { $who="lead"; $what=$1 eq "failover" ? "handed over" : Loomy::DisplayContext::ui("returned","returned"); $extra=text($e->{master})." → ".text($e->{acting})." · ".Loomy::DisplayContext::reason($e) }
       elsif ($ty eq "usage" && ($e->{scope}//"") eq "lead") { $who="lead"; $what="replied"; $extra=($e->{messages}//0)." msg · $model" }
       else { next }
-      my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g } print join("|",@row),"\n";
+      my @row=(text($e->{ts}),$who,$what,$extra); for (@row) { s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($_)) { s/[\x{80}-\x{9f}]/ /g } else { s/\xc2[\x80-\x9f]/ /g } } print join("|",@row),"\n";
     }
   '
 }

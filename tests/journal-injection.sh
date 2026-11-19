@@ -6,7 +6,7 @@
 # output holds no ESC. Synthetic projects only: no provider, no network. Bash 3.2 compatible.
 set -uo pipefail
 REPO="${LOOMY_INJECTION_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-WORK="$(mktemp -d /tmp/lj.XXXX)"; WORK="$(cd "$WORK" && pwd -P)"
+WORK="$(mktemp -d /tmp/ljXXXXXX)"; WORK="$(cd "$WORK" && pwd -P)"
 trap 'kill $SLEEPER 2>/dev/null; wait $SLEEPER 2>/dev/null; [[ -n "${LOOMY_INJECTION_KEEP:-}" ]] || rm -rf "$WORK"' EXIT
 SLEEPER=""
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" XDG_STATE_HOME="$WORK/state" XDG_CACHE_HOME="$WORK/cache"
@@ -72,6 +72,7 @@ check() {   # check <name> <command...>: marker files and raw ESC
   local hits; hits="$(ls "$MARK" 2>/dev/null | tr '\n' ' ')"
   if [[ -z "$hits" ]]; then ok "$name: no marker file"; else ko "$name: injected commands ran ($hits)"; fi
   if LC_ALL=C grep -q "$ESC" "$WORK/out.txt"; then ko "$name: raw ESC reached the output"; else ok "$name: no raw ESC in the output"; fi
+  if LC_ALL=C grep -q $'\xc2[\x80-\x9f]' "$WORK/out.txt"; then ko "$name: a C1 control (C2 80..9F) reached the output"; else ok "$name: no C1 control in the output"; fi
 }
 
 hostile_journal; hostile_state
@@ -86,6 +87,65 @@ check "report (brief name with a tab)" bash "$L" report
 check "statusline" bash -c "echo '{}' | bash '$REPO/scripts/loomy-statusline.sh'"
 check "context (start hook)" bash "$REPO/scripts/loomy-context.sh" --hook start --root "$P"
 check "context (resume text)" bash "$REPO/scripts/loomy-context.sh" --root "$P"
+
+# ---- LR9-2: text columns that carry spaces (model, role, ts, advisor model) next to numbers. A `read` on the
+# default IFS used to shift the text into a numeric variable. Journal events are now schema-checked where they
+# are read, and the readers validate every number again.
+# A value with spaces in front, then a payload without whitespace (${IFS} expands to a space only inside the subscript),
+# so that `read` puts it whole into one variable, whichever column it lands in.
+sp() { printf 'x 1 1 PATH[$(touch${IFS}%s/%s)]' "$MARK" "$1"; }
+hostile_journal2() {
+  local ts="$NOW" pid="$SLEEPER" c1; c1="$(printf 'a\xc2\x9bb')"
+  plant \
+   "{\"type\":\"session\",\"event\":\"start\",\"tool\":\"claude\",\"session\":\"s1\",\"pid\":$pid,\"model\":\"claude-sonnet-5-5\",\"effort\":\"high\",\"ts\":\"$ts\"}" \
+   "{\"type\":\"phase\",\"phase\":\"brief\",\"ts\":\"2026-11-01T00:00:00Z $(sp bstart)\"}" \
+   "{\"type\":\"phase\",\"phase\":\"done\",\"ts\":\"2026-11-01T01:00:00Z $(sp bend)\"}" \
+   "{\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"model\":\"a\\u009bb $c1\",\"calls\":1,\"tokens_in\":10,\"ts\":\"$ts\"}" \
+   "{\"type\":\"advisor\",\"tool\":\"claude\",\"family\":\"claude\",\"scope\":\"lead\",\"model\":\"a b $(printf 'PATH[$(touch${IFS}%s/advisor)]' "$MARK")\",\"calls\":2,\"tokens_in\":3000,\"tokens_out\":1,\"cost_usd\":0.1,\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"m1\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"$(sp role)\",\"model\":\"$(sp model)\",\"status\":\"ok\",\"duration_s\":3,\"tokens_in\":5,\"tokens_out\":5,\"cost_usd\":0.2,\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"m2\",\"bridge\":\"codex\",\"family\":\"codex\",\"role\":\"developer\",\"model\":\"a\\u009bb\",\"status\":\"ok\",\"duration_s\":3,\"tokens_in\":5,\"task\":\"t $c1 u\\u009bv\",\"ts\":\"$ts\"}" \
+   "{\"type\":\"delegation\",\"id\":\"m3\",\"bridge\":\"claude\",\"family\":\"claude\",\"role\":\"reviewer\",\"model\":\"$(sp model2)\",\"status\":\"$(sp status)\",\"tokens_in\":5,\"ts\":\"$ts\"}" \
+   "{\"type\":\"usage\",\"scope\":\"lead\",\"tool\":\"claude\",\"model\":\"$(sp umodel)\",\"messages\":2,\"ts\":\"$ts $(sp uts)\"}" \
+   "{\"type\":\"delegation_start\",\"id\":\"m4\",\"pid\":$pid,\"bridge\":\"codex\",\"role\":\"$(sp srole)\",\"family\":\"codex\",\"model\":\"$(sp smodel)\",\"task\":\"$c1\",\"ts\":\"$ts\"}"
+}
+hostile_journal2
+mkdir -p "$XDG_CONFIG_HOME/loomy"; printf 'advisor=opus\n' >"$XDG_CONFIG_HOME/loomy/config"   # the tree draws the advisor
+printf 'phase=done\nupdated=2026-11-01 01:00\n' >.loomy/state; rm -f .loomy/failover
+check "status (spaces in model, role, ts; bootstrap done)" bash "$L" status
+check "status --compact (spaces)" bash "$L" status --compact
+check "tree --once (spaces, advisor configured)" bash "$L" tree --once
+check "stats (spaces)" bash "$L" stats
+check "log (spaces)" bash "$L" log -n 50
+check "report (spaces)" bash "$L" report
+
+# The watch views render from the sampler cache (the reducer rows, then the frame): status and the tree diagram.
+cat >"$WORK/watch-view.sh" <<'WATCH'
+# usage: watch-view.sh <repo> <root> <status|tree|list>: one frame of the watch views, from the sampler rows.
+REPO="$1"; ROOT="$2"; VIEW="$3"; J="$ROOT/.loomy/logs/events.jsonl"
+export LOOMY_STATUS_LIBRARY=1
+source "$REPO/scripts/loomy-status.sh" --root "$ROOT"
+source "$REPO/scripts/loomy-tree.sh" --library
+set +eu   # the frame code runs without errexit and nounset, as in loomy watch
+loomy_live_init
+LEGACY_USAGE="0 0 0 0 0 0"; LEGACY_ADVISOR="0 0 0 -"; LEGACY_TOTAL="0 0"; LEGACY_COUNT=0; LEGACY_NATIVE=0; LEGACY_HAS_USAGE=0; LEGACY_HAS_ADVISOR=0
+rows="$(perl -e "$LOOMY_WATCH_LEGACY_PERL"'
+  require "$ARGV[0]/scripts/lib/live-state.pl"; binmode STDOUT, ":encoding(UTF-8)";
+  my $reader=Loomy::LiveState->new; my $cache=Loomy::WatchLegacy->new;
+  $cache->consume($_,0,0) for $reader->journal_records($ARGV[1]);
+  print "$_\n" for $cache->snapshot("claude",0);
+' "$REPO" "$J")"
+LEGACY_SEQ=0
+while IFS= read -r row; do loomy_watch_legacy_accept "$row"; done <<<"$rows"
+LV_NOW="$(date +%s)"; LV_CLOCK=01:00:00; loomy_live_states; loomy_live_metadata
+tick=$LV_NOW; size=--full; watch_body_height=80; tree_mode=list; view="$VIEW"
+[[ "$VIEW" != tree ]] || tree_mode=diagram
+loomy_watch_legacy_pretty
+COLUMNS=170 LINES=65 loomy_watch_legacy_render
+WATCH
+check "watch status view (spaces, bootstrap done)" bash "$WORK/watch-view.sh" "$REPO" "$P" status
+check "watch tree diagram (spaces, advisor configured)" bash "$WORK/watch-view.sh" "$REPO" "$P" tree
+if grep -q 'opus' "$WORK/out.txt"; then ok "the watch tree shows the advisor line"; else ko "the watch tree lost the advisor line"; fi
+check "watch tree list (spaces)" bash "$WORK/watch-view.sh" "$REPO" "$P" list
 
 # The reported case: the task text ends the line, its last field was evaluated as arithmetic.
 plant "{\"type\":\"delegation_start\",\"id\":\"d4\",\"pid\":$SLEEPER,\"bridge\":\"codex\",\"role\":\"architect\",\"family\":\"codex\",\"model\":\"m\",\"task\":\"x|$(m reported)\",\"ts\":\"$NOW\"}"

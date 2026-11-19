@@ -13,7 +13,7 @@ if ! declare -F ai_journal_write >/dev/null 2>&1; then source "$(dirname "${BASH
 lf_file() { echo "$1/.loomy/failover"; }
 
 # lf_get <root> <key>
-lf_get() { sed -n "s/^$2=//p" "$(lf_file "$1")" 2>/dev/null | head -1 | LC_ALL=C tr -d '\000-\037\177' || true; }
+lf_get() { sed -n "s/^$2=//p" "$(lf_file "$1")" 2>/dev/null | head -1 | ai_ctl_strip || true; }
 
 # lf_active <root>: a relay is running (state present, acting tool differs from the master).
 lf_active() {

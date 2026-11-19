@@ -41,7 +41,7 @@ fi
 seg=""
 R="${LOOMY_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR:-}}"
 if [[ -n "$R" && -f "$R/.loomy/state" ]]; then
-  ph="$(sed -n 's/^phase=//p' "$R/.loomy/state" 2>/dev/null | head -1 | LC_ALL=C tr -d '\000-\037\177')"
+  ph="$(sed -n 's/^phase=//p' "$R/.loomy/state" 2>/dev/null | head -1 | LC_ALL=C tr -d '\000-\037\177' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]//g')"
   [[ -n "$ph" && "$ph" != "done" ]] && seg="$ph"
   J="$R/.loomy/logs/events.jsonl"
   if [[ -f "$J" ]]; then

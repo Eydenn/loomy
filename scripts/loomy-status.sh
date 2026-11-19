@@ -192,7 +192,7 @@ sub once {
   return 0;
 }
 sub num { my $s=text($_[0]); $s =~ /^\d+(?:\.\d+)?$/ ? 0+$s : 0 }
-sub wire { my @v=@_; for (@v) {$_=text($_); s/[\x00-\x1f|]/ /g} join("|",@v) }
+sub wire { my @v=@_; for (@v) {$_=text($_); s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($_)) { s/[\x{80}-\x{9f}]/ /g } else { s/\xc2[\x80-\x9f]/ /g }} join("|",@v) }
 # Archive bootstrap summaries are read once; current-file snapshots cannot add them twice.
 sub phase_consume {
   my ($s,$d,$pc,$px)=@_; my $ty=text($d->{type}); my %identity=%$d; delete $identity{snapshot};
@@ -302,11 +302,11 @@ sub snapshot {
   my ($s,$preferred,$native,$force_logs)=@_; my @out;
   if (delete $s->{dirty}) {
     push @out,"K|reset";
-    for my $ph (sort keys %{$s->{phase}}) {my @v=@{$s->{phase}{$ph}}; $v[3]=sprintf "%.2f",$v[3]; push @out,wire("K","B",$ph,join(" ",@v))}
+    for my $ph (sort keys %{$s->{phase}}) {my @v=@{$s->{phase}{$ph}}; $v[3]=sprintf "%.2f",$v[3]; s/\s/_/g for @v[0,1]; push @out,wire("K","B",$ph,join(" ",@v))}
     push @out,wire("K","U",sprintf("%d %.4f %d %d %.4f %d",@{$s->{usage}}));
-    my @a=@{$s->{advisor}}; $a[1]=sprintf "%.4f",$a[1]; push @out,wire("K","V",join(" ",@a));
+    my @a=@{$s->{advisor}}; $a[1]=sprintf "%.4f",$a[1]; s/\s/_/g for @a[3,4]; push @out,wire("K","V",join(" ",@a));
     my @t=@{$s->{total}}; $t[1]=sprintf "%.4f",$t[1]; push @out,wire("K","S","TOTAL ".join(" ",@t));
-    for my $m (sort keys %{$s->{models}}) {my @v=@{$s->{models}{$m}}; $v[1]=sprintf "%.4f",$v[1]; push @out,wire("K","M","MODEL $m ".join(" ",@v))}
+    for my $m (sort keys %{$s->{models}}) {my @v=@{$s->{models}{$m}}; $v[1]=sprintf "%.4f",$v[1]; (my $mm=$m) =~ s/\s/_/g; push @out,wire("K","M","MODEL $mm ".join(" ",@v))}
     for my $raw (@{$s->{last}}) {local $ENV{LOOMY_DISPLAY_FORMAT}="status"; my $d=Loomy::DisplayContext::prepare($raw); push @out,wire("K","F",$d->{ts},$d->{status},$d->{role},$d->{model},num($d->{duration_s}),num($d->{cost_usd}),(text($d->{failover_from}) ne "" ? "⇄ " : "").(text($d->{display_task}) || substr(title($d->{task}),0,40)),$d->{family},num($d->{tokens_in})+num($d->{tokens_out}),$d->{outcome},$d->{bridge})}
     for my $raw (@{$s->{starts}}) {local $ENV{LOOMY_DISPLAY_FORMAT}="status"; my $d=Loomy::DisplayContext::prepare($raw); next if $s->{done}{text($d->{id})} || text($d->{bridge}) eq "codex-native"; my $a=$s->{avg}{text($d->{role})."|".text($d->{model})}; push @out,wire("K","R",$d->{pid},$d->{ts},$d->{role},$d->{model},(text($d->{display_task}) || substr(title($d->{task}),0,60)),$a && $a->[1] ? int($a->[0]/$a->[1]) : "")}
     push @out,wire("K","H",$s->{has_usage}//0,$s->{has_advisor}//0,$t[0],$s->{has_native}//0);
@@ -816,8 +816,9 @@ loomy_watch_legacy_render() (
     local row kind pid ts tool state=none hhmm="?" chosen_ts=0 chosen_tool=""
     for row in ${LEGACY_SESSIONS[@]+"${LEGACY_SESSIONS[@]}"}; do
       loomy_native_read "$row" kind pid ts tool
+      ai_uint ts
       if [[ "$kind" == open ]]; then
-        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then state=open; chosen_ts=$ts; chosen_tool=$tool; break; fi
+        if ai_pid_ok "$pid" && kill -0 "$pid" 2>/dev/null; then state=open; chosen_ts=$ts; chosen_tool=$tool; break; fi
       elif [[ "$state" == none ]]; then state=closed; chosen_ts=$ts; chosen_tool=$tool; fi
     done
     [[ "$state" != none ]] || { printf 'none\n'; return; }
@@ -953,6 +954,8 @@ else
       e == "" && (index($0, "\"type\":\"usage\"") || index($0, "\"type\":\"advisor\"")) { add() }
       END { printf "%s %s %d %.2f %d\n", (s == "" ? "-" : s), (e == "" ? "-" : e), n, c, tk }' < <(ai_journal_all "$ROOT" | ai_journal_canonical))"
 fi
+    # Journal-derived: only digits (and one decimal for the cost) may reach the arithmetic below.
+    ai_uint b_n; ai_uint b_tok; [[ "$b_cost" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || b_cost=0
     s_ep="$(ai_ts_epoch "$b_start")"; e_ep="$(ai_ts_epoch "$b_end")"
     took=""
     if [[ -n "$s_ep" && -n "$e_ep" ]] && (( e_ep >= s_ep )); then
@@ -1062,13 +1065,15 @@ if [[ -s "$JOURNAL" ]]; then
 if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
     read -r u_ln u_lc u_lt u_sn u_sc u_st <<<"$LEGACY_USAGE"
 else
-    read -r u_ln u_lc u_lt u_sn u_sc u_st <<<"$(awk '
+    read -r u_ln u_lc u_lt u_sn u_sc u_st <<<"$(ai_journal_canonical <"$JOURNAL" | awk '
       function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
       index($0, "\"type\":\"usage\"") {
         c = num("cost_usd"); m = num("messages"); tk = num("tokens_in") + num("tokens_out")
         if (index($0, "\"scope\":\"lead\"")) { ln += m; lc += c; lt += tk } else { sn++; sc += c; st += tk } }
-      END { printf "%d %.4f %d %d %.4f %d\n", ln, lc, lt, sn, sc, st }' "$JOURNAL")"
+      END { printf "%d %.4f %d %d %.4f %d\n", ln, lc, lt, sn, sc, st }')"
 fi
+    ai_uint u_ln; ai_uint u_lt; ai_uint u_sn; ai_uint u_st
+    [[ "$u_lc" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || u_lc=0; [[ "$u_sc" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || u_sc=0
     # Subscription: tokens (the quota is shown below); API: the real cost.
     if (( PLAN_C )); then u_lv="$(ai_tokens_label "$u_lt") $(t "tokens")"; u_sv="$(ai_tokens_label "$u_st") $(t "tokens")"
     else u_lv="$(t "cost %s" "\$${u_lc}")"; u_sv="$(t "cost %s" "\$${u_sc}")"; fi
@@ -1079,12 +1084,13 @@ fi
 if [[ "${LOOMY_WATCH_REDUCED:-0}" == 1 ]]; then
       read -r a_n a_c a_t a_m _ <<<"$LEGACY_ADVISOR"
 else
-      read -r a_n a_c a_t a_m <<<"$(awk '
+      read -r a_n a_c a_t a_m <<<"$(ai_journal_canonical <"$JOURNAL" | awk '
         function num(k,   v) { if (match($0, "\"" k "\":[0-9.]+")) { v = substr($0, RSTART, RLENGTH); sub("^\"" k "\":", "", v); return v + 0 } return 0 }
         index($0, "\"type\":\"advisor\"") { n += num("calls"); c += num("cost_usd"); tk += num("tokens_in") + num("tokens_out")
           if (match($0, /"model":"[^"]*"/)) m = substr($0, RSTART + 9, RLENGTH - 10) }
-        END { printf "%d %.4f %d %s\n", n, c, tk, (m == "" ? "-" : m) }' "$JOURNAL")"
+        END { printf "%d %.4f %d %s\n", n, c, tk, (m == "" ? "-" : m) }')"
 fi
+      ai_uint a_n; ai_uint a_t; [[ "$a_c" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || a_c=0
       if (( PLAN_C )); then a_v="$(ai_tokens_label "$a_t") $(t "tokens")"; else a_v="$(t "cost %s" "\$${a_c}")"; fi
       ui_kv "$(t "Advisor")" "$(t "%s consultation(s)" "${C_BOLD}${a_n}${C_RESET}") · $a_m · ${C_BOLD}${a_v}${C_RESET} ${C_DIM}($(t "measured"))${C_RESET}"
     fi
@@ -1109,6 +1115,9 @@ else
             for (m in calls) printf "MODEL %s %d %.4f %d %d\n", m, calls[m], cost[m], tok[m], mp[m] }')"
 fi
     read -r _ n_calls total_cost n_err n_api plan_tok n_native n_paused n_handed n_review <<<"$(printf '%s\n' "$summary" | grep '^TOTAL')"
+    # Journal-derived counters: digits only before any arithmetic.
+    for _v in n_calls n_err n_api plan_tok n_native n_paused n_handed n_review; do ai_uint "$_v"; done
+    [[ "$total_cost" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || total_cost=0
     # API part: its cost; subscription part: its tokens (the quota is in the plans lines).
     d_val=""
     (( n_api > 0 )) && d_val="${C_BOLD}\$${total_cost}${C_RESET}"
@@ -1120,6 +1129,7 @@ fi
     if [[ "$COMPACT" == "1" ]]; then last_n=3; else
     all_tok="$(printf '%s\n' "$summary" | awk '/^MODEL/ { s += $5 } END { print s + 0 }')"
     printf '%s\n' "$summary" | awk '/^MODEL/' | sort -k5 -rn | while read -r _ m c cost tok onplan; do
+      ai_uint c; ai_uint tok; ai_uint onplan; [[ "$cost" =~ ^[0-9]{1,12}(\.[0-9]{1,9})?$ ]] || cost=0
       # Bar: share of the tokens (comparable across API and subscription).
       width=0
       (( all_tok > 0 )) && width=$(( tok * 24 / all_tok ))

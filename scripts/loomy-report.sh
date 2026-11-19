@@ -41,8 +41,8 @@ fi
 metrics() {
   local r="$1" name phase tasks=0 tdone=0 audits=0 reviews=0 f st
   # Tabs separate the figures below: a name or phase (cloned files) must not add fields.
-  name="$(_ai_brief_get "$r/.loomy/brief.md" name | LC_ALL=C tr -d '\000-\037\177')"; name="${name:-$(basename "$r" | LC_ALL=C tr -d '\000-\037\177')}"
-  phase="$(sed -n 's/^phase=//p' "$r/.loomy/state" 2>/dev/null | head -1 | LC_ALL=C tr -d '\000-\037\177')"
+  name="$(_ai_brief_get "$r/.loomy/brief.md" name | ai_ctl_strip)"; name="${name:-$(basename "$r" | ai_ctl_strip)}"
+  phase="$(sed -n 's/^phase=//p' "$r/.loomy/state" 2>/dev/null | head -1 | ai_ctl_strip)"
   for f in "$r"/.loomy/tasks/*.md; do [[ -f "$f" ]] || continue; tasks=$(( tasks + 1 )); st="$(sed -n 's/^status: //p' "$f" | head -1)"; [[ "$st" == "done" ]] && tdone=$(( tdone + 1 )); done
   for f in "$r"/.loomy/audits/*/; do [[ -d "$f" ]] && audits=$(( audits + 1 )); done
   for f in "$r"/.loomy/reviews/*.md; do [[ -f "$f" ]] && reviews=$(( reviews + 1 )); done

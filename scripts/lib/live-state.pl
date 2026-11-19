@@ -15,6 +15,8 @@ use Scalar::Util qw(blessed refaddr weaken);
 $INC{abs_path(__FILE__)}=1;
 my $content_lib=abs_path(__FILE__); $content_lib =~ s{/[^/]+$}{/content-policy.pl};
 require $content_lib;
+my $schema_lib=abs_path(__FILE__); $schema_lib =~ s{/[^/]+$}{/event-schema.pl};
+require $schema_lib;
 my $journal_json=JSON::PP->new->utf8->canonical;
 my ($gate_lib,$gate_loaded)=(abs_path(__FILE__),0);
 
@@ -972,7 +974,8 @@ sub journal_records {
     my @out;
     for my $line (split /\n/,substr($buf,$skip,$end-$skip+1)) {
         next if length($line)>65536;
-        my $d=eval {decode_fast($line)}; push @out,$d if ref($d) eq 'HASH';
+        my $d=eval {decode_fast($line)};
+        if (ref($d) eq 'HASH') { Loomy::EventSchema::clean_event($d); push @out,$d }
     }
     return @out;
 }
@@ -1034,7 +1037,7 @@ sub claude_evidence {
     }
 }
 sub wire {
-    my @row=@_; for (@row) { $_=text($_); s/[\x00-\x1f\x7f|]/ /g } return join('|',@row);
+    my @row=@_; for (@row) { $_=text($_); s/[\x00-\x1f\x7f|]/ /g; if (utf8::is_utf8($_)) { s/[\x{80}-\x{9f}]/ /g } else { s/\xc2[\x80-\x9f]/ /g } } return join('|',@row);
 }
 # Recompute explicit ownership at projection time: links can arrive after native starts.
 sub bridge_owner {

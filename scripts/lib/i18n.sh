@@ -35,6 +35,20 @@ if [[ "$LOOMY_UI_LANG" == "fr" ]]; then
   source "$(dirname "${BASH_SOURCE[0]}")/i18n/fr.sh" 2>/dev/null || _t_fr() { _T=""; }
 fi
 
+# ai_uint <variable name>: runtime files and journals are untrusted input, and Bash evaluates a variable's text
+# as an arithmetic expression ((( )), $(( )), [[ -gt ]], array subscripts: a[$(cmd)] runs cmd). Every number read
+# from a runtime file goes through here before any arithmetic: digits only (at most 12, normalized to decimal),
+# anything else becomes 0.
+ai_uint() {
+  local __ai_v="${!1-}"
+  if [[ "$__ai_v" =~ ^[0-9]{1,12}$ ]]; then printf -v "$1" '%s' "$(( 10#$__ai_v ))"; else printf -v "$1" '%s' 0; fi
+}
+# ai_pid_ok <value>: a positive process id (more than 1), safe for kill -0 (0 and negatives address groups).
+ai_pid_ok() { [[ "${1-}" =~ ^[0-9]{1,12}$ ]] && (( 10#$1 > 1 )); }
+# ai_ctl_strip: stdin without C0 controls (newlines included), DEL and UTF-8 C1 controls (C2 80..9F): text from a
+# runtime file (state, relay, brief) never drives the terminal. Bytes, whatever the locale.
+ai_ctl_strip() { LC_ALL=C tr -d '\000-\037\177' | LC_ALL=C sed $'s/\xc2[\x80-\x9f]//g'; }
+
 # t <sentence> [arguments]: sentence in the interface language (printf when arguments follow).
 t() {
   local s="$1"; shift

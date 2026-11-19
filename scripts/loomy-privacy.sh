@@ -41,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     --host) INVENTORY_HOST=1 ;;
     restore) CMD="restore"; ARG="${2:-}"; [[ $# -gt 1 ]] && shift ;;
     content|labels|results|label) CMD="$1"; shift; CONTENT_ARGS=("$@"); break ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
+    -h|--help) awk 'NR == 1 { next } /^# shellcheck/ || !/^#/ { exit } { print }' "$0" | sed 's/^# \{0,1\}//' | i18n_lines; exit 0 ;;
     *) t "Unknown argument: %s (loomy privacy --help)" "$1" >&2; echo >&2; exit 2 ;;
   esac
   shift
@@ -434,10 +434,10 @@ AI_REPO="$(loomy_slug "$AI_REPO")"
 
 # ---------------------------------------------------------------- separate private repository
 create_companion() {
-  local url="$REMOTE" owner
+  local url="$REMOTE" owner line
   if privacy_companion_ready "$ROOT"; then return 0; fi
   if privacy_companion_present "$ROOT"; then
-    ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "a .loomy/ai.git is here but Loomy did not create it")"
+    ui_err "$(t "Private history not verified · run loomy privacy adopt")" "$(t "a .loomy/ai.git is here and is not trusted yet")"
     return 1
   fi
   if [[ -z "$url" ]]; then
@@ -462,12 +462,20 @@ create_companion() {
     fi
     url="https://github.com/$owner/$AI_REPO.git"
   fi
+  # A local remote is stored as its canonical absolute path (git resolves the stored path again at every push).
+  url="$(privacy_canonical_remote "$url")"
   loomy_git_user init --bare -q -b main "$(privacy_ai_git_dir "$ROOT")"
   privacy_set_key "$ROOT" ai_repo_name "$(basename "$url" .git)"
   ai_git "$ROOT" remote add origin "$url"
   privacy_companion_config "$ROOT"
   # Recorded once its remote is set: the record carries a digest of every url, so any later change needs `loomy privacy adopt`.
-  privacy_companion_record "$ROOT" || { ui_err "$(t "Can't record the private repository")" "${XDG_CONFIG_HOME:-~/.config}/loomy"; return 1; }
+  # Created in this call, so a failed record removes it again: no half-made companion is left to be refused later.
+  if ! privacy_companion_record "$ROOT"; then
+    ui_err "$(t "Can't record the private repository")" "${XDG_CONFIG_HOME:-~/.config}/loomy"
+    while IFS= read -r line; do [[ -z "$line" ]] || ui_rail "    ${C_DIM}$line${C_RESET}"; done <<<"${PRIVACY_RECORD_WHY:-}"
+    rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"
+    return 1
+  fi
   return 0
 }
 
@@ -632,8 +640,14 @@ case "$CMD" in
     loomy_git_user clone --bare -q -- "$url" "$(privacy_ai_git_dir "$ROOT")" || { t "Can't clone: %s" "$url" >&2; echo >&2; exit 1; }
     # The user cloned it themselves: record it, then drop anything a repository could carry beyond its objects.
     rm -rf "$(privacy_ai_git_dir "$ROOT")/hooks" "$(privacy_ai_git_dir "$ROOT")/info/attributes"
+    cur="$(loomy_git config --no-includes --file "$(privacy_ai_git_dir "$ROOT")/config" --get remote.origin.url 2>/dev/null || true)"
+    if [[ -n "$cur" ]]; then canon="$(privacy_canonical_remote "$cur")"; [[ "$canon" == "$cur" ]] || ai_git "$ROOT" config remote.origin.url "$canon"; fi
     privacy_companion_config "$ROOT"
-    privacy_companion_record "$ROOT" || { t "Can't clone: %s" "$url" >&2; echo >&2; rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1; }
+    privacy_companion_record "$ROOT" || {
+      t "Can't clone: %s" "$url" >&2; echo >&2
+      printf '%s\n' "${PRIVACY_RECORD_WHY:-}" | sed '/^$/d; s/^/  /' >&2
+      rm -rf "$(privacy_ai_git_dir "$ROOT")"; privacy_companion_forget "$ROOT"; exit 1
+    }
     # Filter historical runtime paths before either backing up local files or materializing the old commit.
     if ! privacy_companion_restore_index "$ROOT"; then
       t "Can't restore: %s" "$url" >&2; echo >&2

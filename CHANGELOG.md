@@ -2,7 +2,7 @@
 
 Loomy stays at 0.x until the whole thing has been validated in real conditions. 1.0.0 will come after that validation.
 
-## 0.17.10 — 2026-11-21
+## 0.17.10 — 2026-11-20
 
 ### One live collector per project
 
